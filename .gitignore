@@ -1,0 +1,15 @@
+# User PCDs must never be committed. Public fixtures need synthetic or cleared data.
+*.pcd
+*.pcd.zip
+*.session
+*.session.zip
+/uploads/
+/outputs/
+.env
+.env.*
+/build/
+/.claude/
+/.agents/
+/.scratch/
+/plans/
+*.plan.md
