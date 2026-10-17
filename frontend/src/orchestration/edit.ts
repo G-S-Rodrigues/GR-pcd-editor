@@ -10,6 +10,7 @@ export interface EditApi {
   undo(cloudRevision: number): Promise<SessionState>;
   redo(cloudRevision: number): Promise<SessionState>;
   removeInvalid(cloudRevision: number): Promise<SessionState>;
+  clearSelection(cloudRevision: number): Promise<SessionState>;
   refreshState(): Promise<void>;
   refreshRender(): Promise<boolean>;
 }
@@ -66,6 +67,9 @@ export function createEditor(store: Store<AppState>, api: EditApi, confirmFn: (m
     async redo(): Promise<void> {
       if (!store.get().session?.history.can_redo || store.get().job.busy) return;
       await guarded(async () => afterChange(await api.redo(rev())));
+    },
+    async clearSelection(): Promise<void> {
+      await guarded(async () => afterChange(await api.clearSelection(rev())));
     },
     removeInvalidVisible: (): boolean => (store.get().session?.counts.invalid_active ?? 0) > 0,
     removeInvalidLabel: (): string =>

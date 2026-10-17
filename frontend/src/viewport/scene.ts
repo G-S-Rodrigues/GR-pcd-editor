@@ -3,6 +3,7 @@ import { colourize } from "../colour/modes";
 import { PALETTE } from "../colour/palette";
 import { type AppState } from "../state/app";
 import type { Store } from "../state/store";
+import { createToolsOverlay } from "./tools3d";
 import { FOV_DEG, eyePosition, halfHeight } from "../view/camera";
 
 export interface Viewport {
@@ -44,6 +45,8 @@ export function createViewport(
   );
   pivot.renderOrder = 10;
   scene.add(pivot);
+
+  const overlay = createToolsOverlay(scene);
 
   const axes = new THREE.Scene();
   const axisCam = new THREE.OrthographicCamera(-1.3, 1.3, 1.3, -1.3, -10, 10);
@@ -142,6 +145,7 @@ export function createViewport(
     pivot.position.set(cam.target[0] - origin[0], cam.target[1] - origin[1], cam.target[2] - origin[2]);
     pivot.scale.setScalar(Math.max(halfHeight(cam) * 0.03, 1e-9));
     pivot.visible = s.session !== null;
+    overlay.update(s, origin as [number, number, number]);
 
     renderer.setScissorTest(false);
     renderer.setViewport(0, 0, w, h);

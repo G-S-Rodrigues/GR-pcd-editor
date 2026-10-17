@@ -1,4 +1,17 @@
+import * as api from "./api/session";
 import { getState } from "./api/session";
+import { postJson } from "./files/http";
+import { pollJob } from "./files/jobs";
+import { createFilterController, filterFromState, selectDisplayedBody } from "./inspector/filters";
+import { type ProtectionModel, protectionFromState } from "./inspector/protection";
+import { createProtectionController } from "./inspector/protection-controller";
+import { createEditor, keyAction } from "./orchestration/edit";
+import { createRunner } from "./orchestration/runner";
+import { startDrawing, cancelDrawing, closePolygon, emptyPolygon, enterTool } from "./tools/polygon/model";
+import { fitToBounds } from "./tools/box/model";
+import { applyPreset } from "./view/presets";
+import { buildEditPanels, buildToolPalette } from "./ui/panels";
+import { createToolInteraction } from "./viewport/interact";
 import { attachDropZone } from "./files/dragdrop";
 import { dropNotice, openSource } from "./orchestration/open";
 import { createRefresher } from "./orchestration/refresh";
@@ -27,7 +40,52 @@ const viewport = createViewport(canvas, store, (reason) => {
   n.textContent = `WebGL is unavailable (${reason}). The cloud cannot be drawn, but file information and counts still work.`;
 });
 const size = () => viewport?.size() ?? { w: canvas.clientWidth, h: canvas.clientHeight };
-if (viewport) attachControls(canvas, store, size);
+
+async function refreshState(): Promise<void> {
+  const state = await getState();
+  if (state) store.set({ session: state });
+  await refresher.refresh();
+}
+const runner = createRunner(store, {
+  submitSelection: (b) => api.submitSelection(b as api.SelectionBody),
+  submitCandidate: (rev) => api.submitCandidate(rev),
+  cancelJob: (id) => postJson(`/api/jobs/${id}/cancel`),
+  poll: (id, opts) => pollJob(id, opts),
+  refreshState,
+});
+const editor = createEditor(
+  store,
+  {
+    apply: api.apply,
+    undo: api.undo,
+    redo: api.redo,
+    removeInvalid: api.removeInvalid,
+    clearSelection: api.clearSelection,
+    refreshState,
+    refreshRender: () => refresher.refresh(),
+  },
+  (m) => window.confirm(m),
+);
+const filters = createFilterController(store, {
+  putFilter: api.putFilter,
+  onParamsChanged: () => runner.paramsChanged(),
+  onError: (e) => addNotice(store, "error", "filter_failed", e instanceof Error ? e.message : "The filter could not be set"),
+});
+const protection = createProtectionController(store, {
+  putProtection: api.putProtection,
+  onParamsChanged: () => {
+    runner.paramsChanged();
+    void refresher.refresh();
+  },
+  onError: (e) => addNotice(store, "error", "protection_failed", e instanceof Error ? e.message : "Protection could not be set"),
+});
+const note = (text: string) => addNotice(store, "warn", "tool_edit", text);
+const tools = createToolInteraction(canvas, store, size, {
+  onToolChanged: () => runner.onToolChanged(),
+  protectionEdit: (fn) => protection.edit(fn),
+  notify: note,
+});
+if (viewport) attachControls(canvas, store, size, tools, () => runner.onToolChanged());
 
 function onOpened(state: SessionState) {
   const { w, h: ph } = size();
@@ -35,7 +93,20 @@ function onOpened(state: SessionState) {
   const fitted = state.active_bounds
     ? fitBounds(resetPivot(cam, state.active_bounds), state.active_bounds, w / Math.max(ph, 1))
     : cam;
-  store.set({ camera: fitted });
+  runner.reset();
+  store.update((st) => ({
+    ...st,
+    camera: fitted,
+    tool: "none",
+    candidate: null,
+    tools: {
+      ...st.tools,
+      box: state.bounds ? fitToBounds(st.tools.box, state.bounds) : st.tools.box,
+      polygon: emptyPolygon(),
+      filters: filterFromState(state.display_filter),
+      protection: protectionFromState(state.protection) as ProtectionModel,
+    },
+  }));
 }
 
 const deps = {
@@ -52,6 +123,10 @@ buildToolbar($("toolbar"), store, {
       (c) => void openSource({ kind: "mounted", path: c.path, itemKind: c.kind }, deps),
       (m) => addNotice(store, "error", "mounted_failed", m),
     ),
+  preview: () => runner.previewNow(),
+  apply: () => void editor.apply(),
+  undo: () => void editor.undo(),
+  redo: () => void editor.redo(),
 });
 buildViewbar($("viewbar"), store, {
   size,
@@ -60,7 +135,67 @@ buildViewbar($("viewbar"), store, {
   notify: (text) => addNotice(store, "warn", "pivot_invalid", text),
 });
 buildStatusbar($("statusbar"), $("modebar"), store);
-buildInspector($("tools"), $("inspector"), store);
+const panelActions = {
+  toolChanged: () => runner.onToolChanged(),
+  filterEdit: (axis: "x" | "y" | "z", patch: Partial<{ enabled: boolean; min: number; max: number }>) => filters.edit(axis, patch),
+  filterResetBounds: () => filters.resetToCloud(),
+  filterResetAll: () => filters.resetAll(),
+  protectionEdit: (fn: Parameters<typeof protection.edit>[0]) => protection.edit(fn),
+  setTool: (t: "none" | "box" | "polygon" | "cluster") => {
+    store.update((st) => ({ ...st, tool: t, interaction: "orbit" }));
+    if (t === "polygon") {
+      enterTool();
+      store.set({ camera: applyPreset(store.get().camera, "top") });
+    }
+    if (t !== "none") runner.onToolChanged();
+    else runner.reset();
+  },
+  commitDraft: () => runner.commitDraft(),
+  selectDisplayed: () => runner.oneShot((rev) => selectDisplayedBody(rev)),
+  invert: () =>
+    runner.oneShot((rev) => ({ cloud_revision: rev, op: "invert", scope: store.get().scope, tool: null, evaluate_candidate: true })),
+  clearSelection: () => {
+    runner.reset();
+    void editor.clearSelection();
+  },
+  removeInvalid: () => void editor.removeInvalid(),
+  removeInvalidVisible: () => editor.removeInvalidVisible(),
+  removeInvalidLabel: () => editor.removeInvalidLabel(),
+  cancelJob: () => runner.reset(),
+  startDrawing: () => store.update((st) => ({ ...st, tools: { ...st.tools, polygon: startDrawing(st.tools.polygon) } })),
+  finishPolygon: (): string | null => {
+    const r = closePolygon(store.get().tools.polygon);
+    if (!r.ok) return r.message ?? "The polygon is not valid";
+    store.update((st) => ({ ...st, tools: { ...st.tools, polygon: r.state } }));
+    runner.onToolChanged();
+    return null;
+  },
+  cancelDrawing: () => store.update((st) => ({ ...st, tools: { ...st.tools, polygon: cancelDrawing(st.tools.polygon) } })),
+  clearPolygon: () => {
+    store.update((st) => ({ ...st, tools: { ...st.tools, polygon: emptyPolygon() } }));
+    runner.reset();
+  },
+};
+buildInspector($("fileinfo"), store);
+buildToolPalette($("tools"), store, panelActions);
+buildEditPanels($("editpanels"), store, panelActions);
+
+window.addEventListener("keydown", (e) => {
+  const t = e.target as HTMLElement | null;
+  const a = keyAction({ key: e.key, ctrlKey: e.ctrlKey || e.metaKey, shiftKey: e.shiftKey, target: t?.tagName ?? "" });
+  if (a === "undo") {
+    e.preventDefault();
+    void editor.undo();
+  } else if (a === "redo") {
+    e.preventDefault();
+    void editor.redo();
+  } else if (e.key === "Enter" && store.get().tool === "polygon" && store.get().tools.polygon.phase === "drawing" && t?.tagName !== "INPUT") {
+    const msg = panelActions.finishPolygon();
+    if (msg) note(msg);
+  } else if (e.key === "Escape" && store.get().tools.polygon.phase === "drawing") {
+    panelActions.cancelDrawing();
+  }
+});
 
 $("help").append(
   h("strong", { text: "Controls" }),
@@ -74,7 +209,9 @@ $("help").append(
       ["1 2 3 4 5 6", "Top, bottom, front, back, left, right"],
       ["P", "Perspective / orthographic"],
       ["F", "Fit the cloud"],
-      ["Esc", "Leave pivot-pick mode"],
+      ["Esc", "Leave pick mode / cancel polygon drawing"],
+      ["Ctrl+Z, Ctrl+Y", "Undo, redo"],
+      ["Enter", "Close the polygon"],
     ].map(([k, v]) => h("tr", {}, h("td", { text: k }), h("td", { text: v }))),
   ),
 );

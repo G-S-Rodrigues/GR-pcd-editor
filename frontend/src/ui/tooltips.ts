@@ -1,3 +1,5 @@
+import { FIELD_SPECS } from "./fields";
+
 export const NEXT_STEP = "Available in the next step; this control is not active yet";
 
 export const TOOLTIPS: Record<string, string> = {
@@ -5,10 +7,10 @@ export const TOOLTIPS: Record<string, string> = {
   "open-mounted": "Browse the folder mounted into the app (/data) and open a file from it without uploading",
   "save-session": `Download the editing session as a .pcdsession archive. ${NEXT_STEP}.`,
   export: `Export the cleaned cloud as a new .pcd download; the source file is never overwritten. ${NEXT_STEP}.`,
-  undo: `Undo the last applied deletion. ${NEXT_STEP}.`,
-  redo: `Redo the last undone deletion. ${NEXT_STEP}.`,
-  preview: `Compute exact counts for the current selection without deleting. ${NEXT_STEP}.`,
-  apply: `Delete the previewed points from the active cloud (undoable). ${NEXT_STEP}.`,
+  undo: "Undo the last applied deletion (Ctrl+Z)",
+  redo: "Redo the last undone deletion (Ctrl+Y)",
+  preview: "Compute exact counts for the current selection without deleting",
+  apply: "Delete the previewed points from the active cloud (undoable); enabled only for an up-to-date preview",
   "view-top": "Top view: look down the Z axis, orthographic (key 1)",
   "view-bottom": "Bottom view: look up the Z axis, orthographic (key 2)",
   "view-front": "Front view: look along +Y with Z up, orthographic (key 3)",
@@ -29,4 +31,5 @@ export const TOOLTIPS: Record<string, string> = {
   "mounted-up": "Go up one folder inside the mounted data folder",
   "mounted-close": "Close the mounted folder browser without opening anything",
   help: "Show the mouse and keyboard controls",
+  ...Object.fromEntries(FIELD_SPECS.map((f) => [f.id, f.tooltip])),
 };

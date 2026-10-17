@@ -1,7 +1,9 @@
+import { FIELD_SPECS, type FieldGroup } from "./fields";
+
 export interface ControlDescriptor {
   id: string;
   label: string;
-  group: "file" | "edit" | "view" | "pivot" | "display";
+  group: "file" | "edit" | "view" | "pivot" | "display" | FieldGroup;
 }
 
 /** Every control the shell builds; the DOM binders and the tooltip test both read this list. */
@@ -35,5 +37,6 @@ export function describeControls(): ControlDescriptor[] {
     { id: "help", label: "Controls help", group: "display" },
     { id: "mounted-up", label: "Up one folder", group: "file" },
     { id: "mounted-close", label: "Close", group: "file" },
+    ...FIELD_SPECS.map(({ id, label, group }) => ({ id, label, group })),
   ];
 }

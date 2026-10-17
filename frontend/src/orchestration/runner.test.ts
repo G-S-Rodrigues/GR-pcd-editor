@@ -165,4 +165,23 @@ describe("runner", () => {
     expect((t.submitted[0] as { op: string }).op).toBe("add");
     expect(t.store.get().draft).toBe(false);
   });
+
+  it("one-shot requests (select displayed, invert) run immediately without a tool and supersede earlier jobs", async () => {
+    const t = setup();
+    t.runner.oneShot((rev) => ({
+      cloud_revision: rev,
+      op: "invert",
+      scope: "active",
+      tool: null,
+      evaluate_candidate: true,
+    }));
+    await flush();
+    expect(t.submitted[0]).toEqual({ cloud_revision: 3, op: "invert", scope: "active", tool: null, evaluate_candidate: true });
+    t.runner.oneShot((rev) => ({ cloud_revision: rev, op: "replace", scope: "displayed", tool: { type: "filter" }, evaluate_candidate: true }));
+    await flush();
+    expect(t.cancelled).toContain("j1");
+    t.polls[1].resolve({ selected: 9, operand: 9, candidate: candidateFixture({ candidate_id: "one" }) });
+    await flush();
+    expect(t.store.get().candidate?.candidate_id).toBe("one");
+  });
 });

@@ -3,6 +3,7 @@ import { pickAllowed, resolveSeed, spacingEstimate } from "../pick/resolve";
 import { type AppState, addNotice } from "../state/app";
 import type { Store } from "../state/store";
 import { orbit, pan, togglePerspective, zoom } from "../view/camera";
+import type { ToolInteraction } from "./interact";
 import { fitBounds } from "../view/fit";
 import { pickPivot } from "../view/pivot";
 import { PRESET_ORDER, applyPreset } from "../view/presets";
@@ -15,11 +16,14 @@ export function attachControls(
   canvas: HTMLCanvasElement,
   store: Store<AppState>,
   size: () => { w: number; h: number },
+  tools?: ToolInteraction,
+  onSeedPicked?: () => void,
 ): () => void {
   let drag: { x: number; y: number; startX: number; startY: number; pan: boolean } | null = null;
 
   const onDown = (e: PointerEvent) => {
     canvas.setPointerCapture(e.pointerId);
+    if (tools?.pointerDown(e)) return; // a handle is being dragged: the camera stays put
     drag = {
       x: e.clientX,
       y: e.clientY,
@@ -29,6 +33,7 @@ export function attachControls(
     };
   };
   const onMove = (e: PointerEvent) => {
+    if (tools?.pointerMove(e)) return;
     if (!drag) return;
     const dx = e.clientX - drag.x;
     const dy = e.clientY - drag.y;
@@ -42,6 +47,7 @@ export function attachControls(
     });
   };
   const onUp = (e: PointerEvent) => {
+    if (tools?.pointerUp()) return;
     if (!drag) return;
     const moved = Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY);
     const wasPan = drag.pan;
@@ -55,7 +61,8 @@ export function attachControls(
 
   async function onClick(e: PointerEvent) {
     const s = store.get();
-    if (s.interaction !== "pick-pivot" || !s.render) return;
+    if (tools?.click(e)) return;
+    if ((s.interaction !== "pick-pivot" && s.interaction !== "pick-seed") || !s.render) return;
     const allowed = pickAllowed(s.renderMode);
     if (!allowed.ok) {
       addNotice(store, "warn", "pick_refused", allowed.reason);
@@ -85,6 +92,15 @@ export function attachControls(
         addNotice(store, "info", "no_point", "No point near the click; try again closer to a point");
         return;
       }
+      if (s.interaction === "pick-seed") {
+        store.update((st) => ({
+          ...st,
+          interaction: "orbit",
+          tools: { ...st.tools, cluster: { ...st.tools.cluster, seed: { id: seed.id, point: seed.point } } },
+        }));
+        onSeedPicked?.();
+        return;
+      }
       store.set({
         camera: pickPivot(store.get().camera, { id: seed.id, point: seed.point }),
         interaction: "orbit",
@@ -107,7 +123,7 @@ export function attachControls(
     } else if ((e.key === "f" || e.key === "F") && s.session?.active_bounds) {
       const { w, h } = size();
       store.set({ camera: fitBounds(s.camera, s.session.active_bounds, w / Math.max(h, 1)) });
-    } else if (e.key === "Escape" && s.interaction === "pick-pivot") {
+    } else if (e.key === "Escape" && s.interaction !== "orbit") {
       store.set({ interaction: "orbit" });
     }
   };

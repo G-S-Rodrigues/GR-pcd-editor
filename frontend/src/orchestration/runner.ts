@@ -4,7 +4,7 @@ import { type AppState, addNotice } from "../state/app";
 import type { Store } from "../state/store";
 import type { Candidate } from "../state/types";
 import { clusterErrorText } from "../tools/cluster/model";
-import { buildSelection, isDraftOp } from "./selection";
+import { type SelectionRequest, buildSelection, isDraftOp } from "./selection";
 import { createDebouncer } from "./timing";
 
 export interface RunnerApi {
@@ -136,6 +136,12 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
       toolDebounce.cancel();
       store.set({ draft: false });
       selectionNow();
+    },
+    /** One-shot selection (Select displayed, Invert): sent at once, independent of the tool. */
+    oneShot(make: (cloudRevision: number) => SelectionRequest): void {
+      toolDebounce.cancel();
+      store.set({ draft: false });
+      void run(() => api.submitSelection(make(store.get().session?.revision.cloud ?? 0)), "Evaluating selection", false);
     },
     /** The Preview button: recompute now. */
     previewNow(): void {

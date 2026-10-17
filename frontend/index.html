@@ -47,6 +47,17 @@
       #mounted-list { list-style: none; margin: 8px 0; padding: 0; max-height: 50vh; overflow: auto; }
       #mounted-list li { padding: 4px 6px; cursor: pointer; border-radius: 4px; display: flex; justify-content: space-between; gap: 12px; }
       #mounted-list li:hover { background: #2a313b; }
+      .panel { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 4px; }
+      .stack { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+      .triple { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+      .f { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: 2px 0; color: var(--muted); }
+      .f input[type=text] { width: 6em; }
+      .note { font-size: 12px; }
+      .verts { max-height: 160px; overflow: auto; }
+      .vertrow { display: grid; grid-template-columns: 1.5em 1fr 1fr; gap: 4px; margin: 2px 0; }
+      .vertrow input { width: 100%; }
+      #history-list { margin: 4px 0; padding-left: 18px; color: var(--muted); }
+      #history-list li.undone { opacity: .5; }
       #help { position: absolute; right: 8px; bottom: 8px; background: var(--panel); border: 1px solid var(--line); padding: 8px 12px; border-radius: 6px; display: none; z-index: 4; }
       #help.on { display: block; }
       #help td { padding: 1px 10px 1px 0; }
@@ -67,7 +78,7 @@
         <div id="notices"></div>
         <div id="help"></div>
       </div>
-      <aside id="inspector"></aside>
+      <aside id="inspector"><div id="fileinfo"></div><div id="editpanels"></div></aside>
     </div>
     <div id="statusbar"></div>
     <div id="dropzone">Drop a .pcd or .pcdsession file to open it</div>

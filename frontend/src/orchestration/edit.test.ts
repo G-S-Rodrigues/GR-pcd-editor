@@ -21,6 +21,7 @@ function setup(session = sessionFixture()) {
     undo: vi.fn(async (_r: number) => sessionFixture({ revision: { cloud: 5, params: 6 }, history: hist(1, 0) })),
     redo: vi.fn(async (_r: number) => sessionFixture({ history: hist(1, 1) })),
     removeInvalid: vi.fn(async (_r: number) => sessionFixture()),
+    clearSelection: vi.fn(async (_r: number) => sessionFixture()),
     refreshState: vi.fn(async () => undefined),
     refreshRender: vi.fn(async () => true),
   };
@@ -116,5 +117,14 @@ describe("editor actions", () => {
     expect(keyAction({ key: "Z", ctrlKey: true, shiftKey: true, target: "BODY" })).toBe("redo");
     expect(keyAction({ key: "z", ctrlKey: true, shiftKey: false, target: "INPUT" })).toBeNull();
     expect(keyAction({ key: "z", ctrlKey: false, shiftKey: false, target: "BODY" })).toBeNull();
+  });
+
+  it("clear selection sends the revision, resets candidate and refreshes the render", async () => {
+    const t = setup(sessionFixture({ selection: { count: 4, ops: [] } }));
+    t.store.set({ candidate: candidateFixture() });
+    await t.ed.clearSelection();
+    expect(t.api.clearSelection).toHaveBeenCalledWith(3);
+    expect(t.store.get().candidate).toBeNull();
+    expect(t.api.refreshRender).toHaveBeenCalled();
   });
 });

@@ -5,14 +5,8 @@ import { h } from "./dom";
 
 const f3 = (v: readonly number[]) => v.map((x) => Math.round(x * 1000) / 1000).join(", ");
 
-/** Read-only file and view information (editing inspectors arrive with the tools). */
-export function buildInspector(tools: HTMLElement, root: HTMLElement, store: Store<AppState>): void {
-  tools.append(
-    h("h2", { text: "Tools" }),
-    h("p", { text: "Selection tools (box, polygon, cluster) arrive in the next step. Navigation, views, pivot and colouring work now." }),
-    h("h2", { text: "Navigate" }),
-    h("p", { text: "Left-drag orbits, middle/right-drag or Shift-drag pans, wheel zooms. Click ? for all keys." }),
-  );
+/** Read-only file and view information . */
+export function buildInspector(root: HTMLElement, store: Store<AppState>): void {
   const render = (s: AppState) => {
     const sess = s.session;
     if (!sess) {

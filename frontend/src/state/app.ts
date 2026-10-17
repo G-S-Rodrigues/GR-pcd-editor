@@ -28,7 +28,7 @@ export interface ToolsState {
 export interface AppState {
   session: SessionState | null;
   tool: ToolKind;
-  interaction: "orbit" | "pick-pivot";
+  interaction: "orbit" | "pick-pivot" | "pick-seed";
   op: SelectionOp;
   scope: Scope;
   camera: Camera;
@@ -39,6 +39,7 @@ export interface AppState {
   rendering: boolean;
   candidate: Candidate | null;
   tools: ToolsState;
+  gizmo: { snap: boolean; step: number; angleStep: number; local: boolean };
   /** A tool edit exists that has not been committed (Add/Subtract/Intersect drafts). */
   draft: boolean;
   job: { busy: boolean; progress: number | null; message: string | null };
@@ -67,6 +68,7 @@ export function initialState(): AppState {
       filters: emptyFilter(),
       protection: emptyProtection(),
     },
+    gizmo: { snap: false, step: 0.1, angleStep: 5, local: true },
     draft: false,
     job: { busy: false, progress: null, message: null },
     upload: null,
