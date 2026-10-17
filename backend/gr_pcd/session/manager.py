@@ -39,6 +39,7 @@ class SessionManager:
         self.downloads: dict[str, Download] = {}
         self.uploads = UploadRegistry()
         self._lock = threading.RLock()
+        self._open_lock = threading.Lock()  # one import at a time
 
     # ---- directories (created lazily, never at import) -----------------
     def _dir(self, *parts: str) -> Path:
@@ -83,6 +84,10 @@ class SessionManager:
             shutil.rmtree(old.source_path.parent, ignore_errors=True)
 
     def open_pcd(self, path: Path, display_name: str) -> EditingSession:
+        with self._open_lock:
+            return self._open_pcd(path, display_name)
+
+    def _open_pcd(self, path: Path, display_name: str) -> EditingSession:
         path = Path(path)
         if path.stat().st_size > self.settings.max_source_bytes:
             raise PcdError("source_too_large", "file exceeds the size limit")
@@ -100,6 +105,10 @@ class SessionManager:
         return new
 
     def open_archive(self, path: Path) -> EditingSession:
+        with self._open_lock:
+            return self._open_archive(path)
+
+    def _open_archive(self, path: Path) -> EditingSession:
         sid = uuid.uuid4().hex
         dest = self._dir("sessions", sid) / "source.pcd"
         try:

@@ -117,15 +117,22 @@ class JobManager:
         return job
 
     def _run(self, job: Job, fn: Callable[[JobContext], dict]) -> None:
-        if job.token.cancelled:
-            job.status = "cancelled"
-            return
-        job.status = "running"
+        with self._lock:
+            if job.token.cancelled:
+                job.status = "cancelled"
+                return
+            job.status = "running"
         job.token.guard = make_rss_guard()
         try:
-            job.result = fn(JobContext(job))
-            job.progress = 1.0
-            job.status = "complete"
+            result = fn(JobContext(job))
+            with self._lock:
+                if job.token.cancelled:
+                    # cancelled while the body ran: the result is discarded
+                    job.status = "cancelled"
+                    return
+                job.result = result
+                job.progress = 1.0
+                job.status = "complete"
         except Cancelled:
             job.status = "cancelled"
         except Stale:
@@ -166,10 +173,13 @@ class JobManager:
 
     def cancel(self, job_id: str) -> Job | None:
         job = self.get(job_id)
-        if job is not None and job.status in ("queued", "running"):
-            job.token.cancel()
-            if job.status == "queued":
-                job.status = "cancelled"
+        if job is None:
+            return None
+        with self._lock:
+            if job.status in ("queued", "running"):
+                job.token.cancel()
+                if job.status == "queued":
+                    job.status = "cancelled"
         return job
 
     def cancel_kinds(self, kinds: tuple[str, ...]) -> None:

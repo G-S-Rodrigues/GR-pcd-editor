@@ -39,7 +39,7 @@ from gr_pcd.session.manager import SessionManager
 from gr_pcd.settings import Settings
 
 MAX_CLIENT_STATE = 1024 * 1024
-UPLOAD_ID = re.compile(r"^[0-9a-f]{32}$")
+UPLOAD_ID = re.compile(r"[0-9a-f]{32}")
 
 
 # open and upload replace the session: the id of the old one is irrelevant
@@ -106,7 +106,7 @@ def build_router(manager: SessionManager, settings: Settings) -> APIRouter:
         filename: str,
         replace: bool = False,
     ):
-        if not UPLOAD_ID.match(upload_id):
+        if not UPLOAD_ID.fullmatch(upload_id):
             raise InvalidUploadId("upload_id must be 32 lowercase hex digits")
         manager.require_replaceable(replace)
         sweep_runtime(manager)

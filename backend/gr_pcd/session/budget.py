@@ -1,6 +1,8 @@
 """Memory guard: estimates are made from the header, before allocating."""
 
+import errno
 import os
+import shutil
 import time
 from collections.abc import Callable
 
@@ -112,3 +114,9 @@ def check_budget(estimate: int, budget: int, what: str = "import") -> None:
             "memory_budget_exceeded",
             f"{what} needs about {estimate} bytes, budget is {budget} bytes",
         )
+
+
+def ensure_free_space(directory, need: int) -> None:
+    """Refuse (ENOSPC, mapped to storage_full) before writing `need` bytes."""
+    if shutil.disk_usage(directory).free < need:
+        raise OSError(errno.ENOSPC, "not enough free space")

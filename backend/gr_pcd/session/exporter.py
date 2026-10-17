@@ -6,6 +6,7 @@ from pathlib import Path
 from gr_pcd.files.names import safe_filename
 from gr_pcd.pcd.errors import PcdError
 from gr_pcd.pcd.writer import verify_written, write_pcd_file
+from gr_pcd.session.budget import ensure_free_space
 
 
 def cleaned_filename(display_name: str) -> str:
@@ -30,6 +31,8 @@ def export_session(
                 "would_overwrite_source", "refusing to overwrite the source"
             )
     mask = session.export_mask(scope)
+    # upper bound: the whole record array (binary); compressed is smaller
+    ensure_free_space(dest.parent, session.cloud.records.nbytes)
     count = write_pcd_file(
         dest,
         session.cloud,

@@ -43,13 +43,10 @@ class PcdHeader:
 
 
 def _int(key: str, token: str) -> int:
-    try:
-        value = int(token)
-    except ValueError:
-        raise PcdError("bad_header", f"{key}: not an integer: {token}")
-    if value < 0:
-        raise PcdError("bad_header", f"{key}: negative value")
-    return value
+    # digits only: int() would also accept "1_0", "+3" and non-ASCII digits
+    if not (token.isascii() and token.isdigit()):
+        raise PcdError("bad_header", f"{key}: not an integer: {token[:40]}")
+    return int(token)
 
 
 def parse_header(prefix: bytes) -> PcdHeader:
@@ -153,7 +150,10 @@ def parse_header(prefix: bytes) -> PcdHeader:
         raise PcdError("too_many_points", "more than 2^32 - 1 points")
 
     xyz_indices(schema)
-    build_dtype(schema)
+    try:
+        build_dtype(schema)
+    except (ValueError, OverflowError):
+        raise PcdError("bad_header", "SIZE or COUNT is out of range")
     return PcdHeader(
         version=version,
         schema=schema,

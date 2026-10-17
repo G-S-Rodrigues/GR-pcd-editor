@@ -30,6 +30,7 @@ from gr_pcd.geometry.filters import DisplayFilter, validate_filter
 from gr_pcd.pcd.errors import PcdError
 from gr_pcd.pcd.model import PcdCloud
 from gr_pcd.pcd.reader import read_pcd
+from gr_pcd.session.budget import ensure_free_space
 from gr_pcd.session.codec import (
     filter_from_dict,
     filter_to_dict,
@@ -43,7 +44,7 @@ MAX_ENTRIES = 100_000
 MAX_MANIFEST = 16 * 1024 * 1024
 MAX_CLIENT_STATE = 1024 * 1024
 _NAME = re.compile(
-    r"^(manifest\.json|source\.pcd|selection\.bin|history/(0|[1-9][0-9]*)\.bin)$"
+    r"(manifest\.json|source\.pcd|selection\.bin|history/(0|[1-9][0-9]*)\.bin)"
 )
 
 
@@ -206,7 +207,7 @@ def _validate_entries(zf: zipfile.ZipFile) -> dict[str, zipfile.ZipInfo]:
     by_name: dict[str, zipfile.ZipInfo] = {}
     for info in infos:
         name = info.filename
-        if not _NAME.match(name):
+        if not _NAME.fullmatch(name):
             raise _bad(f"unexpected entry name: {name!r}")
         if name in by_name:
             raise _bad(f"duplicate entry: {name}")
@@ -316,6 +317,7 @@ def _load_open(zf, dest_source, budget, max_source_bytes) -> LoadedArchive:
     sinfo = by_name["source.pcd"]
     if sinfo.file_size > max_source_bytes:
         raise _bad("source.pcd is larger than the allowed maximum")
+    ensure_free_space(dest_source.parent, sinfo.file_size)
     digest = hashlib.sha256()
     with dest_source.open("wb") as out:
 
