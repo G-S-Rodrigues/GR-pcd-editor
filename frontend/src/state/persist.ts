@@ -40,6 +40,8 @@ export interface ClientPatch {
   tools?: Partial<Pick<AppState["tools"], "box" | "polygon" | "cluster">>;
 }
 
+const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+const unitQuat = (v: unknown): v is number[] => nums(v, 4) && Math.hypot(...v) > 1e-9;
 const COLOURS = ["height", "rgb", "intensity", "flat"];
 
 /** Returns null for an unknown version or non-object; ignores each malformed section on its own. */
@@ -47,10 +49,10 @@ export function restoreClientState(raw: unknown): ClientPatch | null {
   if (!isObj(raw) || raw.v !== CLIENT_STATE_VERSION) return null;
   const out: ClientPatch = {};
   const c = raw.camera;
-  if (isObj(c) && nums(c.target, 3) && nums(c.orientation, 4) && typeof c.distance === "number" && c.distance > 0 && Number.isFinite(c.distance) && typeof c.ortho === "boolean") {
+  if (isObj(c) && nums(c.target, 3) && unitQuat(c.orientation) && typeof c.distance === "number" && c.distance > 0 && Number.isFinite(c.distance) && typeof c.ortho === "boolean") {
     out.camera = { target: [...c.target] as Camera["target"], orientation: [...c.orientation] as Quat, distance: c.distance, ortho: c.ortho };
   }
-  if (typeof raw.colour === "string" && COLOURS.includes(raw.colour) && typeof raw.pointSize === "number" && raw.pointSize > 0 && raw.pointSize <= 50) {
+  if (typeof raw.colour === "string" && COLOURS.includes(raw.colour) && finite(raw.pointSize) && raw.pointSize > 0 && raw.pointSize <= 50) {
     out.colour = { mode: raw.colour as AppState["colour"]["mode"], pointSize: raw.pointSize };
   }
   const cmp = raw.comparison;
@@ -60,7 +62,7 @@ export function restoreClientState(raw: unknown): ClientPatch | null {
   }
   const ui = raw.ui;
   if (isObj(ui)) {
-    if (typeof ui.budget === "number" && ui.budget >= 1) out.budget = ui.budget;
+    if (finite(ui.budget) && ui.budget >= 1) out.budget = ui.budget;
     const sl = ui.slice;
     if (isObj(sl) && typeof sl.enabled === "boolean" && ["x", "y", "z"].includes(sl.axis as string) && typeof sl.centre === "number" && Number.isFinite(sl.centre) && typeof sl.thickness === "number" && sl.thickness > 0 && Number.isFinite(sl.thickness)) {
       out.slice = { enabled: sl.enabled, axis: sl.axis as "x" | "y" | "z", centre: sl.centre, thickness: sl.thickness };
@@ -70,7 +72,7 @@ export function restoreClientState(raw: unknown): ClientPatch | null {
   if (isObj(t)) {
     const tools: NonNullable<ClientPatch["tools"]> = {};
     const b = t.box;
-    if (isObj(b) && nums(b.center, 3) && nums(b.dimensions, 3) && nums(b.quat, 4) && (b.mode === "inside" || b.mode === "outside")) {
+    if (isObj(b) && nums(b.center, 3) && nums(b.dimensions, 3) && b.dimensions.every((d) => d > 0) && unitQuat(b.quat) && (b.mode === "inside" || b.mode === "outside")) {
       tools.box = { center: [...b.center], dimensions: [...b.dimensions], quat: [...b.quat], mode: b.mode } as BoxModel;
     }
     const p = t.polygon;
@@ -79,14 +81,15 @@ export function restoreClientState(raw: unknown): ClientPatch | null {
       ["idle", "closed"].includes(p.phase as string) &&
       Array.isArray(p.vertices) &&
       p.vertices.every((v) => nums(v, 2)) &&
-      typeof p.zMin === "number" &&
-      typeof p.zMax === "number" &&
+      finite(p.zMin) &&
+      finite(p.zMax) &&
+      p.zMin <= p.zMax &&
       (p.mode === "inside" || p.mode === "outside")
     ) {
       tools.polygon = { phase: p.phase, vertices: p.vertices, previous: null, zMin: p.zMin, zMax: p.zMax, mode: p.mode } as PolygonState;
     }
     const k = t.cluster;
-    if (isObj(k) && typeof k.radius === "number" && k.radius > 0 && typeof k.excludeProtected === "boolean" && ["none", "box", "prism"].includes(k.region as string) && (k.scope === "displayed" || k.scope === "active")) {
+    if (isObj(k) && finite(k.radius) && k.radius > 0 && typeof k.excludeProtected === "boolean" && ["none", "box", "prism"].includes(k.region as string) && (k.scope === "displayed" || k.scope === "active")) {
       tools.cluster = { seed: null, radius: k.radius, region: k.region, excludeProtected: k.excludeProtected, maxPoints: defaultCluster().maxPoints, scope: k.scope } as ClusterModel;
     }
     if (Object.keys(tools).length > 0) out.tools = tools;
