@@ -33,6 +33,7 @@ export function describeControls(): ControlDescriptor[] {
     { id: "pivot-set", label: "Set pivot", group: "pivot" },
     { id: "colour-mode", label: "Colour", group: "display" },
     { id: "point-size", label: "Point size", group: "display" },
+    { id: "point-size-auto", label: "Auto size", group: "display" },
     { id: "budget", label: "Render budget", group: "display" },
     { id: "help", label: "Controls help", group: "display" },
     { id: "compare-original", label: "Original", group: "view" },

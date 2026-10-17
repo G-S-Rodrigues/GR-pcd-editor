@@ -25,6 +25,7 @@ export const TOOLTIPS: Record<string, string> = {
   "pivot-set": "Move the orbit pivot to the typed X, Y, Z",
   "colour-mode": "Colour points by height, RGB, intensity or flat grey; RGB and intensity need those fields in the file",
   "point-size": "Size of drawn points in pixels (display only)",
+  "point-size-auto": "Set the point size from the current zoom: closer views get bigger points (display only)",
   budget: "How many points to draw at most; larger is slower. The status bar shows how many are drawn of how many are eligible",
   "mounted-up": "Go up one folder inside the mounted data folder",
   "mounted-close": "Close the mounted folder browser without opening anything",

@@ -1,5 +1,6 @@
 import { protectionBlock } from "../inspector/protection";
 import { canApply } from "../orchestration/runner";
+import { headline } from "../status/headline";
 import { shouldWarn, unsavedLabel } from "../orchestration/unsaved";
 import type { AppState } from "../state/app";
 import type { Store } from "../state/store";
@@ -37,6 +38,8 @@ export function buildToolbar(root: HTMLElement, store: Store<AppState>, a: Toolb
   const redo = control("button", { id: "redo", disabled: true, onclick: a.redo }, "Redo");
   const preview = control("button", { id: "preview", disabled: true, onclick: a.preview }, "Preview");
   const apply = control("button", { id: "apply", disabled: true, onclick: a.apply }, "Apply");
+  const hlDelete = h("span", { id: "headline-delete", class: "headline" });
+  const hlKept = h("span", { id: "headline-kept", class: "headline" });
   root.append(
     input,
     control("button", { id: "open-file", onclick: () => input.click() }, "Open from this computer"),
@@ -50,6 +53,8 @@ export function buildToolbar(root: HTMLElement, store: Store<AppState>, a: Toolb
     redo,
     preview,
     apply,
+    hlDelete,
+    hlKept,
   );
   const tips = new Map([undo, redo, preview, apply, save, exp].map((b) => [b, b.title]));
   const set = (b: HTMLButtonElement, on: boolean, why: string) => {
@@ -59,6 +64,10 @@ export function buildToolbar(root: HTMLElement, store: Store<AppState>, a: Toolb
   const sync = (s: AppState) => {
     const idle = !s.job.busy && s.compare === "edited";
     const why = s.compare !== "edited" ? "return to the edited view" : "a job is running";
+    const hl = headline(s);
+    hlDelete.textContent = hl.willDelete;
+    hlKept.textContent = hl.kept;
+    hlKept.classList.toggle("warn", hl.keptCount > 0);
     badge.textContent = unsavedLabel(s);
     badge.classList.toggle("on", shouldWarn(s));
     set(save, !!s.session && !s.job.busy, s.session ? "a job is running" : "no file open");

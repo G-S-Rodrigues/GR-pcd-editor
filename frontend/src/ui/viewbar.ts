@@ -4,6 +4,7 @@ import type { Store } from "../state/store";
 import { togglePerspective } from "../view/camera";
 import { fitBounds } from "../view/fit";
 import { parsePivot, resetPivot } from "../view/pivot";
+import { AUTO_BUDGET, pointSizeFor, pxPerUnit } from "../view/pointsize";
 import { PRESET_ORDER, type PresetName, applyPreset } from "../view/presets";
 import { COMPARE_MODES, type CompareMode, clampOpacity } from "../compare/model";
 import { control } from "./controls";
@@ -17,7 +18,7 @@ const LABEL: Record<PresetName, string> = {
   left: "Left",
   right: "Right",
 };
-const BUDGETS = [100_000, 300_000, 1_000_000, 2_000_000];
+const BUDGETS = [100_000, 300_000, 1_000_000, AUTO_BUDGET];
 
 export interface ViewbarActions {
   size: () => { w: number; h: number };
@@ -112,6 +113,14 @@ export function buildViewbar(root: HTMLElement, store: Store<AppState>, a: Viewb
     oninput: () =>
       store.update((s) => ({ ...s, colour: { ...s.colour, pointSize: Number(size.value) } })),
   });
+  const autoSize = control("button", {
+    id: "point-size-auto",
+    onclick: () => {
+      const s = store.get();
+      const px = pointSizeFor(pxPerUnit(s.camera, a.size().h));
+      store.update((st) => ({ ...st, colour: { ...st.colour, pointSize: px } }));
+    },
+  }, "Auto");
   const budget = control("select", {
     id: "budget",
     onchange: () => {
@@ -120,7 +129,8 @@ export function buildViewbar(root: HTMLElement, store: Store<AppState>, a: Viewb
     },
   });
   for (const b of BUDGETS) {
-    budget.append(h("option", { value: String(b), selected: b === store.get().budget }, `${b.toLocaleString("en-US")} points`));
+    const label = b === AUTO_BUDGET ? "Auto (max)" : `${b.toLocaleString("en-US")} points`;
+    budget.append(h("option", { value: String(b), selected: b === store.get().budget }, label));
   }
   const compareButtons = COMPARE_MODES.map((m) =>
     control("button", { id: `compare-${m}`, onclick: () => a.setCompare(m) }, COMPARE_LABEL[m]),
@@ -165,6 +175,7 @@ export function buildViewbar(root: HTMLElement, store: Store<AppState>, a: Viewb
     h("span", { class: "sep" }),
     h("label", {}, "Colour ", colour),
     h("label", {}, "Point size ", size),
+    autoSize,
     h("label", {}, "Draw up to ", budget),
     help,
   );
@@ -187,7 +198,7 @@ export function buildViewbar(root: HTMLElement, store: Store<AppState>, a: Viewb
     hold.disabled = !has;
     opacity.disabled = !has || s.compare !== "overlay";
     opacity.title = opacity.disabled && has ? "Opacity of the deleted overlay (available in the Overlay view)" : "Opacity of the deleted-points overlay, from 0.05 to 1";
-    for (const el of [...presetButtons, persp, fit, reset, pick, set, ix, iy, iz]) {
+    for (const el of [...presetButtons, persp, fit, reset, pick, set, ix, iy, iz, autoSize]) {
       (el as HTMLButtonElement).disabled = !has;
     }
     const opts = colourOptions(s.session?.schema ?? []);

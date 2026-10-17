@@ -249,7 +249,9 @@ def test_api_08_filter_tool_beyond_render_budget(api):
     job = api.select_wait({"type": "filter"}, scope="displayed")
     cand = job["result"]["candidate"]
     assert api.candidate_ids(cand["candidate_id"]) == SCENE_FLOOR
-    assert api.render(budget=5)[1].shape[0] <= 5  # sampling is display only
+    assert (
+        api.render(budget=5)[1].shape[0] <= 5 + 5 // 2
+    )  # sampling is display only; flagged points add up to budget // 2 (decision 8)
     api.client.put("/api/session/display-filter", json={})
     api.select_wait(GHOST_BOX)
     api.client.put(
@@ -840,3 +842,32 @@ def test_api_52_get_session_without_a_session_is_200_no_session(api):
     assert "no_session" not in api.client.get("/api/session").json()
     api.client.delete("/api/session")
     assert api.client.get("/api/session").json() == {"no_session": True}
+
+
+def test_api_53_render_samples_to_the_exact_budget_and_keeps_flagged_points(
+    api,
+):
+    api.open()
+    # no flags: m (127) > budget -> exactly `budget` points, evenly spread over the eligible ids
+    r, _, ids, flags = api.render("original", 10)
+    assert int(r.headers["X-Eligible"]) == 127
+    assert int(r.headers["X-Count"]) == 10 and len(ids) == 10
+    assert (flags == 0).all()
+    assert (np.diff(ids.astype(np.int64)) > 0).all()
+    assert ids[0] == 0 and ids[-1] >= 127 - 127 // 10 - 1
+    r, _, ids, _ = api.render(
+        "original", 100
+    )  # the old stride (2) would give 64
+    assert int(r.headers["X-Count"]) == 100 and len(set(ids.tolist())) == 100
+    # m <= budget: everything is drawn
+    assert len(api.render("original", 127)[2]) == 127
+    # flagged points are appended up to the cap budget // 2; the 27 ghost points all fit at budget 100 (cap 50)
+    api.select_wait(GHOST_BOX)
+    r, _, ids, flags = api.render("original", 100)
+    got = set(ids.tolist())
+    assert len(ids) == len(got) and len(ids) <= 150
+    assert int((flags == 1).sum()) == 27
+    # beyond the cap (budget 20 -> cap 10) only the cap's worth of extra flagged points is added
+    r, _, ids, flags = api.render("original", 20)
+    sampled_flagged = int((flags == 1).sum())
+    assert 10 <= len(ids) <= 30 and sampled_flagged <= 27

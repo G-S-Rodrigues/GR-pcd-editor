@@ -569,18 +569,39 @@ class EditingSession:
         }[mode]
         eligible = np.flatnonzero(base & display)
         m = len(eligible)
-        step = max(1, -(-m // budget)) if m else 1
-        ids = eligible[::step].astype(np.uint32)
+        sampled = (
+            eligible
+            if m <= budget
+            else eligible[
+                np.floor(np.linspace(0, m, budget, endpoint=False)).astype(
+                    np.int64
+                )
+            ]
+        )
+        protected = protected_mask(
+            self.xyz, valid, effective_intervals(protection)
+        )
+        sel = selection & active & valid
+        if m > budget:
+            # flagged points (selected / candidate / protected) are always drawn, up to budget // 2 extra
+            flagged = np.setdiff1d(
+                eligible[sel[eligible]], sampled, assume_unique=True
+            )
+            cap = budget // 2
+            if len(flagged) > cap:
+                flagged = flagged[
+                    np.floor(
+                        np.linspace(0, len(flagged), cap, endpoint=False)
+                    ).astype(np.int64)
+                ]
+            sampled = np.union1d(sampled, flagged)
+        ids = sampled.astype(np.uint32)
         if self.bounds is None:
             origin = (0.0, 0.0, 0.0)
         else:
             lo, hi = np.array(self.bounds["min"]), np.array(self.bounds["max"])
             origin = tuple(((lo + hi) / 2.0).tolist())
         coords = (self.xyz[ids] - np.array(origin)).astype(np.float32)
-        protected = protected_mask(
-            self.xyz, valid, effective_intervals(protection)
-        )
-        sel = selection & active & valid
         flags = np.zeros(len(ids), dtype=np.uint8)
         flags[sel[ids] & ~protected[ids]] |= FLAG_SELECTED
         flags[sel[ids] & protected[ids]] |= FLAG_PROTECTED

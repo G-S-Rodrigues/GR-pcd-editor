@@ -27,7 +27,7 @@ test("UI-23 status lists labelled counts in order", () => {
   expect(m.Candidates).toBe("43");
   expect(m["Invalid (active/total)"]).toBe("2 / 5");
   expect(m["Deleted"]).toBe("10.00%");
-  expect(m.Rendered).toBe("Rendered 300 of 800 eligible (every 3rd point, sampled)");
+  expect(m.Rendered).toBe("Rendered 300 of 800 eligible (sampled to budget)");
   expect(m.Unsaved).toBe("No");
   expect(items.map((i) => i.label)).not.toContain("Total");
 });

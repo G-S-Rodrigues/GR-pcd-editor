@@ -174,7 +174,9 @@ def test_ses_09_render_budget_and_flags(mgr):
     select_box(mgr, box_all_ghost())
     sel_before = s.selection.copy()
     arr, _ = s.render(10, "edited")
-    assert len(arr.ids) <= 10 and arr.eligible == 127
+    assert (
+        len(arr.ids) <= 10 + 10 // 2 and arr.eligible == 127
+    )  # flagged extras up to budget // 2 (decision 8)
     arr_all, _ = s.render(1000, "edited")
     assert len(arr_all.ids) == 127
     assert (s.selection == sel_before).all()

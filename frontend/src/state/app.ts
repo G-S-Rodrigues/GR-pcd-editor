@@ -37,6 +37,8 @@ export interface AppState {
   rect: boolean;
   /** Render-only slab (clipping); never changes selection, filters or counts. */
   slice: Slice;
+  /** Render-only emphasis of protected-selected (kept) points. */
+  showKept: boolean;
   op: SelectionOp;
   scope: Scope;
   camera: Camera;
@@ -68,6 +70,7 @@ export function initialState(): AppState {
     floorT: DEFAULT_FLOOR_T,
     rect: false,
     slice: defaultSlice(),
+    showKept: false,
     op: "replace",
     scope: "displayed",
     camera: defaultCamera(),
@@ -75,7 +78,7 @@ export function initialState(): AppState {
     renderMode: "edited",
     compare: "edited",
     overlayOpacity: 0.35,
-    budget: 300_000,
+    budget: 1_000_000,
     render: null,
     render2: null,
     rendering: false,

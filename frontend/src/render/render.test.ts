@@ -69,14 +69,12 @@ test("UI-06 toWorld/toLocal round-trip exactly at large origins", () => {
 
 test("UI-07 lodLabel", () => {
   expect(lodLabel({ count: 100000, eligible: 1234567, budget: 100000 })).toBe(
-    "Rendered 100,000 of 1,234,567 eligible (every 13th point, sampled)",
+    "Rendered 100,000 of 1,234,567 eligible (sampled to budget)",
   );
   expect(lodLabel({ count: 5000, eligible: 5000, budget: 300000 })).toBe(
     "Rendered all 5,000 eligible points",
   );
-  expect(lodLabel({ count: 50, eligible: 100, budget: 50 })).toContain("every 2nd point");
-  expect(lodLabel({ count: 50, eligible: 150, budget: 50 })).toContain("every 3rd point");
-  expect(lodLabel({ count: 50, eligible: 1100, budget: 100 })).toContain("every 11th point");
+  expect(lodLabel({ count: 50, eligible: 100, budget: 50 })).toContain("sampled to budget");
   expect(lodLabel({ count: 1, eligible: 1, budget: 1 })).not.toMatch(/total/);
 });
 

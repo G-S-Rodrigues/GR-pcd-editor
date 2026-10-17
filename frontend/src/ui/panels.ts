@@ -9,6 +9,7 @@ import { displayedBounds, fitToView, rectAxis, rectDepth } from "../tools/box/re
 import { POLYGON_DEPTH_NOTE, Z_UNLIMITED } from "../tools/polygon/model";
 import * as PG from "../tools/polygon/model";
 import { CLUSTER_LIMIT_TEXT, clusterLimitText, clusterPanel, regionOptions, setRadius } from "../tools/cluster/model";
+import { headline } from "../status/headline";
 import { invertNote, scopeNotice } from "../orchestration/selection";
 import { historyRows } from "../inspector/history";
 import { control } from "./controls";
@@ -68,6 +69,8 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
   const commit = control("button", { id: "sel-commit", onclick: a.commitDraft }, "Commit draft");
   const note = h("p", { id: "scope-note", class: "note" });
   const invalid = control("button", { id: "remove-invalid", onclick: a.removeInvalid }, "Remove invalid");
+  const keptWarn = h("p", { id: "kept-warning", class: "note warn", hidden: true });
+  const keptToggle = control("button", { id: "sel-show-kept", onclick: () => store.update((s) => ({ ...s, showKept: !s.showKept })) }, "Show kept points");
   root.append(
     h("h2", { text: "Tools" }),
     h("div", { class: "stack" }, btns.box, btns.polygon, btns.cluster),
@@ -83,6 +86,8 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
       control("button", { id: "sel-clear", onclick: a.clearSelection }, "Clear selection"),
     ),
     note,
+    keptWarn,
+    keptToggle,
     h("h2", { text: "Cloud" }),
     invalid,
     h("p", { class: "note", text: "Navigation: left-drag orbits, middle/right-drag or Shift-drag pans, wheel zooms. Click ? for all keys." }),
@@ -101,6 +106,11 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     commit.textContent = s.draft ? `Commit: ${s.op} tool shape` : "Commit draft";
     const n = scopeNotice(s);
     note.textContent = n ?? (s.op === "invert" ? invertNote(s.scope) : "");
+    const hl = headline(s);
+    keptWarn.hidden = hl.warning === null;
+    keptWarn.textContent = hl.warning ?? "";
+    keptToggle.hidden = hl.keptCount === 0;
+    keptToggle.classList.toggle("active", s.showKept);
     invalid.hidden = !a.removeInvalidVisible();
     invalid.textContent = a.removeInvalidLabel();
   };

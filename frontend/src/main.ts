@@ -30,6 +30,7 @@ import { h } from "./ui/dom";
 import { buildInspector } from "./ui/inspector-shell";
 import { openMountedDialog } from "./ui/open-dialog";
 import { buildStatusbar } from "./ui/statusbar";
+import { buildLegend } from "./ui/legend";
 import { buildToolbar } from "./ui/toolbar";
 import { buildViewbar } from "./ui/viewbar";
 import { attachControls } from "./viewport/controls3d";
@@ -230,6 +231,7 @@ const panelActions = {
 };
 buildInspector($("fileinfo"), store);
 buildToolPalette($("tools"), store, panelActions);
+buildLegend($("legend"));
 buildEditPanels($("editpanels"), store, panelActions);
 
 const typing = (t: HTMLElement | null) => ["INPUT", "TEXTAREA", "SELECT"].includes(t?.tagName ?? "");

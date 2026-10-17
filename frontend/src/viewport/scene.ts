@@ -64,6 +64,37 @@ export function createViewport(
   rightPts.visible = false;
   scene.add(rightPts);
 
+  // "Show kept points": render-only layer of the protected-selected points, drawn larger
+  const keptPts = new THREE.Points(
+    new THREE.BufferGeometry(),
+    new THREE.PointsMaterial({ size: 6, sizeAttenuation: false, color: new THREE.Color(...PALETTE.protected) }),
+  );
+  keptPts.frustumCulled = false;
+  keptPts.visible = false;
+  keptPts.renderOrder = 5;
+  scene.add(keptPts);
+  let keptFor: RenderData | null = null;
+  function syncKept(s: AppState) {
+    const d = s.render;
+    const on = s.showKept && d !== null && s.compare !== "split";
+    if (!on || !d) {
+      keptPts.visible = false;
+      keptFor = null;
+      return;
+    }
+    if (keptFor !== d) {
+      const idx: number[] = [];
+      for (let i = 0; i < d.count; i++) if (d.flags[i] & 2) idx.push(i);
+      const pos = new Float32Array(idx.length * 3);
+      idx.forEach((i, k) => pos.set(d.coords.subarray(3 * i, 3 * i + 3), 3 * k));
+      keptPts.geometry.dispose();
+      keptPts.geometry = new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      keptFor = d;
+    }
+    (keptPts.material as THREE.PointsMaterial).size = Math.max(6, s.colour.pointSize * 2.5);
+    keptPts.visible = true;
+  }
+
   const pivot = new THREE.LineSegments(
     new THREE.BufferGeometry().setAttribute(
       "position",
@@ -144,7 +175,7 @@ export function createViewport(
     const sp = slicePlanes(s.slice, (s.render?.origin ?? [0, 0, 0]) as [number, number, number]);
     sp.forEach((p, i) => clipPlanes[i].set(new THREE.Vector3(...p.normal), p.constant));
     const on = sp.length > 0;
-    for (const m of [points.material, deletedPts.material, rightPts.material] as THREE.PointsMaterial[]) {
+    for (const m of [points.material, deletedPts.material, rightPts.material, keptPts.material] as THREE.PointsMaterial[]) {
       m.clippingPlanes = on ? clipPlanes : null;
       if (on !== clipOn) m.needsUpdate = true;
     }
@@ -155,6 +186,7 @@ export function createViewport(
     raf = 0;
     const s = store.get();
     syncGeometry(s);
+    syncKept(s);
     syncClip(s);
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;

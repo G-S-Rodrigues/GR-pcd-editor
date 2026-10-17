@@ -21,6 +21,7 @@ export const FIELD_SPECS: FieldSpec[] = [
   f("sel-select-displayed", "Select displayed", "tool", "Select every displayed point (those passing the display filter), including points not drawn"),
   f("sel-invert", "Invert", "tool", "Invert the selection relative to the chosen scope"),
   f("sel-clear", "Clear selection", "tool", "Clear the whole selection; nothing is deleted"),
+  f("sel-show-kept", "Show kept points", "tool", "Draw the selected points that protection keeps larger and bright cyan (view only; nothing is deleted)"),
   f("remove-invalid", "Remove invalid", "tool", "Remove points whose coordinates are NaN or infinite from the active cloud (undoable)"),
   ...AX.map((a) => f(`box-center-${a}`, `Centre ${up(a)}`, "box", `Box centre ${up(a)} coordinate in the file frame`)),
   ...AX.map((a) => f(`box-size-${a}`, `Size ${up(a)}`, "box", `Box size along its local ${up(a)} axis; must be greater than 0`)),

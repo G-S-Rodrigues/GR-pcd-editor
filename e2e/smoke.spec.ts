@@ -644,3 +644,57 @@ test("E2E-17 7b1 slice view clips the drawn cloud in the real canvas and changes
   expect(Buffer.compare(await region(wallAt), emptyShot)).not.toBe(0);
   expect(await counts()).toEqual(before);
 });
+
+test("E2E-18 7b1 legend, headline numbers and the kept-by-protection warning equal fixture truth", async ({ page }) => {
+  const { exact, ctl, setNum } = helpers(page);
+  await openRoom(page, exact);
+  // legend chips use the palette colours
+  await expect(page.locator('#legend [data-legend="selected"]')).toHaveCSS("background-color", "rgb(255, 159, 28)");
+  await expect(page.locator('#legend [data-legend="protected"]')).toHaveCSS("background-color", "rgb(0, 209, 255)");
+  await expect(page.locator("#headline-delete")).toHaveText("Will delete —");
+  await expect(page.locator("#kept-warning")).toBeHidden();
+
+  await ctl("prot-enabled").check();
+  await setNum("prot-min", -0.05);
+  await setNum("prot-max", 0.05);
+  await exact("Protected", String(ROOM.floor + ROOM.floorGhost));
+  await ctl("tool-box").click();
+  for (const [id, v] of [["box-center-x", 9], ["box-center-y", 9], ["box-center-z", 2], ["box-size-x", 30], ["box-size-y", 30], ["box-size-z", 10]] as const) await setNum(id, v);
+  const valid = ROOM_TOTAL - ROOM.invalid;
+  const kept = ROOM.floor + ROOM.floorGhost; // z 0 and z 0.02 lie inside +-0.05
+  await exact("Selected", String(valid));
+  await exact("Candidates", String(valid - kept));
+  await expect(page.locator("#headline-delete")).toHaveText(`Will delete ${valid - kept}`);
+  await expect(page.locator("#headline-kept")).toHaveText(`Kept by protection ${kept}`);
+  await expect(page.locator("#kept-warning")).toBeVisible();
+  await expect(page.locator("#kept-warning")).toHaveText(`${kept} selected points lie inside the protected interval and will be kept (ghosts in the floor slab?)`);
+
+  // Show kept points redraws the canvas (render only: counts do not move)
+  await page.waitForTimeout(500);
+  const plain = await page.locator("#viewport").screenshot();
+  await ctl("sel-show-kept").click();
+  await page.waitForTimeout(600);
+  expect(Buffer.compare(await page.locator("#viewport").screenshot(), plain)).not.toBe(0);
+  await exact("Candidates", String(valid - kept));
+
+  // protection off: nothing is kept, the warning goes
+  await ctl("prot-enabled").uncheck();
+  await exact("Candidates", String(valid));
+  await expect(page.locator("#kept-warning")).toBeHidden();
+  await expect(page.locator("#headline-kept")).toHaveText("Kept by protection 0");
+});
+
+test("E2E-18b 7b1 draw budget: Rendered equals the budget exactly, the default draws everything, Auto is offered", async ({ page }) => {
+  const { stat, exact } = helpers(page);
+  const n = 150_000;
+  const rows: string[] = [];
+  for (let i = 0; i < n; i++) rows.push(`${i % 400} ${Math.floor(i / 400)} 0`);
+  const head = ["# .PCD v.7 - synthetic grid", "VERSION .7", "FIELDS x y z", "SIZE 4 4 4", "TYPE F F F", "COUNT 1 1 1", `WIDTH ${n}`, "HEIGHT 1", "VIEWPOINT 0 0 0 1 0 0 0", `POINTS ${n}`, "DATA ascii"];
+  await page.goto("/");
+  await page.locator("#file-input").setInputFiles({ name: "grid.pcd", mimeType: "application/octet-stream", buffer: Buffer.from(`${head.join("\n")}\n${rows.join("\n")}\n`) });
+  await exact("Original", "150,000");
+  await expect(stat("Rendered")).toHaveText("Rendered: Rendered all 150,000 eligible points", { timeout: 20000 });
+  await expect(page.locator('[data-control="budget"] option', { hasText: "Auto (max)" })).toHaveCount(1);
+  await page.locator('[data-control="budget"]').selectOption("100000");
+  await expect(stat("Rendered")).toHaveText("Rendered: Rendered 100,000 of 150,000 eligible (sampled to budget)", { timeout: 20000 });
+});
