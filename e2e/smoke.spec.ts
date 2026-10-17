@@ -1704,3 +1704,239 @@ test("E2E-46 10-8 each inspector section folds by click and keyboard, the fold s
   // an inspector never scrolls sideways
   expect(await page.evaluate(() => { const a = document.getElementById("inspector")!; return a.scrollWidth <= a.clientWidth; })).toBe(true);
 });
+
+// ---------------------------------------------------------------- part 11: history timeline
+type Pg = import("@playwright/test").Page;
+type StepHook = { stepLayer: () => { sid: number | null; visible: boolean; count: number; colour: number[]; opacity: number; hover: boolean } };
+const stepLayer = (page: Pg) => page.evaluate(() => (window as unknown as { __editor: StepHook }).__editor.stepLayer());
+const sidsOf = (page: Pg) =>
+  page.evaluate(() => (window as unknown as { __editor: { state: () => { session: { history: { entries: { sid: number; count: number; name: string | null }[]; cursor: number } } } } }).__editor.state().session.history);
+
+/** Helpers for the timeline tests: own dialog handling (discard/delete confirms are answered by `answer`). */
+function tl(page: Pg) {
+  const base = helpers(page);
+  page.removeAllListeners("dialog");
+  const dialogs: string[] = [];
+  const mode = { answer: "accept" as "accept" | "dismiss" };
+  page.on("dialog", (d) => {
+    const m = d.message();
+    if (/^(Applying a new deletion|Remove step)/.test(m)) {
+      dialogs.push(m);
+      void (mode.answer === "accept" ? d.accept() : d.dismiss());
+    } else void d.accept(); // replacing an earlier test's open session
+  });
+  const cards = page.locator("#timeline .step[data-step]");
+  const card = (i: number) => cards.nth(i);
+  const marker = page.locator("#timeline-marker");
+  /** Page x of marker slot k: between card k-1 and card k, measured from the DOM (not from the model code). */
+  const slotPageX = async (k: number) => {
+    const n = await cards.count();
+    if (k === 0) return (await card(0).boundingBox())!.x - 4;
+    const prev = (await card(k - 1).boundingBox())!;
+    return k === n ? prev.x + prev.width + 4 : (prev.x + prev.width + (await card(k).boundingBox())!.x) / 2;
+  };
+  /** A gesture while a job runs is ignored by design: wait until the previous one and its refresh are done. */
+  const isIdle = () => page.evaluate(() => { const st = (window as unknown as { __editor: { state: () => { job: { busy: boolean }; rendering: boolean } } }).__editor.state(); return !st.job.busy && !st.rendering; });
+  /** Idle on three samples 150 ms apart: a preview the tool restarts after a change must not start under the next gesture. */
+  const idle = async () => {
+    let ok = 0;
+    for (let i = 0; i < 100 && ok < 3; i++) {
+      ok = (await isIdle()) ? ok + 1 : 0;
+      await page.waitForTimeout(150);
+    }
+    expect(ok).toBe(3);
+  };
+  const dragMarkerTo = async (slot: number) => {
+    await idle();
+    const mb = (await marker.boundingBox())!;
+    const y = mb.y + mb.height / 2;
+    await page.mouse.move(mb.x + mb.width / 2, y);
+    await page.mouse.down();
+    const x = await slotPageX(slot);
+    await page.mouse.move(x, y, { steps: 8 });
+    await page.mouse.up();
+  };
+  const rollbacks: string[] = [];
+  page.on("request", (r) => {
+    if (r.url().endsWith("/api/session/history/rollback")) rollbacks.push(r.postData() ?? "");
+  });
+  const boxAt = async (cx: number, cy: number, cz: number, sx: number, sy: number, sz: number) => {
+    // the previous test's tool is restored with the page: a click on an active tool would switch it off
+    if (!(await base.ctl("tool-box").evaluate((e) => e.classList.contains("active")))) await base.ctl("tool-box").click();
+    await unfold();
+    for (const [id, v] of [["box-center-x", cx], ["box-center-y", cy], ["box-center-z", cz], ["box-size-x", sx], ["box-size-y", sy], ["box-size-z", sz]] as const) await base.setNum(id, v);
+  };
+  /** E2E-46 leaves the inspector sections folded in the state the next page restores: unfold the visible ones. */
+  const unfold = async () => {
+    const closed = page.locator("details[data-section]:not([open]) > summary:visible");
+    for (let i = 0; i < 12 && (await closed.count()) > 0; i++) await closed.first().click();
+  };
+  const open = async () => {
+    await openRoom(page, base.exact);
+    await unfold();
+  };
+  /** Three deletions with three tools on the room: a box (27 ghost points), a cluster of the wall (40), and the 4 displayed noise points. */
+  const threeSteps = async () => {
+    await open();
+    await boxAt(3, 13, 2, 4, 4, 3);
+    await base.exact("Candidates", String(ROOM.ghost));
+    await base.ctl("apply").click();
+    await base.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
+    await base.ctl("cube-top").click();
+    await base.ctl("pivot-x").fill("-1");
+    await base.ctl("pivot-y").fill("4");
+    await base.ctl("pivot-z").fill("4");
+    await base.ctl("pivot-set").click();
+    await base.ctl("tool-cluster").click();
+    await unfold();
+    await base.ctl("cluster-pick-seed").click();
+    await page.locator("#viewport").click();
+    await expect(page.locator("#editpanels")).toContainText("Seed: point");
+    await base.setNum("cluster-radius", 1.1);
+    await base.exact("Candidates", String(ROOM.wall));
+    await base.ctl("apply").click();
+    await base.exact("Active", String(ROOM_TOTAL - ROOM.ghost - ROOM.wall));
+    await base.setNum("filter-z-min", 1);
+    await base.exact("Displayed", String(ROOM.noise));
+    await base.ctl("sel-select-displayed").click();
+    await base.exact("Candidates", String(ROOM.noise));
+    await base.ctl("apply").click();
+    await base.exact("Active", String(ROOM_TOTAL - ROOM.ghost - ROOM.wall - ROOM.noise));
+    await base.ctl("filter-z-min-reset").click();
+    await expect(cards).toHaveCount(3);
+  };
+  return { ...base, open, cards, card, marker, dialogs, mode, slotPageX, dragMarkerTo, idle, rollbacks, boxAt, threeSteps };
+}
+const ACTIVE_ALL = ROOM_TOTAL - ROOM.ghost - ROOM.wall - ROOM.noise;
+
+test("E2E-50 11 three deletions with three tools make three step cards with icons, counts and tooltips", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("console", (m) => {
+    if (m.type() === "error" && !/Failed to load resource.*404/.test(m.text())) errors.push(m.text());
+  });
+  const t = tl(page);
+  await t.threeSteps();
+  await expect(t.card(0)).toHaveAttribute("data-icon", "box");
+  await expect(t.card(1)).toHaveAttribute("data-icon", "cluster");
+  await expect(t.card(0)).toHaveAttribute("title", /^Box delete, 27 points/);
+  await expect(t.card(1)).toHaveAttribute("title", /^Cluster delete, 40 points/);
+  await expect(t.card(2)).toHaveAttribute("title", /, 4 points/);
+  await expect(t.card(0)).toContainText("27");
+  await expect(t.card(1)).toContainText("40");
+  await expect(t.card(2)).toContainText("4");
+  await expect(t.marker).toHaveAttribute("aria-valuenow", "3");
+  await expect(t.marker).toHaveAttribute("aria-valuetext", "After step 3 of 3");
+  const h = await sidsOf(page);
+  expect(h.entries.map((e) => e.count)).toEqual([ROOM.ghost, ROOM.wall, ROOM.noise]);
+  await expect(page.locator("#history-list li")).toHaveCount(3); // the right-panel list stays
+  expect(errors).toEqual([]);
+});
+
+test("E2E-51 11 click highlights a step's points in a distinct colour, hover previews lighter, click again and Esc clear", async ({ page }) => {
+  const t = tl(page);
+  await t.threeSteps();
+  await page.mouse.move(5, 5);
+  const none = await page.locator("#viewport").screenshot();
+  expect((await stepLayer(page)).visible).toBe(false);
+  await expect(page.locator('#legend [data-legend="step"]')).toHaveCount(0);
+  await t.card(1).locator(".step-icon").click();
+  await expect.poll(async () => (await stepLayer(page)).count, { timeout: 15000 }).toBe(ROOM.wall); // recorded count = fixture truth
+  const on = await stepLayer(page);
+  expect(on).toMatchObject({ visible: true, hover: false, opacity: 0.95 });
+  const css = (c: number[]) => c.map((v) => Math.round(v * 255)).join(",");
+  expect(css(on.colour)).not.toBe("230,57,70"); // not the Deleted overlay colour
+  expect(css(on.colour)).not.toBe("255,159,28"); // not the selected colour
+  await expect(page.locator('#legend [data-legend="step"]')).toHaveCSS("background-color", `rgb(${css(on.colour).replaceAll(",", ", ")})`);
+  await expect(page.locator("#legend")).toContainText("Step highlight");
+  await page.mouse.move(5, 5);
+  await page.waitForTimeout(400);
+  expect(Buffer.compare(none, await page.locator("#viewport").screenshot())).not.toBe(0);
+  // hover another step: lighter preview of that step
+  await t.card(2).locator(".step-icon").hover();
+  await expect.poll(async () => (await stepLayer(page)).hover, { timeout: 15000 }).toBe(true);
+  await expect.poll(async () => (await stepLayer(page)).count).toBe(ROOM.noise);
+  const hov = await stepLayer(page);
+  expect(css(hov.colour)).not.toBe(css(on.colour));
+  expect(hov.opacity).toBe(0.7);
+  await page.mouse.move(5, 5);
+  await expect.poll(async () => (await stepLayer(page)).count).toBe(ROOM.wall);
+  // click the same step again clears
+  await t.card(1).locator(".step-icon").click();
+  await page.mouse.move(5, 5); // while the pointer rests on the card its lighter hover preview stays
+  await expect.poll(async () => (await stepLayer(page)).visible).toBe(false);
+  await expect(page.locator('#legend [data-legend="step"]')).toHaveCount(0);
+  // Esc clears too (focus is on the strip, and with focus elsewhere)
+  await t.card(0).locator(".step-icon").click();
+  await expect.poll(async () => (await stepLayer(page)).count).toBe(ROOM.ghost);
+  await page.mouse.move(5, 5);
+  await page.keyboard.press("Escape");
+  await expect.poll(async () => (await stepLayer(page)).visible).toBe(false);
+  await t.card(0).locator(".step-icon").click();
+  await page.mouse.move(5, 5);
+  await expect.poll(async () => (await stepLayer(page)).visible).toBe(true);
+  await page.locator("#viewport").focus();
+  await page.keyboard.press("Escape");
+  await expect.poll(async () => (await stepLayer(page)).visible).toBe(false);
+  // click on the strip background clears as well
+  await t.card(0).locator(".step-icon").click();
+  await page.mouse.move(5, 5);
+  await expect.poll(async () => (await stepLayer(page)).visible).toBe(true);
+  const sb = (await page.locator("#timeline-scroll").boundingBox())!;
+  await page.mouse.click(sb.x + sb.width - 6, sb.y + 6);
+  await expect.poll(async () => (await stepLayer(page)).visible).toBe(false);
+});
+
+for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-52 11 the strip sits under the stage at ${w}x${hgt}, overlaps nothing and scrolls on its own with 25 steps`, async ({ page }) => {
+    test.setTimeout(240000);
+    await page.setViewportSize({ width: w, height: hgt });
+    const t = tl(page);
+    await t.open();
+    await t.boxAt(0, 0, 0, 0.5, 0.5, 0.5);
+    await t.setNum("box-center-y", 0);
+    for (let i = 0; i < 25; i++) {
+      await t.setNum("box-center-x", i % 20);
+      if (i >= 20) await t.setNum("box-center-y", 1);
+      await t.exact("Candidates", "1");
+      await t.ctl("apply").click();
+      await expect(t.cards).toHaveCount(i + 1);
+    }
+    const r = await page.evaluate(() => {
+      const box = (s: string) => {
+        const e = document.querySelector(s);
+        if (!e) return null;
+        const b = e.getBoundingClientRect();
+        return { x: b.left, y: b.top, r: b.right, b: b.bottom, w: b.width, h: b.height };
+      };
+      const doc = document.documentElement;
+      const scroll = document.querySelector("#timeline-scroll") as HTMLElement;
+      return {
+        timeline: box("#timeline"),
+        stage: box("#stage"),
+        status: box("#statusbar"),
+        legend: box("#legend"),
+        cube: box("#viewcube"),
+        boxes: [...document.querySelectorAll("#fbox-layer .fbox")].map((e) => {
+          const b = e.getBoundingClientRect();
+          return { x: b.left, y: b.top, r: b.right, b: b.bottom };
+        }),
+        docScroll: [doc.scrollWidth - doc.clientWidth, doc.scrollHeight - doc.clientHeight],
+        scroll: [scroll.scrollWidth, scroll.clientWidth],
+      };
+    });
+    const tlb = r.timeline!;
+    expect(tlb.h).toBeGreaterThanOrEqual(60);
+    expect(tlb.h).toBeLessThanOrEqual(68);
+    expect(r.stage!.b).toBeLessThanOrEqual(tlb.y + 1); // strip is below the stage
+    expect(tlb.b).toBeLessThanOrEqual(r.status!.y + 1); // and above the status bar
+    const hit = (a: { x: number; y: number; r: number; b: number }) => a.x < tlb.r && a.r > tlb.x && a.y < tlb.b && a.b > tlb.y;
+    for (const [name, b] of [["legend", r.legend], ["viewcube", r.cube]] as const) expect(b && hit(b), `${name} overlaps the strip`).toBeFalsy();
+    for (const b of r.boxes) expect(hit(b), "a filter box overlaps the strip").toBeFalsy();
+    expect(r.docScroll).toEqual([0, 0]);
+    expect(r.scroll[0], "25 steps need their own horizontal scroll").toBeGreaterThan(r.scroll[1]);
+    // the newest step is scrolled into view
+    const last = (await t.card(24).boundingBox())!;
+    expect(last.x + last.width).toBeLessThanOrEqual(tlb.r + 1);
+  });
+}

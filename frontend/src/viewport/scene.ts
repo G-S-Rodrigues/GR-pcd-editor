@@ -13,11 +13,14 @@ import { createFilterPlanesOverlay } from "./filterplanes3d";
 import { createToolsOverlay } from "./tools3d";
 import { FOV_DEG, eyePosition, halfHeight } from "../view/camera";
 import { slicePlanes } from "../view/slice";
+import { stepLayerStyle } from "../timeline/model";
 
 export interface Viewport {
   size(): { w: number; h: number };
   /** Points the main layer draws right now (the interaction LOD lowers it while the camera moves). */
   drawnCount(): number;
+  /** The history-step highlight layer as drawn (for the browser smoke). */
+  stepLayer(): { sid: number | null; visible: boolean; count: number; colour: number[]; opacity: number; hover: boolean };
   requestRender(): void;
   dispose(): void;
 }
@@ -68,6 +71,16 @@ export function createViewport(
   rightPts.frustumCulled = false;
   rightPts.visible = false;
   scene.add(rightPts);
+
+  // history step highlight: the points one step deleted, flat colour, drawn on top; view-only
+  const stepPts = new THREE.Points(
+    new THREE.BufferGeometry(),
+    new THREE.PointsMaterial({ size: 4, sizeAttenuation: false, color: new THREE.Color(...PALETTE.step), transparent: true, opacity: 0.95, depthWrite: false }),
+  );
+  stepPts.frustumCulled = false;
+  stepPts.visible = false;
+  stepPts.renderOrder = 6;
+  scene.add(stepPts);
 
   // "Show kept points": render-only layer of the protected-selected points, drawn larger
   const keptPts = new THREE.Points(
@@ -168,6 +181,15 @@ export function createViewport(
     for (const [obj, d] of [[deletedPts, s.render2], [rightPts, s.render2]] as const) {
       if (d) obj.position.set(d.origin[0] - o[0], d.origin[1] - o[1], d.origin[2] - o[2]);
     }
+    const stepStyle = s.compare === "split" ? null : stepLayerStyle(s.timeline);
+    syncLayer(stepPts, stepStyle ? s.stepRender : null, s, false);
+    if (stepStyle && s.stepRender) {
+      stepPts.position.set(s.stepRender.origin[0] - o[0], s.stepRender.origin[1] - o[1], s.stepRender.origin[2] - o[2]);
+      const sm = stepPts.material as THREE.PointsMaterial;
+      sm.color.setRGB(...stepStyle.colour);
+      sm.opacity = stepStyle.opacity;
+      sm.size = s.colour.pointSize + stepStyle.sizeDelta;
+    }
     const mat = deletedPts.material as THREE.PointsMaterial;
     mat.opacity = clampOpacity(s.overlayOpacity);
     mat.size = s.colour.pointSize;
@@ -181,7 +203,7 @@ export function createViewport(
     const sp = slicePlanes(s.slice, (s.render?.origin ?? [0, 0, 0]) as [number, number, number]);
     sp.forEach((p, i) => clipPlanes[i].set(new THREE.Vector3(...p.normal), p.constant));
     const on = sp.length > 0;
-    for (const m of [points.material, deletedPts.material, rightPts.material, keptPts.material] as THREE.PointsMaterial[]) {
+    for (const m of [points.material, deletedPts.material, rightPts.material, keptPts.material, stepPts.material] as THREE.PointsMaterial[]) {
       m.clippingPlanes = on ? clipPlanes : null;
       if (on !== clipOn) m.needsUpdate = true;
     }
@@ -283,6 +305,18 @@ export function createViewport(
   return {
     size: () => ({ w: canvas.clientWidth, h: canvas.clientHeight }),
     requestRender,
+    stepLayer: () => {
+      const m = stepPts.material as THREE.PointsMaterial;
+      const st = stepLayerStyle(store.get().timeline);
+      return {
+        sid: st?.sid ?? null,
+        visible: stepPts.visible,
+        count: stepPts.visible ? (stepPts.geometry.getAttribute("position")?.count ?? 0) : 0,
+        colour: [m.color.r, m.color.g, m.color.b],
+        opacity: m.opacity,
+        hover: st?.hover ?? false,
+      };
+    },
     drawnCount: () => (points.visible ? (points.geometry.index?.count ?? points.geometry.getAttribute("position")?.count ?? 0) : 0),
     dispose() {
       unsub();

@@ -39,6 +39,7 @@ import { control } from "./ui/controls";
 import { buildInspector } from "./ui/inspector-shell";
 import { buildStatusbar } from "./ui/statusbar";
 import { buildLegend } from "./ui/legend";
+import { buildTimeline } from "./timeline/strip";
 import { buildHelp } from "./ui/help";
 import { classifyKey } from "./ui/keys";
 import { buildViewCube } from "./ui/viewcube";
@@ -128,7 +129,7 @@ const tools = createToolInteraction(canvas, store, size, {
 window.addEventListener("keydown", (e) => {
   if (e.key === "Escape") tools.cancel(); // an arrow drag in progress goes back to its start value
 });
-installDebugHook(canvas, store, size, () => viewport?.drawnCount() ?? 0);
+installDebugHook(canvas, store, size, () => viewport?.drawnCount() ?? 0, () => viewport?.stepLayer() ?? { visible: false });
 if (viewport) {
   attachControls(canvas, store, size, tools, () => runner.onToolChanged(), (kind, point) => {
     const st = store.get();
@@ -269,7 +270,13 @@ const panelActions = {
 };
 buildInspector($("fileinfo"), store);
 buildToolPalette($("tools"), store, panelActions);
-buildLegend($("legend"));
+const legend = buildLegend($("legend"));
+store.subscribe((s) => legend.update(s.timeline.highlight !== null));
+buildTimeline($("timeline"), store, {
+  rollback: (c) => void editor.rollback(c),
+  deleteStep: (sid) => void editor.deleteStep(sid),
+  renameStep: (sid, name) => void editor.renameStep(sid, name),
+});
 buildViewCube($("viewcube"), store);
 buildFilterBoxes($("fbox-layer"), canvas, store, {
   editSide: (axis, side, value, o) => filters.editSide(axis, side, value, o),

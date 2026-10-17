@@ -8,6 +8,8 @@ export const TOOLTIPS: Record<string, string> = {
   redo: "Redo the last undone deletion (Ctrl+Y)",
   preview: "Compute exact counts for the current selection without deleting",
   apply: "Delete the previewed points from the active cloud (undoable); enabled only for an up-to-date preview",
+  timeline: "History timeline: one card per deletion. Click a step icon to highlight its points, double-click a name to rename, hover for Roll back, Rename and Delete",
+  "timeline-marker": "History marker: drag it, or press Left/Right/Home/End, to roll back to that point; steps after it are greyed and can be redone",
   "cube-top": "ViewCube TOP face: look down the Z axis, orthographic (key 1). Click an edge or corner for a diagonal view",
   "cube-bottom": "ViewCube BOTTOM face: look up the Z axis, orthographic (key 2)",
   "cube-front": "ViewCube FRONT face: look along +Y with Z up, orthographic (key 3)",

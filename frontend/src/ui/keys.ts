@@ -97,5 +97,8 @@ export const MOUSE_DOCS: { keys: string; label: string }[] = [
   { keys: "Drag a filter box grip, or the arrow on its plane", label: "Set that side of the display filter along the view; Shift is finer, Esc cancels the drag" },
   { keys: "Drag a protection arrow, or the band's edge", label: "Move that side of the protected slab along its normal; Esc cancels the drag" },
   { keys: "Drag a blue ring around the slab", label: "Tilt the protected slab (X ring and Y ring, limit 60 degrees); the Level button resets it" },
+  { keys: "Click a timeline step icon", label: "Highlight the points that step deleted (click again, the strip background or Esc clears; hover previews)" },
+  { keys: "Drag the timeline marker", label: "Roll the history back or forward to that point (one step per cursor slot); the button Roll back to here and the Left/Right/Home/End keys do the same" },
+  { keys: "Double-click a step name", label: "Rename the step (also the pencil button or F2); Delete or Backspace on a focused step removes it after a confirmation" },
   { keys: "Arrow keys on a focused grip", label: "Nudge the filter value (Shift finer, PageUp/PageDown ten steps, Home/End the cloud bounds)" },
 ];
