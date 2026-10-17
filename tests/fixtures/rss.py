@@ -22,7 +22,7 @@ def run_cluster(
     limit_as=3 * 1024**3,
     cancel_after=None,
     scene_seed=7,
-    timeout=600,
+    timeout=120,
 ):
     args = {
         "n": n,
@@ -32,14 +32,19 @@ def run_cluster(
         "cancel_after": cancel_after,
     }
     env = dict(os.environ, PYTHONPATH=os.pathsep.join(p for p in sys.path if p))
-    proc = subprocess.run(
-        [sys.executable, os.path.abspath(__file__), json.dumps(args)],
-        check=False,
-        capture_output=True,
-        text=True,
-        env=env,
-        timeout=timeout,
-    )
+    try:
+        proc = subprocess.run(
+            [sys.executable, os.path.abspath(__file__), json.dumps(args)],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        # e.g. a hang after a MemoryError in a worker thread
+        msg = f"timed out after {timeout}s"
+        return {"ok": False, "stderr": msg, "rss_mib": 0}
     rss = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1024
     if proc.returncode != 0:
         return {"ok": False, "stderr": proc.stderr[-2000:], "rss_mib": rss}

@@ -138,6 +138,24 @@ space (a reserve of `GR_PCD_UPLOAD_RESERVE_BYTES`, 256 MiB, is kept free).
 port (`GR_PCD_PUBLIC_PORT`, set by the launcher from the chosen port); other
 Host or Origin values are refused.
 
+## Measured limits
+
+The container runs with a memory limit (`GR_PCD_MEM_LIMIT`, default `6g`, no
+swap beyond it), 256 processes and an init process; the default import budget
+is 60 % of the smaller of the limit and the host's available memory. A running
+operation that nears 85 % of the limit is stopped with a `memory_guard` message
+and the session survives. Cluster growth (cell-level search, memory bounded by
+chunk caps, not by point density) on the synthetic room scene on the checks
+image: 331k points in 0.5 to 1.3 s and at most 315 MiB for radius 0.5 to 5; 993k
+points at radius 0.5 in 2.7 s and 177 MiB peak (radius 2: 5.9 s, 422 MiB);
+cancel is observed within 10 ms. These are guarded by `CLU-40..43`; a real
+machine and a real scan will differ. A radius so small that the cloud needs more
+than 2^20 cells per axis is refused with the minimum radius to use.
+
+Binary export is bit-exact. ASCII export writes float32 fields with nine
+significant digits after a 64-bit read, so a value can differ from the source
+text in the last digit while still round-tripping to the same float32.
+
 If the folder browser reports `mount_unreadable`, make the data folder readable
 by the user id the launcher runs the app as.
 

@@ -19,7 +19,11 @@ services:
       gr-pcd.port: "${GR_PCD_PORT:-8080}"
       gr-pcd.user: "${GR_PCD_UID:-10001}:${GR_PCD_GID:-10001}"
     read_only: true
-    tmpfs: [/tmp]
+    tmpfs: ["/tmp:noexec,nosuid"]
+    mem_limit: ${GR_PCD_MEM_LIMIT:-6g}
+    memswap_limit: ${GR_PCD_MEM_LIMIT:-6g}
+    pids_limit: 256
+    init: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     restart: unless-stopped
@@ -45,7 +49,11 @@ services:
         target: /data
         read_only: true
     user: "10001:10001"
-    tmpfs: ["/work:uid=10001,gid=10001,mode=1777", /tmp]
+    tmpfs: ["/work:uid=10001,gid=10001,mode=1777", "/tmp:noexec,nosuid"]
+    mem_limit: ${GR_PCD_MEM_LIMIT:-6g}
+    memswap_limit: ${GR_PCD_MEM_LIMIT:-6g}
+    pids_limit: 256
+    init: true
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]

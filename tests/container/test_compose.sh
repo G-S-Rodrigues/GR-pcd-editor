@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Container-tier checks CTR-01..05, CTR-07 and CTR-08 (CTR-06 is LCH-01/LCH-26).
+# Container-tier checks CTR-01..05, CTR-07, CTR-08 and CTR-09 (CTR-06 is LCH-01/LCH-26).
 # Needs docker, curl and python3.
 set -euo pipefail
 
@@ -108,6 +108,15 @@ if dc up -d --wait --wait-timeout 60 app >/dev/null 2>&1 \
     pass CTR-05
 else
     fail CTR-05 "marker lost after recreate"
+fi
+
+# CTR-09 process bounds: memory (no swap beyond it), pids, init
+cid=$(dc ps -q app 2>/dev/null || true)
+bounds=$(docker inspect -f '{{.HostConfig.Memory}} {{.HostConfig.MemorySwap}} {{.HostConfig.PidsLimit}} {{.HostConfig.Init}}' "$cid" 2>/dev/null || true)
+if [ "$bounds" = "6442450944 6442450944 256 true" ]; then
+    pass CTR-09
+else
+    fail CTR-09 "mem/swap/pids/init = '$bounds'"
 fi
 
 # CTR-08 public port reaches the app, Host guard, read-only mount listing

@@ -954,3 +954,35 @@ test("E2E-24b 7b2 with no file open the banner explains why the tools are inert"
   await expect(ctl("tool-box")).toBeDisabled();
   await expect(ctl("apply")).toBeDisabled();
 });
+
+test("E2E-25 7c1 cluster r=2 on a 300k-point room finishes, Apply deletes the component exactly, the server stays up", async ({ page, request }) => {
+  test.setTimeout(180000);
+  const { exact, ctl, setNum } = helpers(page);
+  // floor 500 x 440 grid at z 0 (220,000) and an isolated 40 x 40 x 50 ghost block 5 m above it (80,000)
+  const rows: string[] = [];
+  for (let x = 0; x < 500; x++) for (let y = 0; y < 440; y++) rows.push(`${x / 10} ${y / 10} 0`);
+  for (let x = 0; x < 40; x++) for (let y = 0; y < 40; y++) for (let z = 0; z < 50; z++) rows.push(`${20 + x / 10} ${20 + y / 10} ${5 + z / 10}`);
+  const head = ["# .PCD v.7 - synthetic room 300k", "VERSION .7", "FIELDS x y z", "SIZE 4 4 4", "TYPE F F F", "COUNT 1 1 1", `WIDTH ${rows.length}`, "HEIGHT 1", "VIEWPOINT 0 0 0 1 0 0 0", `POINTS ${rows.length}`, "DATA ascii"];
+  await page.goto("/");
+  await page.locator("#file-input").setInputFiles({ name: "room300k.pcd", mimeType: "application/octet-stream", buffer: Buffer.from(`${head.join("\n")}\n${rows.join("\n")}\n`) });
+  await exact("Original", "300,000");
+  await page.waitForTimeout(800);
+  await ctl("cube-top").click();
+  await ctl("pivot-x").fill("22");
+  await ctl("pivot-y").fill("22");
+  await ctl("pivot-z").fill("0");
+  await ctl("pivot-set").click();
+  await ctl("tool-cluster").click();
+  await ctl("cluster-pick-seed").click();
+  await page.locator("#viewport").click(); // top view: the greatest Z under the pivot is a ghost point
+  await expect(page.locator("#editpanels")).toContainText("Seed: point");
+  await setNum("cluster-radius", 2);
+  await exact("Candidates", "80,000");
+  await expect(page.locator("#editpanels")).not.toContainText("Stopped at");
+  await ctl("apply").click();
+  await exact("Displayed", "220,000");
+  await exact("Original", "300,000");
+  const alive = await request.get("/api/session");
+  expect(alive.status()).toBe(200);
+  expect((await alive.json()).no_session).toBeUndefined();
+});

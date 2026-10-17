@@ -143,3 +143,21 @@ export, save, persist, unsaved, tooltips), under `frontend/src/**`; backend rend
   Run a subset with `bash scripts/smoke.sh npx playwright test -g "E2E-2[01]"`.
 - Fast loop for vitest and `tsc` without a rebuild: bind-mount `frontend/src`
   over the checks image, e.g. `docker run --rm --network none -v "$PWD/frontend/src:/app/frontend/src:ro" gr-pcd-visualizer:checks bash -c "cd frontend && node node_modules/vitest/vitest.mjs run"`.
+
+## Part 7c-1 additions (cluster engine, process bounds)
+
+- `CLU-30..36` (oracle fuzz against the old BFS, dyadic gaps, boundary, partial, cancel,
+  `radius_too_small`) in `tests/unit/test_cluster.py`; `CLU-40..43` (time and peak RSS in a
+  fresh process, `RLIMIT_AS` 3 GiB, 120 s timeout counts as failure) in
+  `tests/unit/test_cluster_perf.py` via `tests/fixtures/rss.py`. Measured: 331k points r 0.5..5
+  in 0.5-1.3 s and <= 315 MiB; 993k r 0.5 in 2.7 s and 177 MiB. Raise a bound only with a
+  recorded measurement, never skip.
+- `SES-40..43` in `tests/unit/test_job_guards.py` (cgroup budget, RSS guard, generic
+  `internal_error`, orphan sweeper with an injected clock; `JobManager(sweep=False)` in tests),
+  `UI-150/151` (cluster error text, pagehide beacon), `CTR-09` (compose `mem_limit` 6g,
+  `memswap_limit`, `pids_limit` 256, `init`), smoke `E2E-25` (300k room, cluster r=2, Apply).
+- Run backend tests under a memory cap without rebuilding: `docker run --rm --network none -m 6g
+  --memory-swap 6g -v "$PWD/tests:/app/tests:ro" -v "$PWD/backend:/app/backend:ro"
+  gr-pcd-visualizer:checks python -m pytest -q <args>`. The compose `verify` service has no cap.
+- A stale checks image runs old code against new tests (a hung 993k cluster once held the
+  suite for minutes): rebuild (`build --no-cache verify lint`) before the gate.
