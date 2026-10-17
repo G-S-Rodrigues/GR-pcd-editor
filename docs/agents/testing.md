@@ -83,3 +83,15 @@ only when run as root (chmod 000 cannot deny root); FIL-05b covers the 403
 mapping with a monkeypatched `PermissionError`. FIL-25 runs a real uvicorn
 thread to prove disconnect cleanup. Single frontend run: add the vitest args
 by running `node node_modules/vitest/vitest.mjs run <file>` in `frontend/`.
+
+## Smoke (browser, part 6)
+
+`bash scripts/smoke.sh` builds the app image (tag `gr-pcd-visualizer:smoke`),
+starts it under compose project `gr-pcd-smoke` (profile `smoke`, tmpfs `/work`,
+no published port) and runs Playwright `mcr.microsoft.com/playwright:v1.64.1-noble`
+with `network_mode: service:smoke-app`, so the page is `http://localhost:8080`
+(the Host guard only allows loopback). `e2e/node_modules` is installed once
+with `docker run ... node:22-bookworm npm ci` in `e2e/`. WebGL spike result:
+headless Chromium creates WebGL 2 through SwiftShader with
+`--use-angle=swiftshader --use-gl=angle --enable-unsafe-swiftshader
+--ignore-gpu-blocklist` (no fallback needed). Not part of `verify`.

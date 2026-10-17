@@ -19,3 +19,4 @@ build
 .scratch
 plans
 *.plan.md
+e2e
