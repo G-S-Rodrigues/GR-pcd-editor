@@ -3,6 +3,7 @@ import { resetOperation } from "../inspector/protection";
 import { type AppState, addNotice } from "../state/app";
 import type { Store } from "../state/store";
 import type { SessionState } from "../state/types";
+import { deleteStepText, discardCount, discardText, stepsOf } from "../timeline/model";
 import { canApply } from "./runner";
 
 export interface EditApi {
@@ -10,6 +11,9 @@ export interface EditApi {
   undo(cloudRevision: number): Promise<SessionState>;
   redo(cloudRevision: number): Promise<SessionState>;
   removeInvalid(cloudRevision: number): Promise<SessionState>;
+  rollback?(cloudRevision: number, cursor: number): Promise<SessionState>;
+  deleteStep?(cloudRevision: number, sid: number): Promise<SessionState>;
+  renameStep?(sid: number, name: string): Promise<SessionState>;
   clearSelection(cloudRevision: number): Promise<SessionState>;
   refreshState(): Promise<void>;
   refreshRender(): Promise<boolean>;
@@ -62,13 +66,19 @@ export function createEditor(store: Store<AppState>, api: EditApi, confirmFn: (m
     const c = s.candidate;
     const tool = s.tool === "none" ? "selection" : s.tool;
     const active = s.session?.counts.active ?? 0;
-    if (applyNeedsConfirm(c.candidates, active)) {
+    const bulk = applyNeedsConfirm(c.candidates, active);
+    const discard = discardCount(s.session);
+    if (bulk || discard > 0) {
       // ask about the session the server really has: a replaced one reloads with its own notice instead
       if (api.checkSession && !(await api.checkSession())) return;
+    }
+    if (bulk) {
       const pct = Math.round((c.candidates / active) * 100);
       const fmt = (n: number) => n.toLocaleString("en-US");
       if (!confirmFn(`This deletes ${fmt(c.candidates)} of ${fmt(active)} points (${pct} %). It can be undone. Continue?`)) return;
     }
+    // applying while rolled back throws the greyed steps away on the server: say so first
+    if (discard > 0 && !confirmFn(discardText(discard))) return;
     await guarded(async () => {
       const state = await api.apply(rev(), c.candidate_id, `Delete ${c.candidates} points (${tool})`);
       await afterChange(state, {
@@ -94,6 +104,28 @@ export function createEditor(store: Store<AppState>, api: EditApi, confirmFn: (m
     async redo(): Promise<void> {
       if (!store.get().session?.history.can_redo || store.get().job.busy) return;
       await guarded(async () => afterChange(await api.redo(rev())));
+    },
+    /** Moves the history marker to `cursor` (0..steps): later steps become greyed, earlier ones are applied. */
+    async rollback(cursor: number): Promise<void> {
+      const s = store.get().session;
+      if (!s || store.get().job.busy || cursor === s.history.cursor || !api.rollback) return;
+      const call = api.rollback;
+      await guarded(async () => afterChange(await call(rev(), cursor)));
+    },
+    /** Removes one step (after a confirmation); the later steps stay. Not undoable. */
+    async deleteStep(sid: number): Promise<void> {
+      const s = store.get();
+      const step = stepsOf(s.session).find((x) => x.sid === sid);
+      if (!step || s.job.busy || !api.deleteStep) return;
+      if (!confirmFn(deleteStepText(step.label, step.count))) return;
+      const call = api.deleteStep;
+      await guarded(async () => afterChange(await call(rev(), sid)));
+    },
+    /** A name changes nothing in the cloud: the candidate and the render stay. '' clears the name. */
+    async renameStep(sid: number, name: string): Promise<void> {
+      if (!api.renameStep) return;
+      const call = api.renameStep;
+      await guarded(async () => store.set({ session: await call(sid, name) }));
     },
     async clearSelection(): Promise<void> {
       await guarded(async () => afterChange(await api.clearSelection(rev())));

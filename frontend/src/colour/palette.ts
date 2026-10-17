@@ -11,6 +11,9 @@ export const PALETTE = {
   protectedStrong: hex(0x00f0ff),
   slab: hex(0xc77dff),
   deleted: hex(0xe63946),
+  /** Highlighted history step (its deleted points) and its lighter hover preview. */
+  step: hex(0x7bd88f),
+  stepHover: hex(0xcdeccf),
   pivot: hex(0xffffff),
 } as const;
 

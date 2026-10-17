@@ -63,20 +63,22 @@ export function parseRender(buf: ArrayBuffer, headers: HeaderLike): RenderData {
 
 export const MAX_BUDGET = 2_000_000;
 
-export function renderQuery(mode: RenderMode, budget: number, attr?: string): string {
+export function renderQuery(mode: RenderMode | "step", budget: number, attr?: string, step?: number): string {
   const b = Math.min(MAX_BUDGET, Math.max(1, Math.floor(budget)));
-  return `mode=${mode}&budget=${b}${attr ? `&attr=${encodeURIComponent(attr)}` : ""}`;
+  const st = mode === "step" && step !== undefined ? `&step=${Math.floor(step)}` : "";
+  return `mode=${mode}${st}&budget=${b}${attr ? `&attr=${encodeURIComponent(attr)}` : ""}`;
 }
 
 export async function fetchRender(
-  mode: RenderMode,
+  mode: RenderMode | "step",
   budget: number,
   attr?: string,
   signal?: AbortSignal,
+  step?: number,
 ): Promise<RenderData> {
   let res: Response;
   try {
-    res = await fetch(`/api/session/render?${renderQuery(mode, budget, attr)}`, { signal, headers: sessionHeaders() });
+    res = await fetch(`/api/session/render?${renderQuery(mode, budget, attr, step)}`, { signal, headers: sessionHeaders() });
   } catch (cause) {
     if (signal?.aborted) throw new ApiError(0, "cancelled", "render request superseded");
     throw new ApiError(0, "network", `could not reach the app: ${String(cause)}`);

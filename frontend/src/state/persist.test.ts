@@ -136,3 +136,10 @@ test("UI-145 a restored page keeps the view but starts Replace, Displayed, no to
   expect(out.tools.cluster.maxPoints).toBe(fresh.tools.cluster.maxPoints);
   expect(out.tools.cluster.seed).toBeNull();
 });
+
+test("UI-276 the timeline highlight and hover are view-only: not in the saved client state", () => {
+  const a = createAppStore();
+  a.update((s) => ({ ...s, timeline: { highlight: 3, hover: 2, renaming: null, dragging: null } }));
+  const s = JSON.stringify(serialiseClientState(a.get()));
+  expect(s).not.toMatch(/timeline|highlight|stepRender/);
+});

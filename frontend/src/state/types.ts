@@ -44,6 +44,12 @@ export interface HistoryEntry {
   kind: string;
   description: string;
   count: number;
+  /** Stable step id (survives delete and reorder); absent only in old fixtures. */
+  sid?: number;
+  /** box | polygon | cluster | filter | selection | invalid. */
+  tool?: string;
+  /** The user's name for the step, null when unnamed. */
+  name?: string | null;
 }
 export interface SessionState {
   session_id: string;

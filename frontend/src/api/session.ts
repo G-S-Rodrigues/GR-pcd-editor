@@ -67,6 +67,13 @@ const revCall = async (path: string, cloud_revision: number) =>
 export const clearSelection = (rev: number) => revCall("selection/clear", rev);
 export const undo = (rev: number) => revCall("undo", rev);
 export const redo = (rev: number) => revCall("redo", rev);
+export const rollback = async (cloud_revision: number, cursor: number) =>
+  normaliseState(await postJson("/api/session/history/rollback", { cloud_revision, cursor }));
+export const deleteStep = async (cloud_revision: number, sid: number) =>
+  normaliseState(await postJson("/api/session/history/delete-step", { cloud_revision, sid }));
+/** An empty name clears the step's name. Does not change the cloud revision. */
+export const renameStep = async (sid: number, name: string) =>
+  normaliseState(await postJson("/api/session/history/rename", { sid, name }));
 export const removeInvalid = (rev: number) => revCall("remove-invalid", rev);
 export async function apply(cloud_revision: number, candidate_id: string, description: string) {
   return normaliseState(

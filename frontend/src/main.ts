@@ -29,6 +29,7 @@ import { createToolInteraction } from "./viewport/interact";
 import { attachDropZone } from "./files/dragdrop";
 import { dropNotice, openSource } from "./orchestration/open";
 import { createRefresher } from "./orchestration/refresh";
+import { createStepView } from "./orchestration/stepview";
 import { createSessionSync } from "./orchestration/session-sync";
 import { createAppStore, addNotice, dismissNotice } from "./state/app";
 import { createJobHint } from "./orchestration/jobhint";
@@ -56,6 +57,7 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const store = createAppStore();
 createJobHint(store);
 const refresher = createRefresher(store);
+const stepView = createStepView(store);
 const canvas = $<HTMLCanvasElement>("viewport");
 
 const viewport = createViewport(canvas, store, (reason) => {
@@ -93,6 +95,9 @@ const editor = createEditor(
     undo: api.undo,
     redo: api.redo,
     removeInvalid: api.removeInvalid,
+    rollback: api.rollback,
+    deleteStep: api.deleteStep,
+    renameStep: api.renameStep,
     clearSelection: api.clearSelection,
     refreshState,
     refreshRender: () => refresher.refresh(),
@@ -177,7 +182,10 @@ const deps = {
   },
   confirm: (m: string) => window.confirm(m),
   refresh: () => refresher.refresh(),
-  clearCache: () => refresher.clear(),
+  clearCache: () => {
+    refresher.clear();
+    stepView.clear();
+  },
   onOpened,
 };
 

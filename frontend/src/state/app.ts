@@ -7,6 +7,7 @@ import { type BoxModel, defaultBox } from "../tools/box/model";
 import { type ClusterModel, defaultCluster } from "../tools/cluster/model";
 import { type PolygonState, emptyPolygon } from "../tools/polygon/model";
 import type { RenderData } from "../render/parse";
+import { type TimelineState, emptyTimeline } from "../timeline/model";
 import { type Camera, defaultCamera } from "../view/camera";
 import { type Slice, defaultSlice } from "../view/slice";
 import { type Store, createStore } from "./store";
@@ -58,6 +59,8 @@ export interface AppState {
   render: RenderData | null;
   /** Second render for overlay (deleted) and split (edited). */
   render2: RenderData | null;
+  /** Render of the highlighted (or hovered) history step: only that step's deleted points; view-only. */
+  stepRender: RenderData | null;
   rendering: boolean;
   candidate: Candidate | null;
   tools: ToolsState;
@@ -72,6 +75,8 @@ export interface AppState {
   floorPanelOpen: boolean;
   /** Inspector sections the user folded (missing = open); see ui/sections.ts. */
   sectionsOpen: SectionsOpen;
+  /** History strip view state (highlight, hover, rename, marker drag); never saved. */
+  timeline: TimelineState;
 }
 
 export function initialState(): AppState {
@@ -93,6 +98,7 @@ export function initialState(): AppState {
     budget: 1_000_000,
     render: null,
     render2: null,
+    stepRender: null,
     rendering: false,
     candidate: null,
     tools: {
@@ -110,6 +116,7 @@ export function initialState(): AppState {
     filterUi: { collapsed: {}, interacting: null },
     floorPanelOpen: true,
     sectionsOpen: {},
+    timeline: emptyTimeline(),
   };
 }
 
