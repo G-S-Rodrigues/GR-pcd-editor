@@ -50,6 +50,8 @@ therefore covers these seven files: this specification, `README.md`,
 `.gitignore`, `AGENTS.md`, `docs/GLOSSARY.md`, `docs/agents/testing.md`, and
 `scripts/check-bootstrap-contract.sh`.
 
+**Part 8 addendum (2026-10-17):** Owner decision: loading from a mounted folder is removed. The launcher has no `--data-dir`, Compose binds no host folder, the app serves no `/api/mounted` and has no open-by-path routes. Files are opened only by browser selection or drag and drop (upload). Superseded: Scope 2 `/data` mount, read-only source mount and backend path rules; Scope 3 `--data-dir` and its validation; Scope 4 mounted imports and their labelling; AC-21 (now: launch from another directory finds its own configuration); AC-22 invalid directory case; AC-26 "source mount is read-only" and "path traversal/symlink escapes" (loopback-only and cross-origin refusal remain); AC-27 "data directory" (changed port or user remains). AC-23 and AC-25 stand. Tests and docs follow this addendum.
+
 ### 2. Container image, Compose and persistent storage
 
 **Now:** Original section 3 made containers optional and required a native Linux path. This item replaces that packaging requirement.

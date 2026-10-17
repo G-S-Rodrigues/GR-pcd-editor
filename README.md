@@ -13,7 +13,7 @@ tool, global height protection and the live preview counts in the status bar.*
 
 ## Using the editor
 
-1. **Open** a `.pcd` or `.pcdsession` (picker, drag and drop, or the mounted folder).
+1. **Open** a `.pcd` or `.pcdsession` (file picker, or drag and drop).
 2. Navigate: the ViewCube or keys `1`..`6` (top, bottom, front, back, left,
    right), `P` toggles perspective/orthographic, `F` fits the cloud. The orbit
    pivot can be reset, typed as X/Y/Z or picked on a point.
@@ -76,8 +76,8 @@ Concepts worth knowing:
 Clone the repository and run:
 
 ```sh
-./gr-pcd-visualizer.sh                      # data folder = current directory, port 8080
-./gr-pcd-visualizer.sh --data-dir "/home/user/PCD maps" --port 8081
+./gr-pcd-visualizer.sh                      # port 8080
+./gr-pcd-visualizer.sh --port 8081
 ./gr-pcd-visualizer.sh --rebuild            # rebuild the image, keep work data
 ./gr-pcd-visualizer.sh --no-browser         # do not open a browser
 ./gr-pcd-visualizer.sh --stop               # stop; work data is kept
@@ -91,13 +91,15 @@ never prints that line before the health check passes. The server listens on
 exports or the persistent `work` volume.
 
 One instance per checkout. Running the launcher again with the same settings
-reuses the running app. Different `--data-dir`, `--port` or user is refused
+reuses the running app. Different `--port` or user is refused
 (exit 5); run `./gr-pcd-visualizer.sh --stop` first. `COMPOSE_PROJECT_NAME`
-selects a separate instance.
+selects a separate instance. Upgrading from an earlier build: run
+`./gr-pcd-visualizer.sh --rebuild` once (a container that still has the old
+data-folder mount is recreated). A leftover `--data-dir` in a shell alias now
+exits 2.
 
-The container runs as your user id, so it can read the data folder you can
-read (supplementary groups are not passed). If you are root, it runs as uid
-10001 and warns. A `work` volume created by an older image is owned by uid
+The container runs as your user id; that matters only for the `work` volume.
+If you are root, it runs as uid 10001 and warns. A `work` volume created by an older image is owned by uid
 10001; if the app then reports the work folder is not writable, remove it
 yourself with `docker volume rm gr-pcd-visualizer_work` (this deletes
 uploads and session working data; the launcher never does it).
@@ -106,7 +108,7 @@ uploads and session working data; the launcher never does it).
 |---|---|
 | 0 | ready / stopped |
 | 1 | startup failed or health timed out (logs printed) |
-| 2 | bad flag, port or data directory (a missing directory is never created) |
+| 2 | bad flag or port (`--data-dir` was removed) |
 | 3 | Docker CLI, Compose v2, daemon or local context missing |
 | 4 | port in use |
 | 5 | running instance has different settings |
@@ -117,9 +119,8 @@ uploads and session working data; the launcher never does it).
 **Open** takes a PCD or a saved session (`.pcdsession`) from the browser's
 file picker or by drag-and-drop, from any folder the browser can read. The file
 is uploaded only to this loopback app, with progress and a Cancel while bytes
-are being sent. A separate mounted-folder browser lists only the launcher's data
-folder (shown as `/data`, read-only, relative paths only); symlinks that leave
-that folder are hidden and rejected. A replacement import never clears the
+are being sent. The app has no access to your folders: nothing is mounted into
+the container. A replacement import never clears the
 current session until it succeeds, and unsaved edits need an explicit replace.
 
 **Export PCD** downloads `<original>_cleaned.pcd` and **Save session**
@@ -156,14 +157,11 @@ Binary export is bit-exact. ASCII export writes float32 fields with nine
 significant digits after a 64-bit read, so a value can differ from the source
 text in the last digit while still round-tripping to the same float32.
 
-If the folder browser reports `mount_unreadable`, make the data folder readable
-by the user id the launcher runs the app as.
-
 A Docker named volume `work` holds uploads, caches and session working data
 and survives stop and rebuild. Unsaved in-memory editing state is lost when the
-container stops; downloads and the mounted folder are never removed.
+container stops; downloads you saved are never removed.
 
-If Docker, Compose, the Docker daemon, the data folder, or the requested port
+If Docker, Compose, the Docker daemon, or the requested port
 is unavailable, the launcher explains the corrective action and
 exit without claiming success.
 
