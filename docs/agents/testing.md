@@ -211,3 +211,18 @@ export, save, persist, unsaved, tooltips), under `frontend/src/**`; backend rend
   FE path-escape test, `LCH-01`, `02`, `03`, `06`, `07`, `26`, the mounted `E2E-01`.
 - Changed: `FIL-00` (no `data_root` tail), `API-03`, `API-29` (upload failures), `UI-21`, `LCH-05`,
   `LCH-17/18`, `LCH-20/22/25`, `CTR-01`, `CTR-04`, `CTR-08`.
+
+## Part 9 additions (final polish)
+
+- `SEC-01` (`tests/integration/test_app_http.py`): CSP, `X-Frame-Options: DENY`, nosniff and
+  `Referrer-Policy` on static, health, API, 404 and the 403 guard answer (`api/security.py`, outermost
+  middleware). The CSP allows inline styles only (`style-src 'unsafe-inline'`, the app's `<style>`); scripts are
+  `'self'`. `CTR-10` (container tier): the `/tmp` tmpfs has `size=256m` and the running app sends the headers.
+  Smoke `E2E-34` (no CSP console message while a cloud loads and draws), `E2E-33` (canvas role and label,
+  notices live region).
+- `BUD-01..03` (`tests/unit/test_budget_text.py`): budget refusals read in MiB/GiB and an import refusal says the
+  file is not corrupt. `UI-185`: the open toast shows that text without the "valid PCD?" hint.
+- `UI-180/182` (confirm checks the session first), `UI-181` (double Apply), `UI-183` (Rendered text, changed
+  `UI-23`), `UI-184` (Protected shows `updating…` until the server has the picked floor), `UI-187` (Rect tooltip).
+- Deliberately not done: pick-floor hint in Top/Bottom (m-2: smoke `E2E-31` pins no hint in Top) and Rect disarm after
+  a drag (m-7: `E2E-29` needs it armed across views; the tooltip says it stays on).
