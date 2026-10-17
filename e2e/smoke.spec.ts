@@ -419,3 +419,42 @@ test("E2E-11 7a the Box tool opens small and a bulk delete asks for confirmation
   expect(dialogs[0]).toContain(`${FLOOR + GHOST} of ${activeBefore} points`);
   await exact("Active", String(activeBefore));
 });
+
+test("E2E-12 7a Shift+drag on a box handle is a fine drag and does not pan the camera (F-06)", async ({ page }) => {
+  const { exact, ctl, setNum } = helpers(page);
+  await page.goto("/");
+  await page.locator("#file-input").setInputFiles({ name: "synthetic.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
+  await exact("Displayed", String(FLOOR + GHOST));
+  await ctl("view-top").click();
+  await ctl("tool-box").click();
+  const setBox = async () => {
+    for (const [id, v] of [["box-center-x", 4.5], ["box-center-y", 4.5], ["box-center-z", 1.5], ["box-size-x", 4], ["box-size-y", 4], ["box-size-z", 2]] as const) await setNum(id, v);
+  };
+  type Hook = { state: () => { camera: { target: number[] }; tools: { box: { dimensions: number[] } } }; handlePositions: () => { id: string; x: number; y: number }[] };
+  const read = () => page.evaluate(() => {
+    const e = (window as unknown as { __editor: Hook }).__editor;
+    const s = e.state();
+    return { target: [...s.camera.target], width: s.tools.box.dimensions[0] };
+  });
+  const dragHandle = async (shift: boolean): Promise<{ delta: number; before: number[]; after: number[] }> => {
+    await setBox();
+    await page.waitForTimeout(400);
+    const h = (await page.evaluate(() => (window as unknown as { __editor: Hook }).__editor.handlePositions())).find((p) => p.id === "resize-0+")!;
+    const before = await read();
+    if (shift) await page.keyboard.down("Shift");
+    await page.mouse.move(h.x, h.y);
+    await page.mouse.down();
+    await page.mouse.move(h.x + 50, h.y, { steps: 5 });
+    await page.mouse.move(h.x + 100, h.y, { steps: 5 });
+    await page.mouse.up();
+    if (shift) await page.keyboard.up("Shift");
+    const after = await read();
+    return { delta: after.width - before.width, before: before.target, after: after.target };
+  };
+  const plain = await dragHandle(false);
+  expect(plain.delta).toBeGreaterThan(0.5);
+  const fine = await dragHandle(true);
+  expect(fine.delta).toBeGreaterThan(0);
+  expect(fine.delta / plain.delta).toBeCloseTo(0.1, 1);
+  expect(fine.after).toEqual(fine.before); // the camera did not pan
+});

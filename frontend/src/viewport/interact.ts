@@ -59,7 +59,7 @@ export function createToolInteraction(
   return {
     pointerDown(e: PointerEvent): boolean {
       const s = store.get();
-      if (!s.session || s.compare !== "edited" || e.button !== 0 || e.shiftKey) return false;
+      if (!s.session || s.compare !== "edited" || e.button !== 0) return false;
       const p = px(e);
       const vp = size();
       const ray = screenRay(s.camera, vp, p.x, p.y);

@@ -32,6 +32,7 @@ import { buildStatusbar } from "./ui/statusbar";
 import { buildToolbar } from "./ui/toolbar";
 import { buildViewbar } from "./ui/viewbar";
 import { attachControls } from "./viewport/controls3d";
+import { installDebugHook } from "./viewport/debug";
 import { createViewport } from "./viewport/scene";
 import { fitBounds } from "./view/fit";
 import { resetPivot } from "./view/pivot";
@@ -91,6 +92,7 @@ const tools = createToolInteraction(canvas, store, size, {
   protectionEdit: (fn) => protection.edit(fn),
   notify: note,
 });
+installDebugHook(canvas, store, size);
 if (viewport) attachControls(canvas, store, size, tools, () => runner.onToolChanged());
 
 function onOpened(state: SessionState) {
