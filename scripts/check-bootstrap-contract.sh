@@ -41,6 +41,13 @@ if grep -Eqi "$forbidden" <<<"$tracked"; then
   fail "tracked content includes private or planning material"
 fi
 
+# Every shell entry point must be executable in the git index (mode 100755);
+# the checks image copies files as stored, so a 100644 script fails with
+# "permission denied" (CTR-07).
+while read -r mode _ _ path; do
+  [[ "$mode" == 100755 ]] || fail "not executable in the index (mode $mode): $path"
+done < <(git ls-files -s -- 'scripts/*.sh' gr-pcd-visualizer.sh)
+
 if [[ "${1:-}" == "--staged" ]]; then
   staged="$(git diff --cached --name-only | sort)"
   expected="$(printf '%s\n' "${required[@]}" | sort)"
