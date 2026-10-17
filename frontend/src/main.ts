@@ -37,6 +37,7 @@ import { installDebugHook } from "./viewport/debug";
 import { createViewport } from "./viewport/scene";
 import { fitBounds } from "./view/fit";
 import { resetPivot } from "./view/pivot";
+import { AXIS_INDEX, defaultSlice, sliceFromPick } from "./view/slice";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -97,9 +98,13 @@ const tools = createToolInteraction(canvas, store, size, {
 });
 installDebugHook(canvas, store, size);
 if (viewport) {
-  attachControls(canvas, store, size, tools, () => runner.onToolChanged(), (z) => {
+  attachControls(canvas, store, size, tools, () => runner.onToolChanged(), (kind, point) => {
     const st = store.get();
-    const r = floorFromPick(st.compare, z, st.floorT);
+    if (kind === "slice") {
+      store.set({ slice: sliceFromPick(st.slice.axis, point[AXIS_INDEX[st.slice.axis]], st.slice.thickness) });
+      return;
+    }
+    const r = floorFromPick(st.compare, point[2], st.floorT);
     if (!r.ok) return note(r.reason);
     protection.edit((m) => setGlobal(m, { enabled: true, min: r.min, max: r.max }));
   });
@@ -117,6 +122,7 @@ function onOpened(state: SessionState) {
     ...st,
     camera: fitted,
     tool: "none",
+    slice: defaultSlice(),
     candidate: null,
     tools: {
       ...st.tools,

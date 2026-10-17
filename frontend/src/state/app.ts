@@ -30,7 +30,7 @@ export interface ToolsState {
 export interface AppState {
   session: SessionState | null;
   tool: ToolKind;
-  interaction: "orbit" | "pick-pivot" | "pick-seed" | "pick-floor";
+  interaction: "orbit" | "pick-pivot" | "pick-seed" | "pick-floor" | "pick-slice";
   /** Half thickness of the floor slab made by "Pick floor point" (unit label only). */
   floorT: number;
   /** Rectangle select: dragging in an aligned ortho view makes the Box tool's box. */

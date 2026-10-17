@@ -1,4 +1,4 @@
-export type FieldGroup = "tool" | "box" | "polygon" | "cluster" | "filter" | "protection" | "history";
+export type FieldGroup = "tool" | "box" | "polygon" | "cluster" | "filter" | "protection" | "history" | "slice";
 export interface FieldSpec {
   id: string;
   label: string;
@@ -63,6 +63,15 @@ export const FIELD_SPECS: FieldSpec[] = [
   ]),
   f("filter-reset-bounds", "Reset to cloud", "filter", "Set the filter limits to the whole cloud bounds and turn the filters off"),
   f("filter-reset-all", "Reset filters", "filter", "Turn all display filters off"),
+  f("slice-enabled", "Slice view", "slice", "Draw only a slab of the cloud (view only: selection, filters and counts are not affected)"),
+  f("slice-axis", "Slice axis", "slice", "Axis the slab is cut across"),
+  f("slice-centre", "Slice centre", "slice", "Centre of the slab along its axis, in the file frame"),
+  f("slice-thickness", "Slice thickness", "slice", "Thickness of the slab; must be greater than 0"),
+  f("slice-from-box", "Slice from box", "slice", "Make the slab cover the box along the view axis (or the slice axis outside a face view)"),
+  f("slice-at-point", "Slice at point", "slice", "Click a point in the view: the slab is centred on it along the slice axis"),
+  f("slice-prev", "Slice back", "slice", "Move the slab one thickness toward lower values (key [)"),
+  f("slice-next", "Slice forward", "slice", "Move the slab one thickness toward higher values (key ])"),
+  f("slice-off", "Slice off", "slice", "Draw the whole cloud again"),
   f("prot-enabled", "Global protection", "protection", "Protect every point whose Z is inside the interval from deletion; off by default"),
   f("prot-min", "Protect min Z", "protection", "Lower Z of the protected slab (inclusive)"),
   f("prot-max", "Protect max Z", "protection", "Upper Z of the protected slab (inclusive)"),

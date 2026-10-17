@@ -50,12 +50,15 @@ export function pickPoint(
   px: number,
   py: number,
   radiusPx = 8,
+  accept?: (world: Vec3) => boolean,
 ): { index: number; depth: number; dist: number } | null {
   const hits: { index: number; depth: number; dist: number }[] = [];
   let best = Number.POSITIVE_INFINITY;
   const c = cloud.coords;
   for (let i = 0; i < cloud.count; i++) {
-    const s = project(cam, [c[3 * i], c[3 * i + 1], c[3 * i + 2]], cloud.origin, vp);
+    const local: Vec3 = [c[3 * i], c[3 * i + 1], c[3 * i + 2]];
+    if (accept && !accept([local[0] + cloud.origin[0], local[1] + cloud.origin[1], local[2] + cloud.origin[2]])) continue;
+    const s = project(cam, local, cloud.origin, vp);
     if (!s) continue;
     const d = Math.hypot(s.x - px, s.y - py);
     if (d > radiusPx) continue;

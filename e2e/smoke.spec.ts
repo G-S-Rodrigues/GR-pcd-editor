@@ -604,3 +604,43 @@ test("E2E-16 7b1 rectangle select with the real mouse in Top then Left view, fit
   await exact("Candidates", String(ROOM.wall + ROOM.ghost + ROOM.noise));
   await page.screenshot({ path: "/out/rect-select.png" });
 });
+
+test("E2E-17 7b1 slice view clips the drawn cloud in the real canvas and changes no count", async ({ page }) => {
+  const { exact, num, ctl, setNum } = helpers(page);
+  await openRoom(page, exact);
+  await ctl("view-front").click();
+  await page.waitForTimeout(500);
+  const counts = async () => [await num("Original"), await num("Active"), await num("Displayed"), await num("Selected")];
+  const before = await counts();
+  const region = async (p: { x: number; y: number }) =>
+    page.screenshot({ clip: { x: Math.round(p.x) - 14, y: Math.round(p.y) - 14, width: 28, height: 28 } });
+  const wallAt = (await hook(page, (e) => e.projectWorld([-1, 4, 2.5])))!;
+  const ghostAt = (await hook(page, (e) => e.projectWorld([3, 13, 2]))!)!;
+  const emptyAt = { x: wallAt.x + 40, y: wallAt.y - 120 };
+  const emptyShot = await region(emptyAt);
+  const wallFull = await region(wallAt);
+  const ghostFull = await region(ghostAt);
+  expect(Buffer.compare(wallFull, emptyShot)).not.toBe(0); // wall drawn
+  expect(Buffer.compare(ghostFull, emptyShot)).not.toBe(0); // ghost drawn
+
+  await page.locator('[data-control="slice-axis"]').selectOption("y");
+  await setNum("slice-centre", 13.2);
+  await setNum("slice-thickness", 3.4);
+  await page.waitForTimeout(600);
+  expect(Buffer.compare(await region(wallAt), emptyShot)).toBe(0); // wall (y 0..9) is clipped away
+  expect(Buffer.compare(await region(ghostAt), emptyShot)).not.toBe(0); // ghost slab (y 12..15) stays
+  expect(await counts()).toEqual(before); // render only
+
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("]"); // one thickness forward: centre 16.6, slab 14.9..18.3
+  await expect.poll(async () => (await hook(page, (e) => (e.state() as unknown as { slice: { centre: number } }).slice.centre))).toBeCloseTo(16.6, 6);
+  await page.waitForTimeout(600);
+  expect(Buffer.compare(await region(ghostAt), emptyShot)).toBe(0); // ghosts left the slab
+  await page.keyboard.press("[");
+  await page.waitForTimeout(600);
+  expect(Buffer.compare(await region(ghostAt), emptyShot)).not.toBe(0);
+  await ctl("slice-off").click();
+  await page.waitForTimeout(600);
+  expect(Buffer.compare(await region(wallAt), emptyShot)).not.toBe(0);
+  expect(await counts()).toEqual(before);
+});
