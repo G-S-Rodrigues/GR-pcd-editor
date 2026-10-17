@@ -39,7 +39,7 @@ export function createToolsOverlay(scene: THREE.Scene) {
   return {
     update(s: AppState, origin: Vec3): void {
       clear();
-      if (!s.session || s.renderMode !== "edited") return;
+      if (!s.session || s.compare !== "edited") return;
       const t = s.tools;
       const cz = s.camera.target[2];
 

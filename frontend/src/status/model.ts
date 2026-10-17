@@ -49,5 +49,6 @@ const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 export function modeIndicator(s: AppState): string {
   const tool = s.interaction === "pick-pivot" ? "Pick pivot" : cap(s.tool);
   const unit = s.session?.unit ?? "m";
-  return `Tool: ${tool} · Op: ${cap(s.op)} · Scope: ${cap(s.scope)} · Frame: file (Z up) · Unit: ${unit} (assumed)`;
+  const view = s.compare === "edited" ? "" : ` · View: ${cap(s.compare)} (read-only)`;
+  return `Tool: ${tool} · Op: ${cap(s.op)} · Scope: ${cap(s.scope)} · Frame: file (Z up) · Unit: ${unit} (assumed)${view}`;
 }

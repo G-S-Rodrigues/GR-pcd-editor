@@ -11,6 +11,7 @@ import { CLUSTER_LIMIT_TEXT, clusterPanel, regionOptions, setRadius } from "../t
 import { invertNote, scopeNotice } from "../orchestration/selection";
 import { historyRows } from "../inspector/history";
 import { control } from "./controls";
+import { TOOLTIPS } from "./tooltips";
 import { h } from "./dom";
 
 /** What the panels need from the rest of the app. */
@@ -84,7 +85,11 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
   const sync: Sync = (s) => {
     for (const k of ["box", "polygon", "cluster"] as const) btns[k].classList.toggle("active", s.tool === k);
     const open = s.session !== null;
-    for (const b of [...Object.values(btns)]) b.disabled = !open;
+    const ro = s.compare !== "edited";
+    for (const [k, b] of Object.entries(btns)) {
+      b.disabled = !open || ro;
+      b.title = `${TOOLTIPS[`tool-${k}`]}${ro ? " (disabled: return to the edited view to edit)" : ""}`;
+    }
     op.value = s.op;
     scope.value = s.scope;
     commit.disabled = !s.draft;

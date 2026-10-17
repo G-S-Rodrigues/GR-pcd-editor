@@ -1,6 +1,7 @@
 import type { ColourMode } from "../colour/modes";
 import { type FilterModel, emptyFilter } from "../inspector/filters";
 import { type ProtectionModel, emptyProtection } from "../inspector/protection";
+import type { CompareMode } from "../compare/model";
 import { type BoxModel, defaultBox } from "../tools/box/model";
 import { type ClusterModel, defaultCluster } from "../tools/cluster/model";
 import { type PolygonState, emptyPolygon } from "../tools/polygon/model";
@@ -34,8 +35,13 @@ export interface AppState {
   camera: Camera;
   colour: { mode: ColourMode; pointSize: number };
   renderMode: RenderMode;
+  compare: CompareMode;
+  /** Opacity of the deleted overlay (0.05..1). */
+  overlayOpacity: number;
   budget: number;
   render: RenderData | null;
+  /** Second render for overlay (deleted) and split (edited). */
+  render2: RenderData | null;
   rendering: boolean;
   candidate: Candidate | null;
   tools: ToolsState;
@@ -57,8 +63,11 @@ export function initialState(): AppState {
     camera: defaultCamera(),
     colour: { mode: "height", pointSize: 3 },
     renderMode: "edited",
+    compare: "edited",
+    overlayOpacity: 0.35,
     budget: 300_000,
     render: null,
+    render2: null,
     rendering: false,
     candidate: null,
     tools: {

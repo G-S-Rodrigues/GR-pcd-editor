@@ -1,5 +1,6 @@
 import { pickPoint } from "../pick/ray";
-import { pickAllowed, resolveSeed, spacingEstimate } from "../pick/resolve";
+import { editAllowed } from "../compare/model";
+import { resolveSeed, spacingEstimate } from "../pick/resolve";
 import { type AppState, addNotice } from "../state/app";
 import type { Store } from "../state/store";
 import { orbit, pan, togglePerspective, zoom } from "../view/camera";
@@ -63,7 +64,7 @@ export function attachControls(
     const s = store.get();
     if (tools?.click(e)) return;
     if ((s.interaction !== "pick-pivot" && s.interaction !== "pick-seed") || !s.render) return;
-    const allowed = pickAllowed(s.renderMode);
+    const allowed = editAllowed(s.compare);
     if (!allowed.ok) {
       addNotice(store, "warn", "pick_refused", allowed.reason);
       return;

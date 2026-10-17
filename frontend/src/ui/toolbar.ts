@@ -1,5 +1,6 @@
 import { protectionBlock } from "../inspector/protection";
 import { canApply } from "../orchestration/runner";
+import { shouldWarn, unsavedLabel } from "../orchestration/unsaved";
 import type { AppState } from "../state/app";
 import type { Store } from "../state/store";
 import { control } from "./controls";
@@ -12,9 +13,11 @@ export interface ToolbarActions {
   apply: () => void;
   undo: () => void;
   redo: () => void;
+  saveSession: () => void;
+  openExport: () => void;
 }
 
-/** File and edit buttons. Save and Export stay disabled, with a reason, until they are wired (next step). */
+/** File and edit buttons. Edit buttons are disabled with a reason outside the edited view. */
 export function buildToolbar(root: HTMLElement, store: Store<AppState>, a: ToolbarActions): void {
   const input = h("input", {
     type: "file",
@@ -27,7 +30,9 @@ export function buildToolbar(root: HTMLElement, store: Store<AppState>, a: Toolb
       input.value = "";
     },
   });
-  const pending = { disabled: true, reason: "available in the next step" };
+  const save = control("button", { id: "save-session", disabled: true, onclick: a.saveSession }, "Save session");
+  const exp = control("button", { id: "export", disabled: true, onclick: a.openExport }, "Export");
+  const badge = h("span", { id: "unsaved-badge", class: "badge" });
   const undo = control("button", { id: "undo", disabled: true, onclick: a.undo }, "Undo");
   const redo = control("button", { id: "redo", disabled: true, onclick: a.redo }, "Redo");
   const preview = control("button", { id: "preview", disabled: true, onclick: a.preview }, "Preview");
@@ -37,30 +42,38 @@ export function buildToolbar(root: HTMLElement, store: Store<AppState>, a: Toolb
     control("button", { id: "open-file", onclick: () => input.click() }, "Open from this computer"),
     control("button", { id: "open-mounted", onclick: a.openMounted }, "Open from mounted folder"),
     h("span", { class: "sep" }),
-    control("button", { id: "save-session", ...pending }, "Save session"),
-    control("button", { id: "export", ...pending }, "Export"),
+    save,
+    exp,
+    badge,
     h("span", { class: "sep" }),
     undo,
     redo,
     preview,
     apply,
   );
-  const tips = new Map([undo, redo, preview, apply].map((b) => [b, b.title]));
+  const tips = new Map([undo, redo, preview, apply, save, exp].map((b) => [b, b.title]));
   const set = (b: HTMLButtonElement, on: boolean, why: string) => {
     b.disabled = !on;
     b.title = on ? (tips.get(b) ?? "") : `${tips.get(b)} (${why})`;
   };
   const sync = (s: AppState) => {
-    const idle = !s.job.busy;
-    set(undo, !!s.session?.history.can_undo && idle, s.session ? "nothing to undo" : "no file open");
-    set(redo, !!s.session?.history.can_redo && idle, s.session ? "nothing to redo" : "no file open");
-    set(preview, !!s.session && idle, s.session ? "a job is running" : "no file open");
+    const idle = !s.job.busy && s.compare === "edited";
+    const why = s.compare !== "edited" ? "return to the edited view" : "a job is running";
+    badge.textContent = unsavedLabel(s);
+    badge.classList.toggle("on", shouldWarn(s));
+    set(save, !!s.session && !s.job.busy, s.session ? "a job is running" : "no file open");
+    set(exp, !!s.session && !s.job.busy, s.session ? "a job is running" : "no file open");
+    set(undo, !!s.session?.history.can_undo && idle, s.session ? (idle ? "nothing to undo" : why) : "no file open");
+    set(redo, !!s.session?.history.can_redo && idle, s.session ? (idle ? "nothing to redo" : why) : "no file open");
+    set(preview, !!s.session && idle, s.session ? why : "no file open");
     set(
       apply,
-      canApply(s),
+      canApply(s) && s.compare === "edited",
       !s.session
         ? "no file open"
-        : s.job.busy
+        : s.compare !== "edited"
+          ? "return to the edited view"
+          : s.job.busy
           ? "a job is running"
           : s.draft
             ? "commit or discard the drafted tool shape first"

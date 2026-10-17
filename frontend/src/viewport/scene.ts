@@ -1,5 +1,8 @@
 import * as THREE from "three";
 import { colourize } from "../colour/modes";
+import { clampOpacity, overlayStyle } from "../compare/model";
+import { splitRects } from "../compare/split";
+import type { RenderData } from "../render/parse";
 import { PALETTE } from "../colour/palette";
 import { type AppState } from "../state/app";
 import type { Store } from "../state/store";
@@ -35,6 +38,29 @@ export function createViewport(
   );
   points.frustumCulled = false;
   scene.add(points);
+  // second render: deleted points (overlay, one flat translucent colour) or the edited cloud (split, right pane)
+  const delStyle = overlayStyle(undefined);
+  const deletedPts = new THREE.Points(
+    new THREE.BufferGeometry(),
+    new THREE.PointsMaterial({
+      size: 2,
+      sizeAttenuation: false,
+      color: new THREE.Color(...delStyle.colour),
+      transparent: true,
+      opacity: delStyle.opacity,
+      depthWrite: false,
+    }),
+  );
+  deletedPts.frustumCulled = false;
+  deletedPts.visible = false;
+  scene.add(deletedPts);
+  const rightPts = new THREE.Points(
+    new THREE.BufferGeometry(),
+    new THREE.PointsMaterial({ size: 2, sizeAttenuation: false, vertexColors: true }),
+  );
+  rightPts.frustumCulled = false;
+  rightPts.visible = false;
+  scene.add(rightPts);
 
   const pivot = new THREE.LineSegments(
     new THREE.BufferGeometry().setAttribute(
@@ -65,38 +91,48 @@ export function createViewport(
   const persp = new THREE.PerspectiveCamera(FOV_DEG, 1, 0.1, 1000);
   const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, -1, 1);
 
-  let pointsFor: AppState["render"] = null;
-  let colourKey = "";
   let raf = 0;
-
-  function syncGeometry(s: AppState) {
-    const r = s.render;
-    if (!r) {
-      points.visible = false;
-      pointsFor = null;
+  const layerFor = new Map<THREE.Points, { data: RenderData | null; key: string }>();
+  function syncLayer(obj: THREE.Points, data: RenderData | null, s: AppState, colours: boolean) {
+    if (!data) {
+      obj.visible = false;
+      layerFor.delete(obj);
       return;
     }
-    const key = `${s.colour.mode}|${s.session?.session_id}|${s.session?.revision.cloud}|${s.session?.active_bounds?.min[2]}|${s.session?.active_bounds?.max[2]}`;
-    if (r !== pointsFor) {
-      points.geometry.dispose();
+    const st = layerFor.get(obj) ?? { data: null, key: "" };
+    if (st.data !== data) {
+      obj.geometry.dispose();
       const g = new THREE.BufferGeometry();
-      g.setAttribute("position", new THREE.BufferAttribute(r.coords, 3));
-      g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(r.count * 3), 3));
-      points.geometry = g;
-      pointsFor = r;
-      colourKey = "";
+      g.setAttribute("position", new THREE.BufferAttribute(data.coords, 3));
+      if (colours) g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(data.count * 3), 3));
+      obj.geometry = g;
+      st.data = data;
+      st.key = "";
     }
-    if (key !== colourKey) {
-      colourKey = key;
-      const rgb = colourize(r, {
-        mode: s.colour.mode,
-        bounds: s.session?.active_bounds ?? null,
-        markDeleted: false,
-      });
-      (points.geometry.getAttribute("color") as THREE.BufferAttribute).set(rgb);
-      (points.geometry.getAttribute("color") as THREE.BufferAttribute).needsUpdate = true;
+    if (colours) {
+      const key = `${s.colour.mode}|${s.session?.session_id}|${s.session?.revision.cloud}|${s.session?.active_bounds?.min[2]}|${s.session?.active_bounds?.max[2]}`;
+      if (key !== st.key) {
+        st.key = key;
+        const attr = obj.geometry.getAttribute("color") as THREE.BufferAttribute;
+        attr.set(colourize(data, { mode: s.colour.mode, bounds: s.session?.active_bounds ?? null, markDeleted: false }));
+        attr.needsUpdate = true;
+      }
     }
-    points.visible = true;
+    layerFor.set(obj, st);
+    obj.visible = true;
+  }
+  function syncGeometry(s: AppState) {
+    syncLayer(points, s.render, s, true);
+    syncLayer(deletedPts, s.compare === "overlay" ? s.render2 : null, s, false);
+    syncLayer(rightPts, s.compare === "split" ? s.render2 : null, s, true);
+    const o = s.render?.origin ?? [0, 0, 0];
+    for (const [obj, d] of [[deletedPts, s.render2], [rightPts, s.render2]] as const) {
+      if (d) obj.position.set(d.origin[0] - o[0], d.origin[1] - o[1], d.origin[2] - o[2]);
+    }
+    const mat = deletedPts.material as THREE.PointsMaterial;
+    mat.opacity = clampOpacity(s.overlayOpacity);
+    mat.size = s.colour.pointSize;
+    (rightPts.material as THREE.PointsMaterial).size = s.colour.pointSize;
   }
 
   function draw() {
@@ -119,28 +155,30 @@ export function createViewport(
         ) / 2
       : 1;
     const span = 2 * radius + cam.distance;
-    const aspect = w / h;
-    let camera: THREE.Camera;
-    if (cam.ortho) {
-      const hh = halfHeight(cam);
-      ortho.left = -hh * aspect;
-      ortho.right = hh * aspect;
-      ortho.top = hh;
-      ortho.bottom = -hh;
-      ortho.near = -span;
-      ortho.far = span + cam.distance;
-      ortho.updateProjectionMatrix();
-      camera = ortho;
-    } else {
-      persp.aspect = aspect;
-      persp.near = Math.max(cam.distance * 1e-3, 1e-6);
-      persp.far = span * 2 + cam.distance;
-      persp.updateProjectionMatrix();
-      camera = persp;
-    }
-    camera.position.set(eye[0] - origin[0], eye[1] - origin[1], eye[2] - origin[2]);
-    camera.quaternion.set(...cam.orientation);
-    camera.updateMatrixWorld();
+    const cameraFor = (aspect: number): THREE.Camera => {
+      let camera: THREE.Camera;
+      if (cam.ortho) {
+        const hh = halfHeight(cam);
+        ortho.left = -hh * aspect;
+        ortho.right = hh * aspect;
+        ortho.top = hh;
+        ortho.bottom = -hh;
+        ortho.near = -span;
+        ortho.far = span + cam.distance;
+        ortho.updateProjectionMatrix();
+        camera = ortho;
+      } else {
+        persp.aspect = aspect;
+        persp.near = Math.max(cam.distance * 1e-3, 1e-6);
+        persp.far = span * 2 + cam.distance;
+        persp.updateProjectionMatrix();
+        camera = persp;
+      }
+      camera.position.set(eye[0] - origin[0], eye[1] - origin[1], eye[2] - origin[2]);
+      camera.quaternion.set(...cam.orientation);
+      camera.updateMatrixWorld();
+      return camera;
+    };
     (points.material as THREE.PointsMaterial).size = s.colour.pointSize;
     pivot.position.set(cam.target[0] - origin[0], cam.target[1] - origin[1], cam.target[2] - origin[2]);
     pivot.scale.setScalar(Math.max(halfHeight(cam) * 0.03, 1e-9));
@@ -150,7 +188,25 @@ export function createViewport(
     renderer.setScissorTest(false);
     renderer.setViewport(0, 0, w, h);
     renderer.clear();
-    renderer.render(scene, camera);
+    if (s.compare === "split" && s.render2) {
+      // one camera state drives both panes: left = original, right = edited
+      const [l, r] = splitRects(w, h);
+      const aLeft = points.visible;
+      const bRight = rightPts.visible;
+      renderer.setScissorTest(true);
+      for (const [rect, showLeft] of [[l, true], [r, false]] as const) {
+        points.visible = showLeft && aLeft;
+        rightPts.visible = !showLeft && bRight;
+        renderer.setScissor(rect.x, rect.y, rect.w, rect.h);
+        renderer.setViewport(rect.x, rect.y, rect.w, rect.h);
+        renderer.render(scene, cameraFor(rect.w / Math.max(rect.h, 1)));
+      }
+      points.visible = aLeft;
+      rightPts.visible = bRight;
+      renderer.setScissorTest(false);
+    } else {
+      renderer.render(scene, cameraFor(w / h));
+    }
 
     axisCam.quaternion.set(...cam.orientation);
     axisCam.position.set(0, 0, 5).applyQuaternion(axisCam.quaternion);

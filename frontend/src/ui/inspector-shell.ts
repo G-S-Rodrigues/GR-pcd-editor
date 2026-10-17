@@ -1,3 +1,4 @@
+import { countsPanel } from "../compare/model";
 import { lodLabel } from "../render/lod";
 import type { AppState } from "../state/app";
 import type { Store } from "../state/store";
@@ -26,14 +27,31 @@ export function buildInspector(root: HTMLElement, store: Store<AppState>): void 
         ...(sess.bounds ? row("Min", f3(sess.bounds.min)) : []),
         ...(sess.bounds ? row("Max", f3(sess.bounds.max)) : []),
       ),
-      h("h2", { text: "View" }),
+      h("h2", { text: "Counts (exact)" }),
+      h(
+        "dl",
+        { id: "counts-panel" },
+        ...(() => {
+          const c = countsPanel(sess.counts);
+          const n = (v: number) => v.toLocaleString("en-US");
+          return [
+            ...row("Original", n(c.original)),
+            ...row("Remaining", n(c.remaining)),
+            ...row("Deleted", `${n(c.deleted)} (${c.deletedPercent})`),
+          ];
+        })(),
+      ),
+      h("h2", { text: `View: ${s.compare}` }),
       h(
         "dl",
         {},
         ...row("Projection", s.camera.ortho ? "Orthographic" : "Perspective"),
         ...row("Pivot", f3(s.camera.target)),
         ...(s.render
-          ? row("Drawn", lodLabel({ count: s.render.count, eligible: s.render.eligible, budget: s.budget }))
+          ? row(s.compare === "split" ? "Left drawn" : "Drawn", lodLabel({ count: s.render.count, eligible: s.render.eligible, budget: s.budget }))
+          : []),
+        ...(s.render2 && s.compare !== "edited" && s.compare !== "original"
+          ? row(s.compare === "split" ? "Right drawn" : "Deleted drawn", lodLabel({ count: s.render2.count, eligible: s.render2.eligible, budget: s.budget }))
           : []),
       ),
     );

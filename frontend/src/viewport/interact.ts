@@ -59,7 +59,7 @@ export function createToolInteraction(
   return {
     pointerDown(e: PointerEvent): boolean {
       const s = store.get();
-      if (!s.session || s.renderMode !== "edited" || e.button !== 0 || e.shiftKey) return false;
+      if (!s.session || s.compare !== "edited" || e.button !== 0 || e.shiftKey) return false;
       const p = px(e);
       const vp = size();
       const ray = screenRay(s.camera, vp, p.x, p.y);
@@ -135,7 +135,7 @@ export function createToolInteraction(
     /** A click (no drag) while drawing a polygon adds a vertex on the pivot's Z plane. */
     click(e: PointerEvent): boolean {
       const s = store.get();
-      if (s.tool !== "polygon" || s.tools.polygon.phase !== "drawing" || s.renderMode !== "edited") return false;
+      if (s.tool !== "polygon" || s.tools.polygon.phase !== "drawing" || s.compare !== "edited") return false;
       const p = px(e);
       const xy = intersectZPlane(screenRay(s.camera, size(), p.x, p.y), s.camera.target[2]);
       if (!xy) return true;

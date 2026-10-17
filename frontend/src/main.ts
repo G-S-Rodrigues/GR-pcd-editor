@@ -1,6 +1,13 @@
 import * as api from "./api/session";
 import { getState } from "./api/session";
 import { postJson } from "./files/http";
+import { startExport, startSave, markSaved } from "./files/downloads";
+import { createHold, setCompare } from "./compare/model";
+import { runExport } from "./orchestration/export";
+import { runSave } from "./orchestration/session-save";
+import { beforeUnloadHandler } from "./orchestration/unsaved";
+import { applyClientPatch, createPersister, restoreClientState } from "./state/persist";
+import { buildExportDialog } from "./ui/export-dialog";
 import { pollJob } from "./files/jobs";
 import { createFilterController, enableDefaults, filterFromState, selectDisplayedBody } from "./inspector/filters";
 import { type ProtectionModel, protectionFromState } from "./inspector/protection";
@@ -94,6 +101,7 @@ function onOpened(state: SessionState) {
     ? fitBounds(resetPivot(cam, state.active_bounds), state.active_bounds, w / Math.max(ph, 1))
     : cam;
   runner.reset();
+  const restored = restoreClientState(state.client_state);
   store.update((st) => ({
     ...st,
     camera: fitted,
@@ -107,6 +115,8 @@ function onOpened(state: SessionState) {
       protection: protectionFromState(state.protection) as ProtectionModel,
     },
   }));
+  // AC-17: a reopened session brings its saved view back; filters and protection come from the backend state above
+  if (restored) store.update((st) => applyClientPatch(st, restored));
 }
 
 const deps = {
@@ -116,7 +126,19 @@ const deps = {
   onOpened,
 };
 
+const hold = createHold(store, () => void refresher.refresh());
+const exportDialog = buildExportDialog(store, (o) => runExport(store, o, { startExport: (f, s) => startExport(f, s) }));
+createPersister(store, api.putClientState, { dragging: () => tools.dragging() });
+window.addEventListener("beforeunload", beforeUnloadHandler(() => store.get()));
+window.addEventListener("blur", () => hold.blur());
+window.addEventListener("keyup", (e) => {
+  if (e.key.toLowerCase() === "o") hold.release();
+});
+
 buildToolbar($("toolbar"), store, {
+  saveSession: () =>
+    void runSave(store, { startSave: () => startSave(), markSaved: async (id) => api.normaliseState(await markSaved(id)) }),
+  openExport: () => exportDialog.open(),
   pickFile: (file) => void openSource({ kind: "picker", file }, deps),
   openMounted: () =>
     openMountedDialog(
@@ -132,6 +154,12 @@ buildViewbar($("viewbar"), store, {
   size,
   refresh: () => void refresher.refresh(),
   toggleHelp: () => $("help").classList.toggle("on"),
+  setCompare: (m) => {
+    setCompare(store, m);
+    void refresher.refresh();
+  },
+  holdPress: () => hold.press(),
+  holdRelease: () => hold.release(),
   notify: (text) => addNotice(store, "warn", "pivot_invalid", text),
 });
 buildStatusbar($("statusbar"), $("modebar"), store);
@@ -183,7 +211,9 @@ buildEditPanels($("editpanels"), store, panelActions);
 window.addEventListener("keydown", (e) => {
   const t = e.target as HTMLElement | null;
   const a = keyAction({ key: e.key, ctrlKey: e.ctrlKey || e.metaKey, shiftKey: e.shiftKey, target: t?.tagName ?? "" });
-  if (a === "undo") {
+  if ((e.key === "o" || e.key === "O") && !e.ctrlKey && !e.metaKey && !e.altKey && !["INPUT", "TEXTAREA", "SELECT"].includes(t?.tagName ?? "")) {
+    if (store.get().session) hold.press();
+  } else if (a === "undo") {
     e.preventDefault();
     void editor.undo();
   } else if (a === "redo") {
@@ -211,6 +241,7 @@ $("help").append(
       ["F", "Fit the cloud"],
       ["Esc", "Leave pick mode / cancel polygon drawing"],
       ["Ctrl+Z, Ctrl+Y", "Undo, redo"],
+      ["Hold O", "Show the original cloud while held (read-only)"],
       ["Enter", "Close the polygon"],
     ].map(([k, v]) => h("tr", {}, h("td", { text: k }), h("td", { text: v }))),
   ),
