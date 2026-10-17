@@ -10,7 +10,7 @@ from gr_pcd.pcd.errors import PcdError
 from gr_pcd.pcd.header import MAX_HEADER_BYTES, PcdHeader, parse_header
 from gr_pcd.pcd.lzf import lzf_decompress
 from gr_pcd.pcd.model import PcdCloud, build_dtype, field_dtype
-from gr_pcd.session.budget import check_budget, estimate_bytes
+from gr_pcd.session.budget import ASCII_EXPANSION, check_budget, estimate_bytes
 
 _TRAILING_LIMIT = 1 << 20
 
@@ -131,6 +131,11 @@ def read_pcd(source: Path | bytes, *, budget: int | None = None) -> PcdCloud:
             )
         _check_tail(extra, extra_n)
     else:
+        if budget is not None and header.encoding == "ascii":
+            # parsing tokens costs a multiple of the payload: refuse before reading it
+            check_budget(
+                estimate_bytes(header) + ASCII_EXPANSION * avail, budget
+            )
         if isinstance(source, bytes):
             payload = source[offset:]
         else:

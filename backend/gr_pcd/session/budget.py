@@ -15,6 +15,9 @@ CLUSTER_BYTES_PER_POINT = 128
 HISTORY_BYTES_PER_ID = 4
 HISTORY_FRACTION = 0.25
 DEFAULT_FALLBACK = 4 * 1024**3
+# ASCII parse: the payload, one bytes object per token, the string table and
+# the float copy, as a multiple of the payload size (calibrated by PCD-61)
+ASCII_EXPANSION = 10
 
 
 def estimate_bytes(header: PcdHeader) -> int:
