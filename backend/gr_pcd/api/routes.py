@@ -1,9 +1,14 @@
 """HTTP routes: validation and mapping only; logic lives in the session."""
 
 import json
+import re
+import shutil
+from pathlib import Path
 
 from fastapi import APIRouter, Query, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, Response
+from starlette.requests import ClientDisconnect
 
 from gr_pcd.api.render import render_body, render_headers
 from gr_pcd.api.schemas import (
@@ -18,6 +23,14 @@ from gr_pcd.api.schemas import (
     SelectionBody,
 )
 from gr_pcd.files.mounted import list_mounted
+from gr_pcd.files.names import safe_filename
+from gr_pcd.files.uploads import (
+    InvalidUploadId,
+    StorageFull,
+    UploadIncomplete,
+    UploadTooLarge,
+    store_upload,
+)
 from gr_pcd.paths import resolve_data_path
 from gr_pcd.session.engine import SelectSpec
 from gr_pcd.session.errors import NotFoundError
@@ -25,6 +38,7 @@ from gr_pcd.session.manager import SessionManager
 from gr_pcd.settings import Settings
 
 MAX_CLIENT_STATE = 1024 * 1024
+UPLOAD_ID = re.compile(r"^[0-9a-f]{32}$")
 
 
 def _job(job) -> JSONResponse:
@@ -43,6 +57,82 @@ def build_router(manager: SessionManager, settings: Settings) -> APIRouter:
     @router.get("/mounted")
     def mounted(path: str = ""):
         return list_mounted(settings.data_root, path)
+
+    @router.post("/session/upload")
+    async def upload(
+        request: Request,
+        upload_id: str,
+        filename: str,
+        replace: bool = False,
+    ):
+        if not UPLOAD_ID.match(upload_id):
+            raise InvalidUploadId("upload_id must be 32 lowercase hex digits")
+        manager.require_replaceable(replace)
+        limit = settings.max_source_bytes
+        try:
+            declared = int(request.headers.get("content-length", ""))
+        except ValueError:
+            declared = None
+        if declared is not None and declared > limit:
+            raise UploadTooLarge(
+                f"file exceeds the {limit / 1024**3:g} GiB limit"
+            )
+        uploads_dir = manager.uploads_dir()
+        free = shutil.disk_usage(uploads_dir).free
+        needed = (declared or 0) + settings.upload_reserve_bytes
+        if free < needed:
+            raise StorageFull(
+                "not enough free space in the work volume for this file"
+            )
+        entry = manager.uploads.register(upload_id, declared)
+        name = safe_filename(filename)
+        is_session = name.lower().endswith(".pcdsession")
+        dest = uploads_dir / (
+            upload_id + (".pcdsession" if is_session else ".pcd")
+        )
+        try:
+            received = await store_upload(request.stream(), dest, limit, entry)
+            if declared is not None and received != declared:
+                raise UploadIncomplete(
+                    "the upload ended before all bytes arrived"
+                )
+            entry.status = "importing"
+            manager.require_replaceable(replace)
+            if is_session:
+                session = await run_in_threadpool(manager.open_archive, dest)
+            else:
+                session = await run_in_threadpool(manager.open_pcd, dest, name)
+            entry.status = "done"
+            return session.state()
+        except ClientDisconnect:
+            entry.status = "cancelled"
+            return Response(status_code=499)
+        except BaseException as exc:
+            if entry.status != "cancelled":
+                entry.status = "failed"
+            entry.error = {
+                "code": getattr(exc, "code", "error"),
+                "message": getattr(exc, "message", str(exc)),
+            }
+            raise
+        finally:
+            dest.unlink(missing_ok=True)
+            Path(str(dest) + ".part").unlink(missing_ok=True)
+
+    @router.get("/uploads/{upload_id}")
+    def get_upload(upload_id: str):
+        entry = manager.uploads.get(upload_id)
+        if entry is None:
+            raise NotFoundError("no such upload")
+        return entry.to_dict()
+
+    @router.delete("/uploads/{upload_id}")
+    def cancel_upload(upload_id: str):
+        entry = manager.uploads.get(upload_id)
+        if entry is None:
+            raise NotFoundError("no such upload")
+        entry.cancel_requested = True
+        return entry.to_dict()
 
     @router.get("/session")
     def get_session():

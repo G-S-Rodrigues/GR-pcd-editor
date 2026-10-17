@@ -7,6 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from gr_pcd.editing.errors import EditError
+from gr_pcd.files.uploads import UploadError
 from gr_pcd.geometry.errors import GeometryError
 from gr_pcd.paths import PathEscapeError
 from gr_pcd.pcd.errors import PcdError
@@ -41,6 +42,10 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ReplaceConflict)
     def _replace(_: Request, exc: ReplaceConflict):
         return _body(exc.code, exc.message, 409)
+
+    @app.exception_handler(UploadError)
+    def _upload(_: Request, exc: UploadError):
+        return _body(exc.code, exc.message, exc.status)
 
     @app.exception_handler(PermissionError)
     def _denied(_: Request, exc: PermissionError):

@@ -7,6 +7,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
+from gr_pcd.files.uploads import UploadRegistry
 from gr_pcd.pcd.errors import PcdError
 from gr_pcd.pcd.reader import read_pcd
 from gr_pcd.session.archive import load_archive, save_archive
@@ -36,6 +37,7 @@ class SessionManager:
         self.jobs = JobManager()
         self.session: EditingSession | None = None
         self.downloads: dict[str, Download] = {}
+        self.uploads = UploadRegistry()
         self._lock = threading.RLock()
 
     # ---- directories (created lazily, never at import) -----------------
@@ -43,6 +45,9 @@ class SessionManager:
         d = self.settings.work_root.joinpath(*parts)
         d.mkdir(parents=True, exist_ok=True)
         return d
+
+    def uploads_dir(self) -> Path:
+        return self._dir("uploads")
 
     @property
     def budget(self) -> int:

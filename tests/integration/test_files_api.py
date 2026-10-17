@@ -1,9 +1,11 @@
 """FIL-14..: mounted folder, replace rules, uploads and downloads over HTTP."""
 
+from fixtures.pcdgen import SCENE_FIELDS, build_pcd, scene_rows
 from fixtures.sessions import (
     delete_ghost,
     make_client,
     make_settings,
+    wait,
     write_scene,
 )
 from gr_pcd.app import create_app
@@ -80,3 +82,113 @@ def test_fil_16_clean_session_replaced_and_failure_keeps_old(
     assert r.status_code == 422
     assert c.get("/api/session").json()["session_id"] == again["session_id"]
     assert again["session_id"] != first["session_id"]
+
+
+UP = "/api/session/upload"
+UID = "0123456789abcdef0123456789abcdef"
+OCT = {"Content-Type": "application/octet-stream"}
+
+
+def _scene_bytes() -> bytes:
+    return build_pcd(SCENE_FIELDS, scene_rows(), "binary")
+
+
+def _upload(c, body, upload_id=UID, filename="my scan.pcd", **extra):
+    params = {"upload_id": upload_id, "filename": filename, **extra}
+    return c.post(UP, params=params, content=body, headers=OCT)
+
+
+def _leftovers(settings):
+    d = settings.work_root / "uploads"
+    return sorted(p.name for p in d.iterdir()) if d.exists() else []
+
+
+def test_fil_17_upload_pcd_opens_and_cleans_up(tmp_path) -> None:
+    settings, _unused, c = _app(tmp_path)
+    before = sorted(p.name for p in settings.data_root.iterdir())
+    r = _upload(c, _scene_bytes(), filename='dir/my "scan".pcd')
+    assert r.status_code == 200, r.text
+    assert r.json()["filename"] == "my _scan_.pcd"
+    assert _leftovers(settings) == []
+    assert sorted(p.name for p in settings.data_root.iterdir()) == before
+    prog = c.get(f"/api/uploads/{UID}").json()
+    assert prog["status"] == "done"
+    assert prog["received"] == prog["total"] == len(_scene_bytes())
+
+
+def test_fil_18_upload_pcdsession_restores_edits(tmp_path) -> None:
+    settings, app, c = _app(tmp_path)
+    write_scene(settings)
+    c.post("/api/session/open", json={"path": "scene.pcd"})
+    mgr = app.state.manager
+    delete_ghost(mgr)
+    job = wait(mgr.submit_save())
+    assert job.status == "complete", job.error
+    blob = mgr.downloads[job.result["archive_id"]].path.read_bytes()
+    r = _upload(c, blob, filename="a.pcdsession", replace="true")
+    assert r.status_code == 200, r.text
+    assert r.json()["counts"]["deleted"] == 27
+    assert _leftovers(settings) == []
+
+
+def test_fil_19_corrupt_upload_keeps_old_session(tmp_path) -> None:
+    settings, _unused, c = _app(tmp_path)
+    write_scene(settings)
+    first = c.post("/api/session/open", json={"path": "scene.pcd"}).json()
+    r = _upload(c, b"not a pcd at all")
+    assert r.status_code == 422
+    assert c.get("/api/session").json()["session_id"] == first["session_id"]
+    assert _leftovers(settings) == []
+    assert c.get(f"/api/uploads/{UID}").json()["status"] == "failed"
+
+
+def test_fil_20_declared_length_over_limit_rejected_early(tmp_path) -> None:
+    settings, _unused, c = _app(tmp_path, max_source_bytes=100)
+    r = _upload(c, b"x" * 1000)
+    assert r.status_code == 413
+    assert r.json()["error"]["code"] == "upload_too_large"
+    assert _leftovers(settings) == []
+
+
+def test_fil_21_streamed_body_over_limit_leaves_nothing(tmp_path) -> None:
+    settings, _unused, c = _app(tmp_path, max_source_bytes=100)
+    r = _upload(c, iter([b"x" * 60, b"y" * 60]))
+    assert r.status_code == 413
+    assert r.json()["error"]["code"] == "upload_too_large"
+    assert _leftovers(settings) == []
+
+
+def test_fil_22_not_enough_storage_is_507(tmp_path) -> None:
+    settings, _unused, c = _app(tmp_path, upload_reserve_bytes=2**62)
+    r = _upload(c, _scene_bytes())
+    assert r.status_code == 507
+    assert r.json()["error"]["code"] == "storage_full"
+    assert _leftovers(settings) == []
+
+
+def test_fil_23_unsaved_work_blocks_upload_unless_replace(tmp_path) -> None:
+    settings, app, c = _app(tmp_path)
+    write_scene(settings)
+    c.post("/api/session/open", json={"path": "scene.pcd"})
+    delete_ghost(app.state.manager)
+    r = _upload(c, _scene_bytes())
+    assert r.status_code == 409
+    assert r.json()["error"]["code"] == "unsaved_work"
+    assert not (settings.work_root / "uploads").exists()
+    r = _upload(c, _scene_bytes(), upload_id="f" * 32, replace="true")
+    assert r.status_code == 200, r.text
+
+
+def test_fil_24_upload_ids_validated(tmp_path) -> None:
+    _settings, app, c = _app(tmp_path)
+    r = _upload(c, _scene_bytes(), upload_id="../etc")
+    assert r.status_code == 422
+    assert r.json()["error"]["code"] == "invalid_upload_id"
+    app.state.manager.uploads.register(UID, None)
+    r = _upload(c, _scene_bytes())
+    assert r.status_code == 409
+    assert r.json()["error"]["code"] == "duplicate_upload"
+    assert c.delete("/api/uploads/" + "e" * 32).status_code == 404
+    r = c.delete(f"/api/uploads/{UID}")
+    assert r.status_code == 200
+    assert app.state.manager.uploads.get(UID).cancel_requested is True
