@@ -38,7 +38,7 @@ IDEOF
 # Stub docker: logs every call, behaviour is steered by STUB_* variables.
 args="$*"
 echo "docker $args" >>"$STUB_LOG"
-echo "ENV GR_PCD_DATA_DIR=${GR_PCD_DATA_DIR-} GR_PCD_PORT=${GR_PCD_PORT-} GR_PCD_UID=${GR_PCD_UID-} GR_PCD_GID=${GR_PCD_GID-}" >>"$STUB_LOG"
+echo "ENV GR_PCD_PORT=${GR_PCD_PORT-} GR_PCD_UID=${GR_PCD_UID-} GR_PCD_GID=${GR_PCD_GID-}" >>"$STUB_LOG"
 case "$args" in
     "compose version"*)
         [ "${STUB_COMPOSE_VERSION:-2.40.0}" = fail ] && exit 1
@@ -92,15 +92,13 @@ print(s.getsockname()[1])
 '
 }
 
-# new_case: fresh tmp tree; sets T, STUB_LOG, DATA (a valid data dir).
+# new_case: fresh tmp tree; sets T, STUB_LOG.
 new_case() {
     T=$(mktemp -d)
     chmod 755 "$T"
     STUB_LOG="$T/stub.log"
     : >"$STUB_LOG"
     export STUB_LOG
-    DATA="$T/data"
-    mkdir -p "$DATA"
     make_stub_bin "$T"
 }
 

@@ -10,10 +10,6 @@ cleanup() { "${COMPOSE[@]}" down --remove-orphans >/dev/null 2>&1 || true; rm -r
 trap cleanup EXIT
 export SMOKE_OUT="$OUT"
 chmod 777 "$OUT"
-# compose still binds a /data source until 8-3 removes it; keep it an empty folder
-export SMOKE_DATA="$OUT/data"
-mkdir -p "$SMOKE_DATA"
-chmod 755 "$SMOKE_DATA"
 "${COMPOSE[@]}" build smoke-app
 "${COMPOSE[@]}" up --wait -d smoke-app
 rc=0

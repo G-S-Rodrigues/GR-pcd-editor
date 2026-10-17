@@ -1,31 +1,27 @@
 name: gr-pcd-visualizer
+x-hardening: &hardening
+  read_only: true
+  mem_limit: ${GR_PCD_MEM_LIMIT:-6g}
+  memswap_limit: ${GR_PCD_MEM_LIMIT:-6g}
+  pids_limit: 256
+  init: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
 services:
   app:
     build: {context: .., dockerfile: docker/Dockerfile, target: app}
     image: gr-pcd-visualizer:local
     ports: ["127.0.0.1:${GR_PCD_PORT:-8080}:8080"]
     volumes:
-      - type: bind
-        source: ${GR_PCD_DATA_DIR:-./data-dir-not-set}
-        target: /data
-        read_only: true
-        bind: {create_host_path: false}
       - {type: volume, source: work, target: /work}
     environment:
       GR_PCD_PUBLIC_PORT: "${GR_PCD_PORT:-8080}"
     user: "${GR_PCD_UID:-10001}:${GR_PCD_GID:-10001}"
     labels:
-      gr-pcd.data-dir: "${GR_PCD_DATA_DIR:-./data-dir-not-set}"
       gr-pcd.port: "${GR_PCD_PORT:-8080}"
       gr-pcd.user: "${GR_PCD_UID:-10001}:${GR_PCD_GID:-10001}"
-    read_only: true
+    <<: *hardening
     tmpfs: ["/tmp:noexec,nosuid"]
-    mem_limit: ${GR_PCD_MEM_LIMIT:-6g}
-    memswap_limit: ${GR_PCD_MEM_LIMIT:-6g}
-    pids_limit: 256
-    init: true
-    cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true"]
     restart: unless-stopped
   verify:
     profiles: [checks]
@@ -43,20 +39,9 @@ services:
     profiles: [smoke]
     build: {context: .., dockerfile: docker/Dockerfile, target: app}
     image: gr-pcd-visualizer:smoke
-    volumes:
-      - type: bind
-        source: ${SMOKE_DATA:-/tmp/gr-pcd-smoke-data}
-        target: /data
-        read_only: true
     user: "10001:10001"
+    <<: *hardening
     tmpfs: ["/work:uid=10001,gid=10001,mode=1777", "/tmp:noexec,nosuid"]
-    mem_limit: ${GR_PCD_MEM_LIMIT:-6g}
-    memswap_limit: ${GR_PCD_MEM_LIMIT:-6g}
-    pids_limit: 256
-    init: true
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true"]
   smoke:
     profiles: [smoke]
     image: mcr.microsoft.com/playwright:v1.64.1-noble

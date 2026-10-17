@@ -15,7 +15,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 FROM python:3.12-slim-bookworm AS app
 RUN groupadd -g 10001 app \
     && useradd -u 10001 -g 10001 -M -s /usr/sbin/nologin app \
-    && mkdir -p /data /work \
+    && mkdir -p /work \
     && chown 10001:10001 /work \
     && chmod 1777 /work
 COPY --from=python-deps /app/.venv /app/.venv
@@ -24,7 +24,6 @@ COPY --from=frontend-build /src/frontend/dist /app/static
 ENV PATH=/app/.venv/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    GR_PCD_DATA_ROOT=/data \
     GR_PCD_WORK_ROOT=/work \
     GR_PCD_STATIC_DIR=/app/static
 USER 10001:10001

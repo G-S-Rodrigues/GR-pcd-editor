@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Container-tier checks CTR-01..05, CTR-07, CTR-08 and CTR-09 (CTR-06 is LCH-01/LCH-26).
+# Container-tier checks CTR-01..05, CTR-07, CTR-08 and CTR-09 (CTR-06 went with the mounted folder).
 # Needs docker, curl and python3.
 set -euo pipefail
 
@@ -16,25 +16,13 @@ for tool in docker curl python3; do
     fi
 done
 
-tmp=$(mktemp -d)
-data_dir="$tmp/data"
-mkdir -p "$data_dir/maps dir"
-chmod 755 "$tmp" "$data_dir" "$data_dir/maps dir"
-echo "synthetic source record" >"$data_dir/maps dir/source.txt"
-chmod 644 "$data_dir/maps dir/source.txt"
-printf 'synthetic' >"$data_dir/scan.pcd"
-chmod 644 "$data_dir/scan.pcd"
-src_sha=$(sha256sum "$data_dir/maps dir/source.txt" | cut -d' ' -f1)
-
 dc() {
-    GR_PCD_DATA_DIR="$data_dir" GR_PCD_PORT="$port" \
-        docker compose -p "$project" -f "$compose_file" "$@"
+    GR_PCD_PORT="$port" docker compose -p "$project" -f "$compose_file" "$@"
 }
 
 # shellcheck disable=SC2317 # invoked via trap
 cleanup() {
     dc down -v --remove-orphans >/dev/null 2>&1 || true
-    rm -rf "$tmp"
 }
 trap cleanup EXIT
 
@@ -45,7 +33,7 @@ fail() {
 }
 
 # CTR-01 compose config (incl. user and labels)
-if dc --profile checks config --format json | python3 -c '
+if dc --profile checks --profile smoke config --format json | python3 -c '
 import json, sys
 port = sys.argv[1]
 cfg = json.load(sys.stdin)["services"]
@@ -55,13 +43,20 @@ p = app["ports"][0]
 assert p["host_ip"] == "127.0.0.1" and str(p["published"]) == port, p
 assert p["target"] == 8080, p
 vols = {v["target"]: v for v in app["volumes"]}
-assert vols["/data"]["type"] == "bind" and vols["/data"]["read_only"] is True
+assert "/data" not in vols, vols
 assert vols["/work"]["type"] == "volume"
 assert "profiles" not in app
 assert app["user"] == "10001:10001", app.get("user")
 lab = app["labels"]
 assert lab["gr-pcd.port"] == port, lab
-assert lab["gr-pcd.data-dir"] and lab["gr-pcd.user"] == "10001:10001", lab
+assert "gr-pcd.data-dir" not in lab and lab["gr-pcd.user"] == "10001:10001", lab
+for name in ("app", "smoke-app"):
+    svc = cfg[name]
+    assert svc["read_only"] is True and svc["init"] is True, name
+    assert svc["pids_limit"] == 256 and svc["cap_drop"] == ["ALL"], name
+    assert svc["security_opt"] == ["no-new-privileges:true"], name
+    assert svc["mem_limit"] == svc["memswap_limit"], name
+    assert "/data" not in {v["target"] for v in svc.get("volumes", [])}, name
 for name in ("verify", "lint"):
     assert cfg[name]["profiles"] == ["checks"], name
 ' "$port" \
@@ -92,13 +87,12 @@ else
     fail CTR-03 "uid=$uid or /work not writable"
 fi
 
-# CTR-04 /data read-only
-after=$(sha256sum "$data_dir/maps dir/source.txt" | cut -d' ' -f1)
-if ! dc exec -T app sh -c 'touch "/data/maps dir/x"' >/dev/null 2>&1 \
-    && [ "$after" = "$src_sha" ] && [ ! -e "$data_dir/maps dir/x" ]; then
+# CTR-04 root filesystem read-only and no /data in the container
+if ! dc exec -T app sh -c 'touch /rootfs-probe' >/dev/null 2>&1 \
+    && ! dc exec -T app test -e /data >/dev/null 2>&1; then
     pass CTR-04
 else
-    fail CTR-04 "/data was writable or source changed"
+    fail CTR-04 "root filesystem writable or /data present"
 fi
 
 # CTR-05 work volume survives down + up
