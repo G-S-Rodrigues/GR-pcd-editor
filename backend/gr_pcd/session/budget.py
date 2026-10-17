@@ -14,7 +14,6 @@ PER_POINT_EXTRA = 24 + 1 + 1 + 1 + 3
 # measured 7c-1: ~120 B/point of engine arrays (pts, cell ids, keys, inverse,
 # order, sorted copy, unique temps); 993k peaked at 177 MiB in all
 CLUSTER_BYTES_PER_POINT = 128
-HISTORY_BYTES_PER_ID = 4
 HISTORY_FRACTION = 0.25
 DEFAULT_FALLBACK = 4 * 1024**3
 # ASCII parse: the payload, one bytes object per token, the string table and

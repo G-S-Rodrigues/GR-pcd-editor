@@ -4,8 +4,6 @@ import numpy as np
 
 from gr_pcd.editing.errors import EditError
 
-OPS = ("replace", "add", "subtract", "intersect", "invert")
-
 
 def scope_mask(
     scope: str, active: np.ndarray, valid: np.ndarray, display: np.ndarray

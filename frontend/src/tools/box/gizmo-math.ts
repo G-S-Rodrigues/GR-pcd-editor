@@ -80,7 +80,6 @@ export function rotateBox(b: BoxModel, worldAxis: Vec3, angle: number): BoxModel
 
 export const snap = (v: number, inc: number): number => (inc > 0 ? Math.round(v / inc) * inc : v);
 export const applyPrecision = (delta: number, on: boolean): number => (on ? delta * 0.1 : delta);
-export const SNAP_DEFAULTS = { translate: 0.1, angleDeg: 5 };
 
 export type HandleClass = "translate" | "resize" | "rotate";
 export const HANDLE_STYLES: Record<HandleClass, { shape: "arrow" | "square" | "ring"; colour: string }> = {

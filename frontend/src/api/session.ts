@@ -1,5 +1,5 @@
 import { ApiError } from "../files/errors";
-import { deleteJson, failure, getJson, postJson, sessionHeaders } from "../files/http";
+import { failure, getJson, postJson, sessionHeaders } from "../files/http";
 import type { DisplayFilter, Protection, Scope, SelectionOp, SessionState } from "../state/types";
 
 type Json = Record<string, unknown>;
@@ -39,8 +39,6 @@ export async function getState(): Promise<SessionState | null> {
     throw e;
   }
 }
-
-export const closeSession = () => deleteJson("/api/session");
 
 export async function putFilter(f: DisplayFilter): Promise<SessionState> {
   return normaliseState(await putJson("/api/session/display-filter", f));
