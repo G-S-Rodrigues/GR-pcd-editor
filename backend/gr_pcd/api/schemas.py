@@ -8,6 +8,7 @@ from gr_pcd.editing.protection import (
     Interval,
     OperationProtection,
     ProtectionState,
+    Tilt,
 )
 from gr_pcd.geometry.box import BoxSpec
 from gr_pcd.geometry.filters import AxisRange, DisplayFilter
@@ -127,15 +128,24 @@ class OperationBody(Model):
     acknowledge_override: bool = False
 
 
+class TiltBody(Model):
+    model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
+    rx_deg: float
+    ry_deg: float
+    pivot: tuple[float, float] = (0.0, 0.0)
+
+
 class ProtectionBody(Model):
     model_config = ConfigDict(
         allow_inf_nan=False, extra="forbid", populate_by_name=True
     )
     global_: IntervalBody = Field(default=IntervalBody(), alias="global")
     operation: OperationBody = OperationBody()
+    tilt: TiltBody | None = None
 
     def to_spec(self) -> ProtectionState:
         op = self.operation
+        t = self.tilt
         return ProtectionState(
             Interval(self.global_.enabled, self.global_.min, self.global_.max),
             OperationProtection(
@@ -143,6 +153,7 @@ class ProtectionBody(Model):
                 None if op.local is None else (op.local.min, op.local.max),
                 op.acknowledge_override,
             ),
+            Tilt() if t is None else Tilt(t.rx_deg, t.ry_deg, t.pivot),
         )
 
 

@@ -41,6 +41,7 @@ from gr_pcd.session.codec import (
     FilterTool,
     filter_to_dict,
     protection_to_dict,
+    tilt_to_dict,
     tool_summary,
 )
 from gr_pcd.session.errors import NotFoundError, StaleRevision
@@ -68,6 +69,7 @@ class Candidate:
     intervals: list
     cluster: dict | None
     tool_text: str
+    tilt: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -174,7 +176,10 @@ class EditingSession:
 
     def _protected(self, protection: ProtectionState) -> np.ndarray:
         return protected_mask(
-            self.xyz, self.valid, effective_intervals(protection)
+            self.xyz,
+            self.valid,
+            effective_intervals(protection),
+            protection.tilt,
         )
 
     def require_cloud(self, cloud_revision: int) -> None:
@@ -187,7 +192,7 @@ class EditingSession:
 
     def _reset_operation_protection(self) -> None:
         self.protection = ProtectionState(
-            self.protection.global_, OperationProtection()
+            self.protection.global_, OperationProtection(), self.protection.tilt
         )
 
     def _changed(self) -> None:
@@ -325,7 +330,10 @@ class EditingSession:
                 region = fn(self.xyz, valid, tool.region, token)
             protected = (
                 protected_mask(
-                    self.xyz, valid, effective_intervals(snap["protection"])
+                    self.xyz,
+                    valid,
+                    effective_intervals(snap["protection"]),
+                    snap["protection"].tilt,
                 )
                 if tool.exclude_protected
                 else None
@@ -437,7 +445,9 @@ class EditingSession:
                 )
         display = self._display(token)
         intervals = effective_intervals(protection)
-        protected = protected_mask(self.xyz, self.valid, intervals)
+        protected = protected_mask(
+            self.xyz, self.valid, intervals, protection.tilt
+        )
         token.check()
         res = candidate_deletion(
             self.xyz, active, self.valid, selection, protected, display
@@ -450,6 +460,9 @@ class EditingSession:
             result=res,
             mode=protection.operation.mode,
             intervals=[list(i) for i in intervals],
+            tilt=None
+            if protection.tilt.level
+            else tilt_to_dict(protection.tilt),
             cluster=cluster,
             tool_text=tool_text,
         )
@@ -592,7 +605,7 @@ class EditingSession:
             ]
         )
         protected = protected_mask(
-            self.xyz, valid, effective_intervals(protection)
+            self.xyz, valid, effective_intervals(protection), protection.tilt
         )
         sel = selection & active & valid
         if m > budget:
@@ -658,6 +671,9 @@ def _tool_text(tool) -> str:
 
 def candidate_summary(cand: Candidate) -> dict:
     r = cand.result
+    effective = {"mode": cand.mode, "intervals": cand.intervals}
+    if cand.tilt is not None:
+        effective["tilt"] = cand.tilt
     return {
         "candidate_id": cand.id,
         "cloud_revision": cand.cloud_revision,
@@ -669,9 +685,6 @@ def candidate_summary(cand: Candidate) -> dict:
         "bounds": None
         if r.bounds is None
         else {"min": list(r.bounds[0]), "max": list(r.bounds[1])},
-        "effective_protection": {
-            "mode": cand.mode,
-            "intervals": cand.intervals,
-        },
+        "effective_protection": effective,
         "cluster": cand.cluster,
     }

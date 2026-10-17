@@ -6,6 +6,7 @@ from gr_pcd.editing.protection import (
     Interval,
     OperationProtection,
     ProtectionState,
+    Tilt,
 )
 from gr_pcd.geometry.box import BoxSpec
 from gr_pcd.geometry.errors import GeometryError
@@ -55,9 +56,28 @@ def filter_from_dict(d: dict) -> DisplayFilter:
     return DisplayFilter(**axes)
 
 
+def tilt_to_dict(t: Tilt) -> dict:
+    return {"rx_deg": t.rx_deg, "ry_deg": t.ry_deg, "pivot": list(t.pivot)}
+
+
+def tilt_from_dict(d: dict | None) -> Tilt:
+    if d is None:
+        return Tilt()
+    try:
+        pivot = d["pivot"]
+        return Tilt(
+            _num(d, "rx_deg"),
+            _num(d, "ry_deg"),
+            (float(pivot[0]), float(pivot[1])),
+        )
+    except (KeyError, TypeError, ValueError, IndexError):
+        raise GeometryError("invalid_state", "bad protection tilt")
+
+
 def protection_to_dict(p: ProtectionState) -> dict:
+    """Level protection keeps the pre-tilt shape: `tilt` only when tilted."""
     op = p.operation
-    return {
+    out = {
         "global": {
             "enabled": p.global_.enabled,
             "min": p.global_.min,
@@ -71,6 +91,9 @@ def protection_to_dict(p: ProtectionState) -> dict:
             "acknowledge_override": op.acknowledge_override,
         },
     }
+    if not p.tilt.level:
+        out["tilt"] = tilt_to_dict(p.tilt)
+    return out
 
 
 def protection_from_dict(d: dict) -> ProtectionState:
@@ -86,6 +109,7 @@ def protection_from_dict(d: dict) -> ProtectionState:
                 else (_num(local, "min"), _num(local, "max")),
                 bool(op.get("acknowledge_override", False)),
             ),
+            tilt_from_dict(d.get("tilt")),
         )
     except (KeyError, TypeError, AttributeError):
         raise GeometryError("invalid_state", "bad protection state")

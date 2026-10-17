@@ -8,7 +8,8 @@ recomputes.
 * GEO_EPS_WORLD = 0: world-axis-aligned tests (XYZ filter, prism Z range,
   axis-aligned box). With all angles 0 the rotation is skipped entirely.
 * GEO_EPS_ROTATED = 1e-9 (absolute, coordinate units): slack on rotated-box
-  local extents, covering float64 rotation round-off.
+  local extents, covering float64 rotation round-off. The tilted protection
+  slab uses it too, on the slab coordinate s = n . (p - pivot).
 * GEO_EPS_EDGE = 1e-9: a point within this distance of a polygon edge counts
   as inside.
 * CLUSTER_REL = 1e-12: relative slack on the cluster radius (inclusive).
