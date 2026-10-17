@@ -104,3 +104,60 @@ test("E2E-01 open by dropping a file", async ({ page }) => {
   await page.dispatchEvent("body", "drop", { dataTransfer: bad });
   await expect(page.locator("#notices")).toContainText("Only .pcd and .pcdsession");
 });
+
+test("6b real UI: filter, box select by numbers, preview counts, apply, undo, redo", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("response", (r) => {
+    if (r.status() >= 400 && !(r.status() === 404 && new URL(r.url()).pathname === "/api/session")) {
+      errors.push(`HTTP ${r.status()} ${r.url()}`);
+    }
+  });
+  await page.goto("/");
+  await page.locator("#file-input").setInputFiles({ name: "synthetic.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
+  const status = page.locator("#statusbar");
+  const stat = (name: string) => status.locator(`[data-status="${name}"]`);
+  const exact = (name: string, v: number | string) => expect(stat(name)).toHaveText(new RegExp(`^${name.replace(/[()/]/g, "\\$&")}: ${v}$`), { timeout: 15000 });
+  const num = async (name: string) => Number((await stat(name).innerText()).replace(/[^0-9]/g, ""));
+  const ctl = (id: string) => page.locator(`[data-control="${id}"]`);
+  const setNum = async (id: string, v: number) => {
+    await ctl(id).fill(String(v));
+    await ctl(id).press("Tab");
+  };
+  await exact("Displayed", String(FLOOR + GHOST));
+  await expect(ctl("apply")).toBeDisabled();
+  await expect(ctl("undo")).toBeDisabled();
+  const activeBefore = await num("Active");
+
+  await test.step("display filter on Z hides the floor without deleting it", async () => {
+    await ctl("filter-z-enabled").check();
+    await setNum("filter-z-min", 0.5);
+    await setNum("filter-z-max", 10);
+    await exact("Displayed", String(GHOST));
+    expect(await num("Active")).toBe(activeBefore);
+  });
+
+  await test.step("box over the whole cloud by numeric inputs previews the ghost only", async () => {
+    await ctl("tool-box").click();
+    for (const [id, v] of [["box-center-x", 4.5], ["box-center-y", 4.5], ["box-center-z", 1.5], ["box-size-x", 12], ["box-size-y", 12], ["box-size-z", 6]] as const) {
+      await setNum(id, v);
+    }
+    await exact("Candidates", String(GHOST));
+    await exact("Protected", "0");
+    await expect(ctl("apply")).toBeEnabled();
+  });
+
+  await test.step("apply deletes exactly the candidates; undo restores; redo repeats", async () => {
+    await ctl("apply").click();
+    await exact("Active", String(activeBefore - GHOST));
+    await expect(ctl("undo")).toBeEnabled();
+    await ctl("undo").click();
+    await exact("Active", String(activeBefore));
+    await expect(ctl("redo")).toBeEnabled();
+    await ctl("redo").click();
+    await exact("Active", String(activeBefore - GHOST));
+    await ctl("undo").click();
+    await exact("Active", String(activeBefore));
+  });
+  expect(errors).toEqual([]);
+});

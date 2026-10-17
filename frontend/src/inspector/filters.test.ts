@@ -8,6 +8,7 @@ import {
   filterFromState,
   resetAll,
   resetToBounds,
+  enableDefaults,
   selectDisplayedBody,
   setAxis,
   toFilterBody,
@@ -86,5 +87,17 @@ describe("filter controller", () => {
     expect(store.get().tools.filters).toBe(before);
     await vi.advanceTimersByTimeAsync(150);
     expect((put.mock.calls[0][0] as { x: unknown }).x).toEqual({ enabled: true, min: 0, max: 5 });
+  });
+});
+
+describe("enabling an untouched axis", () => {
+  it("UI-52 starts from the cloud bounds so a first edit is not rejected as min>max", () => {
+    const b = { min: [0, 1, 2] as [number, number, number], max: [9, 8, 3] as [number, number, number] };
+    const m = emptyFilter();
+    expect(enableDefaults(m, "z", { enabled: true }, b)).toEqual({ enabled: true, min: 2, max: 3 });
+    expect(enableDefaults(m, "z", { enabled: true, min: 0.5 }, b)).toEqual({ enabled: true, min: 0.5, max: 3 });
+    const used = setAxis(m, "z", { enabled: true, min: -1, max: 2 }).model;
+    expect(enableDefaults(used, "z", { enabled: true }, b)).toEqual({ enabled: true });
+    expect(enableDefaults(m, "z", { min: 1 }, b)).toEqual({ min: 1 });
   });
 });

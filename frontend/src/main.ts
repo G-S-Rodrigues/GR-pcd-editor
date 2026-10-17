@@ -2,7 +2,7 @@ import * as api from "./api/session";
 import { getState } from "./api/session";
 import { postJson } from "./files/http";
 import { pollJob } from "./files/jobs";
-import { createFilterController, filterFromState, selectDisplayedBody } from "./inspector/filters";
+import { createFilterController, enableDefaults, filterFromState, selectDisplayedBody } from "./inspector/filters";
 import { type ProtectionModel, protectionFromState } from "./inspector/protection";
 import { createProtectionController } from "./inspector/protection-controller";
 import { createEditor, keyAction } from "./orchestration/edit";
@@ -137,7 +137,7 @@ buildViewbar($("viewbar"), store, {
 buildStatusbar($("statusbar"), $("modebar"), store);
 const panelActions = {
   toolChanged: () => runner.onToolChanged(),
-  filterEdit: (axis: "x" | "y" | "z", patch: Partial<{ enabled: boolean; min: number; max: number }>) => filters.edit(axis, patch),
+  filterEdit: (axis: "x" | "y" | "z", patch: Partial<{ enabled: boolean; min: number; max: number }>) => filters.edit(axis, enableDefaults(store.get().tools.filters, axis, patch, store.get().session?.bounds ?? null)),
   filterResetBounds: () => filters.resetToCloud(),
   filterResetAll: () => filters.resetAll(),
   protectionEdit: (fn: Parameters<typeof protection.edit>[0]) => protection.edit(fn),

@@ -32,6 +32,14 @@ export interface FilterEdit {
 }
 
 /** Limits are inclusive; a min above max (or a non-finite value) is rejected and the previous model kept. */
+/** Enabling an untouched axis (0..0) starts from the cloud bounds, so the first min or max edit is valid. */
+export function enableDefaults(m: FilterModel, axis: Axis, patch: Partial<AxisModel>, bounds: Bounds | null): Partial<AxisModel> {
+  const cur = m[axis];
+  if (!bounds || patch.enabled !== true || cur.enabled || cur.min !== 0 || cur.max !== 0) return patch;
+  const i = AXES.indexOf(axis);
+  return { min: bounds.min[i], max: bounds.max[i], ...patch };
+}
+
 export function setAxis(m: FilterModel, axis: Axis, patch: Partial<AxisModel>): FilterEdit {
   const next = { ...m[axis], ...patch };
   if (!Number.isFinite(next.min) || !Number.isFinite(next.max)) {
