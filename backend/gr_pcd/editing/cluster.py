@@ -175,7 +175,10 @@ def connected_component(
     idx = np.flatnonzero(eligible)
     if budget is not None:
         check_budget(
-            CLUSTER_BYTES_PER_POINT * len(idx), budget, "cluster search"
+            CLUSTER_BYTES_PER_POINT * len(idx),
+            budget,
+            "cluster search",
+            "Try a smaller region.",
         )
     if token is not None:
         token.check()

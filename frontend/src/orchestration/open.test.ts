@@ -133,3 +133,17 @@ test("UI-168 a file with 0 points opens with a message saying there is nothing t
   await openSource({ kind: "picker", file: file("a.pcd") }, ok.deps);
   expect(ok.store.get().notices.find((x) => x.code === "empty_cloud")).toBeUndefined();
 });
+
+test("UI-185 a refused size is not blamed on the file format; the server's readable reason stands alone (m-5)", async () => {
+  const d = setup({ withSession: false });
+  const reason = "import needs about 5.4 GiB of memory but the limit is 3.6 GiB. The file is not corrupt; it is too large for this server's memory.";
+  d.upload.mockImplementation((() => ({
+    uploadId: "u",
+    cancel: () => true,
+    promise: Promise.reject(new ApiError(413, "memory_budget_exceeded", reason)),
+  })) as never);
+  await openSource({ kind: "picker", file: file("big.pcd") }, d.deps);
+  const text = d.store.get().notices.at(-1)?.text ?? "";
+  expect(text).toBe(`Cannot open big.pcd: ${reason}`);
+  expect(text).not.toContain("valid PCD");
+});

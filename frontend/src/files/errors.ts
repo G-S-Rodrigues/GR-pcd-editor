@@ -40,5 +40,7 @@ export function networkError(cause: unknown): ApiError {
 }
 
 /** The toast for a file that could not be opened: its name, the reason, what to check. */
-export const openErrorText = (name: string, reason: string): string =>
-  `Cannot open ${name}: ${reason.replace(/[.\s]+$/, "")}. Is it a valid PCD (or .pcdsession)?`;
+export const openErrorText = (name: string, reason: string, code?: string): string =>
+  code === "memory_budget_exceeded"
+    ? `Cannot open ${name}: ${reason}` // a size refusal is not a format problem; the server's text says so
+    : `Cannot open ${name}: ${reason.replace(/[.\s]+$/, "")}. Is it a valid PCD (or .pcdsession)?`;

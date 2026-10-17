@@ -107,11 +107,30 @@ def make_rss_guard() -> Callable[[], None]:
     return guard
 
 
-def check_budget(estimate: int, budget: int, what: str = "import") -> None:
+def human_bytes(n: int) -> str:
+    if n >= 1024**3:
+        return f"{n / 1024**3:.1f} GiB"
+    if n >= 1024**2:
+        return f"{n / 1024**2:.0f} MiB"
+    return f"{n} bytes"
+
+
+IMPORT_ADVICE = (
+    "The file is not corrupt; it is too large for this server's memory."
+)
+
+
+def check_budget(
+    estimate: int,
+    budget: int,
+    what: str = "import",
+    advice: str = IMPORT_ADVICE,
+) -> None:
     if estimate > budget:
         raise PcdError(
             "memory_budget_exceeded",
-            f"{what} needs about {estimate} bytes, budget is {budget} bytes",
+            f"{what} needs about {human_bytes(estimate)} of memory but the "
+            f"limit is {human_bytes(budget)}. {advice}",
         )
 
 

@@ -87,7 +87,7 @@ export async function openSource(src: OpenSource, deps: OpenDeps): Promise<OpenO
     const code = e instanceof ApiError ? e.code : "open_failed";
     if (code !== "cancelled") {
       const name = file?.name ?? "the file";
-      addNotice(store, "error", "open_failed", openErrorText(name, e instanceof Error ? e.message : "unknown error"));
+      addNotice(store, "error", "open_failed", openErrorText(name, e instanceof Error ? e.message : "unknown error", code));
     }
     return { ok: false, reason: "error", code };
   }
