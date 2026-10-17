@@ -17,3 +17,10 @@
   application container.
 - **Session:** Versioned editing state, optionally including the source cloud,
   that can be reopened later.
+- **Candidate:** The exact set of points a previewed selection would delete,
+  after height protection has been applied; Apply deletes exactly this set.
+- **Draft:** A tool shape that has been edited but not yet committed to the
+  selection (Add, Subtract and Intersect operations); nothing is sent until it
+  is committed.
+- **LOD:** Level of detail; the sampled subset of points drawn in the viewport
+  (shown as "Rendered"), never a cloud total.

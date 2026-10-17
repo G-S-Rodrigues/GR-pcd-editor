@@ -1,8 +1,57 @@
 # GR PCD Editor
 
 GR PCD Editor is a Linux-first local application for reviewing and cleaning
-point-cloud (`.pcd`) maps. The application is under construction; the launcher and
-container stack described below work now.
+point-cloud (`.pcd`) maps in the browser: open a cloud, select the points you do
+not want (for example reflection or ghost points), preview exactly what would be
+deleted, apply, undo, compare against the original, and export a new `.pcd`.
+The source file is never modified.
+
+![The editor with a synthetic cloud: box tool, height protection and an exact preview of the candidate points](docs/images/editor.png)
+
+*Synthetic cloud (floor, a ghost blob above it, one invalid point) with the box
+tool, global height protection and the live preview counts in the status bar.*
+
+## Using the editor
+
+1. **Open** a `.pcd` or `.pcdsession` (picker, drag and drop, or the mounted folder).
+2. Navigate: the view buttons or keys `1`..`6` (top, bottom, front, back, left,
+   right), `P` toggles perspective/orthographic, `F` fits the cloud. The orbit
+   pivot can be reset, typed as X/Y/Z or picked on a point.
+3. Pick a tool (**Box**, **Polygon**, **Cluster**), shape it with numbers or its
+   3D handles, and read the **exact** counts in the status bar (Selected,
+   Protected, Candidates). **Apply** is enabled only for an up-to-date preview.
+4. **Undo/Redo** (`Ctrl+Z`, `Ctrl+Y`) walk the history. Compare with **Original**,
+   **Overlay** (deleted points in red, adjustable opacity), **Split** (original
+   left, edited right, one camera) or hold `O` for the original. Comparison
+   views are read-only.
+5. **Export** (scope: active by default, displayed, or selected) or **Save session**.
+
+| Input | Action |
+|---|---|
+| Left-drag | Orbit about the pivot |
+| Middle/right-drag, Shift+left-drag | Pan |
+| Wheel | Zoom |
+| `1` `2` `3` `4` `5` `6` | Top, bottom, front, back, left, right |
+| `P`, `F` | Perspective/orthographic, fit cloud |
+| Hold `O` | Show the original (read-only) |
+| `Ctrl+Z`, `Ctrl+Y` | Undo, redo |
+| `Enter`, `Esc` | Close the polygon, cancel drawing or leave pick mode |
+
+Concepts worth knowing:
+
+- **Height protection is a coordinate slab**, not a semantic floor: points inside
+  the protected Z interval are never deleted, and there are no ramps.
+- A **polygon** selection includes points through the whole view depth unless its
+  Z limits are enabled.
+- A **display filter hides** points from the view; it does not delete them. The
+  scope (Displayed or Active) decides whether a selection reaches hidden points.
+- **Replace** updates the preview live while you edit; **Add, Subtract and
+  Intersect** keep the tool shape as a draft until you press the commit button.
+- The unit is a label only (metres, assumed); the file frame is used as stored, Z up.
+- Counts in the status bar are exact; "Rendered" is the sampled number of points
+  drawn and is never a cloud total.
+- The app warns before leaving the page while there are unsaved edits. The
+  `.pcdsession` download stores the edits and the view; reopen it with **Open**.
 
 ## Prerequisites
 
@@ -107,8 +156,15 @@ bash tests/launcher/test_launcher_smoke.sh    # real Docker, port 18081
 bash scripts/check-bootstrap-contract.sh
 ```
 
+Browser smoke (real headless Chromium through the real UI; needs network once
+to pull the Playwright image):
+
+```sh
+bash scripts/smoke.sh                           # runs e2e/smoke.spec.ts
+SMOKE_UPDATE_SCREENSHOT=1 bash scripts/smoke.sh # also refreshes docs/images/editor.png
+```
+
 ## Point cloud loaded
 
-Part 6 will add a screenshot here showing a **synthetic or redistribution-
-cleared** point cloud loaded in the editor, with descriptive alt text and a
-caption. It will never use `unitree_slam_downloaded_via_UI.pcd`.
+The screenshot at the top shows a **synthetic** cloud generated in code
+(`e2e/synthetic.ts`); no private map is committed.
