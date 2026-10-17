@@ -12,8 +12,8 @@ import { pollJob } from "./files/jobs";
 import { createFilterController, enableDefaults, filterFromState, selectDisplayedBody } from "./inspector/filters";
 import { type ProtectionModel, floorFromPick, protectionFromState, setGlobal } from "./inspector/protection";
 import { createProtectionController } from "./inspector/protection-controller";
-import { createEditor, keyAction } from "./orchestration/edit";
-import { createRunner } from "./orchestration/runner";
+import { createEditor } from "./orchestration/edit";
+import { canApply, createRunner } from "./orchestration/runner";
 import { createParamsHook } from "./orchestration/params";
 import { createClearPolygon } from "./orchestration/polygonclear";
 import { startDrawing, cancelDrawing, closePolygon, emptyPolygon, enterTool } from "./tools/polygon/model";
@@ -31,6 +31,8 @@ import { buildInspector } from "./ui/inspector-shell";
 import { openMountedDialog } from "./ui/open-dialog";
 import { buildStatusbar } from "./ui/statusbar";
 import { buildLegend } from "./ui/legend";
+import { buildHelp } from "./ui/help";
+import { classifyKey } from "./ui/keys";
 import { buildViewCube } from "./ui/viewcube";
 import { buildToolbar } from "./ui/toolbar";
 import { buildViewbar } from "./ui/viewbar";
@@ -172,7 +174,7 @@ buildToolbar($("toolbar"), store, {
 buildViewbar($("viewbar"), store, {
   size,
   refresh: () => void refresher.refresh(),
-  toggleHelp: () => $("help").classList.toggle("on"),
+  toggleHelp: () => help.toggle(),
   setCompare: (m) => {
     setCompare(store, m);
     void refresher.refresh();
@@ -236,52 +238,36 @@ buildLegend($("legend"));
 buildViewCube($("viewcube"), store);
 buildEditPanels($("editpanels"), store, panelActions);
 
-const typing = (t: HTMLElement | null) => ["INPUT", "TEXTAREA", "SELECT"].includes(t?.tagName ?? "");
 window.addEventListener("keyup", (e) => {
   if (e.key.toLowerCase() === "r") rectHeld = false;
 });
 window.addEventListener("blur", () => {
   rectHeld = false;
 });
+const help = buildHelp($("help-overlay"));
 window.addEventListener("keydown", (e) => {
   const t = e.target as HTMLElement | null;
-  if (e.key.toLowerCase() === "r" && !e.ctrlKey && !e.metaKey && !e.altKey && !typing(t)) rectHeld = true;
-  const a = keyAction({ key: e.key, ctrlKey: e.ctrlKey || e.metaKey, shiftKey: e.shiftKey, target: t?.tagName ?? "" });
-  if ((e.key === "o" || e.key === "O") && !e.ctrlKey && !e.metaKey && !e.altKey && !["INPUT", "TEXTAREA", "SELECT"].includes(t?.tagName ?? "")) {
+  const id = classifyKey({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey, shiftKey: e.shiftKey, target: t?.tagName ?? "" });
+  help.apply(id);
+  if (id === "rect") rectHeld = true;
+  else if (id === "hold-original") {
     if (store.get().session) hold.press();
-  } else if (a === "undo") {
+  } else if (id === "undo") {
     e.preventDefault();
     void editor.undo();
-  } else if (a === "redo") {
+  } else if (id === "redo") {
     e.preventDefault();
     void editor.redo();
-  } else if (e.key === "Enter" && store.get().tool === "polygon" && store.get().tools.polygon.phase === "drawing" && t?.tagName !== "INPUT") {
+  } else if (id === "apply") {
+    const s = store.get();
+    if (canApply(s) && s.compare === "edited") void editor.apply();
+  } else if (id === "polygon-close" && store.get().tool === "polygon" && store.get().tools.polygon.phase === "drawing") {
     const msg = panelActions.finishPolygon();
     if (msg) note(msg);
-  } else if (e.key === "Escape" && store.get().tools.polygon.phase === "drawing") {
+  } else if (id === "cancel" && store.get().tools.polygon.phase === "drawing") {
     panelActions.cancelDrawing();
   }
 });
-
-$("help").append(
-  h("strong", { text: "Controls" }),
-  h(
-    "table",
-    {},
-    ...[
-      ["Left-drag", "Orbit about the pivot"],
-      ["Middle/right-drag, Shift+left-drag", "Pan"],
-      ["Wheel", "Zoom"],
-      ["1 2 3 4 5 6", "Top, bottom, front, back, left, right"],
-      ["P", "Perspective / orthographic"],
-      ["F", "Fit the cloud"],
-      ["Esc", "Leave pick mode / cancel polygon drawing"],
-      ["Ctrl+Z, Ctrl+Y", "Undo, redo"],
-      ["Hold O", "Show the original cloud while held (read-only)"],
-      ["Enter", "Close the polygon"],
-    ].map(([k, v]) => h("tr", {}, h("td", { text: k }), h("td", { text: v }))),
-  ),
-);
 
 // notices
 const noticeBox = $("notices");

@@ -2,11 +2,14 @@ import * as THREE from "three";
 import type { AppState } from "../state/app";
 import type { Vec3 } from "../state/types";
 import { boxCorners } from "../tools/box/model";
-import { boxHandles } from "../tools/box/handles";
+import { HANDLE_CROSS_PX, boxHandles } from "../tools/box/handles";
+import { DRAFT_OUTLINE, draftOutline } from "../tools/draft";
+import { pxPerUnit } from "../view/pointsize";
+import { rightVector, upVector } from "../view/camera";
 import { planeAnchors } from "./interact";
 
 const mat = (hex: number) => new THREE.LineBasicMaterial({ color: hex, depthTest: false });
-const COL = { box: 0xffd23f, handle: 0xff9f1c, ring: 0x6ec1ff, poly: 0x7be07b, plane: 0xc77dff, seed: 0xff4d6d };
+const COL = { handle: 0xff9f1c, ring: 0x6ec1ff, poly: 0x7be07b, plane: 0xc77dff, seed: 0xff4d6d };
 
 /** Overlay for the editing tools: box wireframe and handles, polygon outline, protection planes, cluster seed. */
 export function createToolsOverlay(scene: THREE.Scene) {
@@ -28,6 +31,20 @@ export function createToolsOverlay(scene: THREE.Scene) {
     l.frustumCulled = false;
     group.add(l);
   };
+  /** Heavier outline: WebGL lines are 1 px, so the shape is drawn three times, half a pixel apart across the view. */
+  const heavy = (pts: Vec3[], pairs: [number, number][], colour: number, origin: Vec3, s: AppState, viewH: number) => {
+    const u = 0.6 / pxPerUnit(s.camera, Math.max(viewH, 1));
+    const r = rightVector(s.camera);
+    const up = upVector(s.camera);
+    for (const [dx, dy] of [[0, 0], [1, 0], [0, 1]] as const) {
+      const o: Vec3 = [
+        origin[0] - u * (r[0] * dx + up[0] * dy),
+        origin[1] - u * (r[1] * dx + up[1] * dy),
+        origin[2] - u * (r[2] * dx + up[2] * dy),
+      ];
+      lines(pts, pairs, colour, o);
+    }
+  };
   const clear = () => {
     for (const c of [...group.children]) {
       (c as THREE.LineSegments).geometry.dispose();
@@ -37,18 +54,19 @@ export function createToolsOverlay(scene: THREE.Scene) {
   };
 
   return {
-    update(s: AppState, origin: Vec3): void {
+    update(s: AppState, origin: Vec3, viewH = 720): void {
       clear();
       if (!s.session || s.compare !== "edited") return;
       const t = s.tools;
       const cz = s.camera.target[2];
+      const outline = draftOutline(s).colour;
 
       if (s.tool === "box") {
         const c = boxCorners(t.box);
         const pairs: [number, number][] = [];
         for (let i = 0; i < 8; i++) for (const bit of [1, 2, 4]) if (!(i & bit)) pairs.push([i, i | bit]);
-        lines(c, pairs, COL.box, origin);
-        for (const hd of boxHandles(t.box, s.camera, s.gizmo.local)) {
+        heavy(c, pairs, outline, origin, s, viewH);
+        for (const hd of boxHandles(t.box, s.camera, s.gizmo.local, viewH)) {
           if (hd.ring) {
             const r = hd.ring;
             lines(r, r.map((_, i): [number, number] => [i, (i + 1) % r.length]), COL.ring, origin);
@@ -56,9 +74,9 @@ export function createToolsOverlay(scene: THREE.Scene) {
             const tip: Vec3 = hd.anchor;
             const base: Vec3 = hd.cls === "translate" ? t.box.center : hd.anchor;
             const k = hd.cls === "translate" ? 0 : 0.5;
-            lines([base, tip], [[0, 1]], COL.handle, origin);
+            heavy([base, tip], [[0, 1]], COL.handle, origin, s, viewH);
             // a small cross marks the handle's hit point
-            const d = Math.max(Math.abs(s.camera.distance) * 0.01, 1e-9) * (1 + k);
+            const d = (HANDLE_CROSS_PX / pxPerUnit(s.camera, Math.max(viewH, 1))) * (1 + k);
             lines(
               [[tip[0] - d, tip[1], tip[2]], [tip[0] + d, tip[1], tip[2]], [tip[0], tip[1] - d, tip[2]], [tip[0], tip[1] + d, tip[2]], [tip[0], tip[1], tip[2] - d], [tip[0], tip[1], tip[2] + d]],
               [[0, 1], [2, 3], [4, 5]],
@@ -73,7 +91,8 @@ export function createToolsOverlay(scene: THREE.Scene) {
         const v = t.polygon.vertices.map((p): Vec3 => [p[0], p[1], cz]);
         const pairs: [number, number][] = v.slice(1).map((_, i) => [i, i + 1]);
         if (t.polygon.phase === "closed" && v.length > 2) pairs.push([v.length - 1, 0]);
-        lines(v, pairs, COL.poly, origin);
+        if (s.draft) heavy(v, pairs, DRAFT_OUTLINE, origin, s, viewH);
+        else lines(v, pairs, COL.poly, origin);
       }
 
       const b = s.session.active_bounds;

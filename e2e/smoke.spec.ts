@@ -808,3 +808,92 @@ test("E2E-19 7b1 ViewCube: real clicks on all six faces, edge click, orbit track
   await page.screenshot({ path: "/out/viewcube.png", clip: { x: cube.x - 40, y: cube.y - 8, width: cube.width + 50, height: cube.height + 16 } });
   await page.screenshot({ path: "/out/viewcube-full.png" });
 });
+
+test("E2E-20 7b2 the ? key and the ? button open a help overlay listing every key; Esc closes it", async ({ page }) => {
+  const { exact, ctl } = helpers(page);
+  await openRoom(page, exact);
+  const help = page.locator("#help-overlay");
+  await expect(help).not.toBeVisible();
+  await page.keyboard.press("?");
+  await expect(help).toBeVisible();
+  for (const k of ["1", "P", "F", "Alt+F", "O (hold)", "R (hold)", "[", "]", "Enter", "Esc", "Delete", "Ctrl+Z", "Ctrl+Y", "?"]) {
+    await expect(help.locator("td.k", { hasText: new RegExp(`^${k.replace(/[()+[\]?]/g, "\\$&")}$`) })).toHaveCount(1);
+  }
+  await expect(help).toContainText("Click a ViewCube face");
+  await page.keyboard.press("Escape");
+  await expect(help).not.toBeVisible();
+  await ctl("help").click();
+  await expect(help).toBeVisible();
+  await ctl("help").click();
+  await expect(help).not.toBeVisible();
+  // typing a ? in a field must not open it
+  await ctl("pivot-x").click();
+  await page.keyboard.type("?");
+  await expect(help).not.toBeVisible();
+});
+
+const OVERFLOW_SELECTORS = ["#toolbar", "#viewbar", "#tools", "#inspector", "#fileinfo", "#editpanels", "#statusbar", "#modebar"];
+
+async function checkLayout(page: import("@playwright/test").Page, w: number, h: number) {
+  const scan = () =>
+    page.evaluate((sels) => {
+      const bad: string[] = [];
+      const doc = document.documentElement;
+      if (doc.scrollWidth > doc.clientWidth) bad.push(`document scrollWidth ${doc.scrollWidth} > ${doc.clientWidth}`);
+      if (doc.scrollHeight > doc.clientHeight) bad.push(`document scrollHeight ${doc.scrollHeight} > ${doc.clientHeight}`);
+      const containers = [...sels.map((s) => document.querySelector(s)), ...document.querySelectorAll(".panel")] as (HTMLElement | null)[];
+      for (const c of containers) {
+        if (!c) continue;
+        const id = c.id ? `#${c.id}` : `.${c.className}`;
+        if (c.scrollWidth > c.clientWidth + 1) bad.push(`${id} scrollWidth ${c.scrollWidth} > clientWidth ${c.clientWidth}`);
+        const box = c.getBoundingClientRect();
+        for (const el of c.querySelectorAll<HTMLElement>("button, input, select, label, dd, p")) {
+          const r = el.getBoundingClientRect();
+          if (r.width === 0 || r.height === 0) continue;
+          if (r.right > box.right + 1 || r.left < box.left - 1) bad.push(`${id} child ${el.dataset.control ?? el.tagName} spills (${Math.round(r.left)}..${Math.round(r.right)} vs ${Math.round(box.left)}..${Math.round(box.right)})`);
+        }
+      }
+      return bad;
+    }, OVERFLOW_SELECTORS);
+  expect(await scan(), `${w}x${h} initial`).toEqual([]);
+  for (const tool of ["tool-box", "tool-polygon", "tool-cluster"]) {
+    await page.locator(`[data-control="${tool}"]`).click();
+    await page.locator('[data-control="pivot-x"]').focus();
+    await page.waitForTimeout(150);
+    expect(await scan(), `${w}x${h} with ${tool}`).toEqual([]);
+  }
+  const stage = (await page.locator("#stage").boundingBox())!;
+  expect(stage.width, `${w}x${h} viewport width`).toBeGreaterThanOrEqual(w * 0.6);
+  expect(stage.height, `${w}x${h} viewport height`).toBeGreaterThanOrEqual(h * 0.55);
+}
+
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-21 7b2 no overflow at ${w}x${h} and the viewport keeps most of the window`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const { exact } = helpers(page);
+    await openRoom(page, exact);
+    await checkLayout(page, w, h);
+    await page.locator('[data-control="tool-box"]').click();
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `/out/layout-${w}.png` });
+  });
+}
+
+test("E2E-23 7b2 an Add shape is shown as a draft with its own outline colour and no invented count, until committed", async ({ page }) => {
+  const { exact, ctl } = helpers(page);
+  await openRoom(page, exact);
+  await ctl("tool-box").click();
+  await ctl("op-select").selectOption("add");
+  await expect(page.locator("#draft-note")).toBeHidden();
+  await ctl("box-size-x").fill("3");
+  await ctl("box-size-x").press("Enter");
+  await expect(page.locator("#draft-note")).toBeVisible();
+  await expect(page.locator("#draft-note")).toContainText("Draft, not yet applied");
+  await expect(page.locator("#draft-note")).toContainText("count is unknown");
+  await expect(ctl("sel-commit")).toBeEnabled();
+  await expect(ctl("apply")).toBeDisabled();
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: "/out/draft.png" });
+  await ctl("sel-commit").click();
+  await expect(page.locator("#draft-note")).toBeHidden({ timeout: 15000 });
+});

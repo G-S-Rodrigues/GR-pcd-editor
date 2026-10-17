@@ -8,7 +8,7 @@ import type { ToolInteraction } from "./interact";
 import { fitBounds } from "../view/fit";
 import { isClipped, stepSlice } from "../view/slice";
 import { pickPivot } from "../view/pivot";
-import { presetForKey } from "../ui/keys";
+import { classifyKey, presetForKey } from "../ui/keys";
 import { applyPreset } from "../view/presets";
 
 const ORBIT_RAD_PER_PX = 0.005;
@@ -120,21 +120,26 @@ export function attachControls(
   }
 
   const onKey = (e: KeyboardEvent) => {
-    const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT")) return;
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const id = classifyKey({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey, shiftKey: e.shiftKey, target: (e.target as HTMLElement | null)?.tagName ?? "" });
+    if (!id) return;
     const s = store.get();
     const preset = presetForKey(e.key);
-    if (preset) {
+    if (preset && id.startsWith("view-")) {
       store.set({ camera: applyPreset(s.camera, preset) });
-    } else if (e.key === "[" || e.key === "]") {
-      store.set({ slice: stepSlice(s.slice, e.key === "]" ? 1 : -1) });
-    } else if (e.key === "p" || e.key === "P") {
+    } else if (id === "slice-prev" || id === "slice-next") {
+      store.set({ slice: stepSlice(s.slice, id === "slice-next" ? 1 : -1) });
+    } else if (id === "perspective") {
       store.set({ camera: togglePerspective(s.camera) });
-    } else if ((e.key === "f" || e.key === "F") && s.session?.active_bounds) {
+    } else if (id === "fit" && s.session?.active_bounds) {
       const { w, h } = size();
       store.set({ camera: fitBounds(s.camera, s.session.active_bounds, w / Math.max(h, 1)) });
-    } else if (e.key === "Escape" && s.interaction !== "orbit") {
+    } else if (id === "fit-selection") {
+      const bb = s.candidate?.bounds;
+      if (bb) {
+        const { w, h } = size();
+        store.set({ camera: fitBounds(s.camera, bb, w / Math.max(h, 1)) });
+      }
+    } else if (id === "cancel" && s.interaction !== "orbit") {
       store.set({ interaction: "orbit" });
     }
   };

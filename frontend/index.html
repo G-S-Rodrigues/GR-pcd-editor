@@ -18,11 +18,14 @@
       .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 5px 8px; background: var(--panel); border-bottom: 1px solid var(--line); }
       .row .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 4px; }
       .row label { color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
-      #body { flex: 1; display: grid; grid-template-columns: 220px 1fr 280px; min-height: 0; }
-      aside { background: var(--panel); padding: 8px; overflow: auto; }
+      #body { flex: 1; display: grid; grid-template-columns: 220px minmax(0, 1fr) 280px; min-height: 0; }
+      @media (min-width: 1700px) { #body { grid-template-columns: 240px minmax(0, 1fr) 340px; } }
+      aside { background: var(--panel); padding: 8px; overflow-x: hidden; overflow-y: auto; min-width: 0; }
+      aside > *, .panel { min-width: 0; }
       #tools { border-right: 1px solid var(--line); }
       #inspector { border-left: 1px solid var(--line); }
       aside h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 8px 0 4px; }
+      aside h3 { font-size: 12px; font-weight: 600; color: var(--text); margin: 6px 0 2px; }
       aside p, aside dl { margin: 4px 0; color: var(--muted); }
       aside dt { float: left; clear: left; width: 6.5em; color: var(--muted); }
       aside dd { margin: 0 0 2px 6.5em; color: var(--text); overflow-wrap: anywhere; }
@@ -56,9 +59,11 @@
       #mounted-list li:hover { background: #2a313b; }
       .panel { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 4px; }
       .stack { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
-      .triple { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
-      .f { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: 2px 0; color: var(--muted); }
-      .f input[type=text] { width: 6em; }
+      .triple { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+      .triple .f { flex-direction: column; align-items: stretch; gap: 1px; margin: 2px 0; min-width: 0; }
+      .triple .f input[type=text] { width: 100%; min-width: 0; }
+      .f { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: 2px 0; color: var(--muted); min-width: 0; }
+      .f input[type=text] { width: 6em; max-width: 100%; min-width: 0; }
       .note { font-size: 12px; }
       .verts { max-height: 160px; overflow: auto; }
       .vertrow { display: grid; grid-template-columns: 1.5em 1fr 1fr; gap: 4px; margin: 2px 0; }
@@ -67,9 +72,10 @@
       #history-list li.undone { opacity: .5; }
       .badge { padding: 2px 8px; border-radius: 10px; background: #2a313b; color: var(--muted); }
       .badge.on { background: var(--accent); color: #15181d; font-weight: 600; }
-      #help { position: absolute; right: 8px; bottom: 8px; background: var(--panel); border: 1px solid var(--line); padding: 8px 12px; border-radius: 6px; display: none; z-index: 4; }
-      #help.on { display: block; }
-      #help td { padding: 1px 10px 1px 0; }
+      #help-overlay { position: absolute; right: 8px; bottom: 8px; max-width: min(520px, 90%); max-height: 90%; overflow: auto; background: var(--panel); border: 1px solid var(--line); padding: 8px 12px; border-radius: 6px; display: none; z-index: 4; }
+      #help-overlay.on { display: block; }
+      #help-overlay td { padding: 1px 10px 1px 0; vertical-align: top; }
+      #help-overlay td.k { white-space: nowrap; color: var(--accent); }
     </style>
   </head>
   <body data-app="gr-pcd-editor">
@@ -86,7 +92,7 @@
         <div id="progress"></div>
         <div id="webgl-notice" hidden></div>
         <div id="notices"></div>
-        <div id="help"></div>
+        <div id="help-overlay" role="dialog" aria-label="Controls help"></div>
       </div>
       <aside id="inspector"><div id="fileinfo"></div><div id="editpanels"></div></aside>
     </div>

@@ -10,6 +10,7 @@ import { POLYGON_DEPTH_NOTE, Z_UNLIMITED } from "../tools/polygon/model";
 import * as PG from "../tools/polygon/model";
 import { CLUSTER_LIMIT_TEXT, clusterLimitText, clusterPanel, regionOptions, setRadius } from "../tools/cluster/model";
 import { headline } from "../status/headline";
+import { draftText } from "../tools/draft";
 import { invertNote, scopeNotice } from "../orchestration/selection";
 import { historyRows } from "../inspector/history";
 import { control } from "./controls";
@@ -69,6 +70,7 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
   const commit = control("button", { id: "sel-commit", onclick: a.commitDraft }, "Commit draft");
   const note = h("p", { id: "scope-note", class: "note" });
   const invalid = control("button", { id: "remove-invalid", onclick: a.removeInvalid }, "Remove invalid");
+  const draftNote = h("p", { id: "draft-note", class: "note warn", hidden: true });
   const keptWarn = h("p", { id: "kept-warning", class: "note warn", hidden: true });
   const keptToggle = control("button", { id: "sel-show-kept", onclick: () => store.update((s) => ({ ...s, showKept: !s.showKept })) }, "Show kept points");
   root.append(
@@ -86,6 +88,7 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
       control("button", { id: "sel-clear", onclick: a.clearSelection }, "Clear selection"),
     ),
     note,
+    draftNote,
     keptWarn,
     keptToggle,
     h("h2", { text: "Cloud" }),
@@ -104,6 +107,9 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     scope.value = s.scope;
     commit.disabled = !s.draft;
     commit.textContent = s.draft ? `Commit: ${s.op} tool shape` : "Commit draft";
+    const dn = draftText(s);
+    draftNote.hidden = dn === null;
+    draftNote.textContent = dn ?? "";
     const n = scopeNotice(s);
     note.textContent = n ?? (s.op === "invert" ? invertNote(s.scope) : "");
     const hl = headline(s);

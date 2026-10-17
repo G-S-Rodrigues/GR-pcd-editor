@@ -78,7 +78,7 @@ export function createToolInteraction(
         return false;
       }
       if (s.tool === "box") {
-        const hit = hitHandle(boxHandles(s.tools.box, s.camera, s.gizmo.local), s.camera, vp, p.x, p.y);
+        const hit = hitHandle(boxHandles(s.tools.box, s.camera, s.gizmo.local, vp.h), s.camera, vp, p.x, p.y);
         if (hit) {
           drag = { kind: "box", state: beginDrag(hit, s.tools.box, ray) };
           return true;

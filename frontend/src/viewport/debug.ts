@@ -22,7 +22,7 @@ export function installDebugHook(canvas: HTMLCanvasElement, store: Store<AppStat
       const s = store.get();
       const r = canvas.getBoundingClientRect();
       const zero: Vec3 = [0, 0, 0];
-      return boxHandles(s.tools.box, s.camera, s.gizmo.local).flatMap((h) => {
+      return boxHandles(s.tools.box, s.camera, s.gizmo.local, size().h).flatMap((h) => {
         const p = project(s.camera, h.anchor, zero, size());
         return p ? [{ id: h.id, x: r.left + p.x, y: r.top + p.y }] : [];
       });

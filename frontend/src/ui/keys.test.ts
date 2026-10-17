@@ -21,3 +21,43 @@ test("UI-133 the six view buttons are gone; the six ViewCube faces are described
   }
   expect(ids).toContain("view-perspective");
 });
+
+import { KEY_DOCS, classifyKey, helpOpenAfter } from "./keys";
+
+const ev = (o: Partial<Parameters<typeof classifyKey>[0]>) => ({ key: "", ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, target: "BODY", ...o });
+
+test("UI-140 the key table has no duplicate keys and every documented key classifies to its own handler id", () => {
+  const ids = KEY_DOCS.map((d) => d.id);
+  expect(new Set(ids).size).toBe(ids.length);
+  const shown = KEY_DOCS.map((d) => d.keys);
+  expect(new Set(shown).size).toBe(shown.length);
+  const probes = KEY_DOCS.flatMap((d) => d.probes.map((p) => ({ id: d.id, p })));
+  expect(probes.length).toBeGreaterThanOrEqual(KEY_DOCS.length);
+  for (const { id, p } of probes) expect(classifyKey(ev(p))).toBe(id);
+  // no two documented ids answer to the same key event
+  const seen = new Map<string, string>();
+  for (const { id, p } of probes) {
+    const k = JSON.stringify(p);
+    expect(seen.get(k) ?? id).toBe(id);
+    seen.set(k, id);
+  }
+  for (const want of ["undo", "redo", "help", "perspective", "fit", "fit-selection", "hold-original", "rect", "slice-prev", "slice-next", "polygon-close", "cancel", "apply"]) {
+    expect(ids).toContain(want);
+  }
+});
+
+test("UI-140 typing in a field never triggers a view or edit key", () => {
+  for (const key of ["1", "p", "f", "o", "r", "[", "?", "Delete", "Enter"]) expect(classifyKey(ev({ key, target: "INPUT" }))).toBeNull();
+  expect(classifyKey(ev({ key: "z", ctrlKey: true, target: "INPUT" }))).toBeNull();
+  expect(classifyKey(ev({ key: "7" }))).toBeNull();
+  expect(classifyKey(ev({ key: "1", ctrlKey: true }))).toBeNull();
+});
+
+test("UI-141 ? toggles the help overlay, Escape closes it, other keys leave it alone", () => {
+  expect(helpOpenAfter(false, "help")).toBe(true);
+  expect(helpOpenAfter(true, "help")).toBe(false);
+  expect(helpOpenAfter(true, "cancel")).toBe(false);
+  expect(helpOpenAfter(false, "cancel")).toBe(false);
+  expect(helpOpenAfter(true, "fit")).toBe(true);
+  expect(classifyKey(ev({ key: "?", shiftKey: true }))).toBe("help");
+});

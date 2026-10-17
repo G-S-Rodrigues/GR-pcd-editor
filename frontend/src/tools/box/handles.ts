@@ -1,7 +1,8 @@
 import { rotate } from "../../math/quat";
 import { project } from "../../pick/ray";
 import type { Vec3 } from "../../state/types";
-import { type Camera, halfHeight } from "../../view/camera";
+import { type Camera } from "../../view/camera";
+import { pxPerUnit } from "../../view/pointsize";
 import type { HandleClass } from "./gizmo-math";
 import type { BoxModel } from "./model";
 
@@ -22,9 +23,19 @@ const E: Vec3[] = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
 const RING_SAMPLES = 48;
 const add3 = (a: Vec3, b: Vec3, k: number): Vec3 => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
 
-/** Handle geometry sized to the view so handles keep a similar screen size. `local` selects box or world axes. */
-export function boxHandles(box: BoxModel, cam: Camera, local: boolean): Handle[] {
-  const len = halfHeight(cam) * 0.3;
+/** Arrow length, grab radii and marker size in screen pixels: the same at every zoom and window size. */
+export const HANDLE_ARROW_PX = 72;
+export const HANDLE_HIT_PX = 16;
+export const HANDLE_RING_HIT_PX = 10;
+export const HANDLE_CROSS_PX = 7;
+const DEFAULT_VIEW_H = 720;
+
+/** World length of an arrow handle for the camera and viewport height. */
+export const handleLength = (cam: Camera, viewH: number = DEFAULT_VIEW_H): number => HANDLE_ARROW_PX / pxPerUnit(cam, Math.max(viewH, 1));
+
+/** Handle geometry sized in pixels, so handles keep one screen size. `local` selects box or world axes. */
+export function boxHandles(box: BoxModel, cam: Camera, local: boolean, viewH: number = DEFAULT_VIEW_H): Handle[] {
+  const len = handleLength(cam, viewH);
   const half = box.dimensions.map((d) => d / 2) as Vec3;
   const localDir = (i: number): Vec3 => rotate(box.quat, E[i]);
   const out: Handle[] = [];
@@ -50,8 +61,8 @@ export function boxHandles(box: BoxModel, cam: Camera, local: boolean): Handle[]
   return out;
 }
 
-const POINT_PX = 10;
-const RING_PX = 7;
+const POINT_PX = HANDLE_HIT_PX;
+const RING_PX = HANDLE_RING_HIT_PX;
 
 /** The handle under a pixel: resize squares first, then arrow tips, then rings. */
 export function hitHandle(
