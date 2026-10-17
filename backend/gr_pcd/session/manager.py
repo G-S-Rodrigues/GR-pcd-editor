@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from gr_pcd.files.uploads import UploadRegistry
+from gr_pcd.files.workdir import ensure_dir
 from gr_pcd.pcd.errors import PcdError
 from gr_pcd.pcd.reader import read_pcd
 from gr_pcd.session.archive import load_archive, save_archive
@@ -43,9 +44,7 @@ class SessionManager:
 
     # ---- directories (created lazily, never at import) -----------------
     def _dir(self, *parts: str) -> Path:
-        d = self.settings.work_root.joinpath(*parts)
-        d.mkdir(parents=True, exist_ok=True)
-        return d
+        return ensure_dir(self.settings.work_root, *parts)
 
     def uploads_dir(self) -> Path:
         return self._dir("uploads")

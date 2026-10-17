@@ -4,6 +4,8 @@ import shutil
 import time
 from pathlib import Path
 
+from gr_pcd.files.workdir import sub_dirs
+
 STALE_SECONDS = 600
 SUBDIRS = ("uploads", "exports", "session-archives", "sessions")
 
@@ -11,8 +13,11 @@ SUBDIRS = ("uploads", "exports", "session-archives", "sessions")
 def _remove(path: Path) -> None:
     if path.is_dir() and not path.is_symlink():
         shutil.rmtree(path, ignore_errors=True)
-    else:
+        return
+    try:
         path.unlink(missing_ok=True)
+    except PermissionError:
+        pass  # left by another uid; not ours to remove
 
 
 def _age(path: Path, now: float) -> float:
@@ -25,20 +30,17 @@ def _age(path: Path, now: float) -> float:
 def sweep_startup(settings) -> None:
     """A restart has no live session: empty every temporary area."""
     for sub in SUBDIRS:
-        d = settings.work_root / sub
-        if not d.is_dir():
-            continue
-        for child in d.iterdir():
-            _remove(child)
+        for d in sub_dirs(settings.work_root, sub):
+            for child in d.iterdir():
+                _remove(child)
 
 
 def sweep_runtime(manager, now: float | None = None) -> None:
     """Cheap sweep; never touches the live session's own directory."""
     now = time.time() if now is None else now
     work = manager.settings.work_root
-    uploads = work / "uploads"
-    if uploads.is_dir():
-        active = manager.uploads.active_ids()
+    active = manager.uploads.active_ids()
+    for uploads in sub_dirs(work, "uploads"):
         for child in uploads.iterdir():
             if (
                 child.name.split(".")[0] not in active
@@ -50,10 +52,9 @@ def sweep_runtime(manager, now: float | None = None) -> None:
         if not d.path.exists() or _age(d.path, now) > ttl:
             manager.downloads.pop(key, None)
             d.path.unlink(missing_ok=True)
-    sessions = work / "sessions"
-    if sessions.is_dir():
-        session = manager.session
-        live = None if session is None else session.source_path.parent
+    session = manager.session
+    live = None if session is None else session.source_path.parent
+    for sessions in sub_dirs(work, "sessions"):
         for child in sessions.iterdir():
             # a young dir may be a session still being opened
             if child != live and _age(child, now) > STALE_SECONDS:

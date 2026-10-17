@@ -100,7 +100,8 @@ exits 2.
 
 The container runs as your user id; that matters only for the `work` volume.
 If you are root, it runs as uid 10001 and warns. A `work` volume created by an older image is owned by uid
-10001; if the app then reports the work folder is not writable, remove it
+10001. The app copes with sub folders left by another uid (it uses `uploads.u<uid>` and so on next to them).
+If it still reports that it cannot write `/work`, remove the volume
 yourself with `docker volume rm gr-pcd-visualizer_work` (this deletes
 uploads and session working data; the launcher never does it).
 

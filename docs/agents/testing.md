@@ -81,8 +81,10 @@ Every test that needs an open session posts the file to the upload route with
 `fixture_dir(settings)` is the scratch folder the generated files live in; the
 app does not know it). Tests build clients with `make_client(app)` from `tests/fixtures/sessions.py`
 (Host `localhost:8080`, required by the `/api` Host/Origin guard). A `PermissionError` is
-an `OSError` and maps to the generic `io_error` 500 (the 403 `mount_unreadable`
-mapping went with the mounted folder). FIL-25 runs a real uvicorn
+an `OSError`; it maps to the specific `permission_denied` 500 (path, uid and fix named; the 403
+`mount_unreadable` mapping went with the mounted folder). `WRK-01..06` (`tests/unit/test_workdir.py`): a work
+volume whose `uploads`/`sessions` were made by another uid (0755) still opens a file through the per-uid fallback
+`<sub>.u<uid>`; an unwritable `/work` gives `work_volume_not_writable`. `CTR-11` is the same with a real volume. FIL-25 runs a real uvicorn
 thread to prove disconnect cleanup. Single frontend run: add the vitest args
 by running `node node_modules/vitest/vitest.mjs run <file>` in `frontend/`.
 

@@ -1,6 +1,7 @@
 """Map domain errors to HTTP: {"error": {"code", "message", ...}}."""
 
 import errno
+import os
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -8,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 from gr_pcd.editing.errors import EditError
 from gr_pcd.files.uploads import UploadError
+from gr_pcd.files.workdir import FIX_HINT, WorkVolumeError
 from gr_pcd.geometry.errors import GeometryError
 from gr_pcd.pcd.errors import PcdError
 from gr_pcd.session.errors import (
@@ -51,8 +53,20 @@ def install_error_handlers(app: FastAPI) -> None:
     def _upload(_: Request, exc: UploadError):
         return _body(exc.code, exc.message, exc.status)
 
+    @app.exception_handler(WorkVolumeError)
+    def _work_volume(_: Request, exc: WorkVolumeError):
+        return _body(exc.code, exc.message, exc.status)
+
     @app.exception_handler(OSError)
     def _oserror(_: Request, exc: OSError):
+        if isinstance(exc, PermissionError):
+            where = f" {exc.filename}" if exc.filename else " a file"
+            return _body(
+                "permission_denied",
+                f"The app (uid {os.getuid()}) is not allowed to access"
+                f"{where}. {FIX_HINT}.",
+                500,
+            )
         if exc.errno == errno.ENOSPC:
             return _body(
                 "storage_full", "the work volume has no space left", 507

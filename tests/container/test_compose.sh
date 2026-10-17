@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Container-tier checks CTR-01..05, CTR-07, CTR-08, CTR-09 and CTR-10 (CTR-06 went with the mounted folder).
+# Container-tier checks CTR-01..05, CTR-07, CTR-08, CTR-09, CTR-10 and CTR-11 (CTR-06 went with the mounted folder).
 # Needs docker, curl and python3.
 set -euo pipefail
 
@@ -137,6 +137,33 @@ print(json.load(sys.stdin)["services"]["app"]["environment"]["GR_PCD_PUBLIC_PORT
     pass CTR-08
 else
     fail CTR-08 "public port env, Host guard (got $evil) or /api/mounted (got $mounted)"
+fi
+
+# CTR-11 a work volume with sub folders left by another uid (root, 0755) still opens a file
+vol=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/work"}}{{.Name}}{{end}}{{end}}' "$cid" 2>/dev/null || true)
+pcd=$(mktemp)
+python3 - "$pcd" <<'PY'
+import struct, sys
+n = 100
+head = (
+    "VERSION .7\nFIELDS x y z\nSIZE 4 4 4\nTYPE F F F\nCOUNT 1 1 1\n"
+    f"WIDTH {n}\nHEIGHT 1\nVIEWPOINT 0 0 0 1 0 0 0\nPOINTS {n}\nDATA binary\n"
+)
+body = b"".join(struct.pack("<fff", i, i % 7, i / 9) for i in range(n))
+open(sys.argv[1], "wb").write(head.encode() + body)
+PY
+if [ -n "$vol" ]; then
+    docker run --rm -u 0 --entrypoint sh -v "$vol:/work" gr-pcd-visualizer:local -c \
+        'mkdir -p /work/uploads /work/sessions; chown 0:0 /work/uploads /work/sessions; chmod 755 /work/uploads /work/sessions' >/dev/null 2>&1 || true
+fi
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST --data-binary "@$pcd" \
+    -H 'Content-Type: application/octet-stream' \
+    "http://127.0.0.1:$port/api/session/upload?upload_id=0123456789abcdef0123456789abcdef&filename=t.pcd&replace=true" || true)
+rm -f "$pcd"
+if [ -n "$vol" ] && [ "$code" = "200" ]; then
+    pass CTR-11
+else
+    fail CTR-11 "volume='$vol' upload status=$code (stale root-owned /work/uploads)"
 fi
 
 # CTR-07 failures propagate (AC-31), then clean runs pass
