@@ -5,19 +5,10 @@ import { togglePerspective } from "../view/camera";
 import { fitBounds } from "../view/fit";
 import { parsePivot, resetPivot } from "../view/pivot";
 import { AUTO_BUDGET, pointSizeFor, pxPerUnit } from "../view/pointsize";
-import { PRESET_ORDER, type PresetName, applyPreset } from "../view/presets";
 import { COMPARE_MODES, type CompareMode, clampOpacity } from "../compare/model";
 import { control } from "./controls";
 import { h } from "./dom";
 
-const LABEL: Record<PresetName, string> = {
-  top: "Top",
-  bottom: "Bottom",
-  front: "Front",
-  back: "Back",
-  left: "Left",
-  right: "Right",
-};
 const BUDGETS = [100_000, 300_000, 1_000_000, AUTO_BUDGET];
 
 export interface ViewbarActions {
@@ -33,16 +24,6 @@ export interface ViewbarActions {
 const COMPARE_LABEL: Record<CompareMode, string> = { original: "Original", edited: "Edited", overlay: "Overlay", split: "Split" };
 
 export function buildViewbar(root: HTMLElement, store: Store<AppState>, a: ViewbarActions): void {
-  const presetButtons = PRESET_ORDER.map((name) =>
-    control(
-      "button",
-      {
-        id: `view-${name}`,
-        onclick: () => store.set({ camera: applyPreset(store.get().camera, name) }),
-      },
-      LABEL[name],
-    ),
-  );
   const persp = control(
     "button",
     { id: "view-perspective", onclick: () => store.set({ camera: togglePerspective(store.get().camera) }) },
@@ -158,7 +139,6 @@ export function buildViewbar(root: HTMLElement, store: Store<AppState>, a: Viewb
   const help = control("button", { id: "help", onclick: a.toggleHelp }, "?");
 
   root.append(
-    ...presetButtons,
     persp,
     fit,
     h("span", { class: "sep" }),
@@ -198,7 +178,7 @@ export function buildViewbar(root: HTMLElement, store: Store<AppState>, a: Viewb
     hold.disabled = !has;
     opacity.disabled = !has || s.compare !== "overlay";
     opacity.title = opacity.disabled && has ? "Opacity of the deleted overlay (available in the Overlay view)" : "Opacity of the deleted-points overlay, from 0.05 to 1";
-    for (const el of [...presetButtons, persp, fit, reset, pick, set, ix, iy, iz, autoSize]) {
+    for (const el of [persp, fit, reset, pick, set, ix, iy, iz, autoSize]) {
       (el as HTMLButtonElement).disabled = !has;
     }
     const opts = colourOptions(s.session?.schema ?? []);

@@ -8,7 +8,8 @@ import type { ToolInteraction } from "./interact";
 import { fitBounds } from "../view/fit";
 import { isClipped, stepSlice } from "../view/slice";
 import { pickPivot } from "../view/pivot";
-import { PRESET_ORDER, applyPreset } from "../view/presets";
+import { presetForKey } from "../ui/keys";
+import { applyPreset } from "../view/presets";
 
 const ORBIT_RAD_PER_PX = 0.005;
 const CLICK_SLOP_PX = 4;
@@ -123,9 +124,9 @@ export function attachControls(
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT")) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const s = store.get();
-    const idx = Number(e.key) - 1;
-    if (idx >= 0 && idx < PRESET_ORDER.length) {
-      store.set({ camera: applyPreset(s.camera, PRESET_ORDER[idx]) });
+    const preset = presetForKey(e.key);
+    if (preset) {
+      store.set({ camera: applyPreset(s.camera, preset) });
     } else if (e.key === "[" || e.key === "]") {
       store.set({ slice: stepSlice(s.slice, e.key === "]" ? 1 : -1) });
     } else if (e.key === "p" || e.key === "P") {

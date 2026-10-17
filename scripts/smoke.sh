@@ -28,6 +28,10 @@ if [ "${SMOKE_UPDATE_SCREENSHOT:-0}" = "1" ] && [ -f "$OUT/editor.png" ]; then
   mkdir -p docs/images
   cp "$OUT/editor.png" docs/images/editor.png
 fi
+if [ "${SMOKE_UPDATE_SCREENSHOT:-0}" = "1" ] && [ -f "$OUT/viewcube.png" ]; then
+  mkdir -p docs/images
+  cp "$OUT/viewcube.png" docs/images/viewcube.png
+fi
 # optional: keep every screenshot the smoke wrote (for looking at them)
 if [ -n "${SMOKE_SHOTS_DIR:-}" ]; then
   mkdir -p "$SMOKE_SHOTS_DIR"

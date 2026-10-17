@@ -39,12 +39,12 @@ test("open a cloud, navigate, pick a pivot, colour, read counts", async ({ page 
   });
 
   await test.step("E2E-02 views and projection", async () => {
-    await page.locator('[data-control="view-top"]').click();
+    await page.locator('[data-control="cube-top"]').click();
     await expect(page.locator("#inspector")).toContainText("Orthographic");
     await page.locator('[data-control="view-perspective"]').click();
     await expect(page.locator("#inspector")).toContainText("Perspective");
     await page.locator('[data-control="view-perspective"]').click();
-    await page.locator('[data-control="view-top"]').click();
+    await page.locator('[data-control="cube-top"]').click();
   });
 
   await test.step("E2E-02 pivot: reset, XYZ entry, pick", async () => {
@@ -425,7 +425,7 @@ test("E2E-12 7a Shift+drag on a box handle is a fine drag and does not pan the c
   await page.goto("/");
   await page.locator("#file-input").setInputFiles({ name: "synthetic.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
   await exact("Displayed", String(FLOOR + GHOST));
-  await ctl("view-top").click();
+  await ctl("cube-top").click();
   await ctl("tool-box").click();
   const setBox = async () => {
     for (const [id, v] of [["box-center-x", 4.5], ["box-center-y", 4.5], ["box-center-z", 1.5], ["box-size-x", 4], ["box-size-y", 4], ["box-size-z", 2]] as const) await setNum(id, v);
@@ -464,7 +464,7 @@ test("E2E-13 7a cluster: partial result, no limit, and re-run when protection ch
   await page.goto("/");
   await page.locator("#file-input").setInputFiles({ name: "synthetic.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
   await exact("Displayed", String(FLOOR + GHOST));
-  await ctl("view-top").click();
+  await ctl("cube-top").click();
   await ctl("pivot-x").fill("4");
   await ctl("pivot-y").fill("4");
   await ctl("pivot-z").fill("0");
@@ -537,7 +537,7 @@ const openRoom = async (page: import("@playwright/test").Page, exact: (n: string
 test("E2E-15 7b1 protect the floor from a picked point: no typing, counts equal fixture truth", async ({ page }) => {
   const { exact, ctl } = helpers(page);
   await openRoom(page, exact);
-  await ctl("view-top").click();
+  await ctl("cube-top").click();
   await page.waitForTimeout(300);
   const at = await hook(page, (e) => e.projectWorld([15, 2, 0]));
   expect(at).not.toBeNull();
@@ -569,7 +569,7 @@ test("E2E-16 7b1 rectangle select with the real mouse in Top then Left view, fit
   await openRoom(page, exact);
   const rows = parsePcd(roomPcd()).rows;
   await ctl("tool-box").click();
-  await ctl("view-top").click();
+  await ctl("cube-top").click();
   await page.waitForTimeout(300);
   await ctl("box-rect").click();
   const P = async (x: number, y: number, z: number) => (await hook(page, (e) => e.projectWorld([0, 0, 0])), (await page.evaluate(([a, b, c]) => (window as unknown as { __editor: EditorHook }).__editor.projectWorld([a, b, c]), [x, y, z] as number[]))!);
@@ -584,7 +584,11 @@ test("E2E-16 7b1 rectangle select with the real mouse in Top then Left view, fit
   expect(truth).toBeGreaterThanOrEqual(ROOM.ghost + ROOM.floorGhost);
   await exact("Candidates", String(truth));
 
-  await ctl("view-left").click();
+  // Left is edge-on from Top: click the Top face's left edge (diagonal view), then the now visible Left face
+  const topFace = (await ctl("cube-top").boundingBox())!;
+  await page.mouse.click(topFace.x + 3, topFace.y + topFace.height / 2);
+  await expect(ctl("cube-left")).toHaveAttribute("data-facing", "true");
+  await ctl("cube-left").click();
   await page.waitForTimeout(300);
   await realDrag(page, await P(5, 11.5, 0.5), await P(5, 15.2, 3.5));
   await expect.poll(async () => (await readBox(page)).d[0], { timeout: 15000 }).toBeCloseTo(20, 6); // depth = bounds x
@@ -608,7 +612,7 @@ test("E2E-16 7b1 rectangle select with the real mouse in Top then Left view, fit
 test("E2E-17 7b1 slice view clips the drawn cloud in the real canvas and changes no count", async ({ page }) => {
   const { exact, num, ctl, setNum } = helpers(page);
   await openRoom(page, exact);
-  await ctl("view-front").click();
+  await ctl("cube-front").click();
   await page.waitForTimeout(500);
   const counts = async () => [await num("Original"), await num("Active"), await num("Displayed"), await num("Selected")];
   const before = await counts();
@@ -697,4 +701,110 @@ test("E2E-18b 7b1 draw budget: Rendered equals the budget exactly, the default d
   await expect(page.locator('[data-control="budget"] option', { hasText: "Auto (max)" })).toHaveCount(1);
   await page.locator('[data-control="budget"]').selectOption("100000");
   await expect(stat("Rendered")).toHaveText("Rendered: Rendered 100,000 of 150,000 eligible (sampled to budget)", { timeout: 20000 });
+});
+
+const PRESET_LOOK_UP: Record<string, { look: number[]; up: number[] }> = {
+  top: { look: [0, 0, -1], up: [0, 1, 0] },
+  bottom: { look: [0, 0, 1], up: [0, 1, 0] },
+  front: { look: [0, 1, 0], up: [0, 0, 1] },
+  back: { look: [0, -1, 0], up: [0, 0, 1] },
+  left: { look: [1, 0, 0], up: [0, 0, 1] },
+  right: { look: [-1, 0, 0], up: [0, 0, 1] },
+};
+const NAMES = ["top", "bottom", "front", "back", "left", "right"];
+const rotateQ = (q: number[], v: number[]) => {
+  const [x, y, z, w] = q;
+  const [vx, vy, vz] = v;
+  const tx = 2 * (y * vz - z * vy);
+  const ty = 2 * (z * vx - x * vz);
+  const tz = 2 * (x * vy - y * vx);
+  return [vx + w * tx + (y * tz - z * ty), vy + w * ty + (z * tx - x * tz), vz + w * tz + (x * ty - y * tx)];
+};
+const cameraLookUp = async (page: import("@playwright/test").Page) => {
+  const c = await hook(page, (e) => ({ q: [...(e.state() as unknown as { camera: { orientation: number[] } }).camera.orientation], ortho: (e.state() as unknown as { camera: { ortho: boolean } }).camera.ortho }));
+  return { look: rotateQ(c.q, [0, 0, -1]), up: rotateQ(c.q, [0, 1, 0]), ortho: c.ortho };
+};
+const cubeFaces = (page: import("@playwright/test").Page) =>
+  page.evaluate(() => Object.fromEntries([...document.querySelectorAll<HTMLElement>("#viewcube .cube-face")].map((f) => [f.dataset.control, { facing: f.dataset.facing, transform: f.style.transform }])));
+const matrixOf = (t: string) => (t.match(/-?[\d.]+(?:e-?\d+)?/g) ?? []).map(Number);
+
+test("E2E-19 7b1 ViewCube: real clicks on all six faces, edge click, orbit tracking, keys 1-6, screenshot", async ({ page }) => {
+  const { exact, ctl } = helpers(page);
+  await openRoom(page, exact);
+  const stage = (await page.locator("#viewport").boundingBox())!;
+  const expectPreset = async (name: string) => {
+    const c = await cameraLookUp(page);
+    PRESET_LOOK_UP[name].look.forEach((v, i) => expect(c.look[i]).toBeCloseTo(v, 6));
+    PRESET_LOOK_UP[name].up.forEach((v, i) => expect(c.up[i]).toBeCloseTo(v, 6));
+    expect(c.ortho).toBe(true);
+    const faces = await cubeFaces(page);
+    for (const n of NAMES) expect(faces[`cube-${n}`].facing, `${name}: ${n}`).toBe(String(n === name));
+    const m = matrixOf(faces[`cube-${name}`].transform); // the clicked face is straight on, upright (no flip, no shear)
+    [1, 0, 0, 1].forEach((v, i) => expect(m[i]).toBeCloseTo(v, 4));
+  };
+
+  // Faces other than the facing one are edge-on in a preset view, so move like a user does: click the facing face's edge
+  // toward the neighbour (a diagonal view that shows both), then click the neighbour. Opposite faces go via a third face.
+  const cross3 = (p: number[], q: number[]) => [p[1] * q[2] - p[2] * q[1], p[2] * q[0] - p[0] * q[2], p[0] * q[1] - p[1] * q[0]];
+  const dot3 = (p: number[], q: number[]) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+  const normal = (n: string) => PRESET_LOOK_UP[n].look.map((v) => -v);
+  let cur = "top"; // the default view shows Top, Front and Right
+  const clickFace = async (name: string) => {
+    await ctl(`cube-${name}`).click();
+    await expectPreset(name);
+    cur = name;
+  };
+  const go = async (name: string): Promise<void> => {
+    if (name === cur) return clickFace(name);
+    const n = normal(name);
+    if (dot3(n, normal(cur)) !== 0) {
+      const via = NAMES.find((v) => v !== cur && v !== name)!;
+      await go(via);
+      return go(name);
+    }
+    const box = (await ctl(`cube-${cur}`).boundingBox())!;
+    const right = cross3(PRESET_LOOK_UP[cur].look, PRESET_LOOK_UP[cur].up);
+    const down = PRESET_LOOK_UP[cur].up.map((v) => -v);
+    const sx = Math.round(dot3(n, right));
+    const sy = Math.round(dot3(n, down));
+    await page.mouse.click(box.x + box.width / 2 + sx * (box.width / 2 - 3), box.y + box.height / 2 + sy * (box.height / 2 - 3));
+    await expect(ctl(`cube-${name}`)).toHaveAttribute("data-facing", "true");
+    await clickFace(name);
+  };
+  await clickFace("top"); // visible straight away
+  for (const name of ["front", "bottom", "back", "left", "right", "top"]) await go(name);
+
+  // orbit with the mouse: the cube follows
+  const before = await cubeFaces(page);
+  await realDrag(page, { x: stage.x + 40, y: stage.y + stage.height - 150 }, { x: stage.x + 160, y: stage.y + stage.height - 110 });
+  const after = await cubeFaces(page);
+  expect(JSON.stringify(after)).not.toBe(JSON.stringify(before));
+
+  // keys 1-6 give identical results
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  for (const [i, name] of NAMES.entries()) {
+    await page.keyboard.press(String(i + 1));
+    await expectPreset(name);
+  }
+
+  // an edge click from the Top view looks at the cube diagonally
+  cur = "right"; // key 6 was the last press
+  await go("top");
+  const top = (await ctl("cube-top").boundingBox())!;
+  await page.mouse.click(top.x + top.width - 3, top.y + top.height / 2);
+  const diag = await cameraLookUp(page);
+  expect(diag.look[0]).toBeCloseTo(-Math.SQRT1_2, 6);
+  expect(diag.look[2]).toBeCloseTo(-Math.SQRT1_2, 6);
+  await expect(ctl("cube-right")).toHaveAttribute("data-facing", "true");
+
+  // no view-* preset buttons remain
+  for (const n of NAMES) await expect(page.locator(`[data-control="view-${n}"]`)).toHaveCount(0);
+  await expect(page.locator("#axis-legend")).toHaveCount(0);
+
+  // screenshots: the cube in the default isometric view, plus the full window for a visual check
+  await page.keyboard.press("3"); // Front, then orbit a little so three faces show
+  await realDrag(page, { x: stage.x + 40, y: stage.y + stage.height - 150 }, { x: stage.x + 100, y: stage.y + stage.height - 110 });
+  const cube = (await page.locator("#viewcube").boundingBox())!;
+  await page.screenshot({ path: "/out/viewcube.png", clip: { x: cube.x - 40, y: cube.y - 8, width: cube.width + 50, height: cube.height + 16 } });
+  await page.screenshot({ path: "/out/viewcube-full.png" });
 });

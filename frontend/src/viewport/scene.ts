@@ -16,7 +16,6 @@ export interface Viewport {
   dispose(): void;
 }
 
-const AXIS_PX = 96;
 
 /** WebGL point viewport. Returns null (after showing a notice element) when WebGL is unavailable. */
 export function createViewport(
@@ -106,20 +105,6 @@ export function createViewport(
   scene.add(pivot);
 
   const overlay = createToolsOverlay(scene);
-
-  const axes = new THREE.Scene();
-  const axisCam = new THREE.OrthographicCamera(-1.3, 1.3, 1.3, -1.3, -10, 10);
-  for (const [dir, colour] of [
-    [[1, 0, 0], 0xff5555],
-    [[0, 1, 0], 0x55ff55],
-    [[0, 0, 1], 0x5599ff],
-  ] as const) {
-    const g = new THREE.BufferGeometry().setAttribute(
-      "position",
-      new THREE.BufferAttribute(new Float32Array([0, 0, 0, ...dir]), 3),
-    );
-    axes.add(new THREE.Line(g, new THREE.LineBasicMaterial({ color: colour })));
-  }
 
   const persp = new THREE.PerspectiveCamera(FOV_DEG, 1, 0.1, 1000);
   const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, -1, 1);
@@ -256,16 +241,6 @@ export function createViewport(
     } else {
       renderer.render(scene, cameraFor(w / h));
     }
-
-    axisCam.quaternion.set(...cam.orientation);
-    axisCam.position.set(0, 0, 5).applyQuaternion(axisCam.quaternion);
-    axisCam.updateMatrixWorld();
-    renderer.setScissorTest(true);
-    renderer.setScissor(8, 8, AXIS_PX, AXIS_PX);
-    renderer.setViewport(8, 8, AXIS_PX, AXIS_PX);
-    renderer.clearDepth();
-    renderer.render(axes, axisCam);
-    renderer.setScissorTest(false);
   }
 
   const requestRender = () => {
