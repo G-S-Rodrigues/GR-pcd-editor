@@ -38,3 +38,17 @@ bash tests/launcher/test_launcher_smoke.sh          # launcher, real Docker
   `UI-`). Name tests `test_be_02_...`.
 - Ready gate: bootstrap contract + the three Compose commands + container tier + both
   launcher scripts.
+
+## PCD processing tests and tolerance policy
+
+Test ID prefixes for part 5: `PCD-` (parse/write), `GEO-` (geometry), `EDT-`
+(selection/protection/history), `CLU-` (cluster), `SES-` (session/export/
+archive), `API-` (HTTP). Test bytes come from `tests/fixtures/pcdgen.py`,
+which imports no production code.
+
+Tolerance policy (single module `backend/gr_pcd/geometry/tolerance.py`): all
+predicates run in float64 on the exact stored coordinates, boundaries are
+inclusive, and preview and commit share one path. World-axis tests use eps 0;
+rotated-box extents and polygon edges use an absolute 1e-9; the cluster
+radius uses a relative 1e-12. Tests keep near-boundary gaps at exactly 0
+(dyadic coordinates) or >= 1e-6.
