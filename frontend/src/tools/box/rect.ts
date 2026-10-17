@@ -1,0 +1,79 @@
+import { AXES, type FilterModel } from "../../inspector/filters";
+import { IDENTITY } from "../../math/quat";
+import type { Viewport } from "../../pick/ray";
+import { screenRay } from "../../pick/screenray";
+import type { Bounds, Vec3 } from "../../state/types";
+import { type Camera, lookDirection, rightVector } from "../../view/camera";
+import { AXIS_INDEX, type Slice } from "../../view/slice";
+import { MIN_EXTENT, type BoxModel } from "./model";
+
+export const MIN_RECT_PX = 4;
+export type Depth = { min: number; max: number };
+
+const AXIS_TOL = 1e-6;
+const axisOf = (v: Vec3): 0 | 1 | 2 | null => {
+  for (const i of [0, 1, 2] as const) if (Math.abs(Math.abs(v[i]) - 1) < AXIS_TOL) return i;
+  return null;
+};
+
+/**
+ * World axis (0 x, 1 y, 2 z) the camera looks along, or null unless the view is orthographic and both the
+ * look and the screen-right vectors are world axes (one of the six presets): only then is a screen rectangle
+ * an axis-aligned world box.
+ */
+export function rectAxis(cam: Camera): 0 | 1 | 2 | null {
+  if (!cam.ortho) return null;
+  const look = axisOf(lookDirection(cam));
+  const right = axisOf(rightVector(cam));
+  return look !== null && right !== null && look !== right ? look : null;
+}
+
+/** Extent of the box along the view axis: the slice slab if it is on that axis, else the active bounds. */
+export function rectDepth(axis: 0 | 1 | 2, bounds: Bounds | null, slice: Slice | null): Depth | null {
+  if (slice?.enabled && AXIS_INDEX[slice.axis] === axis) {
+    return { min: slice.centre - slice.thickness / 2, max: slice.centre + slice.thickness / 2 };
+  }
+  return bounds ? { min: bounds.min[axis], max: bounds.max[axis] } : null;
+}
+
+/** Axis-aligned box from a dragged screen rectangle in a preset view; null when the view is not aligned or the rectangle is under 4 px. */
+export function rectToBox(
+  prev: BoxModel,
+  cam: Camera,
+  vp: Viewport,
+  p0: { x: number; y: number },
+  p1: { x: number; y: number },
+  depth: Depth,
+): BoxModel | null {
+  const axis = rectAxis(cam);
+  if (axis === null) return null;
+  if (Math.abs(p1.x - p0.x) < MIN_RECT_PX || Math.abs(p1.y - p0.y) < MIN_RECT_PX) return null;
+  const a = screenRay(cam, vp, p0.x, p0.y).origin;
+  const b = screenRay(cam, vp, p1.x, p1.y).origin;
+  const center: Vec3 = [0, 0, 0];
+  const dimensions: Vec3 = [0, 0, 0];
+  for (const i of [0, 1, 2] as const) {
+    const [lo, hi] = i === axis ? [depth.min, depth.max] : [Math.min(a[i], b[i]), Math.max(a[i], b[i])];
+    center[i] = (lo + hi) / 2;
+    dimensions[i] = Math.max(hi - lo, MIN_EXTENT);
+  }
+  return { ...prev, center, dimensions, quat: IDENTITY };
+}
+
+/** The box that covers the whole visible rectangle of an aligned ortho view (depth as for a drag). */
+export function fitToView(prev: BoxModel, cam: Camera, vp: Viewport, depth: Depth): BoxModel | null {
+  return rectToBox(prev, cam, vp, { x: 0, y: 0 }, { x: vp.w, y: vp.h }, depth);
+}
+
+/** Active bounds narrowed by the enabled display-filter axes. */
+export function displayedBounds(active: Bounds, f: FilterModel): Bounds {
+  const min = [...active.min] as Vec3;
+  const max = [...active.max] as Vec3;
+  AXES.forEach((axis, i) => {
+    if (!f[axis].enabled) return;
+    min[i] = Math.max(min[i], f[axis].min);
+    max[i] = Math.min(max[i], f[axis].max);
+    if (min[i] > max[i]) [min[i], max[i]] = [f[axis].min, f[axis].max];
+  });
+  return { min, max };
+}

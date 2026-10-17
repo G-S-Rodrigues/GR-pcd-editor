@@ -5,6 +5,7 @@ import type { AppState } from "../state/app";
 import type { Store } from "../state/store";
 import type { Vec3 } from "../state/types";
 import * as B from "../tools/box/model";
+import { displayedBounds, fitToView, rectAxis, rectDepth } from "../tools/box/rect";
 import { POLYGON_DEPTH_NOTE, Z_UNLIMITED } from "../tools/polygon/model";
 import * as PG from "../tools/polygon/model";
 import { CLUSTER_LIMIT_TEXT, clusterLimitText, clusterPanel, regionOptions, setRadius } from "../tools/cluster/model";
@@ -35,8 +36,10 @@ export interface PanelActions {
   finishPolygon: () => string | null;
   cancelDrawing: () => void;
   clearPolygon: () => void;
+  viewSize: () => { w: number; h: number };
 }
 
+const RECT_REASON = "switch to an ortho view (click a ViewCube face)";
 type Sync = (s: AppState) => void;
 const fmt = (v: number) => String(Math.round(v * 1e6) / 1e6);
 
@@ -204,6 +207,13 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
       (s) => !B.minMaxState(s.tools.box).enabled,
     );
   const AXN = ["x", "y", "z"] as const;
+  const rectButton = button("box-rect", "Rect", () => store.update((s) => ({ ...s, rect: !s.rect })));
+  syncs.push((s) => {
+    const ok = rectAxis(s.camera) !== null;
+    rectButton.disabled = !ok;
+    rectButton.classList.toggle("active", s.rect && ok);
+    rectButton.title = ok ? TOOLTIPS["box-rect"] : `${TOOLTIPS["box-rect"]} (disabled: ${RECT_REASON})`;
+  });
   const boxPanel = section(
     "Box",
     (s) => s.tool === "box",
@@ -228,11 +238,25 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     h(
       "div",
       { class: "stack" },
+      rectButton,
       button("box-reset-rotation", "Reset rotation", () => boxEdit((b) => ({ ok: true, box: B.resetRotation(b) }))),
       button("box-reset", "Reset box", () => boxEdit((b) => ({ ok: true, box: { ...B.resetBox(store.get().camera.target), mode: b.mode } }))),
       button("box-fit-cloud", "Fit cloud", () => {
         const bb = store.get().session?.active_bounds;
         if (bb) boxEdit((b) => ({ ok: true, box: B.fitToBounds(b, bb) }));
+      }),
+      button("box-fit-displayed", "Fit displayed", () => {
+        const s = store.get();
+        const bb = s.session?.active_bounds;
+        if (bb) boxEdit((b) => ({ ok: true, box: B.fitToBounds(b, displayedBounds(bb, s.tools.filters)) }));
+      }),
+      button("box-fit-view", "Fit to view", () => {
+        const s = store.get();
+        const axis = rectAxis(s.camera);
+        const depth = axis === null ? null : rectDepth(axis, s.session?.active_bounds ?? null, s.slice);
+        const box = depth ? fitToView(s.tools.box, s.camera, a.viewSize(), depth) : null;
+        if (box) boxEdit(() => ({ ok: true, box }));
+        else showErr(RECT_REASON);
       }),
       button("box-fit-selection", "Fit selection", () => {
         const bb = store.get().candidate?.bounds;
@@ -427,6 +451,16 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     "Height protection",
     (s) => s.session !== null,
     h("p", { class: "note", text: PROTECTION_COPY }),
+    h(
+      "div",
+      { class: "stack" },
+      button("prot-pick-floor", "Pick floor point", () => store.set({ interaction: store.get().interaction === "pick-floor" ? "orbit" : "pick-floor" })),
+    ),
+    field("prot-floor-t", "Floor +/-", (s) => s.floorT, (v) => {
+      if (!P.intervalFromPick(0, v).ok) return "The floor thickness must be a number above 0";
+      store.update((s) => ({ ...s, floorT: v }));
+      return null;
+    }),
     check("prot-enabled", "Global protection", (s) => s.tools.protection.global.enabled, (v) => prot((m) => P.setGlobal(m, { enabled: v }))),
     row(
       field("prot-min", "Min Z", (s) => s.tools.protection.global.min, (v) => { const r = a.protectionEdit((m) => P.setGlobal(m, { min: v })); return r.ok ? null : (r.error ?? "Invalid"); }),

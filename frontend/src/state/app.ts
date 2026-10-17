@@ -1,12 +1,13 @@
 import type { ColourMode } from "../colour/modes";
 import { type FilterModel, emptyFilter } from "../inspector/filters";
-import { type ProtectionModel, emptyProtection } from "../inspector/protection";
+import { DEFAULT_FLOOR_T, type ProtectionModel, emptyProtection } from "../inspector/protection";
 import type { CompareMode } from "../compare/model";
 import { type BoxModel, defaultBox } from "../tools/box/model";
 import { type ClusterModel, defaultCluster } from "../tools/cluster/model";
 import { type PolygonState, emptyPolygon } from "../tools/polygon/model";
 import type { RenderData } from "../render/parse";
 import { type Camera, defaultCamera } from "../view/camera";
+import { type Slice, defaultSlice } from "../view/slice";
 import { type Store, createStore } from "./store";
 import type {
   Candidate,
@@ -29,7 +30,13 @@ export interface ToolsState {
 export interface AppState {
   session: SessionState | null;
   tool: ToolKind;
-  interaction: "orbit" | "pick-pivot" | "pick-seed";
+  interaction: "orbit" | "pick-pivot" | "pick-seed" | "pick-floor";
+  /** Half thickness of the floor slab made by "Pick floor point" (unit label only). */
+  floorT: number;
+  /** Rectangle select: dragging in an aligned ortho view makes the Box tool's box. */
+  rect: boolean;
+  /** Render-only slab (clipping); never changes selection, filters or counts. */
+  slice: Slice;
   op: SelectionOp;
   scope: Scope;
   camera: Camera;
@@ -58,6 +65,9 @@ export function initialState(): AppState {
     session: null,
     tool: "none",
     interaction: "orbit",
+    floorT: DEFAULT_FLOOR_T,
+    rect: false,
+    slice: defaultSlice(),
     op: "replace",
     scope: "displayed",
     camera: defaultCamera(),

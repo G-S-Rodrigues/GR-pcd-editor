@@ -10,7 +10,7 @@ import { applyClientPatch, createPersister, restoreClientState } from "./state/p
 import { buildExportDialog } from "./ui/export-dialog";
 import { pollJob } from "./files/jobs";
 import { createFilterController, enableDefaults, filterFromState, selectDisplayedBody } from "./inspector/filters";
-import { type ProtectionModel, protectionFromState } from "./inspector/protection";
+import { type ProtectionModel, floorFromPick, protectionFromState, setGlobal } from "./inspector/protection";
 import { createProtectionController } from "./inspector/protection-controller";
 import { createEditor, keyAction } from "./orchestration/edit";
 import { createRunner } from "./orchestration/runner";
@@ -88,13 +88,22 @@ const protection = createProtectionController(store, {
   onError: (e) => addNotice(store, "error", "protection_failed", e instanceof Error ? e.message : "Protection could not be set"),
 });
 const note = (text: string) => addNotice(store, "warn", "tool_edit", text);
+let rectHeld = false;
 const tools = createToolInteraction(canvas, store, size, {
+  rectHeld: () => rectHeld,
   onToolChanged: () => runner.onToolChanged(),
   protectionEdit: (fn) => protection.edit(fn),
   notify: note,
 });
 installDebugHook(canvas, store, size);
-if (viewport) attachControls(canvas, store, size, tools, () => runner.onToolChanged());
+if (viewport) {
+  attachControls(canvas, store, size, tools, () => runner.onToolChanged(), (z) => {
+    const st = store.get();
+    const r = floorFromPick(st.compare, z, st.floorT);
+    if (!r.ok) return note(r.reason);
+    protection.edit((m) => setGlobal(m, { enabled: true, min: r.min, max: r.max }));
+  });
+}
 
 function onOpened(state: SessionState) {
   const { w, h: ph } = size();
@@ -202,6 +211,7 @@ const panelActions = {
     return null;
   },
   cancelDrawing: () => store.update((st) => ({ ...st, tools: { ...st.tools, polygon: cancelDrawing(st.tools.polygon) } })),
+  viewSize: size,
   clearPolygon: createClearPolygon({
     emptyPolygon: () => store.update((st) => ({ ...st, tools: { ...st.tools, polygon: emptyPolygon() } })),
     polygonSelected: () => {
@@ -216,8 +226,16 @@ buildInspector($("fileinfo"), store);
 buildToolPalette($("tools"), store, panelActions);
 buildEditPanels($("editpanels"), store, panelActions);
 
+const typing = (t: HTMLElement | null) => ["INPUT", "TEXTAREA", "SELECT"].includes(t?.tagName ?? "");
+window.addEventListener("keyup", (e) => {
+  if (e.key.toLowerCase() === "r") rectHeld = false;
+});
+window.addEventListener("blur", () => {
+  rectHeld = false;
+});
 window.addEventListener("keydown", (e) => {
   const t = e.target as HTMLElement | null;
+  if (e.key.toLowerCase() === "r" && !e.ctrlKey && !e.metaKey && !e.altKey && !typing(t)) rectHeld = true;
   const a = keyAction({ key: e.key, ctrlKey: e.ctrlKey || e.metaKey, shiftKey: e.shiftKey, target: t?.tagName ?? "" });
   if ((e.key === "o" || e.key === "O") && !e.ctrlKey && !e.metaKey && !e.altKey && !["INPUT", "TEXTAREA", "SELECT"].includes(t?.tagName ?? "")) {
     if (store.get().session) hold.press();

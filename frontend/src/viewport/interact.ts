@@ -4,6 +4,7 @@ import { intersectZPlane, screenRay } from "../pick/screenray";
 import type { AppState } from "../state/app";
 import type { Store } from "../state/store";
 import type { Vec3 } from "../state/types";
+import { type Depth, rectAxis, rectDepth, rectToBox } from "../tools/box/rect";
 import { type DragState, beginDrag, dragBox } from "../tools/box/drag";
 import { translateDelta } from "../tools/box/gizmo-math";
 import { boxHandles, hitHandle } from "../tools/box/handles";
@@ -13,12 +14,15 @@ type PlaneKey = { which: "global" | "local"; edge: "min" | "max" };
 type Drag =
   | { kind: "box"; state: DragState }
   | { kind: "vertex"; index: number }
+  | { kind: "rect"; p0: { x: number; y: number }; depth: Depth }
   | { kind: "plane"; key: PlaneKey; model0: ProtectionModel; anchor: Vec3; ray0: ReturnType<typeof screenRay> };
 
 export interface ToolInteractionDeps {
   onToolChanged: () => void;
   protectionEdit: (fn: (m: ProtectionModel) => ProtectionEdit) => ProtectionEdit;
   notify: (text: string) => void;
+  /** True while the hold-R key is down (acts like the Rect toggle). */
+  rectHeld?: () => boolean;
 }
 
 const PICK_PX = 10;
@@ -63,6 +67,16 @@ export function createToolInteraction(
       const p = px(e);
       const vp = size();
       const ray = screenRay(s.camera, vp, p.x, p.y);
+      if (s.tool === "box" && (s.rect || deps.rectHeld?.())) {
+        const axis = rectAxis(s.camera);
+        const depth = axis === null ? null : rectDepth(axis, s.session.active_bounds, s.slice);
+        if (depth) {
+          drag = { kind: "rect", p0: p, depth };
+          return true;
+        }
+        deps.notify("Rectangle select needs an orthographic face view: click a ViewCube face first");
+        return false;
+      }
       if (s.tool === "box") {
         const hit = hitHandle(boxHandles(s.tools.box, s.camera, s.gizmo.local), s.camera, vp, p.x, p.y);
         if (hit) {
@@ -102,7 +116,13 @@ export function createToolInteraction(
       const s = store.get();
       const p = px(e);
       const ray = screenRay(s.camera, size(), p.x, p.y);
-      if (drag.kind === "box") {
+      if (drag.kind === "rect") {
+        const box = rectToBox(s.tools.box, s.camera, size(), drag.p0, p, drag.depth);
+        if (box) {
+          store.update((st) => ({ ...st, tools: { ...st.tools, box } }));
+          deps.onToolChanged();
+        }
+      } else if (drag.kind === "box") {
         const box = dragBox(drag.state, ray, {
           symmetric: e.altKey,
           fine: e.shiftKey,

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
-import { FLOOR, GHOST, TOTAL, parsePcd, rowKey, syntheticPcd, truthKeys } from "./synthetic";
+import { FLOOR, GHOST, ROOM, ROOM_TOTAL, TOTAL, parsePcd, roomPcd, rowKey, syntheticPcd, truthKeys } from "./synthetic";
 
 test("open a cloud, navigate, pick a pivot, colour, read counts", async ({ page }) => {
   const errors: string[] = [];
@@ -518,4 +518,89 @@ test("E2E-14 7a first load logs no console errors or failed requests; a bad file
   });
   await expect(page.locator("#notices")).toContainText("Cannot open broken.pcd:");
   await expect(page.locator("#notices")).toContainText("Is it a valid PCD (or .pcdsession)?");
+});
+
+type EditorHook = {
+  state: () => { camera: { target: number[]; orientation: number[]; distance: number; ortho: boolean }; tools: { box: { center: number[]; dimensions: number[] }; protection: { global: { enabled: boolean; min: number; max: number } } } };
+  projectWorld: (p: number[]) => { x: number; y: number } | null;
+  handlePositions: () => { id: string; x: number; y: number }[];
+};
+const hook = <T>(page: import("@playwright/test").Page, fn: (e: EditorHook) => T) =>
+  page.evaluate(`(${fn.toString()})(window.__editor)`) as Promise<T>;
+const openRoom = async (page: import("@playwright/test").Page, exact: (n: string, v: number | string) => Promise<void>) => {
+  await page.goto("/");
+  await page.locator("#file-input").setInputFiles({ name: "room.pcd", mimeType: "application/octet-stream", buffer: roomPcd() });
+  await exact("Original", String(ROOM_TOTAL));
+  await page.waitForTimeout(600);
+};
+
+test("E2E-15 7b1 protect the floor from a picked point: no typing, counts equal fixture truth", async ({ page }) => {
+  const { exact, ctl } = helpers(page);
+  await openRoom(page, exact);
+  await ctl("view-top").click();
+  await page.waitForTimeout(300);
+  const at = await hook(page, (e) => e.projectWorld([15, 2, 0]));
+  expect(at).not.toBeNull();
+  await ctl("prot-pick-floor").click();
+  await expect(page.locator("#modebar")).toContainText("Pick floor point");
+  await page.mouse.click(at!.x, at!.y);
+  await expect(ctl("prot-enabled")).toBeChecked({ timeout: 15000 });
+  await expect(ctl("prot-min")).toHaveValue("-0.05");
+  await expect(ctl("prot-max")).toHaveValue("0.05");
+  // truth: floor 400 and the 9 ghost points inside the slab (z 0.02); the NaN row is invalid, never protected
+  await exact("Protected", String(ROOM.floor + ROOM.floorGhost));
+  await expect(page.locator("#modebar")).toContainText("Tool: None");
+});
+
+/** Independent count of valid rows inside an axis-aligned box (centre and size), inclusive edges. */
+const countInBox = (rows: number[][], c: number[], d: number[]) =>
+  rows.filter((r) => [0, 1, 2].every((i) => Number.isFinite(r[i]) && r[i] >= c[i] - d[i] / 2 - 1e-9 && r[i] <= c[i] + d[i] / 2 + 1e-9)).length;
+const readBox = (page: import("@playwright/test").Page) => hook(page, (e) => ({ c: [...e.state().tools.box.center], d: [...e.state().tools.box.dimensions] }));
+const realDrag = async (page: import("@playwright/test").Page, a: { x: number; y: number }, b: { x: number; y: number }) => {
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2, { steps: 6 });
+  await page.mouse.move(b.x, b.y, { steps: 6 });
+  await page.mouse.up();
+};
+
+test("E2E-16 7b1 rectangle select with the real mouse in Top then Left view, fit to view and fit displayed; counts equal fixture truth", async ({ page }) => {
+  const { exact, num, ctl, setNum } = helpers(page);
+  await openRoom(page, exact);
+  const rows = parsePcd(roomPcd()).rows;
+  await ctl("tool-box").click();
+  await ctl("view-top").click();
+  await page.waitForTimeout(300);
+  await ctl("box-rect").click();
+  const P = async (x: number, y: number, z: number) => (await hook(page, (e) => e.projectWorld([0, 0, 0])), (await page.evaluate(([a, b, c]) => (window as unknown as { __editor: EditorHook }).__editor.projectWorld([a, b, c]), [x, y, z] as number[]))!);
+  await realDrag(page, await P(1.5, 11.5, 0), await P(5.5, 15.5, 0));
+  await expect.poll(async () => (await readBox(page)).d[2], { timeout: 15000 }).toBeCloseTo(4, 6); // depth = bounds z
+  let box = await readBox(page);
+  expect(box.d[0]).toBeGreaterThan(3.5);
+  expect(box.d[0]).toBeLessThan(4.5);
+  expect(box.c[1]).toBeGreaterThan(13);
+  expect(box.c[1]).toBeLessThan(14);
+  let truth = countInBox(rows, box.c, box.d);
+  expect(truth).toBeGreaterThanOrEqual(ROOM.ghost + ROOM.floorGhost);
+  await exact("Candidates", String(truth));
+
+  await ctl("view-left").click();
+  await page.waitForTimeout(300);
+  await realDrag(page, await P(5, 11.5, 0.5), await P(5, 15.2, 3.5));
+  await expect.poll(async () => (await readBox(page)).d[0], { timeout: 15000 }).toBeCloseTo(20, 6); // depth = bounds x
+  box = await readBox(page);
+  truth = countInBox(rows, box.c, box.d);
+  expect(truth).toBe(ROOM.ghost); // the ghost block and nothing else
+  await exact("Candidates", String(truth));
+  await exact("Selected", String(truth));
+
+  await ctl("box-fit-view").click();
+  await exact("Candidates", String(await num("Displayed")));
+  await ctl("filter-z-enabled").check();
+  await setNum("filter-z-min", 0.5);
+  await setNum("filter-z-max", 10);
+  await exact("Displayed", String(ROOM.wall + ROOM.ghost + ROOM.noise));
+  await ctl("box-fit-displayed").click();
+  await exact("Candidates", String(ROOM.wall + ROOM.ghost + ROOM.noise));
+  await page.screenshot({ path: "/out/rect-select.png" });
 });

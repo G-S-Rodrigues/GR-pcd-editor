@@ -1,4 +1,5 @@
 import type { Candidate, Protection } from "../state/types";
+import { type CompareMode, editAllowed } from "../compare/model";
 
 export type OpMode = "inherit" | "add_local" | "override";
 export interface Interval {
@@ -126,4 +127,22 @@ export function dragPlane(
 export function protectionBlock(m: ProtectionModel): string | null {
   const r = toProtectionBody(m);
   return r.ok ? null : r.message;
+}
+
+export const DEFAULT_FLOOR_T = 0.05;
+export type FloorPick = { ok: true; min: number; max: number } | { ok: false; reason: string };
+const round6 = (v: number) => Math.round(v * 1e6) / 1e6;
+
+/** The protection interval around a picked point's Z: z - t .. z + t, rounded to 1e-6. */
+export function intervalFromPick(z: number, t: number): FloorPick {
+  if (!Number.isFinite(z)) return { ok: false, reason: "The picked point has no usable height" };
+  if (!Number.isFinite(t) || t <= 0) return { ok: false, reason: "The floor thickness must be a number above 0" };
+  return { ok: true, min: round6(z - t), max: round6(z + t) };
+}
+
+/** Floor protection from a picked point; refused in the read-only comparison views. */
+export function floorFromPick(compare: CompareMode, z: number, t: number): FloorPick {
+  const allowed = editAllowed(compare);
+  if (!allowed.ok) return { ok: false, reason: allowed.reason };
+  return intervalFromPick(z, t);
 }

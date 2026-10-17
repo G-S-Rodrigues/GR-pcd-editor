@@ -49,3 +49,39 @@ describe("tool pointer routing (F-06)", () => {
     expect(moved(true)).toBeCloseTo(plain * 0.1, 9);
   });
 });
+
+describe("rectangle select routing (7b-1)", () => {
+  const rectSetup = (preset: "top" | "persp") => {
+    const t = setup();
+    const cam = preset === "top" ? t.store.get().camera : { ...t.store.get().camera, ortho: false };
+    t.store.update((s) => ({ ...s, rect: true, camera: cam, session: sessionFixture({ active_bounds: { min: [-5, -5, 0], max: [5, 5, 3] } }) }));
+    const notes: string[] = [];
+    const tools = createToolInteraction(canvas, t.store, () => vp, { onToolChanged: t.changed, protectionEdit: (() => undefined) as never, notify: (m) => notes.push(m) });
+    return { ...t, tools, notes };
+  };
+
+  it("UI-125 with Rect on, a drag in an aligned ortho view sets the box (live preview) and wins over a handle", () => {
+    const t = rectSetup("top");
+    expect(t.tools.pointerDown(t.ev(t.at.x, t.at.y, false))).toBe(true); // on a handle, but Rect is on
+    t.tools.pointerMove(t.ev(t.at.x + 80, t.at.y + 60, false));
+    const box = t.store.get().tools.box;
+    expect(box.dimensions[0]).toBeGreaterThan(1);
+    expect(box.dimensions[2]).toBe(3); // depth = active bounds along the view axis
+    expect(box.center[2]).toBe(1.5);
+    expect(t.changed).toHaveBeenCalled();
+    t.tools.pointerUp();
+  });
+
+  it("UI-125 outside an aligned ortho view the drag is refused with the reason and falls through to orbit", () => {
+    const t = rectSetup("persp");
+    expect(t.tools.pointerDown(t.ev(100, 100, false))).toBe(false);
+    expect(t.notes.join(" ")).toMatch(/ViewCube/);
+  });
+
+  it("UI-125 hold-R acts like the Rect toggle", () => {
+    const t = setup();
+    t.store.update((s) => ({ ...s, session: sessionFixture({ active_bounds: { min: [-5, -5, 0], max: [5, 5, 3] } }) }));
+    const tools = createToolInteraction(canvas, t.store, () => vp, { onToolChanged: t.changed, protectionEdit: (() => undefined) as never, notify: () => undefined, rectHeld: () => true });
+    expect(tools.pointerDown(t.ev(100, 100, false))).toBe(true);
+  });
+});

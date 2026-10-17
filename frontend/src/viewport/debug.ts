@@ -11,6 +11,13 @@ import { boxHandles } from "../tools/box/handles";
 export function installDebugHook(canvas: HTMLCanvasElement, store: Store<AppState>, size: () => { w: number; h: number }): void {
   const hook = {
     state: () => store.get(),
+    /** Page position (px) of a file-frame world point under the current camera; null if it is behind the eye. */
+    projectWorld: (p: Vec3): { x: number; y: number } | null => {
+      const s = store.get();
+      const r = canvas.getBoundingClientRect();
+      const q = project(s.camera, p, [0, 0, 0], size());
+      return q ? { x: r.left + q.x, y: r.top + q.y } : null;
+    },
     handlePositions: (): { id: string; x: number; y: number }[] => {
       const s = store.get();
       const r = canvas.getBoundingClientRect();

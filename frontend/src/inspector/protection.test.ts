@@ -82,3 +82,28 @@ describe("protection model", () => {
     expect(dragPlane(l, "local", "min", -1).local).toEqual({ min: 1, max: 3 });
   });
 });
+
+describe("protect the floor from a picked point (7b-1)", () => {
+  it("UI-120 interval is z +- t rounded to 1e-6; t must be finite and above 0", async () => {
+    const { intervalFromPick, DEFAULT_FLOOR_T } = await import("./protection");
+    expect(DEFAULT_FLOOR_T).toBe(0.05);
+    expect(intervalFromPick(0.02, 0.05)).toEqual({ ok: true, min: -0.03, max: 0.07 });
+    expect(intervalFromPick(1 / 3, 0.1)).toEqual({ ok: true, min: 0.233333, max: 0.433333 });
+    for (const bad of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const r = intervalFromPick(0, bad);
+      expect(r.ok).toBe(false);
+    }
+    expect(intervalFromPick(Number.NaN, 0.05).ok).toBe(false);
+  });
+
+  it("UI-121 a floor pick is refused outside the edited view, with the read-only reason", async () => {
+    const { floorFromPick } = await import("./protection");
+    const ok = floorFromPick("edited", 0, 0.05);
+    expect(ok).toEqual({ ok: true, min: -0.05, max: 0.05 });
+    for (const mode of ["original", "overlay", "split"] as const) {
+      const r = floorFromPick(mode, 0, 0.05);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toMatch(/edited/i);
+    }
+  });
+});

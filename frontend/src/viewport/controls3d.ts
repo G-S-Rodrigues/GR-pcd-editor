@@ -19,6 +19,7 @@ export function attachControls(
   size: () => { w: number; h: number },
   tools?: ToolInteraction,
   onSeedPicked?: () => void,
+  onFloorPicked?: (z: number) => void,
 ): () => void {
   let drag: { x: number; y: number; startX: number; startY: number; pan: boolean } | null = null;
 
@@ -63,7 +64,7 @@ export function attachControls(
   async function onClick(e: PointerEvent) {
     const s = store.get();
     if (tools?.click(e)) return;
-    if ((s.interaction !== "pick-pivot" && s.interaction !== "pick-seed") || !s.render) return;
+    if ((s.interaction !== "pick-pivot" && s.interaction !== "pick-seed" && s.interaction !== "pick-floor") || !s.render) return;
     const allowed = editAllowed(s.compare);
     if (!allowed.ok) {
       addNotice(store, "warn", "pick_refused", allowed.reason);
@@ -91,6 +92,11 @@ export function attachControls(
       });
       if (!seed.ok) {
         addNotice(store, "info", "no_point", "No point near the click; try again closer to a point");
+        return;
+      }
+      if (s.interaction === "pick-floor") {
+        store.set({ interaction: "orbit" });
+        onFloorPicked?.(seed.point[2]);
         return;
       }
       if (s.interaction === "pick-seed") {
