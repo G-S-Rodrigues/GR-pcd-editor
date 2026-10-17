@@ -113,6 +113,11 @@ test("UI-03 getState returns null when there is no session", async () => {
   expect(await getState()).toBeNull();
 });
 
+test("UI-114 getState maps the 200 no_session reply to null", async () => {
+  stubFetch(() => ({ status: 200, body: { no_session: true } }));
+  expect(await getState()).toBeNull();
+});
+
 test("UI-04 a 409 keeps its code", async () => {
   stubFetch(() => ({ status: 409, body: { error: { code: "stale_revision", message: "old" } } }));
   await expect(apply(1, "c", "d")).rejects.toMatchObject({ status: 409, code: "stale_revision" });

@@ -153,7 +153,9 @@ def build_router(manager: SessionManager, settings: Settings) -> APIRouter:
 
     @router.get("/session")
     def get_session():
-        return manager.require().state()
+        # The startup probe: 200 (not 404) so the browser logs no error.
+        session = manager.session
+        return {"no_session": True} if session is None else session.state()
 
     @router.post("/session/open")
     def open_session(body: OpenBody):

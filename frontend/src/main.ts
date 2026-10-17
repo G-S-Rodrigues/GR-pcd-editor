@@ -15,6 +15,7 @@ import { createProtectionController } from "./inspector/protection-controller";
 import { createEditor, keyAction } from "./orchestration/edit";
 import { createRunner } from "./orchestration/runner";
 import { createParamsHook } from "./orchestration/params";
+import { createClearPolygon } from "./orchestration/polygonclear";
 import { startDrawing, cancelDrawing, closePolygon, emptyPolygon, enterTool } from "./tools/polygon/model";
 import { boxForOpen } from "./tools/box/model";
 import { applyPreset } from "./view/presets";
@@ -201,10 +202,15 @@ const panelActions = {
     return null;
   },
   cancelDrawing: () => store.update((st) => ({ ...st, tools: { ...st.tools, polygon: cancelDrawing(st.tools.polygon) } })),
-  clearPolygon: () => {
-    store.update((st) => ({ ...st, tools: { ...st.tools, polygon: emptyPolygon() } }));
-    runner.reset();
-  },
+  clearPolygon: createClearPolygon({
+    emptyPolygon: () => store.update((st) => ({ ...st, tools: { ...st.tools, polygon: emptyPolygon() } })),
+    polygonSelected: () => {
+      const st = store.get();
+      return st.tool === "polygon" && st.tools.polygon.phase === "closed" && st.op === "replace" && (st.session?.selection.count ?? 0) > 0;
+    },
+    resetRunner: () => runner.reset(),
+    clearSelection: () => void editor.clearSelection(),
+  }),
 };
 buildInspector($("fileinfo"), store);
 buildToolPalette($("tools"), store, panelActions);

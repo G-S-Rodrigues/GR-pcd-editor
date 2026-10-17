@@ -31,7 +31,9 @@ export function normaliseState(raw: unknown): SessionState {
 
 export async function getState(): Promise<SessionState | null> {
   try {
-    return normaliseState(await getJson("/api/session"));
+    const body = await getJson("/api/session");
+    if ((body as { no_session?: unknown }).no_session === true) return null;
+    return normaliseState(body);
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) return null;
     throw e;

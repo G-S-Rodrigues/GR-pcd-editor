@@ -3,6 +3,7 @@ import type { Vec2 } from "./validate";
 import { validatePolygon } from "./validate";
 import {
   POLYGON_DEPTH_NOTE,
+  Z_UNLIMITED,
   addVertex,
   cancelDrawing,
   closePolygon,
@@ -10,6 +11,8 @@ import {
   emptyPolygon,
   enterTool,
   moveVertex,
+  polygonProblem,
+  zText,
   setVertexNumeric,
   setZ,
   startDrawing,
@@ -115,5 +118,27 @@ describe("polygon model", () => {
     expect(toPrismTool(draw(sq))).toBeNull(); // not closed
     const closed = closePolygon(draw(sq)).state;
     expect(toPrismTool({ ...closed, mode: "outside" })?.mode).toBe("outside");
+  });
+
+  it("UI-111 two points and collinear points say what is needed; Z min above Z max is flagged", () => {
+    const WANT = "Needs at least 3 points that are not in a line";
+    const two = closePolygon(draw([[0, 0], [4, 0]]));
+    expect(two.ok).toBe(false);
+    expect(two.message).toBe(WANT);
+    const line = closePolygon(draw([[0, 0], [1, 1], [2, 2]]));
+    expect(line.ok).toBe(false);
+    expect(line.message).toBe(WANT);
+    expect(closePolygon(draw(sq)).ok).toBe(true);
+    const closed = closePolygon(draw(sq)).state;
+    expect(polygonProblem(closed)).toBeNull();
+    expect(polygonProblem({ ...closed, zMin: 5, zMax: 1 })).toBe("Invalid: Z min above Z max");
+    expect(setZ(closed, 5, 1).message).toBe("Invalid: Z min above Z max");
+  });
+
+  it("UI-112 Z limits show Unlimited for the sentinels and real numbers otherwise", () => {
+    const fmt = (v: number) => String(v);
+    expect(zText(-Z_UNLIMITED, fmt)).toBe("Unlimited");
+    expect(zText(Z_UNLIMITED, fmt)).toBe("Unlimited");
+    expect(zText(2.5, fmt)).toBe("2.5");
   });
 });

@@ -1,5 +1,5 @@
 import { getState } from "../api/session";
-import { ApiError } from "../files/errors";
+import { ApiError, openErrorText } from "../files/errors";
 import { type DataTransferLike, type DropErrorCode, pickDroppedFile } from "../files/dragdrop";
 import { openMounted as realOpenMounted } from "../files/mounted";
 import { type UploadHandle, type UploadOptions, uploadFile } from "../files/upload";
@@ -87,7 +87,8 @@ export async function openSource(src: OpenSource, deps: OpenDeps): Promise<OpenO
     store.set({ upload: null });
     const code = e instanceof ApiError ? e.code : "open_failed";
     if (code !== "cancelled") {
-      addNotice(store, "error", "open_failed", e instanceof Error ? e.message : "Could not open the file");
+      const name = file?.name ?? (src.kind === "mounted" ? (src.path.split("/").pop() ?? src.path) : "the file");
+      addNotice(store, "error", "open_failed", openErrorText(name, e instanceof Error ? e.message : "unknown error"));
     }
     return { ok: false, reason: "error", code };
   }

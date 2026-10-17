@@ -5,6 +5,7 @@ import {
   boxCorners,
   defaultBox,
   boxForOpen,
+  boxValidity,
   fitToBounds,
   numericView,
   quatToRpy,
@@ -155,4 +156,14 @@ it("UI-105 a newly opened file starts the box as a 1 m cube at the pivot, not at
   expect(b.center).toEqual([4, 5, 6]);
   expect(b.dimensions).toEqual([1, 1, 1]);
   expect(b.mode).toBe("inside");
+});
+
+describe("box validity", () => {
+  it("UI-111 a zero, negative or non-finite size gives a reason and a good box gives none", () => {
+    const b = defaultBox([0, 0, 0]);
+    expect(boxValidity(b)).toBeNull();
+    expect(boxValidity({ ...b, dimensions: [1, 0, 1] })).toBe("Invalid: size must be greater than 0 on every axis");
+    expect(boxValidity({ ...b, dimensions: [1, 1, -2] })).toBe("Invalid: size must be greater than 0 on every axis");
+    expect(boxValidity({ ...b, dimensions: [1, Number.NaN, 1] })).toMatch(/^Invalid: size/);
+  });
 });

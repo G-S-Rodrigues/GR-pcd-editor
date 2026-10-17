@@ -64,6 +64,19 @@ test("UI-19 saved session needs no confirm and sends replace false", async () =>
   expect(d.uploads[0].replace).toBe(false);
 });
 
+test("UI-115 a bad file toasts its name, the reason and what to check", async () => {
+  const d = setup({ withSession: false });
+  d.upload.mockImplementation((() => ({
+    uploadId: "u",
+    cancel: () => true,
+    promise: Promise.reject(new ApiError(422, "bad_header", "bad PCD header")),
+  })) as never);
+  await openSource({ kind: "picker", file: file("scan.pcd") }, d.deps);
+  expect(d.store.get().notices.at(-1)?.text).toBe(
+    "Cannot open scan.pcd: bad PCD header. Is it a valid PCD (or .pcdsession)?",
+  );
+});
+
 test("UI-19 a failing import keeps the old session and reports a notice", async () => {
   const d = setup({ withSession: true, unsaved: true, confirm: true });
   d.upload.mockImplementation((() => ({

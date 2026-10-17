@@ -42,8 +42,21 @@ export function startDrawing(s: PolygonState): PolygonState {
 export function addVertex(s: PolygonState, p: Vec2): PolygonState {
   return s.phase === "drawing" ? { ...s, vertices: [...s.vertices, p] } : s;
 }
+export const POLYGON_NEEDS_THREE = "Needs at least 3 points that are not in a line";
+export const Z_ORDER_MESSAGE = "Invalid: Z min above Z max";
+
+/** A Z limit as the field shows it: the sentinels read "Unlimited". */
+export const zText = (v: number, fmt: (n: number) => string): string => (Math.abs(v) >= Z_UNLIMITED ? "Unlimited" : fmt(v));
+
+/** Why a closed polygon cannot be used, or null. */
+export function polygonProblem(s: PolygonState): string | null {
+  if (s.zMin > s.zMax) return Z_ORDER_MESSAGE;
+  return null;
+}
+
 export function closePolygon(s: PolygonState): PolygonResult {
-  const message = validatePolygon(s.vertices);
+  let message = validatePolygon(s.vertices);
+  if (message && (s.vertices.length < 3 || message === "Polygon has zero area")) message = POLYGON_NEEDS_THREE;
   if (message) return { ok: false, state: s, message };
   return { ok: true, state: { ...s, phase: "closed", previous: null } };
 }
@@ -56,7 +69,7 @@ export function cancelDrawing(s: PolygonState): PolygonState {
 
 export function setZ(s: PolygonState, zMin: number, zMax: number): PolygonResult {
   if (!Number.isFinite(zMin) || !Number.isFinite(zMax)) return { ok: false, state: s, message: "Z limits must be finite" };
-  if (zMin > zMax) return { ok: false, state: s, message: "Z min must not exceed Z max" };
+  if (zMin > zMax) return { ok: false, state: s, message: Z_ORDER_MESSAGE };
   return { ok: true, state: { ...s, zMin, zMax } };
 }
 

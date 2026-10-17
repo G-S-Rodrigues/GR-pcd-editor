@@ -93,6 +93,10 @@ export function setRpy(b: BoxModel, rpy: Vec3): BoxEdit {
   if (!finite3(rpy)) return fail(b, "Rotation angles must be finite numbers");
   return { ok: true, box: { ...b, quat: rpyToQuat(rpy) } };
 }
+/** Why the box cannot be used (shown in the panel), or null. */
+export const boxValidity = (b: BoxModel): string | null =>
+  finite3(b.dimensions) && b.dimensions.every((v) => v > 0) ? null : "Invalid: size must be greater than 0 on every axis";
+
 export const setMode = (b: BoxModel, mode: BoxMode): BoxModel => ({ ...b, mode });
 
 export const isAligned = (b: BoxModel): boolean => quatToRpy(b.quat).every((a) => Math.abs(a) < 1e-9);

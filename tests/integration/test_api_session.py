@@ -124,7 +124,11 @@ def start_slow_cluster(api):
 
 
 def test_api_01_no_session(api):
+    # 7a-6 (F-13): the startup probe answers 200 so the browser logs no error;
+    # every other /api/session/* route keeps 404 no_session.
     r = api.client.get("/api/session")
+    assert r.status_code == 200 and r.json() == {"no_session": True}
+    r = api.client.post("/api/session/undo", json={"cloud_revision": 1})
     assert r.status_code == 404 and r.json()["error"]["code"] == "no_session"
 
 
@@ -657,7 +661,7 @@ def test_api_28_client_state(api):
 def test_api_29_error_shape(api):
     c = api.client
     calls = [
-        c.get("/api/session"),
+        c.post("/api/session/undo", json={"cloud_revision": 1}),
         c.post("/api/session/open", json={"path": "../x"}),
         c.post("/api/session/open", json={"path": "nope.pcd"}),
         c.post("/api/session/open", json={}),
@@ -686,7 +690,7 @@ def test_api_30_router_before_static_mount(tmp_path):
     assert getattr(app.routes[-1], "path", None) == ""  # static mount last
     c = make_client(app)
     r = c.get("/api/session")  # the API router answers before the mount
-    assert r.status_code == 404 and r.json()["error"]["code"] == "no_session"
+    assert r.status_code == 200 and r.json() == {"no_session": True}
     c = make_client(app)
     assert c.get("/").status_code == 200
     assert c.get("/health").json() == {"status": "ok"}
@@ -827,3 +831,12 @@ def test_api_51_cluster_partial_result(api):
     job = api.select_wait(tool)
     assert job["status"] == "failed"
     assert job["error"]["code"] == "component_limit_reached"
+
+
+def test_api_52_get_session_without_a_session_is_200_no_session(api):
+    r = api.client.get("/api/session")
+    assert r.status_code == 200 and r.json() == {"no_session": True}
+    api.open()
+    assert "no_session" not in api.client.get("/api/session").json()
+    api.client.delete("/api/session")
+    assert api.client.get("/api/session").json() == {"no_session": True}

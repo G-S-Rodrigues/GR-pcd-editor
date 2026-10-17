@@ -38,3 +38,7 @@ export function networkError(cause: unknown): ApiError {
   const detail = cause instanceof Error ? `: ${cause.message}` : "";
   return new ApiError(0, "network", `could not reach the app${detail}`);
 }
+
+/** The toast for a file that could not be opened: its name, the reason, what to check. */
+export const openErrorText = (name: string, reason: string): string =>
+  `Cannot open ${name}: ${reason.replace(/[.\s]+$/, "")}. Is it a valid PCD (or .pcdsession)?`;

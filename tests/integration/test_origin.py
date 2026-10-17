@@ -45,7 +45,7 @@ def test_fil_28_loopback_origins_pass(tmp_path) -> None:
                 "Origin": f"http://{host}:{PORT}",
             },
         )
-        assert r.status_code == 404, (host, r.text)  # no session, not 403
+        assert r.status_code == 200, (host, r.text)  # no session, not 403
     r = c.get("/api/session", headers={"Origin": "http://localhost:9999"})
     assert r.status_code == 403
 

@@ -113,15 +113,25 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
   };
 
   /** Numeric text input committed on change. `commit` returns an error message or null. */
-  const field = (id: string, label: string, get: (s: AppState) => number, commit: (v: number) => string | null, off?: (s: AppState) => boolean) => {
+  const field = (
+    id: string,
+    label: string,
+    get: (s: AppState) => number,
+    commit: (v: number) => string | null,
+    off?: (s: AppState) => boolean,
+    /** Optional text view: `show` renders the value, `empty` is the number an empty field means. */
+    view?: { show: (v: number) => string; empty: number },
+  ) => {
     const input = control("input", { id, type: "text", inputmode: "decimal", onchange: () => {
-      const v = Number(input.value.trim());
-      const err = input.value.trim() === "" || Number.isNaN(v) ? `${label} must be a number` : commit(v);
+      const raw = input.value.trim();
+      const blank = view !== undefined && (raw === "" || raw.toLowerCase() === "unlimited");
+      const v = blank ? view.empty : Number(raw);
+      const err = (raw === "" && !blank) || Number.isNaN(v) ? `${label} must be a number` : commit(v);
       showErr(err);
       sync(store.get());
     } });
     const sync: Sync = (s) => {
-      if (document.activeElement !== input) input.value = fmt(get(s));
+      if (document.activeElement !== input) input.value = view ? view.show(get(s)) : fmt(get(s));
       input.disabled = off ? off(s) : false;
     };
     syncs.push(sync);
@@ -197,6 +207,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
   const boxPanel = section(
     "Box",
     (s) => s.tool === "box",
+    text((s) => B.boxValidity(s.tools.box) ?? ""),
     h("h3", { text: "Centre" }),
     row(...AXN.map((ax, i) => vecField("center", i as 0 | 1 | 2, ax))),
     h("h3", { text: "Size" }),
@@ -263,6 +274,8 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
         a.toolChanged();
         return null;
       },
+      undefined,
+      { show: (v) => PG.zText(v, fmt), empty: which === "zMin" ? -Z_UNLIMITED : Z_UNLIMITED },
     );
   const vertexList = h("div", { class: "verts" });
   let vertKey = "";
@@ -305,7 +318,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     text((s) => (s.tools.polygon.phase === "drawing" ? `Drawing: ${s.tools.polygon.vertices.length} vertices. Click to add, Enter to close, Esc to cancel.` : s.tools.polygon.phase === "closed" ? "Polygon closed. Drag a vertex or edit it numerically." : "Press Draw polygon, then click in the view.")),
     vertexList,
     row(polyZ("zMin", "poly-zmin", "Z min"), polyZ("zMax", "poly-zmax", "Z max")),
-    text((s) => (s.tools.polygon.zMin <= -Z_UNLIMITED && s.tools.polygon.zMax >= Z_UNLIMITED ? "Z limits: unlimited" : "")),
+    text((s) => PG.polygonProblem(s.tools.polygon) ?? (s.tools.polygon.zMin <= -Z_UNLIMITED && s.tools.polygon.zMax >= Z_UNLIMITED ? "Z limits: unlimited" : "")),
     select("poly-mode", "Mode", [["inside", "Inside"], ["outside", "Outside"]], (s) => s.tools.polygon.mode, (v) => {
       store.update((s) => ({ ...s, tools: { ...s.tools, polygon: { ...s.tools.polygon, mode: v as "inside" | "outside" } } }));
       a.toolChanged();

@@ -495,3 +495,27 @@ test("E2E-13 7a cluster: partial result, no limit, and re-run when protection ch
   await expect(page.locator("#cluster-result")).toContainText(String(GHOST));
   await expect(stat("Protected")).toHaveText(new RegExp(`${FLOOR}`));
 });
+
+test("E2E-14 7a first load logs no console errors or failed requests; a bad file names itself", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("console", (m) => {
+    if (m.type() === "error") errors.push(`console: ${m.text()}`);
+  });
+  page.on("response", (r) => {
+    if (r.status() >= 400) errors.push(`HTTP ${r.status()} ${r.url()}`);
+  });
+  await page.goto("/");
+  await expect(page.locator("#modebar")).toContainText("Frame: file");
+  await page.waitForTimeout(500);
+  expect(errors).toEqual([]);
+
+  errors.length = 0; // the 422 of the bad upload is expected from here on
+  await page.locator("#file-input").setInputFiles({
+    name: "broken.pcd",
+    mimeType: "application/octet-stream",
+    buffer: Buffer.from("this is not a point cloud\n"),
+  });
+  await expect(page.locator("#notices")).toContainText("Cannot open broken.pcd:");
+  await expect(page.locator("#notices")).toContainText("Is it a valid PCD (or .pcdsession)?");
+});
