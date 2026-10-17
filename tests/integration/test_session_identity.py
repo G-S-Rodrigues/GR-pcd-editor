@@ -5,7 +5,7 @@ import pytest
 from test_api_session import GHOST_BOX, Api
 
 from fixtures.pcdgen import SCENE_FIELDS, build_pcd, scene_rows
-from fixtures.sessions import write_scene
+from fixtures.sessions import fixture_dir, open_via_upload, write_scene
 
 
 @pytest.fixture
@@ -14,15 +14,15 @@ def api(tmp_path):
 
     settings = make_settings(tmp_path)
     write_scene(settings)
-    (settings.data_root / "other.pcd").write_bytes(
+    (fixture_dir(settings) / "other.pcd").write_bytes(
         build_pcd(SCENE_FIELDS, scene_rows(), "binary")
     )
     return Api(settings)
 
 
 def _replace(api, name):
-    r = api.client.post(
-        "/api/session/open", json={"path": name, "replace": True}
+    r = open_via_upload(
+        api.client, fixture_dir(api.settings) / name, replace=True
     )
     assert r.status_code == 200, r.text
     return r.json()
@@ -123,3 +123,24 @@ def test_ses_44_engine_selection_id_is_monotonic(api):
     s.clear_selection(s.clock.cloud)
     assert s.selection_id > a
     assert np.asarray(s.selection).sum() == 0
+
+
+def test_api_66_upload_ignores_a_stale_session_id(api, tmp_path):
+
+    old = api.open()["session_id"]
+    body = (fixture_dir(api.settings) / "other.pcd").read_bytes()
+    r = api.client.post(
+        "/api/session/upload",
+        params={
+            "upload_id": "0123456789abcdef0123456789abcdef",
+            "filename": "o.pcd",
+            "replace": True,
+        },
+        content=body,
+        headers={
+            "X-Session-Id": "stale-" + old,
+            "Content-Type": "application/octet-stream",
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["session_id"] != old

@@ -119,7 +119,8 @@ else
     fail CTR-09 "mem/swap/pids/init = '$bounds'"
 fi
 
-# CTR-08 public port reaches the app, Host guard, read-only mount listing
+# CTR-08 public port reaches the app, Host guard, no mounted listing
+mounted=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/api/mounted" || true)
 evil=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: evil.example' \
     "http://127.0.0.1:$port/api/session" || true)
 if [ "$(dc config --format json | python3 -c '
@@ -127,15 +128,10 @@ import json, sys
 print(json.load(sys.stdin)["services"]["app"]["environment"]["GR_PCD_PUBLIC_PORT"])
 ')" = "$port" ] \
     && [ "$evil" = "403" ] \
-    && curl -fsS "http://127.0.0.1:$port/api/mounted" \
-    | python3 -c '
-import json, sys
-names = [e["name"] for e in json.load(sys.stdin)["entries"]]
-assert names == ["maps dir", "scan.pcd"], names
-'; then
+    && [ "$mounted" != "200" ]; then
     pass CTR-08
 else
-    fail CTR-08 "public port env, Host guard (got $evil) or /data listing"
+    fail CTR-08 "public port env, Host guard (got $evil) or /api/mounted (got $mounted)"
 fi
 
 # CTR-07 failures propagate (AC-31), then clean runs pass

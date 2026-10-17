@@ -14,6 +14,7 @@ from fixtures.pcdgen import (
 from fixtures.sessions import (
     box_all_ghost,
     delete_ghost,
+    fixture_dir,
     make_settings,
     select_box,
     wait,
@@ -32,7 +33,7 @@ def mgr(tmp_path):
     settings = make_settings(tmp_path)
     write_scene(settings)
     m = SessionManager(settings)
-    m.open_pcd(settings.data_root / "scene.pcd", "scene.pcd")
+    m.open_pcd(fixture_dir(settings) / "scene.pcd", "scene.pcd")
     yield m
     m.jobs.shutdown()
 
@@ -104,11 +105,11 @@ def test_ses_19_encodings_and_custom_fields(tmp_path, encoding, fmt):
     settings = make_settings(tmp_path)
     fields = SCENE_FIELDS + [("custom", "I", 4, 3), ("_", "U", 1, 1)]
     rows = [r + ((1, -2, 3), 7) for r in scene_rows()]
-    (settings.data_root / "c.pcd").write_bytes(
+    (fixture_dir(settings) / "c.pcd").write_bytes(
         build_pcd(fields, rows, encoding)
     )
     m = SessionManager(settings)
-    m.open_pcd(settings.data_root / "c.pcd", "c.pcd")
+    m.open_pcd(fixture_dir(settings) / "c.pcd", "c.pcd")
     job = wait(m.submit_export(fmt, "active"))
     assert job.status == "complete", job.error
     out = read_pcd(m.downloads[job.result["export_id"]].path)

@@ -22,11 +22,6 @@ class Model(BaseModel):
     model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
 
 
-class OpenBody(Model):
-    path: str
-    replace: bool = False
-
-
 class BoxTool(Model):
     type: Literal["box"]
     center: Vec3

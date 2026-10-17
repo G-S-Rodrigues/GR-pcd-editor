@@ -17,13 +17,11 @@ from gr_pcd.api.schemas import (
     ExportBody,
     MarkSavedBody,
     NearestBody,
-    OpenBody,
     ProtectionBody,
     RevisionBody,
     SelectionBody,
 )
 from gr_pcd.files.cleanup import sweep_runtime
-from gr_pcd.files.mounted import list_mounted
 from gr_pcd.files.names import safe_filename
 from gr_pcd.files.uploads import (
     InvalidUploadId,
@@ -32,7 +30,6 @@ from gr_pcd.files.uploads import (
     UploadTooLarge,
     store_upload,
 )
-from gr_pcd.paths import resolve_data_path
 from gr_pcd.session.engine import SelectSpec
 from gr_pcd.session.errors import NotFoundError, SessionChanged
 from gr_pcd.session.manager import SessionManager
@@ -42,13 +39,9 @@ MAX_CLIENT_STATE = 1024 * 1024
 UPLOAD_ID = re.compile(r"[0-9a-f]{32}")
 
 
-# open and upload replace the session: the id of the old one is irrelevant
-_UNCHECKED = {
-    "/api/session/open",
-    "/api/session/open-archive",
-    "/api/session/upload",
-}
-_UNCHECKED_PREFIX = ("/api/uploads/", "/api/mounted")
+# upload replaces the session: the id of the old one is irrelevant
+_UNCHECKED = {"/api/session/upload"}
+_UNCHECKED_PREFIX = ("/api/uploads/",)
 
 DOWNLOAD_HEADERS = {
     "Cache-Control": "no-store",
@@ -88,16 +81,6 @@ def build_router(manager: SessionManager, settings: Settings) -> APIRouter:
             raise SessionChanged(None if session is None else session.id)
 
     router = APIRouter(prefix="/api", dependencies=[Depends(check_session)])
-
-    def existing_file(relative: str):
-        path = resolve_data_path(settings.data_root, relative)
-        if not path.is_file():
-            raise NotFoundError(f"no such file: {relative}")
-        return path
-
-    @router.get("/mounted")
-    def mounted(path: str = ""):
-        return list_mounted(settings.data_root, path)
 
     @router.post("/session/upload")
     async def upload(
@@ -181,18 +164,6 @@ def build_router(manager: SessionManager, settings: Settings) -> APIRouter:
         # The startup probe: 200 (not 404) so the browser logs no error.
         session = manager.session
         return {"no_session": True} if session is None else session.state()
-
-    @router.post("/session/open")
-    def open_session(body: OpenBody):
-        path = existing_file(body.path)
-        manager.require_replaceable(body.replace)
-        return manager.open_pcd(path, path.name).state()
-
-    @router.post("/session/open-archive")
-    def open_archive(body: OpenBody):
-        path = existing_file(body.path)
-        manager.require_replaceable(body.replace)
-        return manager.open_archive(path).state()
 
     @router.delete("/session")
     def close_session():

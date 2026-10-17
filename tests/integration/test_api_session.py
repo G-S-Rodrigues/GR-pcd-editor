@@ -17,7 +17,14 @@ from fixtures.pcdgen import (
     scene_rows,
     xyz_fields,
 )
-from fixtures.sessions import make_client, make_settings, write_scene
+from fixtures.sessions import (
+    fixture_dir,
+    make_client,
+    make_settings,
+    open_via_upload,
+    upload,
+    write_scene,
+)
 from gr_pcd.app import create_app
 
 GHOST_BOX = {
@@ -36,7 +43,7 @@ class Api:
         self.client = make_client(create_app(settings))
 
     def open(self, name="scene.pcd"):
-        r = self.client.post("/api/session/open", json={"path": name})
+        r = open_via_upload(self.client, fixture_dir(self.settings) / name)
         assert r.status_code == 200, r.text
         return r.json()
 
@@ -106,7 +113,7 @@ def api(tmp_path):
 
 def write_chain(settings, n=100_000):
     rows = [(0.5 * i, 0.0, 0.0) for i in range(n)]
-    (settings.data_root / "chain.pcd").write_bytes(
+    (fixture_dir(settings) / "chain.pcd").write_bytes(
         build_pcd(xyz_fields(8), rows, "binary")
     )
 
@@ -147,24 +154,17 @@ def test_api_02_open(tmp_path, encoding):
 def test_api_03_open_errors(tmp_path):
     settings = make_settings(tmp_path)
     write_scene(settings)
-    (settings.data_root / "bad.pcd").write_bytes(b"VERSION .7\nDATA ascii\n")
-    outside = tmp_path / "outside.pcd"
-    outside.write_bytes(b"x")
-    (settings.data_root / "link.pcd").symlink_to(outside)
+    (fixture_dir(settings) / "bad.pcd").write_bytes(b"VERSION .7\nDATA ascii\n")
     a = Api(settings)
 
     def code(path):
-        r = a.client.post("/api/session/open", json={"path": path})
+        r = open_via_upload(a.client, fixture_dir(settings) / path)
         return r.status_code, r.json()["error"]["code"]
 
-    assert code("../outside.pcd") == (422, "path_escape")
-    assert code(str(outside)) == (422, "path_escape")
-    assert code("link.pcd") == (422, "path_escape")
     assert code("bad.pcd")[0] == 422
-    assert code("missing.pcd") == (404, "not_found")
     small = Api(make_settings(tmp_path / "t", memory_budget_bytes=100))
     write_scene(small.settings)
-    r = small.client.post("/api/session/open", json={"path": "scene.pcd"})
+    r = open_via_upload(small.client, fixture_dir(small.settings) / "scene.pcd")
     assert r.status_code == 413
     assert r.json()["error"]["code"] == "memory_budget_exceeded"
 
@@ -589,10 +589,9 @@ def test_api_25_open_archive_and_mark_saved(api):
     _res, blob = saved(api)
     before = api.state()
     assert before["unsaved"] is True
-    (api.settings.data_root / "a.pcdsession").write_bytes(blob)
-    st = api.client.post(
-        "/api/session/open-archive",
-        json={"path": "a.pcdsession", "replace": True},
+    (fixture_dir(api.settings) / "a.pcdsession").write_bytes(blob)
+    st = open_via_upload(
+        api.client, fixture_dir(api.settings) / "a.pcdsession", replace=True
     ).json()
     assert st["counts"]["deleted"] == 27 and st["unsaved"] is False
     assert st["selection"]["count"] == 4
@@ -616,7 +615,7 @@ def test_api_26_tampered_archive_keeps_old_session(api, tmp_path):
     _, blob = saved(api)
     src = tmp_path / "src.pcdsession"
     src.write_bytes(blob)
-    bad = api.settings.data_root / "bad.pcdsession"
+    bad = fixture_dir(api.settings) / "bad.pcdsession"
     with zipfile.ZipFile(src) as zi, zipfile.ZipFile(bad, "w") as zo:
         for info in zi.infolist():
             data = zi.read(info)
@@ -624,10 +623,7 @@ def test_api_26_tampered_archive_keeps_old_session(api, tmp_path):
                 data = data[:-1] + bytes([data[-1] ^ 1])
             zo.writestr(info.filename, data)
     before = api.state()
-    r = api.client.post(
-        "/api/session/open-archive",
-        json={"path": "bad.pcdsession", "replace": True},
-    )
+    r = open_via_upload(api.client, bad, replace=True)
     assert r.status_code == 422
     assert r.json()["error"]["code"] == "source_hash_mismatch"
     assert api.state()["session_id"] == before["session_id"]
@@ -636,11 +632,10 @@ def test_api_26_tampered_archive_keeps_old_session(api, tmp_path):
 def test_api_27_fresh_app_reopens_archive(api, tmp_path):
     _, blob = saved(api)
     other = make_settings(tmp_path / "recreated")
-    (other.data_root / "a.pcdsession").write_bytes(blob)
+    (fixture_dir(other) / "a.pcdsession").write_bytes(blob)
     fresh = Api(other)
-    st = fresh.client.post(
-        "/api/session/open-archive",
-        json={"path": "a.pcdsession", "replace": True},
+    st = open_via_upload(
+        fresh.client, fixture_dir(other) / "a.pcdsession", replace=True
     ).json()
     assert st["counts"]["deleted"] == 27 and st["revision"]["cloud"] == 1
 
@@ -665,9 +660,9 @@ def test_api_29_error_shape(api):
     c = api.client
     calls = [
         c.post("/api/session/undo", json={"cloud_revision": 1}),
-        c.post("/api/session/open", json={"path": "../x"}),
-        c.post("/api/session/open", json={"path": "nope.pcd"}),
-        c.post("/api/session/open", json={}),
+        upload(c, b"x", upload_id="not-hex"),
+        upload(c, b"VERSION .7\nDATA ascii\n", upload_id="a" * 32),
+        upload(c, b"not a zip", upload_id="b" * 32, filename="x.pcdsession"),
         c.get("/api/jobs/none"),
         c.get("/api/exports/none"),
     ]
@@ -725,10 +720,10 @@ def test_api_31_end_to_end_flow(api, tmp_path):
     sav = api.wait(api.client.post("/api/session/save", json={}))["result"]
     blob = api.client.get(f"/api/session-archives/{sav['archive_id']}").content
     other = make_settings(tmp_path / "fresh")
-    (other.data_root / "s.pcdsession").write_bytes(blob)
+    (fixture_dir(other) / "s.pcdsession").write_bytes(blob)
     fresh = Api(other)
-    st = fresh.client.post(
-        "/api/session/open-archive", json={"path": "s.pcdsession"}
+    st = open_via_upload(
+        fresh.client, fixture_dir(other) / "s.pcdsession"
     ).json()
     assert st["counts"]["active"] == 102 and st["history"]["cursor"] == 1
 
@@ -771,7 +766,7 @@ def test_api_42_packed_rgb_is_bit_exact(api, typ, kind):
         vals = packed
     rows = [(float(i), 0.0, 0.0, v) for i, v in enumerate(vals)]
     fields = xyz_fields(4) + [("rgb", typ, 4, 1)]
-    (api.settings.data_root / "rgb.pcd").write_bytes(
+    (fixture_dir(api.settings) / "rgb.pcd").write_bytes(
         build_pcd(fields, rows, "binary")
     )
     api.open("rgb.pcd")

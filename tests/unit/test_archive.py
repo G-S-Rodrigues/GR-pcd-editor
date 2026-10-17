@@ -12,6 +12,7 @@ from fixtures.pcdgen import SCENE_GHOST, build_pcd, xyz_fields
 from fixtures.sessions import (
     box_all_ghost,
     delete_ghost,
+    fixture_dir,
     make_settings,
     select_box,
     wait,
@@ -34,7 +35,7 @@ def env(tmp_path):
     settings = make_settings(tmp_path)
     write_scene(settings)
     mgr = SessionManager(settings)
-    mgr.open_pcd(settings.data_root / "scene.pcd", "scene.pcd")
+    mgr.open_pcd(fixture_dir(settings) / "scene.pcd", "scene.pcd")
     yield mgr
     mgr.jobs.shutdown()
 
@@ -97,7 +98,7 @@ def test_ses_22_round_trip(env, tmp_path):
 
 def test_ses_23_archive_embeds_source(env, tmp_path):
     path, _ = saved_archive(env, tmp_path)
-    original = (env.settings.data_root / "scene.pcd").read_bytes()
+    original = (fixture_dir(env.settings) / "scene.pcd").read_bytes()
     with zipfile.ZipFile(path) as zf:
         assert hashlib.sha256(zf.read("source.pcd")).hexdigest() == (
             hashlib.sha256(original).hexdigest()
@@ -111,7 +112,7 @@ def test_ses_23_archive_embeds_source(env, tmp_path):
     keep = tmp_path / "keep.pcdsession"
     shutil.copy(path, keep)
     shutil.rmtree(env.settings.work_root)
-    (env.settings.data_root / "scene.pcd").unlink()
+    (fixture_dir(env.settings) / "scene.pcd").unlink()
     fresh = SessionManager(make_settings(tmp_path / "new"))
     assert fresh.open_archive(keep).state()["counts"]["original"] == 129
     fresh.jobs.shutdown()

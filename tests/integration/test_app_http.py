@@ -7,13 +7,12 @@ from gr_pcd.settings import Settings
 
 
 def _settings(tmp_path: Path) -> Settings:
-    data = tmp_path / "data"
     work = tmp_path / "work"
     static = tmp_path / "static"
-    for d in (data, work, static):
+    for d in (work, static):
         d.mkdir()
     (static / "index.html").write_text("<html></html>")
-    return Settings(data_root=data, work_root=work, static_dir=static)
+    return Settings(work_root=work, static_dir=static)
 
 
 def test_be_10_health_ok_when_ready(tmp_path: Path) -> None:

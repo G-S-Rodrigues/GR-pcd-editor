@@ -15,6 +15,7 @@ from fixtures.pcdgen import (
 from fixtures.sessions import (
     box_all_ghost,
     delete_ghost,
+    fixture_dir,
     make_settings,
     select_box,
     wait,
@@ -39,7 +40,7 @@ def mgr(tmp_path):
     settings = make_settings(tmp_path)
     write_scene(settings)
     m = SessionManager(settings)
-    m.open_pcd(settings.data_root / "scene.pcd", "scene.pcd")
+    m.open_pcd(fixture_dir(settings) / "scene.pcd", "scene.pcd")
     yield m
     m.jobs.shutdown()
 
@@ -219,10 +220,10 @@ def test_ses_12_memory_guard_keeps_old_session(tmp_path):
     write_scene(settings, "a.pcd")
     write_scene(settings, "b.pcd")
     m = SessionManager(settings)
-    old = m.open_pcd(settings.data_root / "a.pcd", "a.pcd")
+    old = m.open_pcd(fixture_dir(settings) / "a.pcd", "a.pcd")
     m.settings = dataclasses.replace(settings, memory_budget_bytes=100)
     with pytest.raises(PcdError):
-        m.open_pcd(settings.data_root / "b.pcd", "b.pcd")
+        m.open_pcd(fixture_dir(settings) / "b.pcd", "b.pcd")
     assert m.session is old and old.state()["counts"]["original"] == 129
     m.jobs.shutdown()
 
@@ -230,16 +231,16 @@ def test_ses_12_memory_guard_keeps_old_session(tmp_path):
 def test_ses_13_replace_session(tmp_path):
     settings = make_settings(tmp_path)
     write_scene(settings, "a.pcd")
-    (settings.data_root / "bad.pcd").write_bytes(b"VERSION .7\n")
+    (fixture_dir(settings) / "bad.pcd").write_bytes(b"VERSION .7\n")
     m = SessionManager(settings)
-    a = m.open_pcd(settings.data_root / "a.pcd", "a.pcd")
+    a = m.open_pcd(fixture_dir(settings) / "a.pcd", "a.pcd")
     with pytest.raises(PcdError):
-        m.open_pcd(settings.data_root / "bad.pcd", "bad.pcd")
+        m.open_pcd(fixture_dir(settings) / "bad.pcd", "bad.pcd")
     assert m.session is a and a.source_path.exists()
     assert [p.name for p in (settings.work_root / "sessions").iterdir()] == [
         a.id
     ]
-    b = m.open_pcd(settings.data_root / "a.pcd", "a2.pcd")
+    b = m.open_pcd(fixture_dir(settings) / "a.pcd", "a2.pcd")
     assert m.session is b and not a.source_path.exists()
     m.close()
     assert m.session is None
@@ -248,7 +249,7 @@ def test_ses_13_replace_session(tmp_path):
 
 def test_ses_14_source_untouched(mgr, tmp_path):
     s = mgr.require()
-    path = mgr.settings.data_root / "scene.pcd"
+    path = fixture_dir(mgr.settings) / "scene.pcd"
     before = hashlib.sha256(path.read_bytes()).hexdigest()
     assert s.source_path.parent.parent == mgr.settings.work_root / "sessions"
     delete_ghost(mgr)
@@ -287,13 +288,13 @@ def test_ses_30_open_cancels_running_job(tmp_path):
     settings = make_settings(tmp_path)
     write_scene(settings)
     m = SessionManager(settings)
-    m.open_pcd(settings.data_root / "scene.pcd", "scene.pcd")
+    m.open_pcd(fixture_dir(settings) / "scene.pcd", "scene.pcd")
     import threading
 
     gate = threading.Event()
     blocker = m.jobs.submit("export", lambda ctx: (gate.wait(5), {})[1])
     queued = m.submit_select(SelectSpec("replace", "active", FilterTool()))
-    m.open_pcd(settings.data_root / "scene.pcd", "again.pcd")
+    m.open_pcd(fixture_dir(settings) / "scene.pcd", "again.pcd")
     gate.set()
     wait(queued)
     wait(blocker)

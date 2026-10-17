@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from gr_pcd.settings import Settings
 
 
@@ -32,4 +30,10 @@ def test_fil_00_env_parsing(monkeypatch) -> None:
     s = Settings.from_env()
     assert (s.public_port, s.upload_reserve_bytes) == (9001, 5)
     assert s.download_ttl_seconds == 7
-    assert isinstance(s.data_root, Path)
+
+
+def test_be_14_no_data_root_setting(monkeypatch, tmp_path) -> None:
+    _env(monkeypatch, GR_PCD_DATA_ROOT=str(tmp_path / "ignored"))
+    s = Settings.from_env()
+    assert not hasattr(s, "data_root")
+    assert "data_root" not in Settings.__dataclass_fields__

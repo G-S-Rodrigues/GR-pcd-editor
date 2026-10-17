@@ -3,6 +3,7 @@ import time
 
 from fixtures.sessions import (
     delete_ghost,
+    fixture_dir,
     make_settings,
     wait,
     write_scene,
@@ -61,7 +62,7 @@ def test_fil_35_ttl_removes_old_downloads_only(tmp_path) -> None:
     settings = make_settings(tmp_path)
     write_scene(settings)
     mgr = SessionManager(settings)
-    mgr.open_pcd(settings.data_root / "scene.pcd", "scene.pcd")
+    mgr.open_pcd(fixture_dir(settings) / "scene.pcd", "scene.pcd")
     ids = []
     for _ in range(2):
         job = wait(mgr.submit_export("binary", "active"))
@@ -79,7 +80,7 @@ def test_fil_36_live_session_dir_is_never_swept(tmp_path) -> None:
     settings = make_settings(tmp_path)
     write_scene(settings)
     mgr = SessionManager(settings)
-    s = mgr.open_pcd(settings.data_root / "scene.pcd", "scene.pcd")
+    s = mgr.open_pcd(fixture_dir(settings) / "scene.pcd", "scene.pcd")
     live = s.source_path.parent
     orphan = live.parent / "orphan"
     orphan.mkdir()
@@ -97,7 +98,7 @@ def test_fil_37_saved_archive_in_ttl_is_still_usable(tmp_path) -> None:
     settings = make_settings(tmp_path)
     write_scene(settings)
     mgr = SessionManager(settings)
-    mgr.open_pcd(settings.data_root / "scene.pcd", "scene.pcd")
+    mgr.open_pcd(fixture_dir(settings) / "scene.pcd", "scene.pcd")
     s = delete_ghost(mgr)
     assert s.unsaved
     job = wait(mgr.submit_save())

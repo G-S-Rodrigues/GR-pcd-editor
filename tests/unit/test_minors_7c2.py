@@ -9,7 +9,7 @@ import pytest
 from test_archive import saved_archive
 
 from fixtures.pcdgen import SCENE_FIELDS, build_pcd, scene_rows
-from fixtures.sessions import make_settings, wait, write_scene
+from fixtures.sessions import fixture_dir, make_settings, wait, write_scene
 from gr_pcd.pcd.errors import PcdError
 from gr_pcd.pcd.header import parse_header
 from gr_pcd.session import archive as arc
@@ -56,7 +56,7 @@ def env(tmp_path):
     settings = make_settings(tmp_path)
     write_scene(settings)
     mgr = SessionManager(settings)
-    mgr.open_pcd(settings.data_root / "scene.pcd", "scene.pcd")
+    mgr.open_pcd(fixture_dir(settings) / "scene.pcd", "scene.pcd")
     yield mgr
     mgr.jobs.shutdown()
 
@@ -116,7 +116,7 @@ def test_ses_46_opens_are_serialised_and_leave_one_session_dir(
 
     def go():
         barrier.wait()
-        mgr.open_pcd(settings.data_root / "scene.pcd", "scene.pcd")
+        mgr.open_pcd(fixture_dir(settings) / "scene.pcd", "scene.pcd")
 
     threads = [threading.Thread(target=go) for _ in range(2)]
     for t in threads:

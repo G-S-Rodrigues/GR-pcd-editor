@@ -9,7 +9,6 @@ from fastapi.responses import JSONResponse
 from gr_pcd.editing.errors import EditError
 from gr_pcd.files.uploads import UploadError
 from gr_pcd.geometry.errors import GeometryError
-from gr_pcd.paths import PathEscapeError
 from gr_pcd.pcd.errors import PcdError
 from gr_pcd.session.errors import (
     NoSessionError,
@@ -52,15 +51,6 @@ def install_error_handlers(app: FastAPI) -> None:
     def _upload(_: Request, exc: UploadError):
         return _body(exc.code, exc.message, exc.status)
 
-    @app.exception_handler(PermissionError)
-    def _denied(_: Request, exc: PermissionError):
-        return _body(
-            "mount_unreadable",
-            "the folder or file is not readable; it must be readable by "
-            "the launcher's user id",
-            403,
-        )
-
     @app.exception_handler(OSError)
     def _oserror(_: Request, exc: OSError):
         if exc.errno == errno.ENOSPC:
@@ -68,10 +58,6 @@ def install_error_handlers(app: FastAPI) -> None:
                 "storage_full", "the work volume has no space left", 507
             )
         return _body("io_error", f"file system error: {exc.strerror}", 500)
-
-    @app.exception_handler(PathEscapeError)
-    def _escape(_: Request, exc: PathEscapeError):
-        return _body("path_escape", str(exc), 422)
 
     @app.exception_handler(PcdError)
     def _pcd(_: Request, exc: PcdError):

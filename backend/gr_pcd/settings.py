@@ -15,7 +15,6 @@ def _env_int(name: str, default: int) -> int:
 
 @dataclass(frozen=True)
 class Settings:
-    data_root: Path
     work_root: Path
     static_dir: Path
     memory_budget_bytes: int | None = None
@@ -28,7 +27,6 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         return cls(
-            data_root=Path(os.environ.get("GR_PCD_DATA_ROOT", "/data")),
             work_root=Path(os.environ.get("GR_PCD_WORK_ROOT", "/work")),
             static_dir=Path(os.environ.get("GR_PCD_STATIC_DIR", "/app/static")),
             memory_budget_bytes=_opt_int("GR_PCD_MEMORY_BUDGET_BYTES"),

@@ -11,7 +11,37 @@ def make_settings(tmp_path, **kw) -> Settings:
     for d in (data, work, static):
         d.mkdir(parents=True, exist_ok=True)
     (static / "index.html").write_text("<html></html>")
-    return Settings(data_root=data, work_root=work, static_dir=static, **kw)
+    return Settings(work_root=work, static_dir=static, **kw)
+
+
+def fixture_dir(settings):
+    """Scratch folder for generated test files (not known to the app)."""
+    return settings.work_root.parent / "data"
+
+
+UP = "/api/session/upload"
+UID = "0123456789abcdef0123456789abcdef"
+OCT = {"Content-Type": "application/octet-stream"}
+
+
+def upload(c, body, upload_id=UID, filename="my scan.pcd", **extra):
+    params = {"upload_id": upload_id, "filename": filename, **extra}
+    return c.post(UP, params=params, content=body, headers=OCT)
+
+
+def open_via_upload(client, path, filename=None, replace=False, upload_id=None):
+    """Open a file on disk through the upload route (the only way in)."""
+    import uuid
+    from pathlib import Path
+
+    path = Path(path)
+    return upload(
+        client,
+        path.read_bytes(),
+        upload_id=upload_id or uuid.uuid4().hex,
+        filename=filename or path.name,
+        replace=replace,
+    )
 
 
 def make_client(app):
@@ -22,7 +52,7 @@ def make_client(app):
 
 
 def write_scene(settings, name="scene.pcd", encoding="binary"):
-    path = settings.data_root / name
+    path = fixture_dir(settings) / name
     path.write_bytes(build_pcd(SCENE_FIELDS, scene_rows(), encoding))
     return path
 
