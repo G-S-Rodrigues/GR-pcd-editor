@@ -13,3 +13,9 @@
 /.scratch/
 /plans/
 *.plan.md
+node_modules/
+frontend/dist/
+.venv/
+__pycache__/
+.ruff_cache/
+.pytest_cache/

@@ -37,13 +37,19 @@ configured data directory. Exported PCDs and saved sessions are browser
 downloads: the browser or operating system selects the destination and may
 show a save dialog. The original input PCD is never modified.
 
+A Docker named volume `work` holds uploads, caches and session working data
+and survives stop and rebuild. Unsaved in-memory editing state is lost when the
+container stops; downloads and the mounted folder are never removed. Until the
+launcher exists, start the app with
+`GR_PCD_DATA_DIR=... docker compose -f docker/compose.yaml up -d --wait app`.
+
 If Docker, Compose, the Docker daemon, the data folder, or the requested port
 is unavailable, the future launcher will explain the corrective action and
 exit without claiming success.
 
-## Verification (forthcoming)
+## Verification
 
-Later parts will provide these Linux commands:
+These Linux commands work now:
 
 ```sh
 docker compose -f docker/compose.yaml --profile checks build verify lint
@@ -51,9 +57,10 @@ docker compose -f docker/compose.yaml --profile checks run --rm verify
 docker compose -f docker/compose.yaml --profile checks run --rm lint
 ```
 
-The current bootstrap contract can be run locally with:
+The container tier (needs Docker) and the bootstrap contract:
 
 ```sh
+bash tests/container/test_compose.sh
 bash scripts/check-bootstrap-contract.sh
 ```
 

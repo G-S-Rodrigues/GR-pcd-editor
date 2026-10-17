@@ -1,0 +1,26 @@
+[project]
+name = "gr-pcd-visualizer"
+version = "0.0.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.143.3",
+    "uvicorn>=0.54.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["backend"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 80
+src = ["backend", "tests"]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+    "ruff>=0.17.1",
+]

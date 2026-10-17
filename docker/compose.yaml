@@ -1,0 +1,32 @@
+name: gr-pcd-visualizer
+services:
+  app:
+    build: {context: .., dockerfile: docker/Dockerfile, target: app}
+    image: gr-pcd-visualizer:local
+    ports: ["127.0.0.1:${GR_PCD_PORT:-8080}:8080"]
+    volumes:
+      - type: bind
+        source: ${GR_PCD_DATA_DIR:-./data-dir-not-set}
+        target: /data
+        read_only: true
+        bind: {create_host_path: false}
+      - {type: volume, source: work, target: /work}
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+  verify:
+    profiles: [checks]
+    build: {context: .., dockerfile: docker/Dockerfile, target: checks}
+    image: gr-pcd-visualizer:checks
+    network_mode: none
+    command: ["scripts/verify.sh"]
+  lint:
+    profiles: [checks]
+    image: gr-pcd-visualizer:checks
+    build: {context: .., dockerfile: docker/Dockerfile, target: checks}
+    network_mode: none
+    command: ["scripts/lint.sh"]
+volumes:
+  work: {}
