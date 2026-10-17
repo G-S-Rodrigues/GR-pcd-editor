@@ -22,6 +22,7 @@ from gr_pcd.api.schemas import (
     RevisionBody,
     SelectionBody,
 )
+from gr_pcd.files.cleanup import sweep_runtime
 from gr_pcd.files.mounted import list_mounted
 from gr_pcd.files.names import safe_filename
 from gr_pcd.files.uploads import (
@@ -39,6 +40,21 @@ from gr_pcd.settings import Settings
 
 MAX_CLIENT_STATE = 1024 * 1024
 UPLOAD_ID = re.compile(r"^[0-9a-f]{32}$")
+
+
+DOWNLOAD_HEADERS = {
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+}
+
+
+def _download(d) -> FileResponse:
+    return FileResponse(
+        d.path,
+        media_type="application/octet-stream",
+        filename=d.filename,
+        headers=DOWNLOAD_HEADERS,
+    )
 
 
 def _job(job) -> JSONResponse:
@@ -68,6 +84,7 @@ def build_router(manager: SessionManager, settings: Settings) -> APIRouter:
         if not UPLOAD_ID.match(upload_id):
             raise InvalidUploadId("upload_id must be 32 lowercase hex digits")
         manager.require_replaceable(replace)
+        sweep_runtime(manager)
         limit = settings.max_source_bytes
         try:
             declared = int(request.headers.get("content-length", ""))
@@ -267,25 +284,23 @@ def build_router(manager: SessionManager, settings: Settings) -> APIRouter:
 
     @router.post("/session/export")
     def export(body: ExportBody):
+        sweep_runtime(manager)
         return _job(manager.submit_export(body.format, body.scope))
 
     @router.get("/exports/{export_id}")
     def download_export(export_id: str):
         d = manager.download(export_id, "exports")
-        return FileResponse(
-            d.path, media_type="application/octet-stream", filename=d.filename
-        )
+        return _download(d)
 
     @router.post("/session/save")
     def save(body: dict | None = None):
+        sweep_runtime(manager)
         return _job(manager.submit_save())
 
     @router.get("/session-archives/{archive_id}")
     def download_archive(archive_id: str):
         d = manager.download(archive_id, "session-archives")
-        return FileResponse(
-            d.path, media_type="application/octet-stream", filename=d.filename
-        )
+        return _download(d)
 
     @router.post("/session/mark-saved")
     def mark_saved(body: MarkSavedBody):

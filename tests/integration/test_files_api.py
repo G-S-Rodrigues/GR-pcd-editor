@@ -1,5 +1,7 @@
 """FIL-14..: mounted folder, replace rules, uploads and downloads over HTTP."""
 
+import time
+
 from fixtures.pcdgen import SCENE_FIELDS, build_pcd, scene_rows
 from fixtures.sessions import (
     delete_ghost,
@@ -192,3 +194,61 @@ def test_fil_24_upload_ids_validated(tmp_path) -> None:
     r = c.delete(f"/api/uploads/{UID}")
     assert r.status_code == 200
     assert app.state.manager.uploads.get(UID).cancel_requested is True
+
+
+def _export_url(c, fmt="binary"):
+    r = c.post("/api/session/export", json={"format": fmt, "scope": "active"})
+    assert r.status_code == 202, r.text
+    jid = r.json()["id"]
+    for _ in range(2000):
+        job = c.get(f"/api/jobs/{jid}").json()
+        if job["status"] not in ("queued", "running"):
+            break
+        time.sleep(0.01)
+    assert job["status"] == "complete", job
+    return f"/api/exports/{job['result']['export_id']}"
+
+
+def test_fil_30_export_filename_is_attachment_without_quotes(
+    tmp_path,
+) -> None:
+    settings, _unused, c = _app(tmp_path)
+    src = write_scene(settings, 'my "scan".pcd')
+    before = (src.read_bytes(), src.stat().st_mtime_ns)
+    c.post("/api/session/open", json={"path": 'my "scan".pcd'})
+    r = c.get(_export_url(c))
+    assert r.status_code == 200
+    cd = r.headers["content-disposition"]
+    assert cd.startswith("attachment")
+    assert "_cleaned.pcd" in cd
+    assert "scan" in cd and "%22" not in cd and '"' not in cd
+    assert (src.read_bytes(), src.stat().st_mtime_ns) == before  # AC-24
+
+
+def test_fil_31_unicode_name_uses_rfc5987(tmp_path) -> None:
+    settings, _unused, c = _app(tmp_path)
+    write_scene(settings, "sala é.pcd")
+    c.post("/api/session/open", json={"path": "sala é.pcd"})
+    r = c.get(_export_url(c))
+    assert "filename*=utf-8''" in r.headers["content-disposition"]
+
+
+def test_fil_32_session_download_name_and_headers(tmp_path) -> None:
+    settings, _unused, c = _app(tmp_path)
+    src = write_scene(settings)
+    before = (src.read_bytes(), src.stat().st_mtime_ns)
+    c.post("/api/session/open", json={"path": "scene.pcd"})
+    r = c.post("/api/session/save", json={})
+    jid = r.json()["id"]
+    for _ in range(2000):
+        job = c.get(f"/api/jobs/{jid}").json()
+        if job["status"] not in ("queued", "running"):
+            break
+        time.sleep(0.01)
+    assert job["status"] == "complete", job
+    d = c.get(f"/api/session-archives/{job['result']['archive_id']}")
+    assert d.status_code == 200
+    assert "_session_v1.pcdsession" in d.headers["content-disposition"]
+    assert d.headers["cache-control"] == "no-store"
+    assert d.headers["x-content-type-options"] == "nosniff"
+    assert (src.read_bytes(), src.stat().st_mtime_ns) == before  # AC-24
