@@ -1,4 +1,9 @@
 import type { ColourMode } from "../colour/modes";
+import { type FilterModel, emptyFilter } from "../inspector/filters";
+import { type ProtectionModel, emptyProtection } from "../inspector/protection";
+import { type BoxModel, defaultBox } from "../tools/box/model";
+import { type ClusterModel, defaultCluster } from "../tools/cluster/model";
+import { type PolygonState, emptyPolygon } from "../tools/polygon/model";
 import type { RenderData } from "../render/parse";
 import { type Camera, defaultCamera } from "../view/camera";
 import { type Store, createStore } from "./store";
@@ -11,6 +16,14 @@ import type {
   SessionState,
   ToolKind,
 } from "./types";
+
+export interface ToolsState {
+  box: BoxModel;
+  polygon: PolygonState;
+  cluster: ClusterModel;
+  filters: FilterModel;
+  protection: ProtectionModel;
+}
 
 export interface AppState {
   session: SessionState | null;
@@ -25,6 +38,9 @@ export interface AppState {
   render: RenderData | null;
   rendering: boolean;
   candidate: Candidate | null;
+  tools: ToolsState;
+  /** A tool edit exists that has not been committed (Add/Subtract/Intersect drafts). */
+  draft: boolean;
   job: { busy: boolean; progress: number | null; message: string | null };
   upload: { phase: "sending" | "importing"; loaded: number; total: number | null } | null;
   notices: Notice[];
@@ -44,6 +60,14 @@ export function initialState(): AppState {
     render: null,
     rendering: false,
     candidate: null,
+    tools: {
+      box: defaultBox([0, 0, 0]),
+      polygon: emptyPolygon(),
+      cluster: defaultCluster(),
+      filters: emptyFilter(),
+      protection: emptyProtection(),
+    },
+    draft: false,
     job: { busy: false, progress: null, message: null },
     upload: null,
     notices: [],
