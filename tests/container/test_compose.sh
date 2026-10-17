@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Container-tier checks CTR-01..05 and CTR-07 (CTR-06 belongs to part 3).
+# Container-tier checks CTR-01..05 and CTR-07 (CTR-06 is LCH-01/LCH-26).
 # Needs docker, curl and python3.
 set -euo pipefail
 
@@ -42,7 +42,7 @@ fail() {
     failed=1
 }
 
-# CTR-01 compose config
+# CTR-01 compose config (incl. user and labels)
 if dc --profile checks config --format json | python3 -c '
 import json, sys
 port = sys.argv[1]
@@ -56,9 +56,19 @@ vols = {v["target"]: v for v in app["volumes"]}
 assert vols["/data"]["type"] == "bind" and vols["/data"]["read_only"] is True
 assert vols["/work"]["type"] == "volume"
 assert "profiles" not in app
+assert app["user"] == "10001:10001", app.get("user")
+lab = app["labels"]
+assert lab["gr-pcd.port"] == port, lab
+assert lab["gr-pcd.data-dir"] and lab["gr-pcd.user"] == "10001:10001", lab
 for name in ("verify", "lint"):
     assert cfg[name]["profiles"] == ["checks"], name
-' "$port"; then pass CTR-01; else fail CTR-01 "compose config"; fi
+' "$port" \
+    && GR_PCD_UID=1234 GR_PCD_GID=5678 dc config --format json | python3 -c '
+import json, sys
+app = json.load(sys.stdin)["services"]["app"]
+assert app["user"] == "1234:5678", app["user"]
+assert app["labels"]["gr-pcd.user"] == "1234:5678", app["labels"]
+'; then pass CTR-01; else fail CTR-01 "compose config"; fi
 
 # CTR-02 up and healthy
 if dc up -d --wait --wait-timeout 60 app >/dev/null 2>&1 \

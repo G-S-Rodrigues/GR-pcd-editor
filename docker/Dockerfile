@@ -16,7 +16,8 @@ FROM python:3.12-slim-bookworm AS app
 RUN groupadd -g 10001 app \
     && useradd -u 10001 -g 10001 -M -s /usr/sbin/nologin app \
     && mkdir -p /data /work \
-    && chown 10001:10001 /work
+    && chown 10001:10001 /work \
+    && chmod 1777 /work
 COPY --from=python-deps /app/.venv /app/.venv
 COPY backend/ /app/backend/
 COPY --from=frontend-build /src/frontend/dist /app/static
@@ -46,5 +47,6 @@ ENV UV_PROJECT_ENVIRONMENT=/app/.venv UV_COMPILE_BYTECODE=0
 RUN uv sync --frozen --no-install-project
 COPY tests/ /app/tests/
 COPY scripts/ /app/scripts/
+COPY gr-pcd-visualizer.sh /app/
 RUN chown 10001:10001 /app
 USER 10001:10001

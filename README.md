@@ -1,8 +1,8 @@
 # GR PCD Editor
 
 GR PCD Editor is a Linux-first local application for reviewing and cleaning
-point-cloud (`.pcd`) maps. The application is not implemented yet; these are
-the intended entry points for the forthcoming Docker-based release.
+point-cloud (`.pcd`) maps. The application is under construction; the launcher and
+container stack described below work now.
 
 ## Prerequisites
 
@@ -10,24 +10,46 @@ the intended entry points for the forthcoming Docker-based release.
 - Docker Engine
 - Docker Compose v2
 
-## Running (forthcoming)
+## Running
 
-After the launcher and container configuration arrive in later parts, clone
-the repository and run:
-
-```sh
-./gr-pcd-visualizer.sh
-```
-
-Subsequent runs will reuse an existing image when possible. The future
-launcher will also support selecting a mounted folder and port:
+Clone the repository and run:
 
 ```sh
+./gr-pcd-visualizer.sh                      # data folder = current directory, port 8080
 ./gr-pcd-visualizer.sh --data-dir "/home/user/PCD maps" --port 8081
+./gr-pcd-visualizer.sh --rebuild            # rebuild the image, keep work data
+./gr-pcd-visualizer.sh --no-browser         # do not open a browser
+./gr-pcd-visualizer.sh --stop               # stop; work data is kept
 ```
 
-The app will print its localhost URL. `--stop` will stop this project's
-containers without deleting exports or persistent working data.
+The launcher builds the image on first use, waits up to 120 s for the app to
+report healthy (override with `GR_PCD_WAIT_TIMEOUT=<seconds>`), then prints
+`GR PCD Editor is ready: http://localhost:<port>` and opens your browser. It
+never prints that line before the health check passes. The server listens on
+`127.0.0.1` only. `--stop` stops this project's container without deleting
+exports or the persistent `work` volume.
+
+One instance per checkout. Running the launcher again with the same settings
+reuses the running app. Different `--data-dir`, `--port` or user is refused
+(exit 5); run `./gr-pcd-visualizer.sh --stop` first. `COMPOSE_PROJECT_NAME`
+selects a separate instance.
+
+The container runs as your user id, so it can read the data folder you can
+read (supplementary groups are not passed). If you are root, it runs as uid
+10001 and warns. A `work` volume created by an older image is owned by uid
+10001; if the app then reports the work folder is not writable, remove it
+yourself with `docker volume rm gr-pcd-visualizer_work` (this deletes
+uploads and session working data; the launcher never does it).
+
+| Exit | Meaning |
+|---|---|
+| 0 | ready / stopped |
+| 1 | startup failed or health timed out (logs printed) |
+| 2 | bad flag, port or data directory (a missing directory is never created) |
+| 3 | Docker CLI, Compose v2, daemon or local context missing |
+| 4 | port in use |
+| 5 | running instance has different settings |
+| 130 | interrupted (the server may still run; use `--stop`) |
 
 ## Files, exports, and troubleshooting
 
@@ -39,12 +61,10 @@ show a save dialog. The original input PCD is never modified.
 
 A Docker named volume `work` holds uploads, caches and session working data
 and survives stop and rebuild. Unsaved in-memory editing state is lost when the
-container stops; downloads and the mounted folder are never removed. Until the
-launcher exists, start the app with
-`GR_PCD_DATA_DIR=... docker compose -f docker/compose.yaml up -d --wait app`.
+container stops; downloads and the mounted folder are never removed.
 
 If Docker, Compose, the Docker daemon, the data folder, or the requested port
-is unavailable, the future launcher will explain the corrective action and
+is unavailable, the launcher explains the corrective action and
 exit without claiming success.
 
 ## Verification
@@ -61,6 +81,8 @@ The container tier (needs Docker) and the bootstrap contract:
 
 ```sh
 bash tests/container/test_compose.sh
+bash tests/launcher/test_launcher.sh          # stub docker, no daemon
+bash tests/launcher/test_launcher_smoke.sh    # real Docker, port 18081
 bash scripts/check-bootstrap-contract.sh
 ```
 
