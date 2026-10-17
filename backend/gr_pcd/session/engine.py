@@ -77,6 +77,9 @@ class RenderArrays:
     flags: np.ndarray  # uint8
     origin: tuple[float, float, float]
     eligible: int
+    attr: np.ndarray | None = None  # 4-byte values of the requested field
+    attr_kind: str | None = None  # f32 | u32 | i32
+    attr_field: str | None = None
 
 
 def _ro(a: np.ndarray) -> np.ndarray:
@@ -519,7 +522,9 @@ class EditingSession:
             "point": self.xyz[rid].tolist(),
         }
 
-    def render(self, budget: int, mode: str) -> tuple[RenderArrays, dict]:
+    def render(
+        self, budget: int, mode: str, attr: str | None = None
+    ) -> tuple[RenderArrays, dict]:
         if mode not in RENDER_MODES:
             raise EditError("invalid_mode", f"unknown render mode {mode}")
         with self.lock:
@@ -551,7 +556,25 @@ class EditingSession:
         flags[sel[ids] & ~protected[ids]] |= FLAG_SELECTED
         flags[sel[ids] & protected[ids]] |= FLAG_PROTECTED
         flags[~active[ids]] |= FLAG_DELETED
-        return RenderArrays(coords, ids, flags, origin, m), rev
+        values, kind = self._attr_values(attr, ids) if attr else (None, None)
+        return RenderArrays(
+            coords, ids, flags, origin, m, values, kind, attr
+        ), rev
+
+    def _attr_values(self, name: str, ids: np.ndarray):
+        idx = [i for i, s in enumerate(self.cloud.schema) if s.name == name]
+        if not idx:
+            raise EditError("unknown_field", f"no field named {name}")
+        spec = self.cloud.schema[idx[0]]
+        col = self.cloud.records[f"c{idx[0]}"]
+        if spec.count > 1:
+            col = col[:, 0]
+        col = col[ids]
+        if spec.size == 4 and spec.type == "U":
+            return col.astype("<u4"), "u32"
+        if spec.size == 4 and spec.type == "I":
+            return col.astype("<i4"), "i32"
+        return col.astype("<f4"), "f32"
 
     def export_mask(self, scope: str) -> np.ndarray:
         with self.lock:

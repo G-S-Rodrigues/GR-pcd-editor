@@ -274,8 +274,9 @@ def build_router(manager: SessionManager, settings: Settings) -> APIRouter:
     def render(
         budget: int = Query(100_000, ge=1, le=2_000_000),
         mode: str = Query("edited"),
+        attr: str | None = Query(None),
     ):
-        arr, rev = manager.require().render(budget, mode)
+        arr, rev = manager.require().render(budget, mode, attr)
         return Response(
             render_body(arr),
             media_type="application/octet-stream",

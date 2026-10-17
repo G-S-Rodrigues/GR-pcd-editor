@@ -724,3 +724,61 @@ def test_api_31_end_to_end_flow(api, tmp_path):
         "/api/session/open-archive", json={"path": "s.pcdsession"}
     ).json()
     assert st["counts"]["active"] == 102 and st["history"]["cursor"] == 1
+
+
+def _render_attr(api, **params):
+    return api.client.get(
+        "/api/session/render",
+        params={"mode": "original", "budget": 1000, **params},
+    )
+
+
+def test_api_40_render_without_attr_is_unchanged(api):
+    api.open()
+    r = _render_attr(api)
+    n = int(r.headers["X-Count"])
+    assert len(r.content) == n * 17
+    assert "X-Attr-Field" not in r.headers
+
+
+def test_api_41_render_attr_intensity_block(api):
+    api.open()
+    r = _render_attr(api, attr="intensity")
+    assert r.status_code == 200, r.text
+    n = int(r.headers["X-Count"])
+    assert len(r.content) == n * 17 + n * 4
+    assert r.headers["X-Attr-Field"] == "intensity"
+    assert r.headers["X-Attr-Kind"] == "f32"
+    ids = np.frombuffer(r.content, "<u4", n, n * 12)
+    attr = np.frombuffer(r.content, "<f4", n, n * 17)
+    expected = np.array(scene_rows())[ids, 3].astype("<f4")
+    assert (attr == expected).all()
+
+
+@pytest.mark.parametrize(("typ", "kind"), [("F", "f32"), ("U", "u32")])
+def test_api_42_packed_rgb_is_bit_exact(api, typ, kind):
+    packed = [0x00FF8040 + i for i in range(5)]
+    if typ == "F":
+        vals = [struct.unpack("<f", struct.pack("<I", p))[0] for p in packed]
+    else:
+        vals = packed
+    rows = [(float(i), 0.0, 0.0, v) for i, v in enumerate(vals)]
+    fields = xyz_fields(4) + [("rgb", typ, 4, 1)]
+    (api.settings.data_root / "rgb.pcd").write_bytes(
+        build_pcd(fields, rows, "binary")
+    )
+    api.open("rgb.pcd")
+    r = _render_attr(api, attr="rgb")
+    assert r.status_code == 200, r.text
+    assert r.headers["X-Attr-Kind"] == kind
+    n = int(r.headers["X-Count"])
+    ids = np.frombuffer(r.content, "<u4", n, n * 12)
+    got = np.frombuffer(r.content, "<u4", n, n * 17)
+    assert [int(g) for g in got] == [packed[i] for i in ids]
+
+
+def test_api_43_unknown_attr_field(api):
+    api.open()
+    r = _render_attr(api, attr="nope")
+    assert r.status_code == 422
+    assert r.json()["error"]["code"] == "unknown_field"
