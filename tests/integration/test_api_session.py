@@ -808,3 +808,22 @@ def test_api_50_filter_change_outdates_displayed_selection(api):
     assert api.apply(old).status_code == 409
     job = api.select_wait(everything, scope="displayed")
     assert job["result"]["candidate"]["candidates"] == 27
+
+
+def test_api_51_cluster_partial_result(api):
+    api.open()
+    tool = {"type": "cluster", "seed_id": 100, "radius": 1.0, "max_points": 5}
+    job = api.select_wait({**tool, "on_limit": "partial"})
+    assert job["status"] == "complete", job
+    cand = job["result"]["candidate"]
+    assert cand["cluster"]["complete"] is False
+    assert cand["cluster"]["limit"] == 5
+    assert job["result"]["selected"] >= 5
+    assert cand["candidates"] == job["result"]["selected"]
+    full = api.select_wait({**tool, "max_points": None, "on_limit": "partial"})
+    assert full["result"]["candidate"]["cluster"]["complete"] is True
+    assert full["result"]["selected"] == 127
+    # the default still fails
+    job = api.select_wait(tool)
+    assert job["status"] == "failed"
+    assert job["error"]["code"] == "component_limit_reached"

@@ -328,6 +328,7 @@ class EditingSession:
                 token=token,
                 on_round=on_round,
                 max_points=tool.max_points,
+                on_limit=tool.on_limit,
                 budget=self.budget,
             )
             out = np.zeros(self.cloud.n, dtype=bool)
@@ -336,6 +337,8 @@ class EditingSession:
                 "seed_id": tool.seed_id,
                 "radius": tool.radius,
                 "size": len(res.ids),
+                "complete": res.complete,
+                "limit": res.limit,
                 "bounds": {
                     "min": list(res.bounds[0]),
                     "max": list(res.bounds[1]),

@@ -25,6 +25,7 @@ class ClusterTool:
     region: BoxSpec | PrismSpec | None = None
     exclude_protected: bool = True
     max_points: int | None = 2_000_000
+    on_limit: str = "fail"  # fail | partial
 
 
 def _num(d: dict, key: str) -> float:

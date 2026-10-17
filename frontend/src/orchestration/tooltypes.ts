@@ -23,6 +23,7 @@ export interface ClusterTool {
   radius: number;
   region: BoxTool | PrismTool | null;
   exclude_protected: boolean;
-  max_points: number;
+  max_points: number | null;
+  on_limit?: "fail" | "partial";
 }
 export type ToolBody = BoxTool | PrismTool | FilterTool | ClusterTool;

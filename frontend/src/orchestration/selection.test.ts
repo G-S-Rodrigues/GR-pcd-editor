@@ -78,3 +78,16 @@ describe("scope notice wiring (QA d6)", () => {
     expect(scopeNotice(base({ scope: "active", candidate: null }))).toBeNull();
   });
 });
+
+describe("cluster request (F-04)", () => {
+  it("UI-109 the cluster request asks for a partial result and sends an empty limit as null (unlimited), never as the 2M default", () => {
+    const c0 = base({ tool: "cluster" });
+    const seeded = setSeed(c0.tools.cluster, { id: 5, point: [0, 0, 0] });
+    const unlimited = { ...c0, tools: { ...c0.tools, cluster: { ...seeded, maxPoints: null } } };
+    const r = buildSelection(unlimited);
+    expect(r.ok && r.body.tool).toMatchObject({ type: "cluster", on_limit: "partial", max_points: null });
+    const limited = { ...c0, tools: { ...c0.tools, cluster: { ...seeded, maxPoints: 40 } } };
+    const l = buildSelection(limited);
+    expect(l.ok && l.body.tool).toMatchObject({ on_limit: "partial", max_points: 40 });
+  });
+});

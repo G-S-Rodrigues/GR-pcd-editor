@@ -7,7 +7,7 @@ import type { Vec3 } from "../state/types";
 import * as B from "../tools/box/model";
 import { POLYGON_DEPTH_NOTE, Z_UNLIMITED } from "../tools/polygon/model";
 import * as PG from "../tools/polygon/model";
-import { CLUSTER_LIMIT_TEXT, clusterPanel, regionOptions, setRadius } from "../tools/cluster/model";
+import { CLUSTER_LIMIT_TEXT, clusterLimitText, clusterPanel, regionOptions, setRadius } from "../tools/cluster/model";
 import { invertNote, scopeNotice } from "../orchestration/selection";
 import { historyRows } from "../inspector/history";
 import { control } from "./controls";
@@ -326,12 +326,25 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
       a.toolChanged();
       return null;
     }),
-    field("cluster-max-points", "Max points", (s) => s.tools.cluster.maxPoints, (v) => {
-      if (!Number.isInteger(v) || v < 1) return "Max points must be a whole number of at least 1";
-      store.update((s) => ({ ...s, tools: { ...s.tools, cluster: { ...s.tools.cluster, maxPoints: v } } }));
-      a.toolChanged();
-      return null;
-    }),
+    (() => {
+      const input = control("input", { id: "cluster-max-points", type: "text", inputmode: "numeric", placeholder: "No limit", onchange: () => {
+        const raw = input.value.trim().replace(/[ ,_]/g, "");
+        const v = raw === "" ? null : Number(raw);
+        if (v !== null && (!Number.isInteger(v) || v < 1)) {
+          showErr("Max points must be a whole number of at least 1, or empty for no limit");
+        } else {
+          showErr(null);
+          store.update((s) => ({ ...s, tools: { ...s.tools, cluster: { ...s.tools.cluster, maxPoints: v } } }));
+          a.toolChanged();
+        }
+        sync(store.get());
+      } });
+      const sync: Sync = (s) => {
+        if (document.activeElement !== input) input.value = s.tools.cluster.maxPoints === null ? "" : fmt(s.tools.cluster.maxPoints);
+      };
+      syncs.push(sync);
+      return h("label", { class: "f" }, "Max points", input);
+    })(),
     (() => {
       const sel = control("select", { id: "cluster-region", onchange: () => {
         store.update((s) => ({ ...s, tools: { ...s.tools, cluster: { ...s.tools.cluster, region: sel.value as "none" | "box" | "prism" } } }));
@@ -354,7 +367,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
       syncs.push((s) => dl.replaceChildren(...clusterPanel(s.candidate).flatMap((r) => [h("dt", { text: r.label }), h("dd", { text: r.value })])));
       return dl;
     })(),
-    text((s) => (s.notices.some((n) => n.code === "component_limit_reached") ? CLUSTER_LIMIT_TEXT : ""), "note warn"),
+    text((s) => clusterLimitText(s.candidate) ?? (s.notices.some((n) => n.code === "component_limit_reached") ? CLUSTER_LIMIT_TEXT : ""), "note warn"),
   );
 
   // ---- filters

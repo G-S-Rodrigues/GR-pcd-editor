@@ -25,7 +25,10 @@ export function currentTool(s: AppState): ToolBody | null {
   const prism = toPrismTool(t.polygon);
   if (s.tool === "box") return box;
   if (s.tool === "polygon") return prism;
-  if (s.tool === "cluster") return toClusterTool(t.cluster, box, prism);
+  if (s.tool === "cluster") {
+    const c = toClusterTool(t.cluster, box, prism);
+    return c && { ...c, on_limit: "partial" as const };
+  }
   return null;
 }
 

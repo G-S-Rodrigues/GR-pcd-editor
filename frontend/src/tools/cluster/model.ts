@@ -8,7 +8,8 @@ export interface ClusterModel {
   radius: number;
   region: RegionKind;
   excludeProtected: boolean;
-  maxPoints: number;
+  /** null = no limit (memory is still protected by the backend budget check). */
+  maxPoints: number | null;
   scope: Scope;
 }
 
@@ -49,6 +50,13 @@ export function toClusterTool(m: ClusterModel, box: BoxTool | null, prism: Prism
     exclude_protected: m.excludeProtected,
     max_points: m.maxPoints,
   };
+}
+
+/** A limit hit selects the partial cluster; say so and how to go on. Null when the cluster is complete. */
+export function clusterLimitText(c: Candidate | null): string | null {
+  const cl = c?.cluster as { complete?: boolean; limit?: number | null } | null | undefined;
+  if (!cl || cl.complete !== false) return null;
+  return `Stopped at ${(cl.limit ?? 0).toLocaleString("en-US")} points; raise Max points or clear the field for no limit`;
 }
 
 export const clusterErrorText = (code: string): string | null =>

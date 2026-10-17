@@ -24,6 +24,9 @@ class ComponentLimitReached(Exception):
 class ClusterResult:
     ids: np.ndarray  # sorted uint32 original indices
     bounds: tuple[tuple[float, ...], tuple[float, ...]]
+    # complete False: growth stopped at `limit` (on_limit="partial")
+    complete: bool = True
+    limit: int | None = None
 
 
 def build_eligible(
@@ -49,6 +52,7 @@ def connected_component(
     on_round: Callable[[int], None] | None = None,
     max_points: int | None = None,
     budget: int | None = None,
+    on_limit: str = "fail",
 ) -> ClusterResult:
     if not (0 <= seed_id < len(xyz)) or not eligible[seed_id]:
         raise EditError(
@@ -71,6 +75,7 @@ def connected_component(
     frontier = np.array([local_seed], dtype=np.int64)
     r = radius * (1.0 + CLUSTER_REL)
     rnd = 0
+    complete = True
     while len(frontier):
         if on_round is not None:
             on_round(rnd)
@@ -85,7 +90,10 @@ def connected_component(
         visited[fresh] = True
         count += len(fresh)
         if max_points is not None and count > max_points:
-            raise ComponentLimitReached(count)
+            if on_limit != "partial":
+                raise ComponentLimitReached(count)
+            complete = False
+            break
         frontier = fresh
     if token is not None:
         token.check()
@@ -93,4 +101,9 @@ def connected_component(
     out_ids = idx[members].astype(np.uint32)
     sel = pts[members]
     bounds = (tuple(sel.min(axis=0).tolist()), tuple(sel.max(axis=0).tolist()))
-    return ClusterResult(ids=out_ids, bounds=bounds)
+    return ClusterResult(
+        ids=out_ids,
+        bounds=bounds,
+        complete=complete,
+        limit=None if complete else max_points,
+    )

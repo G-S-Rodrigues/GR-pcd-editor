@@ -2,7 +2,7 @@ import { COMPARE_MODES, type CompareMode, clampOpacity, fetchPlan } from "../com
 import { createDebouncer } from "../orchestration/timing";
 import type { Quat } from "../math/quat";
 import type { BoxModel } from "../tools/box/model";
-import type { ClusterModel } from "../tools/cluster/model";
+import { type ClusterModel, defaultCluster } from "../tools/cluster/model";
 import type { PolygonState } from "../tools/polygon/model";
 import type { Camera } from "../view/camera";
 import type { AppState } from "./app";
@@ -85,8 +85,8 @@ export function restoreClientState(raw: unknown): ClientPatch | null {
       tools.polygon = { phase: p.phase, vertices: p.vertices, previous: null, zMin: p.zMin, zMax: p.zMax, mode: p.mode } as PolygonState;
     }
     const k = t.cluster;
-    if (isObj(k) && typeof k.radius === "number" && k.radius > 0 && typeof k.excludeProtected === "boolean" && typeof k.maxPoints === "number" && ["none", "box", "prism"].includes(k.region as string) && (k.scope === "displayed" || k.scope === "active")) {
-      tools.cluster = { seed: null, radius: k.radius, region: k.region, excludeProtected: k.excludeProtected, maxPoints: k.maxPoints, scope: k.scope } as ClusterModel;
+    if (isObj(k) && typeof k.radius === "number" && k.radius > 0 && typeof k.excludeProtected === "boolean" && ["none", "box", "prism"].includes(k.region as string) && (k.scope === "displayed" || k.scope === "active")) {
+      tools.cluster = { seed: null, radius: k.radius, region: k.region, excludeProtected: k.excludeProtected, maxPoints: defaultCluster().maxPoints, scope: k.scope } as ClusterModel;
     }
     if (Object.keys(tools).length > 0) out.tools = tools;
   }

@@ -128,3 +128,19 @@ def test_clu_11_isolated_and_single_point():
 def test_clu_12_bounds():
     res = connected_component(XYZ[:15], np.ones(15, bool), 10, 0.5)
     assert res.bounds == ((10.0, 0.0, 0.0), (12.0, 0.0, 0.0))
+
+
+def test_clu_20_partial_limit_returns_the_partial_component():
+    line = np.array([(0.5 * i, 0.0, 0.0) for i in range(100)])
+    everyone = np.ones(100, bool)
+    res = connected_component(
+        line, everyone, 0, 0.5, max_points=40, on_limit="partial"
+    )
+    assert res.complete is False and res.limit == 40
+    assert 40 <= len(res.ids) < 100
+    # grown from seed 0
+    assert set(res.ids.tolist()) == set(range(len(res.ids)))
+    full = connected_component(line, everyone, 0, 0.5, on_limit="partial")
+    assert full.complete is True and len(full.ids) == 100
+    with pytest.raises(ComponentLimitReached):  # the default is unchanged
+        connected_component(line, everyone, 0, 0.5, max_points=40)

@@ -3,6 +3,7 @@ import { ApiError } from "../files/errors";
 import { createAppStore } from "../state/app";
 import { candidateFixture, sessionFixture } from "../testing/fixtures";
 import { setCenter } from "../tools/box/model";
+import { setSeed } from "../tools/cluster/model";
 import { canApply, createRunner } from "./runner";
 
 interface Deferred {
@@ -238,5 +239,32 @@ describe("runner invalidation (F-01/F-02)", () => {
     expect(t.store.get().candidate).toBeNull();
     expect(canApply(t.store.get())).toBe(false);
     expect(t.store.get().notices.map((n) => n.text).join(" ")).toMatch(/select again/i);
+  });
+});
+
+describe("cluster reacts to parameter changes and partial results (F-04, F-07)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("UI-110 with a seed picked, a protection change re-runs the cluster selection instead of only the candidate", async () => {
+    const t = setup();
+    t.store.update((s) => ({ ...s, tool: "cluster", tools: { ...s.tools, cluster: setSeed(s.tools.cluster, { id: 7, point: [0, 0, 0] }) } }));
+    t.store.set({ session: sessionFixture({ selection: { count: 300, ops: [] } }), candidate: candidateFixture({ candidates: 300 }) });
+    t.runner.paramsChanged("protection");
+    expect(t.store.get().candidate).toBeNull();
+    await vi.advanceTimersByTimeAsync(300);
+    await flush();
+    expect(t.api.submitSelection).toHaveBeenCalledTimes(1);
+    expect((t.submitted[0] as { tool: { type: string; seed_id: number } }).tool).toMatchObject({ type: "cluster", seed_id: 7 });
+    expect(t.api.submitCandidate).not.toHaveBeenCalled();
+  });
+
+  it("UI-109 a partial cluster cannot be applied", () => {
+    const t = setup();
+    const cluster = (complete: boolean) => ({ seed_id: 1, radius: 0.5, size: 41, complete, limit: complete ? null : 40, bounds: { min: [0, 0, 0], max: [1, 1, 1] } });
+    t.store.set({ candidate: candidateFixture({ cluster: cluster(true) }) });
+    expect(canApply(t.store.get())).toBe(true);
+    t.store.set({ candidate: candidateFixture({ cluster: cluster(false) }) });
+    expect(canApply(t.store.get())).toBe(false);
   });
 });

@@ -458,3 +458,40 @@ test("E2E-12 7a Shift+drag on a box handle is a fine drag and does not pan the c
   expect(fine.delta / plain.delta).toBeCloseTo(0.1, 1);
   expect(fine.after).toEqual(fine.before); // the camera did not pan
 });
+
+test("E2E-13 7a cluster: partial result, no limit, and re-run when protection changes after the seed (F-04, F-07)", async ({ page }) => {
+  const { stat, exact, num, ctl, setNum } = helpers(page);
+  await page.goto("/");
+  await page.locator("#file-input").setInputFiles({ name: "synthetic.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
+  await exact("Displayed", String(FLOOR + GHOST));
+  await ctl("view-top").click();
+  await ctl("pivot-x").fill("4");
+  await ctl("pivot-y").fill("4");
+  await ctl("pivot-z").fill("0");
+  await ctl("pivot-set").click();
+  await ctl("tool-cluster").click();
+  await ctl("cluster-pick-seed").click();
+  await page.locator("#viewport").click(); // top view: the point under the pivot with the greatest Z, a ghost point
+  await expect(page.locator("#editpanels")).toContainText("Seed: point");
+  await setNum("cluster-radius", 1.2); // links the ghost blob to the floor below it
+
+  await ctl("cluster-max-points").fill("5");
+  await ctl("cluster-max-points").press("Tab");
+  await expect(page.locator("#editpanels")).toContainText("Stopped at 5 points", { timeout: 15000 });
+  expect(await num("Candidates")).toBeGreaterThanOrEqual(5);
+  await expect(ctl("apply")).toBeDisabled();
+
+  await ctl("cluster-max-points").fill("");
+  await ctl("cluster-max-points").press("Tab");
+  await exact("Candidates", String(FLOOR + GHOST));
+  await expect(page.locator("#editpanels")).not.toContainText("Stopped at");
+  await expect(ctl("apply")).toBeEnabled();
+
+  // protection after the seed: the cluster shrinks to what is not protected, with no checkbox toggling
+  await ctl("prot-enabled").check();
+  await setNum("prot-min", -0.1);
+  await setNum("prot-max", 0.1);
+  await exact("Candidates", String(GHOST));
+  await expect(page.locator("#cluster-result")).toContainText(String(GHOST));
+  await expect(stat("Protected")).toHaveText(new RegExp(`${FLOOR}`));
+});

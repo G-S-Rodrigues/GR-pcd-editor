@@ -31,6 +31,7 @@ export function canApply(s: AppState): boolean {
   const c = s.candidate;
   const sess = s.session;
   if (!c || !sess) return false;
+  if ((c.cluster as { complete?: boolean } | null)?.complete === false) return false; // a partial cluster is not what was asked for
   return (
     c.cloud_revision === sess.revision.cloud &&
     c.params_revision === sess.revision.params &&
@@ -168,7 +169,7 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
       store.set({ candidate: null, job: { ...IDLE } });
       const s = store.get();
       const live = s.op === "replace" && s.tool !== "none" && buildSelection(s).ok;
-      const reselect = live && kind !== "protection";
+      const reselect = live && (kind !== "protection" || s.tool === "cluster");
       if (reselect) {
         store.set({ draft: false });
         paramsDebounce.call(selectionNow);

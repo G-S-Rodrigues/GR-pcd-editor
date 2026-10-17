@@ -76,6 +76,7 @@ class ClusterToolBody(Model):
     region: Region | None = None
     exclude_protected: bool = True
     max_points: int | None = 2_000_000
+    on_limit: Literal["fail", "partial"] = "fail"
 
     def to_spec(self) -> ClusterTool:
         return ClusterTool(
@@ -84,6 +85,7 @@ class ClusterToolBody(Model):
             None if self.region is None else self.region.to_spec(),
             self.exclude_protected,
             self.max_points,
+            self.on_limit,
         )
 
 
