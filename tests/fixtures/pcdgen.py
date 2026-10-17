@@ -166,3 +166,76 @@ def scene_rows():
 SCENE_FLOOR = set(range(100))
 SCENE_GHOST = set(range(100, 127))
 SCENE_INVALID = {127, 128}
+
+
+# Room scene for cluster performance and scale tests: floor slab z ~ 0, three
+# walls, ghost volume behind a mirror plane (y 12..24), ghosts inside the floor
+# slab and noise. Labels: 0 floor, 1 wall, 2 ghost, 3 noise, 4 ghost in floor.
+ROOM_FLOOR, ROOM_WALL, ROOM_GHOST, ROOM_NOISE, ROOM_FLOOR_GHOST = range(5)
+
+
+def room_rows(n=300_000, seed=7):
+    """Return (xyz float64 (n, 3), labels int8 (n,)). Deterministic for a seed."""
+    import numpy as np
+
+    rng = np.random.default_rng(seed)
+    share = [0.40, 0.20, 0.15, 0.10, 0.15]
+    counts = [int(n * s) for s in share]
+    counts[0] += n - sum(counts)
+    parts, labels = [], []
+
+    def add(label, xyz):
+        parts.append(xyz)
+        labels.append(np.full(len(xyz), label, dtype=np.int8))
+
+    c = counts[ROOM_FLOOR]
+    add(
+        ROOM_FLOOR,
+        np.column_stack(
+            [
+                rng.uniform(0, 20, c),
+                rng.uniform(0, 24, c),
+                rng.uniform(-0.03, 0.03, c),
+            ]
+        ),
+    )
+    c = counts[ROOM_WALL]
+    side = rng.integers(0, 3, c)
+    u, z = rng.uniform(0, 1, c), rng.uniform(0, 4, c)
+    wx = np.where(side == 0, 0.0, np.where(side == 1, 20.0, u * 20))
+    wy = np.where(side == 2, 0.0, u * 24)
+    add(ROOM_WALL, np.column_stack([wx, wy, z]))
+    c = counts[ROOM_GHOST]
+    add(
+        ROOM_GHOST,
+        np.column_stack(
+            [
+                rng.uniform(0, 20, c),
+                rng.uniform(12, 24, c),
+                rng.uniform(0.5, 4, c),
+            ]
+        ),
+    )
+    c = counts[ROOM_NOISE]
+    add(
+        ROOM_NOISE,
+        np.column_stack(
+            [
+                rng.uniform(0, 20, c),
+                rng.uniform(0, 24, c),
+                rng.uniform(0.5, 4, c),
+            ]
+        ),
+    )
+    c = counts[ROOM_FLOOR_GHOST]
+    add(
+        ROOM_FLOOR_GHOST,
+        np.column_stack(
+            [
+                rng.uniform(0, 20, c),
+                rng.uniform(12, 24, c),
+                rng.uniform(-0.03, 0.03, c),
+            ]
+        ),
+    )
+    return np.concatenate(parts), np.concatenate(labels)

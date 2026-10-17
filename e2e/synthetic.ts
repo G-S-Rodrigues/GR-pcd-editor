@@ -79,3 +79,24 @@ function syntheticPcdRows(): number[][] {
   rows.push([Number.NaN, 0, 0, 2]);
   return rows;
 }
+
+/**
+ * Small room scene: a 20 x 20 floor grid (z 0), a wall strip, a 3 x 3 x 3 ghost blob behind a mirror
+ * (y 12..14), nine ghost points inside the floor slab (z 0.02), noise, one NaN. Truth is counted here,
+ * independently of the app.
+ */
+export const ROOM = { floor: 400, wall: 40, ghost: 27, floorGhost: 9, noise: 4, invalid: 1 };
+export const ROOM_TOTAL = ROOM.floor + ROOM.wall + ROOM.ghost + ROOM.floorGhost + ROOM.noise + ROOM.invalid;
+
+export function roomPcd(): Buffer {
+  const rows: string[] = [];
+  for (let x = 0; x < 20; x++) for (let y = 0; y < 20; y++) rows.push(`${x} ${y} 0 0.5`);
+  for (let y = 0; y < 10; y++) for (let z = 1; z < 5; z++) rows.push(`-1 ${y} ${z} 0.7`);
+  for (let x = 2; x < 5; x++) for (let y = 12; y < 15; y++) for (let z = 1; z < 4; z++) rows.push(`${x} ${y} ${z} 1.5`);
+  for (let x = 2; x < 5; x++) for (let y = 12; y < 15; y++) rows.push(`${x} ${y + 0.5} 0.02 1.5`);
+  for (const [x, y, z] of [[15.5, 15.5, 2], [16.5, 3.5, 3], [8.5, 8.5, 2.5], [1.5, 17.5, 1.5]]) rows.push(`${x} ${y} ${z} 0.1`);
+  rows.push("nan 0 0 2");
+  const head = ["# .PCD v.7 - synthetic room", "VERSION .7", "FIELDS x y z intensity", "SIZE 4 4 4 4", "TYPE F F F F",
+    "COUNT 1 1 1 1", `WIDTH ${rows.length}`, "HEIGHT 1", "VIEWPOINT 0 0 0 1 0 0 0", `POINTS ${rows.length}`, "DATA ascii"];
+  return Buffer.from(`${head.join("\n")}\n${rows.join("\n")}\n`);
+}
