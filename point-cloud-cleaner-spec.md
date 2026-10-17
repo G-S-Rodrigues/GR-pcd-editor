@@ -13,7 +13,7 @@ The user cleans LiDAR SLAM PCD maps, especially mirror/window reflections, while
 
 ## Goals
 
-A Linux user clones the public repository, runs `./gr-pcd-visualizer.sh`, opens its printed localhost URL, chooses a PCD from the computer, previews and reversibly removes unwanted points at full resolution, then saves a session and cleaned PCD back to the computer. Every retained PCD field survives export. A configurable host directory is also mounted for direct file access without requiring uploads for every import.
+A Linux user clones the public repository, runs `./gr-pcd-visualizer.sh`, opens its printed localhost URL, chooses a PCD from the computer, previews and reversibly removes unwanted points at full resolution, then saves a session and cleaned PCD back to the computer. Every retained PCD field survives export.
 
 ## Non-goals
 
@@ -23,7 +23,7 @@ A Linux user clones the public repository, runs `./gr-pcd-visualizer.sh`, opens 
 - ROS integration and live sensor editing: the application edits local files and has no robot runtime contract.
 - Multi-user collaboration and remote hosting: the service is local and has one active editing session; host publication remains loopback-only.
 - Mesh editing, statistical/radius outlier filters and reusable region presets: these expand the tool set beyond the agreed v1 selection workflows. Session serialization may retain region state without providing a reusable preset library.
-- Whole-computer filesystem mounting: browser file selection supplies arbitrary local files; backend path access is limited to configured mounts.
+- Whole-computer filesystem mounting: browser file selection supplies arbitrary local files; the backend opens no host path (part 8: no mounted folder).
 - An installer that installs Docker or starts the system Docker service: the launcher checks prerequisites and explains corrective action.
 - Implementation, issue creation and publishing during this spec-writing task: these are subsequent execution work. Repository creation itself is an explicit requirement below.
 
@@ -37,7 +37,7 @@ The items below describe implementation scope, not an execution plan. File paths
 
 **Change:** Create `GR-pcd-visualizer` as a public repository in the user's personal GitHub account. Determine the intended personal account from authenticated GitHub identity and the user's configured account context before creation. If identity is ambiguous, resolve it before publishing. Do not infer an organization or username from a filesystem path. If that repository already exists, inspect its owner and content before reusing it; never overwrite unrelated work. Configure the local remote and default branch. Report the resulting repository URL when this scope is executed.
 
-Provide README instructions for Linux prerequisites, first build, subsequent offline runs, file selection, mount paths, downloads, stop/restart, troubleshooting and verification. Ignore user PCD maps, session archives, uploads, outputs, secrets and build products. Public fixtures must be synthetic or explicitly cleared for redistribution. A public repository does not imply a chosen open-source license; leave licensing unresolved until the owner selects one and make no unsupported licensing claim.
+Provide README instructions for Linux prerequisites, first build, subsequent offline runs, file selection, downloads, stop/restart, troubleshooting and verification. Ignore user PCD maps, session archives, uploads, outputs, secrets and build products. Public fixtures must be synthetic or explicitly cleared for redistribution. A public repository does not imply a chosen open-source license; leave licensing unresolved until the owner selects one and make no unsupported licensing claim.
 
 Files: `README.md`, `.gitignore`, `.github/workflows/ci.yml`, `docs/agents/testing.md`, `AGENTS.md`.
 
@@ -60,9 +60,9 @@ therefore covers these seven files: this specification, `README.md`,
 
 The first image build may download dependencies. Subsequent operation with an existing image must work without internet. Pin direct dependencies through the chosen ecosystem's lock mechanisms. Run the application as an unprivileged container user. Define a health check that reflects application readiness. Listen on the necessary container interface and publish only `127.0.0.1:<host-port>:<container-port>` on the host, default host port 8080. Keep remote access outside the supported v1 launcher contract.
 
-Mount the configured host PCD folder read-only at `/data`. Mount a Docker-managed writable work volume separately for uploads, caches and session working data. Keep write-heavy work outside the source mount. Browser downloads persist exports/session archives on the host. Container removal must not remove downloaded files or mounted sources; document that unsaved in-memory state can be lost. Retain the working volume across ordinary stops and never remove it implicitly during a rebuild.
+**Superseded in part (part 8): no `/data` mount exists.** Mount a Docker-managed writable work volume at `/work` for uploads, caches and session working data; nothing else is writable except a capped `/tmp` tmpfs. Browser downloads persist exports/session archives on the host. Container removal must not remove downloaded files; document that unsaved in-memory state can be lost. Retain the working volume across ordinary stops and never remove it implicitly during a rebuild.
 
-Backend path requests must stay inside `/data`, including after symlink resolution; reject escapes and traversal. Do not expose arbitrary container paths or a Docker socket. The mounted-file chooser shows paths relative to the mounted root.
+**Superseded (part 8):** the backend takes no path from a request, so there are no backend path rules and no mounted-file chooser. Do not expose arbitrary container paths or a Docker socket.
 
 Provide optional `verify` and `lint` Compose services under profile `checks` so the commands in Testing have one stable interface regardless of language choices. These services must execute real checks and propagate failures.
 
@@ -72,35 +72,35 @@ Files: `docker/Dockerfile`, `docker/compose.yaml`, `.dockerignore`, `backend/`, 
 
 **Now:** No launcher exists; the original startup command was illustrative.
 
-**Change:** Provide executable Bash script `./gr-pcd-visualizer.sh` at repository root. Locate Compose and build files relative to the script so launch works from another directory. The default input mount is the caller's working directory. Accept:
+**Change:** Provide executable Bash script `./gr-pcd-visualizer.sh` at repository root. Locate Compose and build files relative to the script so launch works from another directory. (Part 8: there is no input mount.) Accept:
 
 ```sh
 ./gr-pcd-visualizer.sh
-./gr-pcd-visualizer.sh --data-dir "/home/user/PCD maps" --port 8081
+./gr-pcd-visualizer.sh --port 8081
 ./gr-pcd-visualizer.sh --no-browser
 ./gr-pcd-visualizer.sh --rebuild
 ./gr-pcd-visualizer.sh --stop
 ```
 
-`--data-dir` selects one existing readable directory, with relative paths resolved against the caller's working directory. Canonicalize it and handle spaces and shell metacharacters as literal path data. Validate the port. Pass configuration through properly quoted arguments/environment variables without evaluating path strings as shell code. Missing/inaccessible folders produce errors rather than creating an unexpected empty directory.
+**Superseded (part 8): `--data-dir` was removed;** the launcher rejects it with exit 2 and a "was removed" hint. Validate the port. Pass configuration through properly quoted arguments/environment variables without evaluating strings as shell code.
 
-Check Docker CLI, Compose v2 and local daemon availability. Require a local Docker context because the selected host folder must be accessible to the daemon. Build the image if absent; `--rebuild` explicitly rebuilds it. Start in the background, wait for health with a bounded documented timeout, and only then print a clearly labelled URL such as `http://localhost:8080`. A failed startup exits nonzero with useful diagnostics and no success message.
+Check Docker CLI, Compose v2 and local daemon availability. Require a local Docker context. Build the image if absent; `--rebuild` explicitly rebuilds it. Start in the background, wait for health with a bounded documented timeout, and only then print a clearly labelled URL such as `http://localhost:8080`. A failed startup exits nonzero with useful diagnostics and no success message.
 
-Open the URL using the host browser opener where available unless `--no-browser` is supplied. Failure to open a browser is nonfatal after readiness because the URL is printed. An occupied port produces an actionable error and supports choosing a different port. A repeated launch reuses a healthy compatible instance; a changed data directory/port must be detected and visibly require a restart rather than silently retaining stale configuration. `--stop` stops this project without deleting data volumes. Ctrl-C after the detached launch does not terminate the server. Document the one-instance-per-checkout behavior and how to stop it.
+Open the URL using the host browser opener where available unless `--no-browser` is supplied. Failure to open a browser is nonfatal after readiness because the URL is printed. An occupied port produces an actionable error and supports choosing a different port. A repeated launch reuses a healthy compatible instance; a changed port (or user) must be detected and visibly require a restart rather than silently retaining stale configuration. `--stop` stops this project without deleting data volumes. Ctrl-C after the detached launch does not terminate the server. Document the one-instance-per-checkout behavior and how to stop it.
 
 Files: `gr-pcd-visualizer.sh`, `docker/compose.yaml`, `tests/launcher/`, `README.md`.
 
-### 4. Browser file selection, mounted files and saving
+### 4. Browser file selection and saving
 
 **Now:** The source requires local browser file selection and export but does not define their relationship to a container's filesystem.
 
-**Change:** The default Open action uses the browser file picker; drag-and-drop is also supported. Users can select a PCD from any folder their browser and OS permit, regardless of `/data`. The browser sends the selected file only to the loopback application. No whole-disk mount is required. Offer a separately labelled mounted-folder browser for direct imports under `/data`, avoiding upload copies when useful.
+**Change:** The default Open action uses the browser file picker; drag-and-drop is also supported. Users can select a PCD from any folder their browser and OS permit. The browser sends the selected file only to the loopback application. No whole-disk mount is required. **Superseded (part 8):** the separately labelled mounted-folder browser and imports under `/data` were removed.
 
 Show upload/import progress, cancellation and actionable size/storage errors. Do not clear an existing editing session until a replacement import succeeds and the unsaved-work choice has been resolved. Manage temporary uploads and aborted operations without deleting files still needed by a live or saved working session.
 
 Export PCD and Save session produce completed browser downloads, suggesting `<original>_cleaned.pcd` and a clearly identified versioned session filename. The browser/OS determines the host destination and may show a Save dialog or use its configured Downloads directory. Explain this behavior in the README and UI. Do not claim that a web application can silently overwrite the path selected at import. A completed server-side export does not prove the browser saved the download successfully.
 
-Default session downloads embed the original PCD plus a versioned state manifest. Reopening works after container recreation and does not depend on an ephemeral upload path. Validate the embedded source hash and archive entries, enforce extraction/resource bounds and reject path traversal. Optional referenced sessions must request source reselection or mounted-path relocation and verify its identity. Ordinary operation never modifies the input file.
+Default session downloads embed the original PCD plus a versioned state manifest. Reopening works after container recreation and does not depend on an ephemeral upload path. Validate the embedded source hash and archive entries, enforce extraction/resource bounds and reject path traversal. Optional referenced sessions must request browser source reselection and verify its identity. Ordinary operation never modifies the input file.
 
 Files: `backend/files/`, `backend/sessions/`, `frontend/files/`, `tests/integration/`, `README.md`.
 
@@ -150,7 +150,7 @@ View presets | Projection | Fit | Pivot | Compare
 Original / Active / Displayed / Selected / Protected / Candidates | LOD
 ```
 
-Future editing tools belong with tool selection; their parameters belong in the inspector. File actions and view actions remain separate from geometry controls. Mounted imports and browser uploads must be labelled so a host path is never confused with a container path.
+Future editing tools belong with tool selection; their parameters belong in the inspector. File actions and view actions remain separate from geometry controls. Browser uploads are the only import path (part 8), so no host path is shown.
 
 ## Testing
 
@@ -163,11 +163,11 @@ docker compose -f docker/compose.yaml --profile checks run --rm lint
 ```
 
 - **Unit:** test geometry membership boundaries, all selection operators and inversion universes, protected deletion precedence, cluster chains and exclusion of protected bridges, stale revision rejection, undo/redo identity, PCD schema/record preservation, and session source verification. Use exact ID sets and synthetic records as independent expected results.
-- **Integration:** round-trip all three import encodings with custom fields and invalid coordinates; export/reparse original retained records; import through upload and `/data`; download/reopen a self-contained session in a fresh container; reject path escapes; interrupt failed uploads/exports; verify cancellation and state after errors. Compare outputs with known fixture records instead of relying only on the same reader/writer agreeing with itself.
+- **Integration:** round-trip all three import encodings with custom fields and invalid coordinates; export/reparse original retained records; import through upload; download/reopen a self-contained session in a fresh container; reject archive path escapes; interrupt failed uploads/exports; verify cancellation and state after errors. Compare outputs with known fixture records instead of relying only on the same reader/writer agreeing with itself.
 - **UI:** automate box numeric/gizmo synchronization, polygon height limits, scope and protection warnings, preview/apply revision races, undo/redo, browser downloads and synchronized comparison. Assert counts against backend fixture truth under multiple render budgets.
-- **Launcher/container:** verify Compose configuration, cold start, repeated start, changed settings, missing prerequisites, invalid paths, spaces/metacharacters, occupied ports, readiness timeout, `--stop`, loopback publication, mount read-only status and data survival across recreation. Simulated failures must not be reported as successful startup. Run Linux launcher tests in CI; checks that need a Docker daemon run on a Linux Docker-enabled job.
+- **Launcher/container:** verify Compose configuration, cold start, repeated start, changed settings, missing prerequisites, a removed `--data-dir`, occupied ports, readiness timeout, `--stop`, loopback publication, read-only root filesystem and work-volume survival across recreation. Simulated failures must not be reported as successful startup. Run Linux launcher tests in CI; checks that need a Docker daemon run on a Linux Docker-enabled job.
 - **Lint:** the lint service checks the selected backend/frontend languages, formatting and Bash/ShellCheck. Document its exact underlying commands and any justified exclusions; failures propagate to CI.
-- **Live/manual:** (1) run the documented launch command and verify browser opening and printed URL; desktop browser opening needs a real desktop. (2) select a PCD outside the mounted folder and save downloads to a chosen host directory; confirm browser/OS save behavior. (3) complete the primary walkthrough on a representative Unitree map and inspect floor/reflection separation. (4) measure approximately 30 FPS navigation, import/query/cluster/export timings and peak RAM for 1M and, where feasible, 10M points on a documented 16 GB Linux reference PC. (5) disconnect external networking after building the image and repeat import/edit/export/session operations.
+- **Live/manual:** (1) run the documented launch command and verify browser opening and printed URL; desktop browser opening needs a real desktop. (2) select a PCD from any folder and save downloads to a chosen host directory; confirm browser/OS save behavior. (3) complete the primary walkthrough on a representative Unitree map and inspect floor/reflection separation. (4) measure approximately 30 FPS navigation, import/query/cluster/export timings and peak RAM for 1M and, where feasible, 10M points on a documented 16 GB Linux reference PC. (5) disconnect external networking after building the image and repeat import/edit/export/session operations.
 
 Hardware-dependent performance is a measured target, not a universal guarantee. Reference PC/data availability belongs to the owner before performance sign-off. Synthetic data establishes correctness without publishing private maps. This specification does not establish library fidelity, FPS or peak memory by assertion; implementation must produce the evidence.
 
@@ -179,7 +179,7 @@ Hardware-dependent performance is a measured target, not a universal guarantee. 
 - A picked GPU sample may identify the wrong original record if mappings or display recentering drift. Test picking and edits at large coordinate magnitudes.
 - Browser downloads do not grant arbitrary host write access. Do not promise automatic save-back to the source directory.
 - Loopback binding alone does not protect file APIs from hostile web origins. Validate Host/Origin, reject unintended cross-origin state changes, and constrain server paths to declared roots.
-- Root-owned cache files, inaccessible mounts or remote Docker contexts can make a launch appear healthy while imports fail. Verify actual mounted-file access and report permissions clearly.
+- Root-owned cache files in the work volume or remote Docker contexts can make a launch appear healthy while imports fail. Report permissions clearly.
 - There is no existing repository to inherit CI or license decisions from. Confirm the personal account before public creation and publish only redistributable fixtures.
 
 ## Acceptance criteria
@@ -190,13 +190,13 @@ AC-01 through AC-18 in the detailed requirements remain required. Add:
 | --- | --- | --- |
 | AC-19 | Repository setup executes | Public `GR-pcd-visualizer` exists under the verified personal account; remote and repository URL agree; no private maps or credentials are published |
 | AC-20 | Fresh Linux checkout with Docker available | Root executable launcher builds/starts using `docker/Dockerfile` and `docker/compose.yaml`, waits for health and prints a usable localhost URL |
-| AC-21 | Launch from a different directory with a data path containing spaces | Script finds its own configuration; the intended folder appears under `/data` and inputs remain unmodified |
-| AC-22 | Missing Docker/Compose, daemon unavailable, invalid directory, occupied port or health timeout | Nonzero exit with actionable error; no false success URL |
-| AC-23 | Select PCD outside the mounted directory in the browser | Local upload imports it correctly without mounting the whole host filesystem |
+| AC-21 | **Superseded (part 8: no `/data`).** Launch from a different directory | Script finds its own configuration; inputs are never modified |
+| AC-22 (**part 8:** invalid-directory case superseded) | Missing Docker/Compose, daemon unavailable, occupied port or health timeout | Nonzero exit with actionable error; no false success URL |
+| AC-23 | Select a PCD from any folder in the browser | Local upload imports it correctly without mounting the whole host filesystem |
 | AC-24 | Export cleaned PCD and save session | Browser offers completed host downloads; input is untouched and export/session filenames are clear |
 | AC-25 | Recreate container, then reopen a downloaded default session | Embedded source and saved state restore without the old upload path |
-| AC-26 | Inspect networking and mount behavior | Host service is loopback-only; source mount is read-only; path traversal/symlink escapes and unintended cross-origin changes are rejected |
-| AC-27 | Repeated launch or changed port/data directory | Compatible healthy instance is reused; incompatible settings cannot be silently ignored |
+| AC-26 | Inspect networking and container behavior | Host service is loopback-only; root filesystem is read-only; unintended cross-origin changes are rejected (**superseded, part 8:** source mount and path traversal/symlink escapes no longer exist) |
+| AC-27 | Repeated launch or changed port (**part 8:** no data directory) | Compatible healthy instance is reused; incompatible settings cannot be silently ignored |
 | AC-28 | Stop and rebuild | This project's containers stop/rebuild without deleting source files, downloaded exports or the retained working volume |
 | AC-29 | Image already built, external network disconnected | Launch and all required editing/import/export/session behavior work without package downloads or remote assets |
 | AC-30 | Benchmark and primary walkthrough | Results name reference PC, schema, sizes, timings and peak RAM; full-resolution counts and floor protection remain correct under reduced render budgets |
@@ -344,7 +344,7 @@ Let `A` be active source IDs, `F` the display-filter subset, `S` the accumulated
 - Applying a new edit after undo clears the redo branch. Record a human-readable operation description and counts.
 - Camera navigation does not fill the deletion history.
 - Save a versioned session containing source identity/hash, full field schema or referenced source, deletion mask/history, active selection, saved regions, filters, protection, colouring and camera/pivot state.
-- Default downloaded sessions embed the original source and editing state so they can reopen after container recreation without relying on a temporary upload path. A versioned archive can contain the original PCD and a manifest. Validate source hash, schema and archive paths before accepting it. Referenced-source sessions are optional; verify the source hash and request browser reselection or mounted-path relocation when missing.
+- Default downloaded sessions embed the original source and editing state so they can reopen after container recreation without relying on a temporary upload path. A versioned archive can contain the original PCD and a manifest. Validate source hash, schema and archive paths before accepting it. Referenced-source sessions are optional; verify the source hash and request browser reselection when missing.
 - Produce a complete session archive before offering its browser download. Warn before closing with unsaved edits where the browser supports it, and show persistent unsaved status. A download request alone must not be presented as proof that the user saved a file successfully.
 
 ### 15. Export
