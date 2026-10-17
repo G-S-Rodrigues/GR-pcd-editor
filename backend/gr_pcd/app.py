@@ -2,12 +2,18 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from gr_pcd.api.errors import install_error_handlers
+from gr_pcd.api.routes import build_router
 from gr_pcd.health import readiness_problems
+from gr_pcd.session.manager import SessionManager
 from gr_pcd.settings import Settings
 
 
 def create_app(settings: Settings) -> FastAPI:
+    manager = SessionManager(settings)
     app = FastAPI()
+    app.state.manager = manager
+    install_error_handlers(app)
 
     @app.get("/health")
     def health() -> JSONResponse:
@@ -19,6 +25,8 @@ def create_app(settings: Settings) -> FastAPI:
             )
         return JSONResponse({"status": "ok"})
 
+    app.include_router(build_router(manager, settings))
+    # the static mount must stay last: it matches every remaining path
     app.mount(
         "/",
         StaticFiles(directory=settings.static_dir, html=True, check_dir=False),

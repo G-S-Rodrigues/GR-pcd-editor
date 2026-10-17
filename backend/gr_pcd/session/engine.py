@@ -159,7 +159,7 @@ class EditingSession:
             self.xyz, self.valid, effective_intervals(protection)
         )
 
-    def _require_cloud(self, cloud_revision: int) -> None:
+    def require_cloud(self, cloud_revision: int) -> None:
         if cloud_revision != self.clock.cloud:
             raise StaleRevision("cloud revision is obsolete", self.revision())
 
@@ -433,7 +433,7 @@ class EditingSession:
 
     def clear_selection(self, cloud_revision: int) -> None:
         with self.lock:
-            self._require_cloud(cloud_revision)
+            self.require_cloud(cloud_revision)
             self.selection = _ro(np.zeros(self.cloud.n, dtype=bool))
             self.selection_ops = []
             self._last_cluster = None
@@ -445,7 +445,7 @@ class EditingSession:
         self, candidate_id: str, cloud_revision: int, description: str | None
     ) -> None:
         with self.lock:
-            self._require_cloud(cloud_revision)
+            self.require_cloud(cloud_revision)
             cand = self.candidate
             if (
                 cand is None
@@ -471,21 +471,21 @@ class EditingSession:
 
     def undo(self, cloud_revision: int) -> None:
         with self.lock:
-            self._require_cloud(cloud_revision)
+            self.require_cloud(cloud_revision)
             entry = self.history.undo()
             self.active = with_ids(self.active, entry.ids, True)
             self._changed()
 
     def redo(self, cloud_revision: int) -> None:
         with self.lock:
-            self._require_cloud(cloud_revision)
+            self.require_cloud(cloud_revision)
             entry = self.history.redo()
             self.active = with_ids(self.active, entry.ids, False)
             self._changed()
 
     def remove_invalid(self, cloud_revision: int) -> None:
         with self.lock:
-            self._require_cloud(cloud_revision)
+            self.require_cloud(cloud_revision)
             self.active = remove_invalid(self.active, self.valid, self.history)
             self._changed()
 

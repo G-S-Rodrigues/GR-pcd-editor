@@ -34,8 +34,9 @@ bash tests/launcher/test_launcher_smoke.sh          # launcher, real Docker
   `gr-pcd-ltest-*`, port 18081 (`LTEST_PORT`); never run it with the container
   tier at the same time.
 - Single test: `docker compose -f docker/compose.yaml --profile checks run --rm verify scripts/verify.sh tests/unit/test_paths.py -k be_02`.
-- Test IDs: `BE-` backend, `CTR-` container (`LCH-` launcher, later `PCD-`, `GEO-`,
-  `UI-`). Name tests `test_be_02_...`.
+- Test IDs: `BE-` backend, `CTR-` container, `LCH-` launcher, `PCD-` `GEO-` `EDT-`
+  `CLU-` `SES-` `API-` PCD processing (below), later `UI-`. Name tests
+  `test_be_02_...`.
 - Ready gate: bootstrap contract + the three Compose commands + container tier + both
   launcher scripts.
 
@@ -52,3 +53,19 @@ inclusive, and preview and commit share one path. World-axis tests use eps 0;
 rotated-box extents and polygon edges use an absolute 1e-9; the cluster
 radius uses a relative 1e-12. Tests keep near-boundary gaps at exactly 0
 (dyadic coordinates) or >= 1e-6.
+
+Part 5 files: `tests/unit/test_cluster.py` (CLU-), `test_session_engine.py`
+(SES-01..14, 28..30), `test_archive.py` (SES-22..27),
+`tests/integration/test_export_roundtrip.py` (SES-15..21) and
+`tests/integration/test_api_session.py` (API-01..31, over a generated scene).
+Shared helpers: `tests/fixtures/pcdgen.py` (independent byte builders and the
+FLOOR/GHOST scene) and `tests/fixtures/sessions.py`. Single file:
+`... run --rm verify scripts/verify.sh tests/integration/test_api_session.py -k api_12`.
+`tests/` and `backend/` are baked into the checks image: rebuild before every
+`run`. Host-only runs (`uv run --frozen pytest`) fail BE-12/BE-13 because the
+built static assets exist only in the image.
+
+HTTP contract notes: asynchronous work (select, candidate, export, save) answers
+202 with a job; a failed job carries `error.code` (for example `invalid_seed`,
+`component_limit_reached`). `PcdError`/`EditError`/`GeometryError`/archive
+errors map to 422, `memory_budget_exceeded` to 413, stale revisions to 409.
