@@ -40,6 +40,9 @@
       #viewcube .cube-face { position: absolute; left: 28px; top: 28px; width: 54px; height: 54px; padding: 0; margin: 0; border: 1px solid rgba(0,0,0,0.45); border-radius: 0; font: 700 11px/1 system-ui, sans-serif; letter-spacing: 0.04em; cursor: pointer; transform-origin: 50% 50%; backface-visibility: hidden; }
       #viewcube .cube-face:disabled { opacity: 0.5; cursor: default; }
       #viewcube .cube-triad { position: absolute; left: -34px; top: 66px; width: 48px; height: 48px; pointer-events: none; }
+      .banner { background: #243042; border-left: 4px solid var(--accent); border-radius: 4px; padding: 6px 10px; margin-bottom: 8px; }
+      .banner p { color: var(--text); }
+      #progress #upload-cancel { margin-left: 12px; }
       #empty { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; color: var(--muted); pointer-events: none; }
       #webgl-notice { position: absolute; top: 12px; left: 12px; right: 12px; background: #5a1f24; padding: 8px 12px; border-radius: 4px; }
       #notices { position: absolute; top: 8px; right: 8px; width: 340px; display: flex; flex-direction: column; gap: 6px; z-index: 5; }
@@ -83,7 +86,7 @@
     <div id="viewbar" class="row"></div>
     <div id="modebar"></div>
     <div id="body">
-      <aside id="tools"></aside>
+      <aside id="tools"><div id="start-banner" class="banner" hidden></div></aside>
       <div id="stage">
         <canvas id="viewport"></canvas>
         <div id="viewcube"></div>

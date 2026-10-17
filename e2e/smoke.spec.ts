@@ -897,3 +897,60 @@ test("E2E-23 7b2 an Add shape is shown as a draft with its own outline colour an
   await ctl("sel-commit").click();
   await expect(page.locator("#draft-note")).toBeHidden({ timeout: 15000 });
 });
+
+test("E2E-22 7b2 a slow upload can be cancelled: the progress goes away, the open file is untouched", async ({ page }) => {
+  const { exact, ctl } = helpers(page);
+  await openRoom(page, exact);
+  // hold the next upload request back so the "sending" phase lasts long enough to press Cancel
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((r) => (release = r));
+  await page.route("**/api/session/upload*", async (route) => {
+    await gate;
+    await route.continue().catch(() => undefined);
+  });
+  await page.locator("#file-input").setInputFiles({ name: "slow.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
+  await expect(page.locator("#progress")).toBeVisible();
+  await expect(page.locator("#progress")).toContainText("Uploading");
+  await expect(ctl("upload-cancel")).toBeVisible();
+  await ctl("upload-cancel").click();
+  await expect(page.locator("#progress")).toBeHidden();
+  release();
+  await page.waitForTimeout(500);
+  await expect(page.locator("#notices")).not.toContainText("Cannot open");
+  await exact("Original", String(ROOM_TOTAL));
+  await expect(page.locator("#inspector")).toContainText("room.pcd");
+  await expect(ctl("upload-cancel")).toBeHidden();
+});
+
+test("E2E-24 7b2 first page shows the start banner; a reloaded session starts Replace, Displayed, no tool, default cluster limit", async ({ page }) => {
+  const { exact, ctl } = helpers(page);
+  // a previous test's session is still on the server: close it by opening a page without one is not possible, so check the banner by state
+  await openRoom(page, exact);
+  await expect(page.locator("#start-banner")).toBeHidden();
+  await ctl("tool-cluster").click();
+  await ctl("op-select").selectOption("add");
+  await ctl("scope-select").selectOption("active");
+  await ctl("cluster-max-points").fill("1234");
+  await ctl("cluster-max-points").press("Enter");
+  await expect(page.locator("#modebar")).toContainText("Op: Add");
+  await page.waitForTimeout(1600); // the client state is saved one second after the last change
+  await page.reload();
+  await exact("Original", String(ROOM_TOTAL));
+  await expect(page.locator("#modebar")).toContainText("Tool: None");
+  await expect(page.locator("#modebar")).toContainText("Op: Replace");
+  await expect(page.locator("#modebar")).toContainText("Scope: Displayed");
+  await ctl("tool-cluster").click();
+  await expect(ctl("cluster-max-points")).toHaveValue(/^2[, ]?000[, ]?000$/);
+});
+
+test("E2E-24b 7b2 with no file open the banner explains why the tools are inert", async ({ page, request }) => {
+  const { ctl } = helpers(page);
+  const closed = await request.delete("/api/session");
+  expect([200, 204, 404]).toContain(closed.status());
+  await page.goto("/");
+  await expect(page.locator("#start-banner")).toBeVisible();
+  await expect(page.locator("#start-banner")).toContainText("Open a PCD to start");
+  await expect(page.locator("#start-banner")).toContainText("disabled until a file is open");
+  await expect(ctl("tool-box")).toBeDisabled();
+  await expect(ctl("apply")).toBeDisabled();
+});

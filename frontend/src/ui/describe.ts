@@ -37,6 +37,7 @@ export function describeControls(): ControlDescriptor[] {
     { id: "compare-split", label: "Split", group: "view" },
     { id: "compare-hold-original", label: "Hold original", group: "view" },
     { id: "overlay-opacity", label: "Overlay opacity", group: "view" },
+    { id: "upload-cancel", label: "Cancel upload", group: "file" },
     { id: "export-scope", label: "Export scope", group: "file" },
     { id: "export-format", label: "Export format", group: "file" },
     { id: "export-go", label: "Export now", group: "file" },

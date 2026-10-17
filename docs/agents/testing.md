@@ -115,3 +115,31 @@ Frontend single file: `docker run --rm -u "$(id -u):$(id -g)" -v "$PWD/frontend:
 Frontend test IDs: `UI-01..26` (6a), `UI-30..79` (6b), `UI-80..95` (6c: compare,
 export, save, persist, unsaved, tooltips), under `frontend/src/**`; backend render
 `attr` tests are `API-40..43` in `tests/integration/test_api_session.py`.
+
+## Part 7 additions (7a, 7b)
+
+- Frontend IDs: `UI-100..115` (7a: invalidation, Box start, cluster, persistence,
+  errors), `UI-120..125` (selection helpers), `UI-127..129` (headline, legend,
+  budget label), `UI-130..133` (ViewCube, keys), `UI-134..135` (slice),
+  `UI-140..141` (single key table: no duplicates, every documented key
+  classifies to its handler, `?` toggles help), `UI-142` (handle size in
+  pixels), `UI-143` (draft text and outline), `UI-144` (upload cancel),
+  `UI-145` (a restored page keeps the view only: op, scope and tool are not
+  restored), `UI-146` (start banner).
+- Backend IDs: `API-50..53` (stale displayed selection, cluster partial result,
+  `GET /api/session` answers 200 `{"no_session": true}` without a session, render
+  sampled to the exact budget), `CLU-20..23`.
+- Cluster timing target (`test_clu_22_room_timing`): whole synthetic room (300k
+  points, r 0.5) in at most 12 s on the checks image; raise it only with a
+  recorded measurement, never skip.
+- Smoke: `E2E-10..19` (7a, 7b-1), `E2E-20` (help overlay: `?`, the button, Esc,
+  typing a `?` in a field does nothing), `E2E-21` (no overflow and a viewport of
+  at least 60 % of the width at 1280x720 and 1920x1080, with a field focused and
+  each tool panel open; screenshots `layout-1280.png`, `layout-1920.png` go to
+  the smoke output), `E2E-22` (upload cancel on a held-back request), `E2E-23`
+  (draft outline note), `E2E-24` (a reloaded session starts Replace, Displayed,
+  no tool, default cluster limit), `E2E-24b` (start banner with no session).
+  `SMOKE_SHOTS_DIR=<dir> bash scripts/smoke.sh` keeps every screenshot to look at.
+  Run a subset with `bash scripts/smoke.sh npx playwright test -g "E2E-2[01]"`.
+- Fast loop for vitest and `tsc` without a rebuild: bind-mount `frontend/src`
+  over the checks image, e.g. `docker run --rm --network none -v "$PWD/frontend/src:/app/frontend/src:ro" gr-pcd-visualizer:checks bash -c "cd frontend && node node_modules/vitest/vitest.mjs run"`.

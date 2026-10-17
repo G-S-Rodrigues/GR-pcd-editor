@@ -22,7 +22,7 @@ export function serialiseClientState(s: AppState): Json {
     comparison: { mode: s.compare, opacity: s.overlayOpacity },
     unit: s.session?.unit ?? "m",
     tools: { box: s.tools.box, polygon: s.tools.polygon, cluster: s.tools.cluster },
-    ui: { budget: s.budget, scope: s.scope, op: s.op, gizmo: s.gizmo, slice: s.slice },
+    ui: { budget: s.budget, gizmo: s.gizmo, slice: s.slice },
   };
 }
 
@@ -36,8 +36,6 @@ export interface ClientPatch {
   compare?: CompareMode;
   overlayOpacity?: number;
   budget?: number;
-  scope?: AppState["scope"];
-  op?: AppState["op"];
   slice?: AppState["slice"];
   tools?: Partial<Pick<AppState["tools"], "box" | "polygon" | "cluster">>;
 }
@@ -63,8 +61,6 @@ export function restoreClientState(raw: unknown): ClientPatch | null {
   const ui = raw.ui;
   if (isObj(ui)) {
     if (typeof ui.budget === "number" && ui.budget >= 1) out.budget = ui.budget;
-    if (ui.scope === "displayed" || ui.scope === "active") out.scope = ui.scope;
-    if (["replace", "add", "subtract", "intersect"].includes(ui.op as string)) out.op = ui.op as AppState["op"];
     const sl = ui.slice;
     if (isObj(sl) && typeof sl.enabled === "boolean" && ["x", "y", "z"].includes(sl.axis as string) && typeof sl.centre === "number" && Number.isFinite(sl.centre) && typeof sl.thickness === "number" && sl.thickness > 0 && Number.isFinite(sl.thickness)) {
       out.slice = { enabled: sl.enabled, axis: sl.axis as "x" | "y" | "z", centre: sl.centre, thickness: sl.thickness };
@@ -142,7 +138,7 @@ export function createPersister(
   };
 }
 
-/** Merges a restored patch into the state; filters and protection are left to the backend state. */
+/** Merges a restored patch into the state: view state only. Filters and protection come from the backend; op, scope and tool are never restored. */
 export function applyClientPatch(s: AppState, p: ClientPatch): AppState {
   return {
     ...s,
@@ -151,8 +147,6 @@ export function applyClientPatch(s: AppState, p: ClientPatch): AppState {
     ...(p.compare ? { compare: p.compare, renderMode: fetchPlan(p.compare).primary, render2: null } : {}),
     overlayOpacity: p.overlayOpacity ?? s.overlayOpacity,
     budget: p.budget ?? s.budget,
-    scope: p.scope ?? s.scope,
-    op: p.op ?? s.op,
     slice: p.slice ?? s.slice,
     tools: { ...s.tools, ...p.tools },
   };

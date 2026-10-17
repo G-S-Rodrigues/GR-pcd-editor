@@ -14,7 +14,7 @@ tool, global height protection and the live preview counts in the status bar.*
 ## Using the editor
 
 1. **Open** a `.pcd` or `.pcdsession` (picker, drag and drop, or the mounted folder).
-2. Navigate: the view buttons or keys `1`..`6` (top, bottom, front, back, left,
+2. Navigate: the ViewCube or keys `1`..`6` (top, bottom, front, back, left,
    right), `P` toggles perspective/orthographic, `F` fits the cloud. The orbit
    pivot can be reset, typed as X/Y/Z or picked on a point.
 3. Pick a tool (**Box**, **Polygon**, **Cluster**), shape it with numbers or its
@@ -28,14 +28,26 @@ tool, global height protection and the live preview counts in the status bar.*
 
 | Input | Action |
 |---|---|
-| Left-drag | Orbit about the pivot |
+| Left-drag | Orbit about the pivot (drags a tool handle or the rectangle when one is active) |
 | Middle/right-drag, Shift+left-drag | Pan |
 | Wheel | Zoom |
-| `1` `2` `3` `4` `5` `6` | Top, bottom, front, back, left, right |
-| `P`, `F` | Perspective/orthographic, fit cloud |
+| ViewCube (top right of the view) | Click a face to look along that axis; click an edge or corner for a diagonal view; it follows every camera change |
+| `1` `2` `3` `4` `5` `6` | Top, bottom, front, back, left, right (the ViewCube faces) |
+| `P`, `F`, `Alt+F` | Perspective/orthographic, fit the cloud, fit the camera to the current candidate |
 | Hold `O` | Show the original (read-only) |
+| Hold `R`, or the **Rect** button | Rectangle select: drag a rectangle in a face view to set the box (depth: the slice slab, or the whole cloud) |
+| `[` `]` | Move the slice slab (a render-only clip that changes no count) |
+| `Delete` | Apply the previewed deletion (same as **Apply**, with the same confirmation for bulk deletes) |
 | `Ctrl+Z`, `Ctrl+Y` | Undo, redo |
-| `Enter`, `Esc` | Close the polygon, cancel drawing or leave pick mode |
+| `Enter`, `Esc` | Close the polygon, cancel drawing, leave pick mode, close help |
+| `?` or the **?** button | Show the key list (generated from the same table the handlers use) |
+
+The legend in the view names the highlight colours (unselected, candidate,
+protected-kept, deleted overlay). Next to **Apply**, "Will delete N" and "Kept by
+protection M" show the exact numbers; when M is above 0 a warning says selected
+points lie in the protected interval (ghosts in the floor slab?). Add, Subtract
+and Intersect shapes are drawn in their own outline colour with a "draft, not yet
+applied" note. **Cancel upload** stops a file that is still being sent.
 
 Concepts worth knowing:
 
@@ -163,6 +175,20 @@ to pull the Playwright image):
 bash scripts/smoke.sh                           # runs e2e/smoke.spec.ts
 SMOKE_UPDATE_SCREENSHOT=1 bash scripts/smoke.sh # also refreshes docs/images/editor.png
 ```
+
+### Manual checklist: real GPU and a 1,000,000-point cloud
+
+The smoke runs on software WebGL (SwiftShader) with small synthetic clouds, so
+these checks are manual, on a real browser with a GPU and a private map you own:
+
+- [ ] Open a cloud of about 1,000,000 points; orbit, pan and zoom stay smooth.
+- [ ] Draw budget 1,000,000 and Auto (max): the status bar says "(sampled to budget)" and the frame rate is acceptable.
+- [ ] Box, rectangle and polygon previews follow the drag without stalls; Apply is exact.
+- [ ] Pick floor point, then Apply: floor points survive and ghosts above the slab go.
+- [ ] Slice view (`[` `]`) clips the view while the status counts do not change.
+- [ ] The ViewCube and `1`..`6` agree; the help overlay (`?`) lists every key.
+- [ ] 1280x720 and 1920x1080 windows: no horizontal scrollbars in the side panels.
+- [ ] Export, reopen the exported PCD in your viewer, and compare the point count.
 
 ## Point cloud loaded
 

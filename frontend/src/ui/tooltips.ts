@@ -39,6 +39,7 @@ export const TOOLTIPS: Record<string, string> = {
   "export-format": "Binary is smaller and faster; ASCII is human readable",
   "export-go": "Prepare the export and start the browser download",
   "export-cancel": "Close the export dialog without exporting",
-  help: "Show the mouse and keyboard controls",
+  help: "Show the mouse and keyboard controls (key ?)",
+  "upload-cancel": "Stop sending the file to the app; nothing is opened and the current file is left as it is",
   ...Object.fromEntries(FIELD_SPECS.map((f) => [f.id, f.tooltip])),
 };

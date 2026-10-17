@@ -106,7 +106,33 @@ test("UI-92 applying a restored patch updates camera, colour, comparison and too
   expect(out.colour).toEqual({ mode: "flat", pointSize: 7 });
   expect(out.compare).toBe("split");
   expect(out.renderMode).toBe("original");
-  expect(out.scope).toBe("active");
+  expect(out.scope).toBe("displayed"); // 7b-2: scope is session-transient (plan decision 9)
   expect(out.budget).toBe(123456);
   expect(out.tools.filters).toBe(filters);
+});
+
+test("UI-145 a restored page keeps the view but starts Replace, Displayed, no tool and default cluster limits", () => {
+  const a = createAppStore();
+  a.update((s) => ({
+    ...s,
+    op: "intersect",
+    scope: "active",
+    tool: "cluster",
+    colour: { mode: "flat", pointSize: 5 },
+    tools: { ...s.tools, cluster: { ...s.tools.cluster, maxPoints: 1234, radius: 2, seed: { id: 3, point: [1, 2, 3] } } },
+  }));
+  const saved = JSON.parse(JSON.stringify(serialiseClientState(a.get())));
+  expect(saved.ui.op).toBeUndefined();
+  expect(saved.ui.scope).toBeUndefined();
+  const patch = restoreClientState(saved)!;
+  expect((patch as Record<string, unknown>).op).toBeUndefined();
+  expect((patch as Record<string, unknown>).scope).toBeUndefined();
+  const fresh = createAppStore().get();
+  const out = applyClientPatch(fresh, patch);
+  expect(out.op).toBe("replace");
+  expect(out.scope).toBe("displayed");
+  expect(out.tool).toBe("none");
+  expect(out.colour).toEqual({ mode: "flat", pointSize: 5 });
+  expect(out.tools.cluster.maxPoints).toBe(fresh.tools.cluster.maxPoints);
+  expect(out.tools.cluster.seed).toBeNull();
 });

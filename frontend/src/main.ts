@@ -14,6 +14,10 @@ import { type ProtectionModel, floorFromPick, protectionFromState, setGlobal } f
 import { createProtectionController } from "./inspector/protection-controller";
 import { createEditor } from "./orchestration/edit";
 import { canApply, createRunner } from "./orchestration/runner";
+import { createUploadCanceller } from "./orchestration/upload-cancel";
+import { type UploadOptions, uploadFile } from "./files/upload";
+import { startBanner } from "./status/startbanner";
+import { defaultCluster } from "./tools/cluster/model";
 import { createParamsHook } from "./orchestration/params";
 import { createClearPolygon } from "./orchestration/polygonclear";
 import { startDrawing, cancelDrawing, closePolygon, emptyPolygon, enterTool } from "./tools/polygon/model";
@@ -27,6 +31,7 @@ import { createRefresher } from "./orchestration/refresh";
 import { createAppStore, addNotice, dismissNotice } from "./state/app";
 import type { SessionState } from "./state/types";
 import { h } from "./ui/dom";
+import { control } from "./ui/controls";
 import { buildInspector } from "./ui/inspector-shell";
 import { openMountedDialog } from "./ui/open-dialog";
 import { buildStatusbar } from "./ui/statusbar";
@@ -126,12 +131,15 @@ function onOpened(state: SessionState) {
     ...st,
     camera: fitted,
     tool: "none",
+    op: "replace",
+    scope: "displayed",
     slice: defaultSlice(),
     candidate: null,
     tools: {
       ...st.tools,
       box: boxForOpen(st.tools.box, fitted.target),
       polygon: emptyPolygon(),
+      cluster: defaultCluster(),
       filters: filterFromState(state.display_filter),
       protection: protectionFromState(state.protection) as ProtectionModel,
     },
@@ -140,8 +148,14 @@ function onOpened(state: SessionState) {
   if (restored) store.update((st) => applyClientPatch(st, restored));
 }
 
+const canceller = createUploadCanceller(store);
 const deps = {
   store,
+  upload: (f: File, o: UploadOptions) => {
+    const handle = uploadFile(f, o);
+    canceller.track(handle);
+    return handle;
+  },
   confirm: (m: string) => window.confirm(m),
   refresh: () => refresher.refresh(),
   onOpened,
@@ -284,16 +298,26 @@ store.select(
 
 // progress and empty state
 const progress = $("progress");
+const progressText = h("span", { id: "progress-text" });
+const cancelUpload = control("button", { id: "upload-cancel", onclick: () => void canceller.cancel() }, "Cancel upload");
+progress.append(progressText, cancelUpload);
 const empty = $("empty");
-store.subscribe((s) => {
+const banner = $("start-banner");
+const syncChrome = (s: ReturnType<typeof store.get>) => {
   empty.style.display = s.session ? "none" : "grid";
   const u = s.upload;
   progress.classList.toggle("on", u !== null || s.rendering);
   if (u) {
     const pct = u.total ? ` ${Math.round((u.loaded / u.total) * 100)}%` : "";
-    progress.textContent = u.phase === "sending" ? `Uploading${pct}` : "Importing the point cloud…";
-  } else if (s.rendering) progress.textContent = "Loading points…";
-});
+    progressText.textContent = u.phase === "sending" ? `Uploading${pct}` : "Importing the point cloud…";
+  } else if (s.rendering) progressText.textContent = "Loading points…";
+  cancelUpload.hidden = !canceller.visible(u);
+  const sb = startBanner(s);
+  banner.hidden = sb === null;
+  banner.replaceChildren(...(sb ? [h("strong", { text: sb.title }), h("p", { class: "note", text: sb.reason })] : []));
+};
+store.subscribe(syncChrome);
+syncChrome(store.get());
 
 // drag and drop
 const dropzone = $("dropzone");
