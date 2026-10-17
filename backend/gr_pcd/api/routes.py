@@ -5,7 +5,7 @@ import re
 import shutil
 from pathlib import Path
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, Response
 from starlette.requests import ClientDisconnect
@@ -34,13 +34,21 @@ from gr_pcd.files.uploads import (
 )
 from gr_pcd.paths import resolve_data_path
 from gr_pcd.session.engine import SelectSpec
-from gr_pcd.session.errors import NotFoundError
+from gr_pcd.session.errors import NotFoundError, SessionChanged
 from gr_pcd.session.manager import SessionManager
 from gr_pcd.settings import Settings
 
 MAX_CLIENT_STATE = 1024 * 1024
 UPLOAD_ID = re.compile(r"^[0-9a-f]{32}$")
 
+
+# open and upload replace the session: the id of the old one is irrelevant
+_UNCHECKED = {
+    "/api/session/open",
+    "/api/session/open-archive",
+    "/api/session/upload",
+}
+_UNCHECKED_PREFIX = ("/api/uploads/", "/api/mounted")
 
 DOWNLOAD_HEADERS = {
     "Cache-Control": "no-store",
@@ -62,7 +70,24 @@ def _job(job) -> JSONResponse:
 
 
 def build_router(manager: SessionManager, settings: Settings) -> APIRouter:
-    router = APIRouter(prefix="/api")
+
+    def check_session(request: Request) -> None:
+        """X-Session-Id is optional; when sent it must name the open session."""
+        sent = request.headers.get("x-session-id")
+        if sent is None:
+            return
+        path = request.url.path
+        if (
+            (request.method == "GET" and path == "/api/session")
+            or path in _UNCHECKED
+            or path.startswith(_UNCHECKED_PREFIX)
+        ):
+            return
+        session = manager.session
+        if session is None or session.id != sent:
+            raise SessionChanged(None if session is None else session.id)
+
+    router = APIRouter(prefix="/api", dependencies=[Depends(check_session)])
 
     def existing_file(relative: str):
         path = resolve_data_path(settings.data_root, relative)
@@ -278,11 +303,12 @@ def build_router(manager: SessionManager, settings: Settings) -> APIRouter:
         mode: str = Query("edited"),
         attr: str | None = Query(None),
     ):
-        arr, rev = manager.require().render(budget, mode, attr)
+        s = manager.require()
+        arr, rev = s.render(budget, mode, attr)
         return Response(
             render_body(arr),
             media_type="application/octet-stream",
-            headers=render_headers(arr, rev),
+            headers={**render_headers(arr, rev), "X-Session-Id": s.id},
         )
 
     @router.post("/session/export")

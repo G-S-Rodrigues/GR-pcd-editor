@@ -15,6 +15,7 @@ from gr_pcd.session.errors import (
     NoSessionError,
     NotFoundError,
     ReplaceConflict,
+    SessionChanged,
     StaleRevision,
 )
 
@@ -30,6 +31,10 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(NoSessionError)
     def _no_session(_: Request, exc: NoSessionError):
         return _body("no_session", exc.message, 404)
+
+    @app.exception_handler(SessionChanged)
+    def _changed(_: Request, exc: SessionChanged):
+        return _body(exc.code, exc.message, 409, session_id=exc.current)
 
     @app.exception_handler(NotFoundError)
     def _not_found(_: Request, exc: NotFoundError):

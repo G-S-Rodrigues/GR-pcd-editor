@@ -1,9 +1,13 @@
+import { notifySessionChanged } from "../files/http";
 import { colourOptions } from "../colour/modes";
+import { ApiError } from "../files/errors";
 import { fetchPlan, renderCacheKey } from "../compare/model";
 import { fetchRender as realFetchRender, type RenderData } from "../render/parse";
 import { type AppState, addNotice } from "../state/app";
 import type { Store } from "../state/store";
 import type { RenderMode } from "../state/types";
+
+class StaleSession extends Error {}
 
 type FetchRender = typeof realFetchRender;
 const CACHE_MAX = 3;
@@ -15,6 +19,10 @@ export function createRefresher(store: Store<AppState>, fetchRender: FetchRender
   // Only read-only renders are cached: the edited render carries selection flags that change without a revision bump.
   const cache = new Map<string, RenderData>();
   return {
+    /** Drops every cached render (a different file or session was opened). */
+    clear(): void {
+      cache.clear();
+    },
     async refresh(): Promise<boolean> {
       const mine = ++gen;
       ctl?.abort();
@@ -29,6 +37,11 @@ export function createRefresher(store: Store<AppState>, fetchRender: FetchRender
         const hit = mode !== "edited" ? cache.get(key) : undefined;
         if (hit) return hit;
         const data = await fetchRender(mode, s.budget, attr, signal);
+        // a render made for another session must never be shown or cached
+        if (data.sessionId && s.session && data.sessionId !== s.session.session_id) {
+          notifySessionChanged();
+          throw new StaleSession();
+        }
         if (mode !== "edited") {
           cache.delete(key);
           cache.set(key, data);
@@ -45,6 +58,7 @@ export function createRefresher(store: Store<AppState>, fetchRender: FetchRender
       } catch (e) {
         if (mine !== gen) return false;
         store.set({ rendering: false });
+        if (e instanceof StaleSession || (e instanceof ApiError && e.code === "session_changed")) return false;
         addNotice(store, "error", "render_failed", e instanceof Error ? e.message : "Could not load the point cloud");
         return false;
       }

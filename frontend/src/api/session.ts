@@ -1,5 +1,5 @@
-import { ApiError, parseError } from "../files/errors";
-import { deleteJson, getJson, postJson } from "../files/http";
+import { ApiError } from "../files/errors";
+import { deleteJson, failure, getJson, postJson, sessionHeaders } from "../files/http";
 import type { DisplayFilter, Protection, Scope, SelectionOp, SessionState } from "../state/types";
 
 type Json = Record<string, unknown>;
@@ -9,13 +9,13 @@ async function putJson<T>(url: string, body: unknown): Promise<T> {
   try {
     res = await fetch(url, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...sessionHeaders() },
       body: JSON.stringify(body),
     });
   } catch (cause) {
     throw new ApiError(0, "network", `could not reach the app: ${String(cause)}`);
   }
-  if (!res.ok) throw await parseError(res);
+  if (!res.ok) throw await failure(res);
   return (await res.json()) as T;
 }
 

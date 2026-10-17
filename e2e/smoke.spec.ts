@@ -986,3 +986,29 @@ test("E2E-25 7c1 cluster r=2 on a 300k-point room finishes, Apply deletes the co
   expect(alive.status()).toBe(200);
   expect((await alive.json()).no_session).toBeUndefined();
 });
+
+test("E2E-26 7c2 a second tab replaces the file: the first tab's stale Apply is refused with a notice and reloaded counts", async ({ page, context }) => {
+  const a = helpers(page);
+  await page.goto("/");
+  await page.locator("#file-input").setInputFiles({ name: "synthetic.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
+  await a.exact("Original", String(TOTAL));
+  await a.ctl("tool-box").click();
+  await a.boxEverything();
+  await a.exact("Candidates", String(GHOST + FLOOR));
+  await a.ctl("prot-enabled").check();
+  await a.setNum("prot-min", -0.1);
+  await a.setNum("prot-max", 0.1);
+  await a.exact("Candidates", String(GHOST));
+  await expect(a.ctl("apply")).toBeEnabled();
+
+  const other = await context.newPage();
+  const b = helpers(other);
+  await other.goto("/");
+  await other.locator("#file-input").setInputFiles({ name: "room.pcd", mimeType: "application/octet-stream", buffer: roomPcd() });
+  await b.exact("Original", String(ROOM_TOTAL));
+
+  await a.ctl("apply").click();
+  await expect(page.locator("#notices")).toContainText("replaced in another tab", { timeout: 15000 });
+  await a.exact("Original", String(ROOM_TOTAL));
+  await other.close();
+});

@@ -30,3 +30,14 @@ class ReplaceConflict(Exception):
     message = (
         "the open session has unsaved edits; save it or confirm the replacement"
     )
+
+
+class SessionChanged(Exception):
+    """The request names a session that is no longer the open one."""
+
+    code = "session_changed"
+    message = "the open session is not the one this request was made for"
+
+    def __init__(self, current: str | None) -> None:
+        super().__init__(self.message)
+        self.current = current

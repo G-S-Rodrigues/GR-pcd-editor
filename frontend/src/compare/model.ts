@@ -79,8 +79,8 @@ export function createHold(store: Store<AppState>, refresh: () => void) {
   };
 }
 
-/** Cache key for a fetched render; selection count is included because flags depend on it. */
+/** Cache key for a fetched render: session identity and selection identity (not count) because flags depend on them. */
 export function renderCacheKey(s: AppState, mode: RenderMode, attr?: string): string {
   const r = s.session?.revision;
-  return [r?.cloud, r?.params, s.session?.selection?.count, s.budget, mode, attr ?? ""].join("|");
+  return [s.session?.session_id, r?.cloud, r?.params, s.session?.selection?.id, s.budget, mode, attr ?? ""].join("|");
 }

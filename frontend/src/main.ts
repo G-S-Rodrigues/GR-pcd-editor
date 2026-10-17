@@ -1,6 +1,6 @@
 import * as api from "./api/session";
 import { getState } from "./api/session";
-import { postJson } from "./files/http";
+import { postJson, setSessionChangedHandler, setSessionId } from "./files/http";
 import { startExport, startSave, markSaved } from "./files/downloads";
 import { createHold, setCompare } from "./compare/model";
 import { runExport } from "./orchestration/export";
@@ -28,6 +28,7 @@ import { createToolInteraction } from "./viewport/interact";
 import { attachDropZone } from "./files/dragdrop";
 import { dropNotice, openSource } from "./orchestration/open";
 import { createRefresher } from "./orchestration/refresh";
+import { createSessionSync } from "./orchestration/session-sync";
 import { createAppStore, addNotice, dismissNotice } from "./state/app";
 import type { SessionState } from "./state/types";
 import { h } from "./ui/dom";
@@ -66,6 +67,13 @@ async function refreshState(): Promise<void> {
   if (state) store.set({ session: state });
   await refresher.refresh();
 }
+const sessionSync = createSessionSync(store, { clear: () => refresher.clear(), refresh: () => refresher.refresh() });
+setSessionChangedHandler(() => void sessionSync.onChanged());
+store.subscribe((s) => setSessionId(s.session?.session_id ?? null));
+window.addEventListener("focus", () => void sessionSync.check());
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") void sessionSync.check();
+});
 const runner = createRunner(store, {
   submitSelection: (b) => api.submitSelection(b as api.SelectionBody),
   submitCandidate: (rev) => api.submitCandidate(rev),
@@ -160,6 +168,7 @@ const deps = {
   },
   confirm: (m: string) => window.confirm(m),
   refresh: () => refresher.refresh(),
+  clearCache: () => refresher.clear(),
   onOpened,
 };
 

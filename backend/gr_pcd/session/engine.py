@@ -113,6 +113,7 @@ class EditingSession:
         self.xyz = _ro(xyz64(cloud))
         self.valid = _ro(valid_mask(self.xyz))
         self.active = _ro(np.ones(cloud.n, dtype=bool))
+        self.selection_id = 0
         self.selection = _ro(np.zeros(cloud.n, dtype=bool))
         self.selection_ops: list[dict] = []
         self.display_filter = DisplayFilter()
@@ -135,6 +136,16 @@ class EditingSession:
         self._tree_cache: tuple[int, cKDTree, np.ndarray] | None = None
         self._active_bounds_cache: tuple[int, dict | None] | None = None
         self.bounds = _bounds(self.xyz, self.valid)
+
+    @property
+    def selection(self) -> np.ndarray:
+        return self._selection
+
+    @selection.setter
+    def selection(self, value: np.ndarray) -> None:
+        # identity of the stored selection: bumps on every assignment
+        self._selection = value
+        self.selection_id += 1
 
     def restore(self, loaded) -> None:
         """Apply a validated archive to a fresh session (revisions reset)."""
@@ -191,6 +202,7 @@ class EditingSession:
     def state(self) -> dict:
         with self.lock:
             active, selection = self.active, self.selection
+            sel_id = self.selection_id
             ticket = self.clock.ticket()
             protection = self.protection
             filt = self.display_filter
@@ -240,6 +252,7 @@ class EditingSession:
             "display_filter": filter_to_dict(filt),
             "protection": protection_to_dict(protection),
             "selection": {
+                "id": sel_id,
                 "count": int((selection & base).sum()),
                 "ops": ops,
             },

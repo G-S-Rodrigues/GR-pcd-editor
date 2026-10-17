@@ -57,7 +57,7 @@ export interface SessionState {
   revision: { cloud: number; params: number };
   display_filter: DisplayFilter;
   protection: Protection;
-  selection: { count: number; ops: unknown[] };
+  selection: { id?: number; count: number; ops: unknown[] };
   history: { entries: HistoryEntry[]; cursor: number; can_undo: boolean; can_redo: boolean };
   unit: string;
   unsaved: boolean;

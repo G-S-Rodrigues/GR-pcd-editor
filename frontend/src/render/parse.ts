@@ -1,4 +1,5 @@
-import { ApiError, parseError } from "../files/errors";
+import { ApiError } from "../files/errors";
+import { failure, sessionHeaders } from "../files/http";
 import type { RenderMode, Vec3 } from "../state/types";
 
 export type AttrArray = Float32Array | Uint32Array | Int32Array;
@@ -15,6 +16,7 @@ export interface RenderData {
   eligible: number;
   cloudRevision: number;
   paramsRevision: number;
+  sessionId?: string;
 }
 
 export interface HeaderLike {
@@ -47,6 +49,8 @@ export function parseRender(buf: ArrayBuffer, headers: HeaderLike): RenderData {
     cloudRevision: num("X-Cloud-Revision"),
     paramsRevision: num("X-Params-Revision"),
   };
+  const sid = headers.get("X-Session-Id");
+  if (sid) out.sessionId = sid;
   if (attrKind) {
     const block = buf.slice(count * 17, count * 21); // not 4-byte aligned in place
     out.attrKind = attrKind;
@@ -72,13 +76,13 @@ export async function fetchRender(
 ): Promise<RenderData> {
   let res: Response;
   try {
-    res = await fetch(`/api/session/render?${renderQuery(mode, budget, attr)}`, { signal });
+    res = await fetch(`/api/session/render?${renderQuery(mode, budget, attr)}`, { signal, headers: sessionHeaders() });
   } catch (cause) {
     if (signal?.aborted) throw new ApiError(0, "cancelled", "render request superseded");
     throw new ApiError(0, "network", `could not reach the app: ${String(cause)}`);
   }
   if (!res.ok) {
-    throw await parseError(res);
+    throw await failure(res);
   }
   return parseRender(await res.arrayBuffer(), res.headers);
 }

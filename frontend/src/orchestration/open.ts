@@ -16,6 +16,7 @@ export interface OpenDeps {
   store: Store<AppState>;
   confirm: (message: string) => Promise<boolean> | boolean;
   refresh: () => Promise<unknown>;
+  clearCache?: () => void;
   upload?: (file: File, opts: UploadOptions) => UploadHandle<unknown>;
   openMounted?: (path: string, kind: "pcd" | "session", replace: boolean) => Promise<unknown>;
   onOpened?: (state: SessionState) => void;
@@ -77,6 +78,7 @@ export async function openSource(src: OpenSource, deps: OpenDeps): Promise<OpenO
     }
     const state = await getState();
     if (!state) throw new ApiError(0, "no_session", "the file opened but no session was found");
+    deps.clearCache?.();
     store.batch(() => {
       store.set({ session: state, candidate: null, upload: null, render: null });
     });
