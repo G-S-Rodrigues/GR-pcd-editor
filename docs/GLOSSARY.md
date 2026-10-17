@@ -24,3 +24,14 @@
   is committed.
 - **LOD:** Level of detail; the sampled subset of points drawn in the viewport
   (shown as "Rendered"), never a cloud total.
+- **Filter box:** One of the six on-canvas controls (X, Y, Z, min and max) that
+  sets a side of the display filter; it has a grip, a typed value, a reset and a
+  collapse chip.
+- **Cut plane:** The plane drawn for an expanded filter side, with an arrow toward
+  the hidden side; dragging the arrow sets that side's limit.
+- **Protection band:** The translucent slab drawn on the canvas while the Height
+  protection section is open, with an arrow per plane; points inside it are
+  drawn in the strong protected colour.
+- **Tilted slab:** The protected interval measured along a normal turned by
+  rx and ry (each within 60 degrees) about a pivot at the active-bounds XY centre,
+  instead of along Z. Level (both angles 0) is the plain Z slab.

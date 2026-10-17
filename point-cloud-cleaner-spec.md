@@ -417,3 +417,10 @@ Initial targets, to be benchmarked on a documented desktop Linux reference PC wi
 7. Apply deletion, compare before/after, and undo any over-removal.
 8. Save the editing session and export a new full-resolution PCD with every retained field preserved.
 
+## Part 10 addendum
+
+- Section 8: the dual-ended sliders are superseded by on-canvas filter boxes (grips, cut planes with arrows, typed
+  values, per-side and global reset). Filters stay world-axis-aligned, inclusive and ANDed; the numeric control ids are kept.
+- Section 10: the protected slab may be tilted about X and Y (each within 60 degrees) around a pivot at the
+  active-bounds XY centre, to follow a sloping floor. A level slab behaves as before. It is still a plane, not a surface.
+- AC-17 stands and covers the tilt (a non-level tilt is stored in the session). AC-15 is unchanged.

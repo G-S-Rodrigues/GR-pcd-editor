@@ -95,5 +95,7 @@ export const MOUSE_DOCS: { keys: string; label: string }[] = [
   { keys: "Wheel", label: "Zoom" },
   { keys: "Click a ViewCube face", label: "Look along that axis; edges and corners look diagonally" },
   { keys: "Drag a filter box grip, or the arrow on its plane", label: "Set that side of the display filter along the view; Shift is finer, Esc cancels the drag" },
+  { keys: "Drag a protection arrow, or the band's edge", label: "Move that side of the protected slab along its normal; Esc cancels the drag" },
+  { keys: "Drag a blue ring around the slab", label: "Tilt the protected slab (X ring and Y ring, limit 60 degrees); the Level button resets it" },
   { keys: "Arrow keys on a focused grip", label: "Nudge the filter value (Shift finer, PageUp/PageDown ten steps, Home/End the cloud bounds)" },
 ];

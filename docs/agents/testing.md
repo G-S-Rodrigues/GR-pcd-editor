@@ -228,3 +228,20 @@ export, save, persist, unsaved, tooltips), under `frontend/src/**`; backend rend
   `UI-23`), `UI-184` (Protected shows `updating…` until the server has the picked floor), `UI-187` (Rect tooltip).
 - Deliberately not done: pick-floor hint in Top/Bottom (m-2: smoke `E2E-31` pins no hint in Top) and Rect disarm after
   a drag (m-7: `E2E-29` needs it armed across views; the tooltip says it stays on).
+
+
+## Part 10 additions (filter boxes, protection band, tilted slab)
+
+- Backend: `TLT-00..08` (`tests/unit/test_protection_tilt.py`: TLT-00 is the golden table of slab coordinates shared
+  with the frontend test, TLT-06 covers the tilt surviving Apply), `API-70/71` and `SES-50/51`
+  (`tests/integration/test_protection_tilt_api.py`). Level takes the old Z path unchanged; a tilt is on the wire and in
+  the archive only when non-level, so old archives and level JSON are byte-identical.
+- Tilt tolerance: tilted slab membership is float64 with an inclusive `GEO_EPS_ROTATED` (1e-9); level uses eps 0.
+- Frontend: `UI-200..207` (filter boxes), `UI-202/203` (planes), `UI-210..214` (band), `UI-220..226`
+  (`inspector/tilt.test.ts` and the tilted routing describe in `viewport/interact.test.ts`).
+- Smoke: `E2E-35..43` (boxes, planes, band, fold), `E2E-44` (tilted floor: Y ring by real mouse, typed fit, upper arrow,
+  ghosts deleted and floor kept, Level) and `E2E-45` (typed tilt equals dragged tilt; session download and reopen and a
+  reload keep it). Fixture `tiltedFloorPcd` in `e2e/synthetic.ts`: floor z = 0.1 x + 0.05 y (400 points, offsets
+  +-0.02) and 27 ghosts 1..3 m above; truth comes from `countInTiltedSlab`, an oracle independent of the app.
+- The `filter-*` control ids are unchanged by the boxes (the panel sliders went; the numeric ids stayed on the boxes).
+  New ids: `prot-tilt-x`, `prot-tilt-y`, `prot-level`; read-only hooks `protectionArrows()` and `tiltRings()`.

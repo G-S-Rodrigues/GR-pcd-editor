@@ -36,10 +36,14 @@ view, global height protection (the purple slab) and the live counts in the stat
 | `P`, `F`, `Alt+F` | Perspective/orthographic, fit the cloud, fit the camera to the current candidate |
 | Hold `O` | Show the original (read-only) |
 | Hold `R`, or the **Rect** button | Rectangle select: drag a rectangle in a face view to set the box (depth: the slice slab, or the whole cloud) |
+| Drag a filter box grip, or the arrow on its plane | Set that side of the display filter (six boxes on the canvas; Shift is finer, a typed value and a per-side reset sit in the box, the chip collapses it) |
+| Arrow keys on a focused grip | Nudge the filter value (Shift finer, PageUp/PageDown ten steps, Home/End the cloud bounds) |
+| Drag a protection arrow, or the band's edge | Move that side of the protected slab (open **Height protection**; the band is drawn translucent and the protected points in cyan) |
+| Drag a blue ring around the slab | Tilt the protected slab about X or Y (limit 60 degrees); **Level** or the two angle fields reset or type it |
 | `[` `]` | Move the slice slab (a render-only clip that changes no count) |
 | `Delete` | Apply the previewed deletion (same as **Apply**, with the same confirmation for bulk deletes) |
 | `Ctrl+Z`, `Ctrl+Y` | Undo, redo |
-| `Enter`, `Esc` | Close the polygon, cancel drawing, leave pick mode, close help |
+| `Enter`, `Esc` | Close the polygon, cancel drawing, leave pick mode, close help; Esc during a grip, arrow or ring drag restores the value |
 | `?` or the **?** button | Show the key list (generated from the same table the handlers use) |
 
 The legend in the view names the highlight colours (unselected, candidate,
@@ -52,10 +56,13 @@ applied" note. **Cancel upload** stops a file that is still being sent.
 Concepts worth knowing:
 
 - **Height protection is a coordinate slab**, not a semantic floor: points inside
-  the protected Z interval are never deleted, and there are no ramps.
+  the protected interval are never deleted. The slab is horizontal by default; it
+  can be tilted up to 60 degrees about X and Y (rings, the angle fields or **Level**)
+  to follow a sloping floor, and it stays a plane, not a surface: no ramps or curves.
 - A **polygon** selection includes points through the whole view depth unless its
   Z limits are enabled.
-- A **display filter hides** points from the view; it does not delete them. The
+- A **display filter hides** points from the view; it does not delete them. It is
+  edited with six boxes on the canvas, not panel sliders. The
   scope (Displayed or Active) decides whether a selection reaches hidden points.
 - **Replace** updates the preview live while you edit; **Add, Subtract and
   Intersect** keep the tool shape as a draft until you press the commit button.
