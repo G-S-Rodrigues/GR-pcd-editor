@@ -47,7 +47,7 @@ from gr_pcd.session.codec import (
 from gr_pcd.session.errors import NotFoundError, StaleRevision
 from gr_pcd.session.jobs import Stale
 
-RENDER_MODES = ("edited", "original", "deleted")
+RENDER_MODES = ("edited", "original", "deleted", "step")
 FLAG_SELECTED, FLAG_PROTECTED, FLAG_DELETED = 1, 2, 4
 
 
@@ -158,6 +158,10 @@ class EditingSession:
         self.protection = loaded.protection
         self.history.entries = list(loaded.entries)
         self.history.cursor = loaded.cursor
+        self.history.next_sid = max(
+            loaded.next_sid,
+            max((e.sid for e in loaded.entries), default=-1) + 1,
+        )
         self.client_state = loaded.client_state
         self.unit = loaded.unit
         self.unsaved = False
@@ -265,7 +269,10 @@ class EditingSession:
                 "entries": [
                     {
                         "index": i,
+                        "sid": e.sid,
                         "kind": e.kind,
+                        "tool": e.tool,
+                        "name": e.name,
                         "description": e.description,
                         "count": len(e.ids),
                     }
@@ -520,26 +527,52 @@ class EditingSession:
             text = description or (
                 f"Deleted {len(ids)} points ({cand.tool_text})"
             )
-            self.history.push("delete", text, ids)
+            self.history.push("delete", text, ids, _step_tool(cand.tool_text))
             self.active = with_ids(self.active, ids, False)
             self.selection = _ro(np.zeros(self.cloud.n, dtype=bool))
             self.selection_ops = []
             self._last_cluster = None
             self._changed()
 
+    def _flip(self, entries, back: bool) -> None:
+        for e in entries:
+            self.active = with_ids(self.active, e.ids, back)
+        self._changed()
+
+    def rollback(self, cloud_revision: int, cursor: int) -> None:
+        """Move the marker: later steps' points return, or are deleted again."""
+        with self.lock:
+            self.require_cloud(cloud_revision)
+            entries, back = self.history.rollback(cursor)
+            self._flip(entries, back)
+
     def undo(self, cloud_revision: int) -> None:
         with self.lock:
             self.require_cloud(cloud_revision)
-            entry = self.history.undo()
-            self.active = with_ids(self.active, entry.ids, True)
-            self._changed()
+            if not self.history.can_undo:
+                raise EditError("nothing_to_undo", "nothing to undo")
+            self.rollback(cloud_revision, self.history.cursor - 1)
 
     def redo(self, cloud_revision: int) -> None:
         with self.lock:
             self.require_cloud(cloud_revision)
-            entry = self.history.redo()
-            self.active = with_ids(self.active, entry.ids, False)
-            self._changed()
+            if not self.history.can_redo:
+                raise EditError("nothing_to_redo", "nothing to redo")
+            self.rollback(cloud_revision, self.history.cursor + 1)
+
+    def delete_step(self, cloud_revision: int, sid: int) -> None:
+        """Remove one step only: its points come back (if it was applied),
+        every other step keeps deleting exactly its own set."""
+        with self.lock:
+            self.require_cloud(cloud_revision)
+            entry, applied = self.history.delete_step(sid)
+            self._flip([entry] if applied else [], True)
+
+    def rename_step(self, sid: int, name: str | None) -> None:
+        with self.lock:
+            self.history.rename_step(sid, name)
+            self.edit_counter += 1
+            self.unsaved = True
 
     def remove_invalid(self, cloud_revision: int) -> None:
         with self.lock:
@@ -578,21 +611,35 @@ class EditingSession:
         }
 
     def render(
-        self, budget: int, mode: str, attr: str | None = None
+        self,
+        budget: int,
+        mode: str,
+        attr: str | None = None,
+        step: int | None = None,
     ) -> tuple[RenderArrays, dict]:
         if mode not in RENDER_MODES:
             raise EditError("invalid_mode", f"unknown render mode {mode}")
+        if mode == "step" and step is None:
+            raise EditError("invalid_step", "mode step needs a step id")
         with self.lock:
             active, selection = self.active, self.selection
             protection = self.protection
             rev = self.revision()
+            step_ids = self.history.entry(step).ids if mode == "step" else None
         display = self._display()
         valid = self.valid
-        base = {
-            "edited": active & valid,
-            "original": valid.copy(),
-            "deleted": ~active & valid,
-        }[mode]
+        if mode == "step":
+            # the step's stored id set, never a recomputation
+            in_step = np.zeros(self.cloud.n, dtype=bool)
+            in_step[step_ids] = True
+            base = in_step & valid
+            selection = np.zeros(self.cloud.n, dtype=bool)
+        else:
+            base = {
+                "edited": active & valid,
+                "original": valid.copy(),
+                "deleted": ~active & valid,
+            }[mode]
         eligible = np.flatnonzero(base & display)
         m = len(eligible)
         sampled = (
@@ -631,7 +678,8 @@ class EditingSession:
         flags = np.zeros(len(ids), dtype=np.uint8)
         flags[sel[ids] & ~protected[ids]] |= FLAG_SELECTED
         flags[sel[ids] & protected[ids]] |= FLAG_PROTECTED
-        flags[~active[ids]] |= FLAG_DELETED
+        if mode != "step":
+            flags[~active[ids]] |= FLAG_DELETED
         values, kind = self._attr_values(attr, ids) if attr else (None, None)
         return RenderArrays(
             coords, ids, flags, origin, m, values, kind, attr
@@ -662,6 +710,10 @@ class EditingSession:
         if scope == "displayed":
             return active & self.valid & self._display()
         raise EditError("invalid_scope", f"unknown export scope {scope}")
+
+
+def _step_tool(tool_text: str) -> str:
+    return "polygon" if tool_text == "prism" else tool_text
 
 
 def _tool_text(tool) -> str:

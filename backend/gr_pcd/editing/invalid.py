@@ -14,5 +14,7 @@ def remove_invalid(active, valid, history):
     ids = invalid_active_ids(active, valid)
     if len(ids) == 0:
         raise EditError("nothing_to_remove", "no invalid points to remove")
-    history.push("remove_invalid", f"Removed {len(ids)} invalid points", ids)
+    history.push(
+        "remove_invalid", f"Removed {len(ids)} invalid points", ids, "invalid"
+    )
     return with_ids(active, ids, False)

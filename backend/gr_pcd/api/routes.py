@@ -13,12 +13,15 @@ from starlette.requests import ClientDisconnect
 from gr_pcd.api.render import render_body, render_headers
 from gr_pcd.api.schemas import (
     ApplyBody,
+    DeleteStepBody,
     DisplayFilterBody,
     ExportBody,
     MarkSavedBody,
     NearestBody,
     ProtectionBody,
+    RenameBody,
     RevisionBody,
+    RollbackBody,
     SelectionBody,
 )
 from gr_pcd.files.cleanup import sweep_runtime
@@ -258,6 +261,24 @@ def build_router(manager: SessionManager, settings: Settings) -> APIRouter:
         s.redo(body.cloud_revision)
         return s.state()
 
+    @router.post("/session/history/rollback")
+    def history_rollback(body: RollbackBody):
+        s = manager.require()
+        s.rollback(body.cloud_revision, body.cursor)
+        return s.state()
+
+    @router.post("/session/history/delete-step")
+    def history_delete_step(body: DeleteStepBody):
+        s = manager.require()
+        s.delete_step(body.cloud_revision, body.sid)
+        return s.state()
+
+    @router.post("/session/history/rename")
+    def history_rename(body: RenameBody):
+        s = manager.require()
+        s.rename_step(body.sid, body.name)
+        return s.state()
+
     @router.post("/session/remove-invalid")
     def remove_invalid(body: RevisionBody):
         s = manager.require()
@@ -273,9 +294,10 @@ def build_router(manager: SessionManager, settings: Settings) -> APIRouter:
         budget: int = Query(100_000, ge=1, le=2_000_000),
         mode: str = Query("edited"),
         attr: str | None = Query(None),
+        step: int | None = Query(None),
     ):
         s = manager.require()
-        arr, rev = s.render(budget, mode, attr)
+        arr, rev = s.render(budget, mode, attr, step)
         return Response(
             render_body(arr),
             media_type="application/octet-stream",

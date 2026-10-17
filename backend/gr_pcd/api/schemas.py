@@ -169,6 +169,21 @@ class RevisionBody(Model):
     cloud_revision: int
 
 
+class RollbackBody(Model):
+    cloud_revision: int
+    cursor: int
+
+
+class DeleteStepBody(Model):
+    cloud_revision: int
+    sid: int
+
+
+class RenameBody(Model):
+    sid: int
+    name: str
+
+
 class ApplyBody(Model):
     cloud_revision: int
     candidate_id: str

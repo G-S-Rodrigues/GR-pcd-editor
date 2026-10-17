@@ -80,7 +80,8 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(EditError)
     def _edit(_: Request, exc: EditError):
-        return _body(exc.code, exc.message, 422)
+        status = 404 if exc.code == "no_such_step" else 422
+        return _body(exc.code, exc.message, status)
 
     @app.exception_handler(GeometryError)
     def _geometry(_: Request, exc: GeometryError):

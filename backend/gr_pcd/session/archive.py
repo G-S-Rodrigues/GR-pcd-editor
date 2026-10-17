@@ -73,6 +73,7 @@ class LoadedArchive:
     protection: ProtectionState
     unit: str
     client_state: dict
+    next_sid: int = 0
 
 
 # ---- writing -----------------------------------------------------------
