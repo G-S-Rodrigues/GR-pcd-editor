@@ -130,7 +130,7 @@ export, save, persist, unsaved, tooltips), under `frontend/src/**`; backend rend
   `GET /api/session` answers 200 `{"no_session": true}` without a session, render
   sampled to the exact budget), `CLU-20..23`.
 - Cluster timing target (`test_clu_22_room_timing`): whole synthetic room (300k
-  points, r 0.5) in at most 12 s on the checks image; raise it only with a
+  points, r 0.5) in at most 3 s on the checks image (the ghost component in 1.5 s; tightened in 7c-1 from 12 s and 3 s); raise it only with a
   recorded measurement, never skip.
 - Smoke: `E2E-10..19` (7a, 7b-1), `E2E-20` (help overlay: `?`, the button, Esc,
   typing a `?` in a field does nothing), `E2E-21` (no overflow and a viewport of

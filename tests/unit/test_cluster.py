@@ -191,13 +191,13 @@ def test_clu_22_room_timing():
     whole = connected_component(xyz, np.ones(len(xyz), bool), seed_id, 0.5)
     t_whole = time.perf_counter() - t0
     assert len(whole.ids) > 290_000
-    assert t_whole <= 12.0, f"whole room {t_whole:.1f}s"
+    assert t_whole <= 3.0, f"whole room {t_whole:.1f}s"
     ghosts = lab == ROOM_GHOST
     t0 = time.perf_counter()
     ghost = connected_component(xyz, ghosts, seed_id, 0.5)
     t_ghost = time.perf_counter() - t0
     assert 40_000 <= len(ghost.ids) <= 46_000
-    assert t_ghost <= 3.0, f"ghost component {t_ghost:.1f}s"
+    assert t_ghost <= 1.5, f"ghost component {t_ghost:.1f}s"
 
 
 def test_clu_23_progress_reports_visited_over_eligible_and_is_throttled():
@@ -224,3 +224,111 @@ def test_clu_23_progress_reports_visited_over_eligible_and_is_throttled():
         on_progress=lambda v, e: n_calls.append(v),
     )
     assert 1 <= len(n_calls) < 300
+
+
+# ---- 7c-1: cell-BFS engine (CLU-30..36) --------------------------------
+def _fuzz_case(seed):
+    rng = np.random.default_rng(seed)
+    n = int(rng.integers(5_000, 20_001))
+    xyz, _ = room_rows(n, seed)
+    eligible = rng.random(len(xyz)) >= 0.15
+    seed_id = int(rng.choice(np.flatnonzero(eligible)))
+    radius = float(rng.uniform(0.2, 2.0))
+    return xyz, eligible, seed_id, radius
+
+
+@pytest.mark.parametrize("seed", range(20))
+def test_clu_30_fuzz_same_ids_as_the_oracle(seed):
+    xyz, eligible, seed_id, radius = _fuzz_case(seed)
+    res = connected_component(xyz, eligible, seed_id, radius)
+    assert np.array_equal(res.ids, old_bfs(xyz, eligible, seed_id, radius))
+
+
+@pytest.mark.parametrize("seed", range(5))
+def test_clu_30b_dyadic_gaps_same_ids_as_the_oracle(seed):
+    # coordinates on a 1/8 grid: gaps are exactly 0 or >= 0.125
+    rng = np.random.default_rng(100 + seed)
+    xyz = rng.integers(0, 160, size=(6_000, 3)).astype(np.float64) / 8.0
+    xyz[:, 2] = np.round(xyz[:, 2] / 4) * 1.0  # a few thin layers
+    eligible = np.ones(len(xyz), dtype=bool)
+    for radius in (0.5, 1.0, 1.5):
+        got = connected_component(xyz, eligible, 0, radius)
+        assert np.array_equal(got.ids, old_bfs(xyz, eligible, 0, radius))
+
+
+def test_clu_31_radius_boundary_inclusive_on_a_cell_edge():
+    r = 0.5
+    # points exactly r apart along each axis and along a diagonal 3-4-5
+    pts = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [0.5, 0.0, 0.0],
+            [0.5, 0.5, 0.0],
+            [0.5, 0.5, 0.5],
+            [0.8, 0.5, 0.5],
+            [0.8, 0.9, 0.5],  # 3-4-5 from the previous point at r=0.5
+        ]
+    )
+    res = connected_component(pts, np.ones(6, bool), 0, r)
+    assert ids(res) == {0, 1, 2, 3, 4, 5}
+    res = connected_component(pts, np.ones(6, bool), 0, 0.49)
+    assert ids(res) == {0}
+
+
+def test_clu_32_two_points_at_exactly_the_cell_diagonal_in_one_cell():
+    r = 1.0
+    s = r * (1 + CLUSTER_REL) / np.sqrt(3.0)
+    pts = np.array(
+        [[0.0, 0.0, 0.0], [s, s, s], [3 * s, 0.0, 0.0], [3 * s + 0.9, 0, 0]]
+    )
+    res = connected_component(pts, np.ones(4, bool), 0, r)
+    assert ids(res) == {0, 1}
+    res = connected_component(pts, np.ones(4, bool), 2, r)
+    assert ids(res) == {2, 3}
+
+
+def test_clu_33_partial_prefix_with_overshoot_of_one_round():
+    xyz, _ = room_rows(30_000, 3)
+    eligible = np.ones(len(xyz), dtype=bool)
+    full = connected_component(xyz, eligible, 0, 0.5)
+    limit = len(full.ids) // 3
+    res = connected_component(
+        xyz, eligible, 0, 0.5, max_points=limit, on_limit="partial"
+    )
+    assert res.complete is False and res.limit == limit
+    assert limit < len(res.ids) < len(full.ids)
+    assert set(res.ids.tolist()) <= set(full.ids.tolist())
+    # everything in the partial is within the component, and seed is in it
+    assert 0 in set(res.ids.tolist())
+
+
+def test_clu_34_cancel_inside_a_round_and_from_progress():
+    xyz, _ = room_rows(60_000, 3)
+    eligible = np.ones(len(xyz), dtype=bool)
+    token = CancelToken()
+
+    def progress(visited, total):
+        token.cancel()
+
+    with pytest.raises(Cancelled):
+        connected_component(
+            xyz, eligible, 0, 1.5, token=token, on_progress=progress
+        )
+
+
+def test_clu_35_protected_exclusion_at_radius_two():
+    xyz, lab = room_rows(30_000, 4)
+    ghost = int(np.flatnonzero(lab == ROOM_GHOST)[0])
+    protected = np.abs(xyz[:, 2]) < 0.1  # the floor slab
+    eligible = build_eligible(np.ones(len(xyz), bool), None, protected, True)
+    res = connected_component(xyz, eligible, ghost, 2.0)
+    assert not protected[res.ids].any()
+    assert np.array_equal(res.ids, old_bfs(xyz, eligible, ghost, 2.0))
+
+
+def test_clu_36_radius_too_small_for_the_extent_raises_cleanly():
+    pts = np.array([[0.0, 0.0, 0.0], [1000.0, 0.0, 0.0]])
+    with pytest.raises(EditError) as err:
+        connected_component(pts, np.ones(2, bool), 0, 1e-5)
+    assert err.value.code == "radius_too_small"
+    assert "at least" in err.value.message
