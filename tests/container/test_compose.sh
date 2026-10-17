@@ -115,7 +115,7 @@ fi
 
 # CTR-10 /tmp tmpfs is capped (counts against the memory limit) and the app sends security headers
 tmpfs=$(docker inspect -f '{{index .HostConfig.Tmpfs "/tmp"}}' "$cid" 2>/dev/null || true)
-hdrs=$(curl -sS -D - -o /dev/null "http://127.0.0.1:$port/" 2>/dev/null | tr -d '\r' | tr 'A-Z' 'a-z' || true)
+hdrs=$(curl -sS -D - -o /dev/null "http://127.0.0.1:$port/" 2>/dev/null | tr -d '\r' | tr '[:upper:]' '[:lower:]' || true)
 if printf '%s' "$tmpfs" | grep -q 'size=256m' \
     && printf '%s' "$hdrs" | grep -q "^content-security-policy: default-src 'self'" \
     && printf '%s' "$hdrs" | grep -q '^x-frame-options: deny'; then
