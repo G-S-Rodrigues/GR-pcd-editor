@@ -168,3 +168,23 @@ def test_fil_40_upload_id_with_a_trailing_newline_is_rejected(tmp_path):
 def test_fil_40b_archive_entry_name_with_a_trailing_newline_is_rejected():
     assert arc._NAME.fullmatch("manifest.json\n") is None
     assert arc._NAME.fullmatch("manifest.json") is not None
+
+
+def test_api_63_hostile_header_over_http_is_a_json_422(tmp_path):
+    from fixtures.sessions import make_client
+    from gr_pcd.app import create_app
+
+    settings = make_settings(tmp_path)
+    c = make_client(create_app(settings))
+    body = _header(COUNT="1 1 1 99999999999999999999") + b"1 2 3 4\n"
+    r = c.post(
+        "/api/session/upload",
+        params={
+            "upload_id": "0123456789abcdef0123456789abcdef",
+            "filename": "h.pcd",
+        },
+        content=body,
+        headers={"Content-Type": "application/octet-stream"},
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["error"]["code"] == "bad_header"

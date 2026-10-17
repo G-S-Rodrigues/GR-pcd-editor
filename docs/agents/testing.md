@@ -161,3 +161,21 @@ export, save, persist, unsaved, tooltips), under `frontend/src/**`; backend rend
   gr-pcd-visualizer:checks python -m pytest -q <args>`. The compose `verify` service has no cap.
 - A stale checks image runs old code against new tests (a hung 993k cluster once held the
   suite for minutes): rebuild (`build --no-cache verify lint`) before the gate.
+
+## Part 7c-2 additions (session identity, minors)
+
+- Session identity: `X-Session-Id` is optional on the server and checked on every `/api`
+  route except `GET /api/session`, open, open-archive, upload and mounted; a mismatch (or no
+  session) answers 409 `session_changed` with the current `session_id`. Tests: `API-60..62`,
+  `SES-44` (`tests/integration/test_session_identity.py`), `UI-152..156`
+  (`frontend/src/files/session-id.test.ts`, `orchestration/session-sync.test.ts`), smoke `E2E-26`
+  (two tabs on one app). The render cache key is session id + revision + selection id (not count).
+- ASCII import guard: `ASCII_EXPANSION = 10` x payload bytes added to the estimate before any
+  token is parsed; measured peak 420 MB over base for 1M points (estimate 587 MB), `PCD-60/61`
+  in `tests/unit/test_ascii_guard.py`.
+- Minors in `tests/unit/test_minors_7c2.py`: `PCD-62`, `API-63` (hostile header numbers),
+  `SES-45` (free-space refusal, ENOSPC -> `storage_full`), `SES-46` (opens serialised),
+  `SES-47` (cancelled running job never completes), `FIL-40` (fullmatch). `UI-157` is
+  `state/persist-corrupt.test.ts`; `LCH-28/29` in `tests/launcher/test_launcher.sh` (the stub
+  docker answers `STUB_IMAGE_ID` and `STUB_CONTAINER_IMAGE`). The upload XHR sends no session
+  header: upload and open are exempt because they replace the session.
