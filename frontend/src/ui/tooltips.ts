@@ -2,7 +2,6 @@ import { FIELD_SPECS } from "./fields";
 
 export const TOOLTIPS: Record<string, string> = {
   "open-file": "Choose a .pcd or .pcdsession file from this computer; it is uploaded to the local app",
-  "open-mounted": "Browse the folder mounted into the app (/data) and open a file from it without uploading",
   "save-session": "Download the editing session as a .pcdsession archive; reopen it later with Open from this computer",
   export: "Choose what to export and download the cleaned cloud as a new .pcd; the source file is never overwritten",
   undo: "Undo the last applied deletion (Ctrl+Z)",
@@ -27,8 +26,6 @@ export const TOOLTIPS: Record<string, string> = {
   "point-size": "Size of drawn points in pixels (display only)",
   "point-size-auto": "Set the point size from the current zoom: closer views get bigger points (display only)",
   budget: "How many points to draw at most; larger is slower. The status bar shows how many are drawn of how many are eligible",
-  "mounted-up": "Go up one folder inside the mounted data folder",
-  "mounted-close": "Close the mounted folder browser without opening anything",
   "compare-original": "Show the original cloud as loaded (read-only comparison view)",
   "compare-edited": "Show the edited cloud, the only view where you can edit",
   "compare-overlay": "Show the edited cloud with the deleted points overlaid in red (read-only)",

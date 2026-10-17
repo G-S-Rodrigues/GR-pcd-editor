@@ -10,7 +10,6 @@ export interface ControlDescriptor {
 export function describeControls(): ControlDescriptor[] {
   return [
     { id: "open-file", label: "Open from this computer", group: "file" },
-    { id: "open-mounted", label: "Open from mounted folder", group: "file" },
     { id: "save-session", label: "Save session", group: "file" },
     { id: "export", label: "Export", group: "file" },
     { id: "undo", label: "Undo", group: "edit" },
@@ -42,8 +41,6 @@ export function describeControls(): ControlDescriptor[] {
     { id: "export-format", label: "Export format", group: "file" },
     { id: "export-go", label: "Export now", group: "file" },
     { id: "export-cancel", label: "Cancel export", group: "file" },
-    { id: "mounted-up", label: "Up one folder", group: "file" },
-    { id: "mounted-close", label: "Close", group: "file" },
     ...FIELD_SPECS.map(({ id, label, group }) => ({ id, label, group })),
   ];
 }

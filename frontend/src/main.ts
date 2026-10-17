@@ -35,7 +35,6 @@ import type { SessionState } from "./state/types";
 import { h } from "./ui/dom";
 import { control } from "./ui/controls";
 import { buildInspector } from "./ui/inspector-shell";
-import { openMountedDialog } from "./ui/open-dialog";
 import { buildStatusbar } from "./ui/statusbar";
 import { buildLegend } from "./ui/legend";
 import { buildHelp } from "./ui/help";
@@ -188,11 +187,6 @@ buildToolbar($("toolbar"), store, {
     void runSave(store, { startSave: () => startSave(), markSaved: async (id) => api.normaliseState(await markSaved(id)) }),
   openExport: () => exportDialog.open(),
   pickFile: (file) => void openSource({ kind: "picker", file }, deps),
-  openMounted: () =>
-    openMountedDialog(
-      (c) => void openSource({ kind: "mounted", path: c.path, itemKind: c.kind }, deps),
-      (m) => addNotice(store, "error", "mounted_failed", m),
-    ),
   preview: () => runner.previewNow(),
   apply: () => void editor.apply(),
   undo: () => void editor.undo(),

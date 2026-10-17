@@ -22,11 +22,10 @@ function setup(opts: { unsaved?: boolean; withSession?: boolean; confirm?: boole
     o.onPhase?.("importing");
     return { uploadId: "u", cancel: () => true, promise: Promise.resolve({}) };
   });
-  const mounted = vi.fn(async () => ({}));
   const refresh = vi.fn(async () => true);
   const calls = stubFetch(() => ({ body: { ...STATE(false, "new.pcd"), bounds: null, active_bounds: null, client_state: {} } }));
-  const deps = { store, confirm, upload, openMounted: mounted, refresh };
-  return { store, confirm, upload, uploads, mounted, refresh, calls, deps };
+  const deps = { store, confirm, upload, refresh };
+  return { store, confirm, upload, uploads, refresh, calls, deps };
 }
 const file = (name: string) => ({ name, size: 1 }) as unknown as File;
 
@@ -105,12 +104,8 @@ test("UI-20 dropping a non-PCD or several files produces a notice and no request
   expect(d.uploads).toEqual([{ name: "ok.pcd", replace: false }]);
 });
 
-test("UI-21 mounted choices use the pcd or archive path; session archives are sent as kind session", async () => {
+test("UI-21 session archives are uploaded with their .pcdsession name", async () => {
   const d = setup();
-  await openSource({ kind: "mounted", path: "maps/a.pcdsession", itemKind: "session" }, d.deps);
-  expect(d.mounted).toHaveBeenCalledWith("maps/a.pcdsession", "session", false);
-  await openSource({ kind: "mounted", path: "maps/a.pcd", itemKind: "pcd" }, d.deps);
-  expect(d.mounted).toHaveBeenLastCalledWith("maps/a.pcd", "pcd", false);
   await openSource({ kind: "picker", file: file("x.pcdsession") }, d.deps);
   expect(d.uploads.at(-1)?.name).toBe("x.pcdsession");
 });

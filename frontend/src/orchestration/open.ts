@@ -1,7 +1,6 @@
 import { getState } from "../api/session";
 import { ApiError, openErrorText } from "../files/errors";
 import { type DataTransferLike, type DropErrorCode, pickDroppedFile } from "../files/dragdrop";
-import { openMounted as realOpenMounted } from "../files/mounted";
 import { type UploadHandle, type UploadOptions, uploadFile } from "../files/upload";
 import { type AppState, addNotice, clearNotices } from "../state/app";
 import type { Store } from "../state/store";
@@ -9,8 +8,7 @@ import type { SessionState } from "../state/types";
 
 export type OpenSource =
   | { kind: "picker"; file: File }
-  | { kind: "drop"; dt: DataTransferLike }
-  | { kind: "mounted"; path: string; itemKind: "pcd" | "session" };
+  | { kind: "drop"; dt: DataTransferLike };
 
 export interface OpenDeps {
   store: Store<AppState>;
@@ -18,7 +16,6 @@ export interface OpenDeps {
   refresh: () => Promise<unknown>;
   clearCache?: () => void;
   upload?: (file: File, opts: UploadOptions) => UploadHandle<unknown>;
-  openMounted?: (path: string, kind: "pcd" | "session", replace: boolean) => Promise<unknown>;
   onOpened?: (state: SessionState) => void;
 }
 
@@ -73,8 +70,6 @@ export async function openSource(src: OpenSource, deps: OpenDeps): Promise<OpenO
         onPhase: (phase) => set({ phase }),
         onProgress: (p) => set({ loaded: p.loaded, total: p.total }),
       }).promise;
-    } else if (src.kind === "mounted") {
-      await (deps.openMounted ?? realOpenMounted)(src.path, src.itemKind, replace);
     }
     const state = await getState();
     if (!state) throw new ApiError(0, "no_session", "the file opened but no session was found");
@@ -91,7 +86,7 @@ export async function openSource(src: OpenSource, deps: OpenDeps): Promise<OpenO
     store.set({ upload: null });
     const code = e instanceof ApiError ? e.code : "open_failed";
     if (code !== "cancelled") {
-      const name = file?.name ?? (src.kind === "mounted" ? (src.path.split("/").pop() ?? src.path) : "the file");
+      const name = file?.name ?? "the file";
       addNotice(store, "error", "open_failed", openErrorText(name, e instanceof Error ? e.message : "unknown error"));
     }
     return { ok: false, reason: "error", code };

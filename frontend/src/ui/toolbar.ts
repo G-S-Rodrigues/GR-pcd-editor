@@ -9,7 +9,6 @@ import { h } from "./dom";
 
 export interface ToolbarActions {
   pickFile: (file: File) => void;
-  openMounted: () => void;
   preview: () => void;
   apply: () => void;
   undo: () => void;
@@ -43,7 +42,6 @@ export function buildToolbar(root: HTMLElement, store: Store<AppState>, a: Toolb
   root.append(
     input,
     control("button", { id: "open-file", onclick: () => input.click() }, "Open from this computer"),
-    control("button", { id: "open-mounted", onclick: a.openMounted }, "Open from mounted folder"),
     h("span", { class: "sep" }),
     save,
     exp,

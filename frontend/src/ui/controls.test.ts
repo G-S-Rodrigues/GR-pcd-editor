@@ -21,3 +21,8 @@ test("UI-26 every described control has a distinct non-empty tooltip entry", () 
   expect(new Set(texts).size).toBe(texts.length);
   for (const id of Object.keys(TOOLTIPS)) expect(ids, `orphan tooltip ${id}`).toContain(id);
 });
+
+test("UI-174 no control or tooltip refers to a mounted folder", () => {
+  const ids = [...describeControls().map((c) => c.id), ...Object.keys(TOOLTIPS)];
+  expect(ids.filter((id) => id.startsWith("open-mounted") || id.startsWith("mounted-"))).toEqual([]);
+});

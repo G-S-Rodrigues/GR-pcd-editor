@@ -78,14 +78,10 @@ test("open a cloud, navigate, pick a pivot, colour, read counts", async ({ page 
   expect(errors).toEqual([]);
 });
 
-test("E2E-01 open from the mounted folder (not an upload)", async ({ page }) => {
+test("E2E-32 there is no mounted-folder control", async ({ page }) => {
   await page.goto("/");
-  await page.locator('[data-control="open-mounted"]').click();
-  await expect(page.locator("#mounted-dialog")).toContainText("not an upload");
-  await page.getByText("maps/", { exact: true }).click();
-  await page.getByText("nine.pcd").click();
-  await expect(page.locator('#statusbar [data-status="Original"]')).toContainText("9");
-  await expect(page.locator("#inspector")).toContainText("nine.pcd");
+  await expect(page.locator('[data-control="open-file"]')).toHaveCount(1);
+  await expect(page.locator('[data-control="open-mounted"]')).toHaveCount(0);
 });
 
 test("E2E-01 open by dropping a file", async ({ page }) => {
