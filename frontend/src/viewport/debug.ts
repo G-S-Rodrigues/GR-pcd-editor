@@ -8,9 +8,11 @@ import { boxHandles } from "../tools/box/handles";
  * Read-only hook for the browser smoke (`window.__editor`): the app state and the page position of every
  * box handle, so a real mouse can grab one. It changes nothing.
  */
-export function installDebugHook(canvas: HTMLCanvasElement, store: Store<AppState>, size: () => { w: number; h: number }): void {
+export function installDebugHook(canvas: HTMLCanvasElement, store: Store<AppState>, size: () => { w: number; h: number }, drawnCount: () => number = () => 0): void {
   const hook = {
     state: () => store.get(),
+    /** Points the main layer draws right now (lower while the camera moves). */
+    drawnCount,
     /** Page position (px) of a file-frame world point under the current camera; null if it is behind the eye. */
     projectWorld: (p: Vec3): { x: number; y: number } | null => {
       const s = store.get();

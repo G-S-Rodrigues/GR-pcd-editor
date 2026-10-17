@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { colourize } from "../colour/modes";
 import { clampOpacity, overlayStyle } from "../compare/model";
 import { splitRects } from "../compare/split";
+import { LOD_INTERACT, createLodGate, lodIndex } from "../render/lod";
 import type { RenderData } from "../render/parse";
 import { PALETTE } from "../colour/palette";
 import { type AppState } from "../state/app";
@@ -12,6 +13,8 @@ import { slicePlanes } from "../view/slice";
 
 export interface Viewport {
   size(): { w: number; h: number };
+  /** Points the main layer draws right now (the interaction LOD lowers it while the camera moves). */
+  drawnCount(): number;
   requestRender(): void;
   dispose(): void;
 }
@@ -110,14 +113,22 @@ export function createViewport(
   const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, -1, 1);
 
   let raf = 0;
-  const layerFor = new Map<THREE.Points, { data: RenderData | null; key: string }>();
+  // interaction LOD: while the camera moves, a layer draws a stride subsample (plus its flagged points); the full
+  // index returns LOD_IDLE_MS after the last camera change
+  const gate = createLodGate(() => requestRender());
+  const lodCache = new WeakMap<RenderData, Uint32Array | null>();
+  const lodFor = (d: RenderData): Uint32Array | null => {
+    if (!lodCache.has(d)) lodCache.set(d, lodIndex(d.count, LOD_INTERACT, d.flags));
+    return lodCache.get(d) ?? null;
+  };
+  const layerFor = new Map<THREE.Points, { data: RenderData | null; key: string; lod: boolean }>();
   function syncLayer(obj: THREE.Points, data: RenderData | null, s: AppState, colours: boolean) {
     if (!data) {
       obj.visible = false;
       layerFor.delete(obj);
       return;
     }
-    const st = layerFor.get(obj) ?? { data: null, key: "" };
+    const st = layerFor.get(obj) ?? { data: null, key: "", lod: false };
     if (st.data !== data) {
       obj.geometry.dispose();
       const g = new THREE.BufferGeometry();
@@ -126,6 +137,12 @@ export function createViewport(
       obj.geometry = g;
       st.data = data;
       st.key = "";
+      st.lod = false;
+    }
+    if (gate.active() !== st.lod) {
+      const idx = gate.active() ? lodFor(data) : null;
+      obj.geometry.setIndex(idx ? new THREE.BufferAttribute(idx, 1) : null);
+      st.lod = gate.active();
     }
     if (colours) {
       const key = `${s.colour.mode}|${s.session?.session_id}|${s.session?.revision.cloud}|${s.session?.active_bounds?.min[2]}|${s.session?.active_bounds?.max[2]}`;
@@ -246,7 +263,14 @@ export function createViewport(
   const requestRender = () => {
     if (!raf) raf = requestAnimationFrame(draw);
   };
-  const unsub = store.subscribe(requestRender);
+  let lastCamera = store.get().camera;
+  const unsub = store.subscribe((s) => {
+    if (s.camera !== lastCamera) {
+      lastCamera = s.camera;
+      gate.cameraMoved();
+    }
+    requestRender();
+  });
   const ro = new ResizeObserver(requestRender);
   ro.observe(canvas);
   requestRender();
@@ -254,8 +278,10 @@ export function createViewport(
   return {
     size: () => ({ w: canvas.clientWidth, h: canvas.clientHeight }),
     requestRender,
+    drawnCount: () => (points.visible ? (points.geometry.index?.count ?? points.geometry.getAttribute("position")?.count ?? 0) : 0),
     dispose() {
       unsub();
+      gate.dispose();
       ro.disconnect();
       cancelAnimationFrame(raf);
       renderer.dispose();

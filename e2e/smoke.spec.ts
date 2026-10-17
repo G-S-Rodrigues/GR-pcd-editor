@@ -430,7 +430,7 @@ test("E2E-12 7a Shift+drag on a box handle is a fine drag and does not pan the c
   const setBox = async () => {
     for (const [id, v] of [["box-center-x", 4.5], ["box-center-y", 4.5], ["box-center-z", 1.5], ["box-size-x", 4], ["box-size-y", 4], ["box-size-z", 2]] as const) await setNum(id, v);
   };
-  type Hook = { state: () => { camera: { target: number[] }; tools: { box: { dimensions: number[] } } }; handlePositions: () => { id: string; x: number; y: number }[] };
+  type Hook = { state: () => { render: { count: number } | null; camera: { target: number[] }; tools: { box: { dimensions: number[] } } }; handlePositions: () => { id: string; x: number; y: number }[] };
   const read = () => page.evaluate(() => {
     const e = (window as unknown as { __editor: Hook }).__editor;
     const s = e.state();
@@ -524,6 +524,7 @@ type EditorHook = {
   state: () => { camera: { target: number[]; orientation: number[]; distance: number; ortho: boolean }; tools: { box: { center: number[]; dimensions: number[] }; protection: { global: { enabled: boolean; min: number; max: number } } } };
   projectWorld: (p: number[]) => { x: number; y: number } | null;
   handlePositions: () => { id: string; x: number; y: number }[];
+  drawnCount: () => number;
 };
 const hook = <T>(page: import("@playwright/test").Page, fn: (e: EditorHook) => T) =>
   page.evaluate(`(${fn.toString()})(window.__editor)`) as Promise<T>;
@@ -1105,4 +1106,30 @@ test("E2E-30 7c3 Fit displayed with a Y filter on non-float32 limits selects exa
   await ctl("box-fit-displayed").click();
   await exact("Selected", String(displayed));
   await exact("Candidates", String(displayed));
+});
+
+test("E2E-28 7c3 the interaction LOD draws at most 200k points during a real orbit drag and the full draw returns after idle", async ({ page }) => {
+  test.setTimeout(240000);
+  const { exact } = helpers(page);
+  const xyz = bigRoomXyz();
+  const total = BIG.floor + BIG.ghost;
+  await page.goto("/");
+  await page.locator("#file-input").setInputFiles({ name: "big.pcd", mimeType: "application/octet-stream", buffer: bigRoomPcd(xyz) });
+  await exact("Original", total.toLocaleString("en-US"));
+  await expect.poll(() => hook(page, (e) => e.state().render?.count ?? 0), { timeout: 30000 }).toBe(total);
+  await expect.poll(() => hook(page, (e) => e.drawnCount()), { timeout: 15000 }).toBe(total); // idle: the full draw
+  const box = (await page.locator("#viewport").boundingBox())!;
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  const during: number[] = [];
+  for (let i = 1; i <= 8; i++) {
+    await page.mouse.move(cx + i * 25, cy + i * 8);
+    during.push(await hook(page, (e) => e.drawnCount()));
+  }
+  expect(Math.max(...during)).toBeLessThanOrEqual(200_000);
+  expect(Math.min(...during)).toBeGreaterThan(100_000); // a subsample, not an empty draw
+  await page.mouse.up();
+  await expect.poll(() => hook(page, (e) => e.drawnCount()), { timeout: 5000 }).toBe(total);
 });

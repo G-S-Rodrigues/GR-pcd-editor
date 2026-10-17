@@ -115,7 +115,7 @@ const tools = createToolInteraction(canvas, store, size, {
   protectionEdit: (fn) => protection.edit(fn),
   notify: note,
 });
-installDebugHook(canvas, store, size);
+installDebugHook(canvas, store, size, () => viewport?.drawnCount() ?? 0);
 if (viewport) {
   attachControls(canvas, store, size, tools, () => runner.onToolChanged(), (kind, point) => {
     const st = store.get();

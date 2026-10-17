@@ -200,6 +200,7 @@ The smoke runs on software WebGL (SwiftShader) with small synthetic clouds, so
 these checks are manual, on a real browser with a GPU and a private map you own:
 
 - [ ] Open a cloud of about 1,000,000 points; orbit, pan and zoom stay smooth.
+- [ ] While the camera moves the view draws at most 150,000 points (plus the selected ones) and the full draw returns 250 ms after you stop; write down the frame rate while orbiting and when idle: ______ / ______ fps.
 - [ ] Draw budget 1,000,000 and Auto (max): the status bar says "(sampled to budget)" and the frame rate is acceptable.
 - [ ] Box, rectangle and polygon previews follow the drag without stalls; Apply is exact.
 - [ ] Pick floor point, then Apply: floor points survive and ghosts above the slab go.
