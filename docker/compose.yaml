@@ -39,6 +39,11 @@ services:
     profiles: [smoke]
     build: {context: .., dockerfile: docker/Dockerfile, target: app}
     image: gr-pcd-visualizer:smoke
+    volumes:
+      - type: bind
+        source: ${SMOKE_DATA:-/tmp/gr-pcd-smoke-data}
+        target: /data
+        read_only: true
     user: "10001:10001"
     tmpfs: ["/work:uid=10001,gid=10001,mode=1777", /tmp]
     read_only: true

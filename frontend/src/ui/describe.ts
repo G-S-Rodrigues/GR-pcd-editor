@@ -33,5 +33,7 @@ export function describeControls(): ControlDescriptor[] {
     { id: "point-size", label: "Point size", group: "display" },
     { id: "budget", label: "Render budget", group: "display" },
     { id: "help", label: "Controls help", group: "display" },
+    { id: "mounted-up", label: "Up one folder", group: "file" },
+    { id: "mounted-close", label: "Close", group: "file" },
   ];
 }

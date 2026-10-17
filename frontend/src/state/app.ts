@@ -38,7 +38,7 @@ export function initialState(): AppState {
     op: "replace",
     scope: "displayed",
     camera: defaultCamera(),
-    colour: { mode: "height", pointSize: 2 },
+    colour: { mode: "height", pointSize: 3 },
     renderMode: "edited",
     budget: 300_000,
     render: null,

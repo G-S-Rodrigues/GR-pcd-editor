@@ -96,7 +96,7 @@ export function colourize(r: ColourInput, ctx: ColourContext): Float32Array {
     else if (ctx.mode === "rgb" && bits) c = decodePackedRgb(bits, i);
     else if (ctx.mode === "intensity" && r.attr) {
       const t = imax > imin ? (r.attr[i] - imin) / (imax - imin) : 0.5;
-      const g = 0.15 + 0.85 * Math.min(1, Math.max(0, t));
+      const g = 0.3 + 0.7 * Math.min(1, Math.max(0, t));
       c = [g, g, g];
     } else c = PALETTE.base;
     out[3 * i] = c[0];

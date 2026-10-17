@@ -26,5 +26,7 @@ export const TOOLTIPS: Record<string, string> = {
   "colour-mode": "Colour points by height, RGB, intensity or flat grey; RGB and intensity need those fields in the file",
   "point-size": "Size of drawn points in pixels (display only)",
   budget: "How many points to draw at most; larger is slower. The status bar shows how many are drawn of how many are eligible",
+  "mounted-up": "Go up one folder inside the mounted data folder",
+  "mounted-close": "Close the mounted folder browser without opening anything",
   help: "Show the mouse and keyboard controls",
 };
