@@ -17,6 +17,7 @@ from gr_pcd.api.schemas import (
     RevisionBody,
     SelectionBody,
 )
+from gr_pcd.files.mounted import list_mounted
 from gr_pcd.paths import resolve_data_path
 from gr_pcd.session.engine import SelectSpec
 from gr_pcd.session.errors import NotFoundError
@@ -39,6 +40,10 @@ def build_router(manager: SessionManager, settings: Settings) -> APIRouter:
             raise NotFoundError(f"no such file: {relative}")
         return path
 
+    @router.get("/mounted")
+    def mounted(path: str = ""):
+        return list_mounted(settings.data_root, path)
+
     @router.get("/session")
     def get_session():
         return manager.require().state()
@@ -46,11 +51,13 @@ def build_router(manager: SessionManager, settings: Settings) -> APIRouter:
     @router.post("/session/open")
     def open_session(body: OpenBody):
         path = existing_file(body.path)
+        manager.require_replaceable(body.replace)
         return manager.open_pcd(path, path.name).state()
 
     @router.post("/session/open-archive")
     def open_archive(body: OpenBody):
         path = existing_file(body.path)
+        manager.require_replaceable(body.replace)
         return manager.open_archive(path).state()
 
     @router.delete("/session")

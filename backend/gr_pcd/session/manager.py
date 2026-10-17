@@ -12,7 +12,11 @@ from gr_pcd.pcd.reader import read_pcd
 from gr_pcd.session.archive import load_archive, save_archive
 from gr_pcd.session.budget import default_budget
 from gr_pcd.session.engine import EditingSession, SelectSpec
-from gr_pcd.session.errors import NoSessionError, NotFoundError
+from gr_pcd.session.errors import (
+    NoSessionError,
+    NotFoundError,
+    ReplaceConflict,
+)
 from gr_pcd.session.exporter import export_session
 from gr_pcd.session.jobs import SUPERSEDED, JobManager
 from gr_pcd.settings import Settings
@@ -51,6 +55,12 @@ class SessionManager:
         if session is None:
             raise NoSessionError()
         return session
+
+    def require_replaceable(self, replace: bool) -> None:
+        """Refuse to replace a session that has unsaved edits."""
+        session = self.session
+        if session is not None and session.unsaved and not replace:
+            raise ReplaceConflict()
 
     def _retain_source(self, path: Path, session_id: str) -> Path:
         dest = self._dir("sessions", session_id) / "source.pcd"

@@ -14,6 +14,13 @@ def make_settings(tmp_path, **kw) -> Settings:
     return Settings(data_root=data, work_root=work, static_dir=static, **kw)
 
 
+def make_client(app):
+    """TestClient whose Host matches the public origin guard."""
+    from fastapi.testclient import TestClient
+
+    return TestClient(app, base_url="http://localhost:8080")
+
+
 def write_scene(settings, name="scene.pcd", encoding="binary"):
     path = settings.data_root / name
     path.write_bytes(build_pcd(SCENE_FIELDS, scene_rows(), encoding))

@@ -24,6 +24,7 @@ class Model(BaseModel):
 
 class OpenBody(Model):
     path: str
+    replace: bool = False
 
 
 class BoxTool(Model):

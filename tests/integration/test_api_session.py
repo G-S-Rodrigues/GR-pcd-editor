@@ -585,7 +585,8 @@ def test_api_25_open_archive_and_mark_saved(api):
     assert before["unsaved"] is True
     (api.settings.data_root / "a.pcdsession").write_bytes(blob)
     st = api.client.post(
-        "/api/session/open-archive", json={"path": "a.pcdsession"}
+        "/api/session/open-archive",
+        json={"path": "a.pcdsession", "replace": True},
     ).json()
     assert st["counts"]["deleted"] == 27 and st["unsaved"] is False
     assert st["selection"]["count"] == 4
@@ -618,7 +619,8 @@ def test_api_26_tampered_archive_keeps_old_session(api, tmp_path):
             zo.writestr(info.filename, data)
     before = api.state()
     r = api.client.post(
-        "/api/session/open-archive", json={"path": "bad.pcdsession"}
+        "/api/session/open-archive",
+        json={"path": "bad.pcdsession", "replace": True},
     )
     assert r.status_code == 422
     assert r.json()["error"]["code"] == "source_hash_mismatch"
@@ -631,7 +633,8 @@ def test_api_27_fresh_app_reopens_archive(api, tmp_path):
     (other.data_root / "a.pcdsession").write_bytes(blob)
     fresh = Api(other)
     st = fresh.client.post(
-        "/api/session/open-archive", json={"path": "a.pcdsession"}
+        "/api/session/open-archive",
+        json={"path": "a.pcdsession", "replace": True},
     ).json()
     assert st["counts"]["deleted"] == 27 and st["revision"]["cloud"] == 1
 

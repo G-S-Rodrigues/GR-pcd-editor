@@ -1,5 +1,7 @@
 """Map domain errors to HTTP: {"error": {"code", "message", ...}}."""
 
+import errno
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -8,7 +10,12 @@ from gr_pcd.editing.errors import EditError
 from gr_pcd.geometry.errors import GeometryError
 from gr_pcd.paths import PathEscapeError
 from gr_pcd.pcd.errors import PcdError
-from gr_pcd.session.errors import NoSessionError, NotFoundError, StaleRevision
+from gr_pcd.session.errors import (
+    NoSessionError,
+    NotFoundError,
+    ReplaceConflict,
+    StaleRevision,
+)
 
 
 def _body(code: str, message: str, status: int, **extra) -> JSONResponse:
@@ -30,6 +37,27 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(StaleRevision)
     def _stale(_: Request, exc: StaleRevision):
         return _body("stale_revision", exc.message, 409, current=exc.current)
+
+    @app.exception_handler(ReplaceConflict)
+    def _replace(_: Request, exc: ReplaceConflict):
+        return _body(exc.code, exc.message, 409)
+
+    @app.exception_handler(PermissionError)
+    def _denied(_: Request, exc: PermissionError):
+        return _body(
+            "mount_unreadable",
+            "the folder or file is not readable; it must be readable by "
+            "the launcher's user id",
+            403,
+        )
+
+    @app.exception_handler(OSError)
+    def _oserror(_: Request, exc: OSError):
+        if exc.errno == errno.ENOSPC:
+            return _body(
+                "storage_full", "the work volume has no space left", 507
+            )
+        return _body("io_error", f"file system error: {exc.strerror}", 500)
 
     @app.exception_handler(PathEscapeError)
     def _escape(_: Request, exc: PathEscapeError):

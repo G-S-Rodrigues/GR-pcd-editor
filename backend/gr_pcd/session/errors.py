@@ -23,3 +23,10 @@ class NotFoundError(Exception):
     def __init__(self, message: str) -> None:
         super().__init__(message)
         self.message = message
+
+
+class ReplaceConflict(Exception):
+    code = "unsaved_work"
+    message = (
+        "the open session has unsaved edits; save it or confirm the replacement"
+    )
