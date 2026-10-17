@@ -20,7 +20,8 @@ bash tests/launcher/test_launcher.sh                # launcher, stub docker
 bash tests/launcher/test_launcher_smoke.sh          # launcher, real Docker
 ```
 
-- `verify` runs `scripts/verify.sh` (`pytest -q`).
+- `verify` runs `scripts/verify.sh` (`pytest -q`, then vitest: `frontend/src/**/*.test.ts`,
+  node environment, XHR and `document` faked).
 - `lint` runs `scripts/lint.sh`: `ruff check`, `ruff format --check`,
   `shellcheck` on scripts and container tests, `tsc --noEmit`.
 - The container tier needs Docker, curl and python3, uses project
@@ -69,3 +70,16 @@ HTTP contract notes: asynchronous work (select, candidate, export, save) answers
 202 with a job; a failed job carries `error.code` (for example `invalid_seed`,
 `component_limit_reached`). `PcdError`/`EditError`/`GeometryError`/archive
 errors map to 422, `memory_budget_exceeded` to 413, stale revisions to 409.
+
+## Files tests (part 4)
+
+IDs: `FIL-` backend (`tests/unit/test_{names,files_settings,mounted,uploads,cleanup}.py`,
+`tests/integration/test_{files_api,origin,upload_abort}.py`; `BE-06` path guard),
+`CTR-08` (public port, Host guard, `/data` listing in `test_compose.sh`),
+`FE-F-` frontend (`frontend/src/files/*.test.ts`, fakes in `src/files/testing/`).
+Tests build clients with `make_client(app)` from `tests/fixtures/sessions.py`
+(Host `localhost:8080`, required by the `/api` Host/Origin guard). FIL-05 skips
+only when run as root (chmod 000 cannot deny root); FIL-05b covers the 403
+mapping with a monkeypatched `PermissionError`. FIL-25 runs a real uvicorn
+thread to prove disconnect cleanup. Single frontend run: add the vitest args
+by running `node node_modules/vitest/vitest.mjs run <file>` in `frontend/`.

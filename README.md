@@ -53,11 +53,32 @@ uploads and session working data; the launcher never does it).
 
 ## Files, exports, and troubleshooting
 
-The planned **Open** action accepts a browser-selected PCD from any permitted
-host folder. A separately labelled mounted-folder browser will read only the
-configured data directory. Exported PCDs and saved sessions are browser
-downloads: the browser or operating system selects the destination and may
-show a save dialog. The original input PCD is never modified.
+**Open** takes a PCD or a saved session (`.pcdsession`) from the browser's
+file picker or by drag-and-drop, from any folder the browser can read. The file
+is uploaded only to this loopback app, with progress and a Cancel while bytes
+are being sent. A separate mounted-folder browser lists only the launcher's data
+folder (shown as `/data`, read-only, relative paths only); symlinks that leave
+that folder are hidden and rejected. A replacement import never clears the
+current session until it succeeds, and unsaved edits need an explicit replace.
+
+**Export PCD** downloads `<original>_cleaned.pcd` and **Save session**
+downloads `<original>_session_v1.pcdsession` (`v1` is the session format
+version). Both are browser downloads: the browser or operating system selects
+the destination and may show a save dialog, the app never overwrites the
+original path, and "server finished" does not prove "browser saved". The
+original input PCD is never modified.
+
+Temporary uploads, exports and session archives live in the `work` volume and
+are removed on startup and after one hour (never the live session's data).
+Files above the size limit (16 GiB by default, `GR_PCD_MAX_SOURCE_BYTES`) fail
+with a message naming the limit; "storage full" means the work volume lacks
+space (a reserve of `GR_PCD_UPLOAD_RESERVE_BYTES`, 256 MiB, is kept free).
+`/api` answers only to `localhost`, `127.0.0.1` and `[::1]` on the configured
+port (`GR_PCD_PUBLIC_PORT`, set by the launcher from the chosen port); other
+Host or Origin values are refused.
+
+If the folder browser reports `mount_unreadable`, make the data folder readable
+by the user id the launcher runs the app as.
 
 A Docker named volume `work` holds uploads, caches and session working data
 and survives stop and rebuild. Unsaved in-memory editing state is lost when the
