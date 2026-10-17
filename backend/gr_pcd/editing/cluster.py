@@ -1,7 +1,9 @@
 """Connected-component growth over eligible points (cKDTree BFS)."""
 
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from itertools import chain
 
 import numpy as np
 from scipy.spatial import cKDTree
@@ -10,6 +12,9 @@ from gr_pcd.editing.cancel import CancelToken
 from gr_pcd.editing.errors import EditError
 from gr_pcd.geometry.tolerance import CLUSTER_REL
 from gr_pcd.session.budget import CLUSTER_BYTES_PER_POINT, check_budget
+
+# Seconds between on_progress calls (a long chain has thousands of rounds).
+PROGRESS_INTERVAL_S = 0.2
 
 
 class ComponentLimitReached(Exception):
@@ -53,6 +58,7 @@ def connected_component(
     max_points: int | None = None,
     budget: int | None = None,
     on_limit: str = "fail",
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> ClusterResult:
     if not (0 <= seed_id < len(xyz)) or not eligible[seed_id]:
         raise EditError(
@@ -76,17 +82,23 @@ def connected_component(
     r = radius * (1.0 + CLUSTER_REL)
     rnd = 0
     complete = True
+    last_report = float("-inf")
     while len(frontier):
         if on_round is not None:
             on_round(rnd)
         if token is not None:
             token.check()
         rnd += 1
-        found = tree.query_ball_point(pts[frontier], r)
-        merged = np.unique(
-            np.concatenate([np.asarray(f, np.int64) for f in found])
+        found = tree.query_ball_point(
+            pts[frontier], r, workers=-1, return_sorted=False
         )
-        fresh = merged[~visited[merged]]
+        flat = np.fromiter(
+            chain.from_iterable(found),
+            dtype=np.int64,
+            count=int(sum(map(len, found))),
+        )
+        # drop what is already visited before the (small) unique
+        fresh = np.unique(flat[~visited[flat]])
         visited[fresh] = True
         count += len(fresh)
         if max_points is not None and count > max_points:
@@ -95,6 +107,11 @@ def connected_component(
             complete = False
             break
         frontier = fresh
+        if on_progress is not None:
+            now = time.monotonic()
+            if now - last_report >= PROGRESS_INTERVAL_S:
+                last_report = now
+                on_progress(count, len(idx))
     if token is not None:
         token.check()
     members = np.flatnonzero(visited)

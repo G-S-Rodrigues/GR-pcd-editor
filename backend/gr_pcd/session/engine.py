@@ -288,7 +288,7 @@ class EditingSession:
             self.client_state = state
 
     # ---- selection and candidate (job bodies) -------------------------
-    def _operand(self, spec: SelectSpec, snap: dict, token, on_round):
+    def _operand(self, spec: SelectSpec, snap: dict, token, on_progress):
         tool = spec.tool
         active, valid = snap["active"], self.valid
         if tool is None:
@@ -326,7 +326,7 @@ class EditingSession:
                 tool.seed_id,
                 tool.radius,
                 token=token,
-                on_round=on_round,
+                on_progress=on_progress,
                 max_points=tool.max_points,
                 on_limit=tool.on_limit,
                 budget=self.budget,
@@ -363,12 +363,17 @@ class EditingSession:
         snap["scope"] = scope_mask(
             spec.scope, snap["active"], self.valid, snap["display"]
         )
-        on_round = (
-            (lambda r: progress(min(0.9, r / 1000.0), "growing cluster"))
+        on_progress = (
+            (
+                lambda visited, eligible: progress(
+                    min(0.95, visited / max(eligible, 1)),
+                    f"growing cluster: {visited:,} of {eligible:,} eligible",
+                )
+            )
             if progress
             else None
         )
-        operand = self._operand(spec, snap, token, on_round)
+        operand = self._operand(spec, snap, token, on_progress)
         current = read_selection(snap["selection"], snap["active"], self.valid)
         new_sel = _ro(
             combine_selection(current, operand, spec.op, snap["scope"])

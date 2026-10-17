@@ -1,8 +1,12 @@
 """CLU-01..12: connected-component growth."""
 
+import time
+
 import numpy as np
 import pytest
+from scipy.spatial import cKDTree
 
+from fixtures.pcdgen import ROOM_GHOST, room_rows
 from gr_pcd.editing.cancel import Cancelled, CancelToken
 from gr_pcd.editing.cluster import (
     ComponentLimitReached,
@@ -10,6 +14,7 @@ from gr_pcd.editing.cluster import (
     connected_component,
 )
 from gr_pcd.editing.errors import EditError
+from gr_pcd.geometry.tolerance import CLUSTER_REL
 from gr_pcd.pcd.errors import PcdError
 
 # chain: ids 0..9 at x=0,0.5,..4.5 ; ghost blob ids 10..14 at x=10..12,
@@ -144,3 +149,78 @@ def test_clu_20_partial_limit_returns_the_partial_component():
     assert full.complete is True and len(full.ids) == 100
     with pytest.raises(ComponentLimitReached):  # the default is unchanged
         connected_component(line, everyone, 0, 0.5, max_points=40)
+
+
+def old_bfs(xyz, eligible, seed_id, radius):
+    """Oracle: the pre-7a-5 algorithm (per-round list flatten + np.unique)."""
+    idx = np.flatnonzero(eligible)
+    pts = xyz[idx]
+    tree = cKDTree(pts)
+    local_seed = int(np.searchsorted(idx, seed_id))
+    visited = np.zeros(len(idx), dtype=bool)
+    visited[local_seed] = True
+    frontier = np.array([local_seed], dtype=np.int64)
+    r = radius * (1.0 + CLUSTER_REL)
+    while len(frontier):
+        found = tree.query_ball_point(pts[frontier], r)
+        merged = np.unique(
+            np.concatenate([np.asarray(f, np.int64) for f in found])
+        )
+        fresh = merged[~visited[merged]]
+        visited[fresh] = True
+        frontier = fresh
+    return idx[np.flatnonzero(visited)].astype(np.uint32)
+
+
+@pytest.mark.parametrize("seed", [1, 2, 3])
+@pytest.mark.parametrize("radius", [0.2, 0.35, 0.5])
+def test_clu_21_same_ids_as_the_old_bfs(seed, radius):
+    xyz, _ = room_rows(20_000, seed)
+    rng = np.random.default_rng(seed)
+    eligible = rng.random(len(xyz)) < 0.8
+    seed_id = int(rng.choice(np.flatnonzero(eligible)))
+    res = connected_component(xyz, eligible, seed_id, radius)
+    want = old_bfs(xyz, eligible, seed_id, radius)
+    assert np.array_equal(res.ids, want)
+
+
+def test_clu_22_room_timing():
+    xyz, lab = room_rows(300_000, 7)
+    seed_id = int(np.flatnonzero(lab == ROOM_GHOST)[0])
+    t0 = time.perf_counter()
+    whole = connected_component(xyz, np.ones(len(xyz), bool), seed_id, 0.5)
+    t_whole = time.perf_counter() - t0
+    assert len(whole.ids) > 290_000
+    assert t_whole <= 12.0, f"whole room {t_whole:.1f}s"
+    ghosts = lab == ROOM_GHOST
+    t0 = time.perf_counter()
+    ghost = connected_component(xyz, ghosts, seed_id, 0.5)
+    t_ghost = time.perf_counter() - t0
+    assert 40_000 <= len(ghost.ids) <= 46_000
+    assert t_ghost <= 3.0, f"ghost component {t_ghost:.1f}s"
+
+
+def test_clu_23_progress_reports_visited_over_eligible_and_is_throttled():
+    xyz, _ = room_rows(20_000, 5)
+    calls = []
+    connected_component(
+        xyz,
+        np.ones(len(xyz), bool),
+        0,
+        0.5,
+        on_progress=lambda visited, eligible: calls.append((visited, eligible)),
+    )
+    assert calls and all(e == len(xyz) for _, e in calls)
+    visited = [v for v, _ in calls]
+    assert visited == sorted(visited) and visited[-1] <= len(xyz)
+    # a chain of 3000 rounds must not produce 3000 progress calls
+    chain = np.array([(0.5 * i, 0.0, 0.0) for i in range(3000)])
+    n_calls = []
+    connected_component(
+        chain,
+        np.ones(3000, bool),
+        0,
+        0.5,
+        on_progress=lambda v, e: n_calls.append(v),
+    )
+    assert 1 <= len(n_calls) < 300
