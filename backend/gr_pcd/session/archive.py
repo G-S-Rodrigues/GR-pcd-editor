@@ -19,7 +19,8 @@ from pathlib import Path
 
 import numpy as np
 
-from gr_pcd.editing.history import HistoryEntry
+from gr_pcd.editing.errors import EditError
+from gr_pcd.editing.history import TOOLS, HistoryEntry, clean_name
 from gr_pcd.editing.protection import (
     ProtectionState,
     validate_protection,
@@ -43,6 +44,8 @@ VERSION = 1
 MAX_ENTRIES = 100_000
 MAX_MANIFEST = 16 * 1024 * 1024
 MAX_CLIENT_STATE = 1024 * 1024
+_OLD_TOOL = re.compile(r"\((box|polygon|prism|cluster|filter|selection)\)\s*$")
+MAX_SID = 2**31
 _NAME = re.compile(
     r"(manifest\.json|source\.pcd|selection\.bin|history/(0|[1-9][0-9]*)\.bin)"
 )
@@ -87,6 +90,7 @@ def save_archive(session, path: Path, token) -> dict:
         active, selection = session.active, session.selection
         entries = list(session.history.entries)
         cursor = session.history.cursor
+        next_sid = session.history.next_sid
         ops = list(session.selection_ops)
         filt, protection = session.display_filter, session.protection
         unit, client_state = session.unit, session.client_state
@@ -123,10 +127,14 @@ def save_archive(session, path: Path, token) -> dict:
                     "description": e.description,
                     "count": len(e.ids),
                     "file": f"history/{i}.bin",
+                    "sid": e.sid,
+                    "tool": e.tool,
+                    "name": e.name,
                 }
                 for i, e in enumerate(entries)
             ],
             "cursor": cursor,
+            "next_sid": next_sid,
         },
         "selection": {
             "ids_file": "selection.bin",
@@ -245,6 +253,54 @@ def load_archive(
         raise
 
 
+@dataclass
+class _Steps:
+    fields: list[tuple[int, str, str | None]]
+    next_sid: int
+
+
+def _step_fields(hist: dict, entries: list, metas: list) -> _Steps:
+    """sid/tool/name per entry. An archive written before the timeline has
+    none of them: rebuild the strip from the history it already holds."""
+    has = [("sid" in e) for e in entries]
+    if not any(has):
+        out = []
+        for i, (_, kind, description) in enumerate(metas):
+            if kind == "remove_invalid":
+                tool = "invalid"
+            else:
+                m = _OLD_TOOL.search(description)
+                tool = m.group(1) if m else "selection"
+                tool = "polygon" if tool == "prism" else tool
+            out.append((i, tool, None))
+        nxt = hist.get("next_sid", 0)
+        nxt = nxt if type(nxt) is int and nxt >= 0 else 0
+        return _Steps(out, max(nxt, len(out)))
+    if not all(has):
+        raise _bad("history entries mix old and new step fields")
+    out, seen = [], set()
+    for e in entries:
+        sid, tool, name = e["sid"], e.get("tool"), e.get("name")
+        if type(sid) is not int or not 0 <= sid < MAX_SID or sid in seen:
+            raise _bad("invalid or duplicate step id")
+        seen.add(sid)
+        if tool not in TOOLS:
+            raise _bad("invalid step tool")
+        if name is not None:
+            if not isinstance(name, str):
+                raise _bad("invalid step name")
+            try:
+                if clean_name(name) != name:
+                    raise _bad("invalid step name")
+            except EditError:
+                raise _bad("invalid step name")
+        out.append((sid, tool, name))
+    nxt = hist.get("next_sid", 0)
+    if type(nxt) is not int:
+        raise _bad("invalid next_sid")
+    return _Steps(out, max(nxt, max(seen, default=-1) + 1))
+
+
 def _load(path, dest_source, budget, max_source_bytes) -> LoadedArchive:
     try:
         zf = zipfile.ZipFile(path)
@@ -280,7 +336,9 @@ def _load_open(zf, dest_source, budget, max_source_bytes) -> LoadedArchive:
         src = manifest["source"]
         expect_sha = src["sha256"]
         hist = manifest["history"]
-        hist_entries = list(hist["entries"])
+        if not isinstance(hist["entries"], list):
+            raise _bad("history entries must be a list")
+        hist_entries = hist["entries"]
         cursor = int(hist["cursor"])
         sel = manifest["selection"]
         client_state = manifest.get("client_state", {})
@@ -301,6 +359,7 @@ def _load_open(zf, dest_source, budget, max_source_bytes) -> LoadedArchive:
             for e in hist_entries
         ]
         files = [m[0] for m in metas]
+        steps = _step_fields(hist, hist_entries, metas)
     except ArchiveError:
         raise
     except GeometryError as exc:
@@ -355,13 +414,14 @@ def _load_open(zf, dest_source, budget, max_source_bytes) -> LoadedArchive:
     scratch = np.ones(cloud.n, dtype=bool)
     at_cursor = scratch.copy()
     for i, (fname, kind, description) in enumerate(metas):
+        sid, tool, name = steps.fields[i]
         if i == cursor:
             at_cursor = scratch.copy()
         ids = _read_ids(zf, by_name[fname], cloud.n)
         if not scratch[ids].all():
             raise _bad(f"history entry {i} deletes a point twice")
         scratch[ids] = False
-        entries.append(HistoryEntry(kind, description, ids))
+        entries.append(HistoryEntry(kind, description, ids, sid, tool, name))
     if cursor == len(hist_entries):
         at_cursor = scratch
     selection = np.zeros(cloud.n, dtype=bool)
@@ -381,4 +441,5 @@ def _load_open(zf, dest_source, budget, max_source_bytes) -> LoadedArchive:
         protection=protection,
         unit=unit,
         client_state=client_state,
+        next_sid=steps.next_sid,
     )
