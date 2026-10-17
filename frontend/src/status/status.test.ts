@@ -1,0 +1,58 @@
+import { expect, test } from "vitest";
+import { createAppStore, initialState } from "../state/app";
+import type { Candidate, SessionState } from "../state/types";
+import { modeIndicator, statusItems } from "./model";
+
+const session = (over: Partial<SessionState> = {}) =>
+  ({
+    filename: "a.pcd",
+    unit: "m",
+    unsaved: false,
+    revision: { cloud: 3, params: 4 },
+    counts: { original: 1000, active: 900, deleted: 100, invalid_total: 5, invalid_active: 2, displayed: 800, selected: 50, protected: 7 },
+    ...over,
+  }) as SessionState;
+const cand = (over: Partial<Candidate> = {}): Candidate =>
+  ({ candidate_id: "c", cloud_revision: 3, params_revision: 4, selected_active: 50, protected_retained: 7, candidates: 43, selected_outside_display_filter: 0, bounds: null, effective_protection: null, cluster: null, ...over });
+
+test("UI-23 status lists labelled counts in order", () => {
+  const items = statusItems({ ...initialState(), session: session(), candidate: cand(), render: { count: 300, eligible: 800 } as never, budget: 300 });
+  expect(items.slice(0, 6).map((i) => i.label)).toEqual(["Original", "Active", "Displayed", "Selected", "Protected", "Candidates"]);
+  const m = Object.fromEntries(items.map((i) => [i.label, i.value]));
+  expect(m.Original).toBe("1,000");
+  expect(m.Active).toBe("900");
+  expect(m.Displayed).toBe("800");
+  expect(m.Selected).toBe("50");
+  expect(m.Protected).toBe("7");
+  expect(m.Candidates).toBe("43");
+  expect(m["Invalid (active/total)"]).toBe("2 / 5");
+  expect(m["Deleted"]).toBe("10.00%");
+  expect(m.Rendered).toBe("Rendered 300 of 800 eligible (every 3rd point, sampled)");
+  expect(m.Unsaved).toBe("No");
+  expect(items.map((i) => i.label)).not.toContain("Total");
+});
+
+test("UI-23 candidates show a dash without a current candidate; rendered is never a cloud count", () => {
+  const none = statusItems({ ...initialState(), session: session() });
+  expect(none.find((i) => i.label === "Candidates")?.value).toBe("—");
+  const stale = statusItems({ ...initialState(), session: session(), candidate: cand({ params_revision: 3 }) });
+  expect(stale.find((i) => i.label === "Candidates")?.value).toBe("—");
+  expect(none.find((i) => i.label === "Original")?.value).toBe("1,000");
+  const r = none.find((i) => i.label === "Rendered");
+  expect(r?.value).toBe("—");
+});
+
+test("UI-23 unsaved flag, job progress and no-session state", () => {
+  const items = statusItems({ ...initialState(), session: session({ unsaved: true }), job: { busy: true, progress: 0.5, message: "Selecting" } });
+  expect(items.find((i) => i.label === "Unsaved")?.value).toBe("Yes");
+  expect(items.find((i) => i.label === "Job")?.value).toBe("Selecting 50%");
+  expect(statusItems(createAppStore().get())).toEqual([]);
+});
+
+test("UI-24 mode and frame indicator is always present", () => {
+  expect(modeIndicator(initialState())).toBe("Tool: None · Op: Replace · Scope: Displayed · Frame: file (Z up) · Unit: m (assumed)");
+  expect(modeIndicator({ ...initialState(), tool: "box", op: "subtract", scope: "active", session: session({ unit: "mm" }) })).toBe(
+    "Tool: Box · Op: Subtract · Scope: Active · Frame: file (Z up) · Unit: mm (assumed)",
+  );
+  expect(modeIndicator({ ...initialState(), interaction: "pick-pivot" })).toContain("Tool: Pick pivot");
+});
