@@ -6,10 +6,10 @@ not want (for example reflection or ghost points), preview exactly what would be
 deleted, apply, undo, compare against the original, and export a new `.pcd`.
 The source file is never modified.
 
-![The editor with a synthetic cloud: box tool, height protection and an exact preview of the candidate points](docs/images/editor.png)
+![The editor with a room scan: tools, selection, slice view, height protection and live status counts](docs/images/editor.png)
 
-*Synthetic cloud (floor, a ghost blob above it, one invalid point) with the box
-tool, global height protection and the live preview counts in the status bar.*
+*A real indoor scan (about 124k points) with the tool and selection panels, slice
+view, global height protection (the purple slab) and the live counts in the status bar.*
 
 ## Using the editor
 
