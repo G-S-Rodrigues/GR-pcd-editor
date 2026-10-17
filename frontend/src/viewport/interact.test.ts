@@ -84,4 +84,24 @@ describe("rectangle select routing (7b-1)", () => {
     const tools = createToolInteraction(canvas, t.store, () => vp, { onToolChanged: t.changed, protectionEdit: (() => undefined) as never, notify: () => undefined, rectHeld: () => true });
     expect(tools.pointerDown(t.ev(100, 100, false))).toBe(true);
   });
+
+  it("UI-164 a Shift rectangle narrows the existing box and keeps its depth; a plain one replaces it", () => {
+    const t = rectSetup("top");
+    t.tools.pointerDown(t.ev(100, 100, false));
+    t.tools.pointerMove(t.ev(500, 400, false));
+    t.tools.pointerUp();
+    const first = t.store.get().tools.box;
+    t.store.update((s) => ({ ...s, tools: { ...s.tools, box: { ...first, center: [first.center[0], first.center[1], 9], dimensions: [first.dimensions[0], first.dimensions[1], 2] } } }));
+    t.tools.pointerDown(t.ev(300, 250, true));
+    t.tools.pointerMove(t.ev(700, 550, true));
+    const narrowed = t.store.get().tools.box;
+    expect(narrowed.dimensions[0]).toBeLessThan(first.dimensions[0]);
+    expect(narrowed.center[2]).toBe(9); // depth kept, not reset to the bounds
+    expect(narrowed.dimensions[2]).toBe(2);
+    t.tools.pointerUp();
+    t.tools.pointerDown(t.ev(300, 250, false));
+    t.tools.pointerMove(t.ev(700, 550, false));
+    expect(t.store.get().tools.box.dimensions[2]).toBe(3); // plain: depth reset to the bounds
+  });
 });
+

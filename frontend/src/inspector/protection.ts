@@ -1,4 +1,4 @@
-import type { Candidate, Protection } from "../state/types";
+import type { Bounds, Candidate, Protection } from "../state/types";
 import { type CompareMode, editAllowed } from "../compare/model";
 
 export type OpMode = "inherit" | "add_local" | "override";
@@ -64,6 +64,19 @@ export const resetOperation = (m: ProtectionModel): ProtectionModel => ({
   local: null,
   ack: false,
 });
+
+/**
+ * One click for ghosts inside the protected slab: this operation overrides the global protection with a local
+ * interval entirely above the cloud (cloud max Z + 1 .. + 2), so nothing is protected, and the override is
+ * acknowledged. It is exactly what typing such a dummy interval does; the operation settings reset after Apply.
+ */
+export function alsoDeleteKept(m: ProtectionModel, cloud: Bounds | null): ProtectionEdit {
+  const top = cloud?.max[2];
+  if (top === undefined || !Number.isFinite(top)) {
+    return { ok: false, model: m, error: "The cloud has no usable height range; set the override interval by hand" };
+  }
+  return { ok: true, model: { ...m, mode: "override", local: { min: top + 1, max: top + 2 }, ack: true } };
+}
 
 export type ProtectionBody = {
   global: { enabled: boolean; min: number; max: number };

@@ -4,8 +4,9 @@ import { intersectZPlane, screenRay } from "../pick/screenray";
 import type { AppState } from "../state/app";
 import type { Store } from "../state/store";
 import type { Vec3 } from "../state/types";
-import { type Depth, rectAxis, rectDepth, rectToBox } from "../tools/box/rect";
+import { type Depth, narrowBox, rectAxis, rectDepth, rectToBox } from "../tools/box/rect";
 import { type DragState, beginDrag, dragBox } from "../tools/box/drag";
+import type { BoxModel } from "../tools/box/model";
 import { translateDelta } from "../tools/box/gizmo-math";
 import { boxHandles, hitHandle } from "../tools/box/handles";
 import { addVertex, moveVertex } from "../tools/polygon/model";
@@ -14,7 +15,7 @@ type PlaneKey = { which: "global" | "local"; edge: "min" | "max" };
 type Drag =
   | { kind: "box"; state: DragState }
   | { kind: "vertex"; index: number }
-  | { kind: "rect"; p0: { x: number; y: number }; depth: Depth }
+  | { kind: "rect"; p0: { x: number; y: number }; depth: Depth; narrow: BoxModel | null }
   | { kind: "plane"; key: PlaneKey; model0: ProtectionModel; anchor: Vec3; ray0: ReturnType<typeof screenRay> };
 
 export interface ToolInteractionDeps {
@@ -71,7 +72,8 @@ export function createToolInteraction(
         const axis = rectAxis(s.camera);
         const depth = axis === null ? null : rectDepth(axis, s.session.active_bounds, s.slice);
         if (depth) {
-          drag = { kind: "rect", p0: p, depth };
+          // Shift narrows the box the drag started from; a plain drag replaces it
+          drag = { kind: "rect", p0: p, depth, narrow: e.shiftKey ? s.tools.box : null };
           return true;
         }
         deps.notify("Rectangle select needs an orthographic face view: click a ViewCube face first");
@@ -117,7 +119,7 @@ export function createToolInteraction(
       const p = px(e);
       const ray = screenRay(s.camera, size(), p.x, p.y);
       if (drag.kind === "rect") {
-        const box = rectToBox(s.tools.box, s.camera, size(), drag.p0, p, drag.depth);
+        const box = drag.narrow ? narrowBox(drag.narrow, s.camera, size(), drag.p0, p) : rectToBox(s.tools.box, s.camera, size(), drag.p0, p, drag.depth);
         if (box) {
           store.update((st) => ({ ...st, tools: { ...st.tools, box } }));
           deps.onToolChanged();

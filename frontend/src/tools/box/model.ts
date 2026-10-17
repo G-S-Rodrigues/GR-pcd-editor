@@ -147,9 +147,29 @@ export function setMinMax(b: BoxModel, min: Vec3, max: Vec3): BoxEdit {
 
 export const resetRotation = (b: BoxModel): BoxModel => ({ ...b, quat: IDENTITY });
 
+const F64 = new Float64Array(1);
+const U64 = new BigUint64Array(F64.buffer);
+/** Spacing of float64 values at |v| (the next value up minus v); v must be finite. */
+function ulp(v: number): number {
+  F64[0] = Math.abs(v);
+  U64[0] += 1n;
+  return F64[0] - Math.abs(v);
+}
+
+/**
+ * Box that covers the bounds. The backend keeps a point when |p - centre| <= size / 2 with no tolerance, and
+ * centre and size are rounded, so a point exactly on a limit (a displayed point on a filter edge that is not
+ * float32-representable) could fall out by one ulp. The size is widened by ulps (of the larger of centre and size) until both ends pass the
+ * backend's own test: outward by a hair, exact fits stay exact.
+ */
 export function fitToBounds(b: BoxModel, bounds: Bounds): BoxModel {
   const center = [0, 1, 2].map((i) => (bounds.min[i] + bounds.max[i]) / 2) as Vec3;
-  const dimensions = [0, 1, 2].map((i) => Math.max(bounds.max[i] - bounds.min[i], MIN_EXTENT)) as Vec3;
+  const dimensions = [0, 1, 2].map((i) => {
+    let d = Math.max(bounds.max[i] - bounds.min[i], MIN_EXTENT);
+    const step = Math.max(ulp(d), ulp(center[i]));
+    for (let k = 0; k < 16 && (Math.abs(bounds.min[i] - center[i]) > d / 2 || Math.abs(bounds.max[i] - center[i]) > d / 2); k++) d += step;
+    return d;
+  }) as Vec3;
   return { ...b, center, dimensions, quat: IDENTITY };
 }
 

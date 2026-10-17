@@ -5,6 +5,8 @@ export interface Headline {
   kept: string;
   keptCount: number;
   warning: string | null;
+  /** Label of the one-click 'also delete the kept points' button, or null when nothing is kept. */
+  deleteKeptLabel: string | null;
 }
 
 const n = (v: number) => v.toLocaleString("en-US");
@@ -13,7 +15,7 @@ const n = (v: number) => v.toLocaleString("en-US");
 export function headline(s: AppState): Headline {
   const c = s.candidate;
   const cur = c && s.session && c.cloud_revision === s.session.revision.cloud && c.params_revision === s.session.revision.params ? c : null;
-  if (!cur) return { willDelete: "Will delete —", kept: "Kept by protection —", keptCount: 0, warning: null };
+  if (!cur) return { willDelete: "Will delete —", kept: "Kept by protection —", keptCount: 0, warning: null, deleteKeptLabel: null };
   const m = cur.protected_retained;
   return {
     willDelete: `Will delete ${n(cur.candidates)}`,
@@ -23,5 +25,6 @@ export function headline(s: AppState): Headline {
       m > 0
         ? `${n(m)} selected ${m === 1 ? "point lies" : "points lie"} inside the protected interval and will be kept (ghosts in the floor slab?)`
         : null,
+    deleteKeptLabel: m > 0 ? `Also delete the ${n(m)} kept ${m === 1 ? "point" : "points"} (this operation only)` : null,
   };
 }

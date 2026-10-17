@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { candidateFixture } from "../testing/fixtures";
+import { canApply } from "../orchestration/runner";
+import { initialState } from "../state/app";
+import { candidateFixture, sessionFixture } from "../testing/fixtures";
 import {
   PROTECTION_COPY,
+  alsoDeleteKept,
+  protectionBlock,
   dragPlane,
   effectiveText,
   emptyProtection,
@@ -105,5 +109,39 @@ describe("protect the floor from a picked point (7b-1)", () => {
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.reason).toMatch(/edited/i);
     }
+  });
+});
+
+describe("also delete the kept points (7c-3)", () => {
+  const bounds = { min: [0, 0, -2] as [number, number, number], max: [10, 10, 7] as [number, number, number] };
+
+  it("UI-160 sets Override with a local interval entirely above the cloud and acknowledges it, so Apply is allowed", () => {
+    const base = setGlobal(emptyProtection(), { enabled: true, min: -0.1, max: 0.1 });
+    const r = alsoDeleteKept(base.model, bounds);
+    expect(r.ok).toBe(true);
+    const m = r.model;
+    expect(m.mode).toBe("override");
+    expect(m.ack).toBe(true);
+    expect(m.local).toEqual({ min: 8, max: 9 }); // cloud max z + 1 .. + 2
+    expect(m.global).toEqual(base.model.global); // the global slab itself is untouched
+    expect(protectionBlock(m)).toBeNull();
+    const body = toProtectionBody(m);
+    expect(body.ok && body.body.operation).toEqual({ mode: "override", local: { min: 8, max: 9 }, acknowledge_override: true });
+    // Apply is enabled for a current candidate once the model is set
+    const s = {
+      ...initialState(),
+      session: sessionFixture(),
+      candidate: candidateFixture({ candidates: 12, protected_retained: 0 }),
+    };
+    s.tools = { ...s.tools, protection: m };
+    expect(canApply(s)).toBe(true);
+    // and it is one operation only: resetOperation puts it back
+    expect(resetOperation(m).mode).toBe("inherit");
+  });
+
+  it("UI-160 without bounds the edit is refused with a reason", () => {
+    const r = alsoDeleteKept(emptyProtection(), null);
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/cloud/i);
   });
 });

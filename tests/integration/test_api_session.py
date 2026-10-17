@@ -1,6 +1,7 @@
 """API-01..30: the HTTP surface, end to end over a generated PCD."""
 
 import json
+import math
 import shutil
 import struct
 import time
@@ -871,3 +872,51 @@ def test_api_53_render_samples_to_the_exact_budget_and_keeps_flagged_points(
     r, _, ids, flags = api.render("original", 20)
     sampled_flagged = int((flags == 1).sum())
     assert 10 <= len(ids) <= 30 and sampled_flagged <= 27
+
+
+def _fit_displayed(active, filt, outward):
+    """Mirror of the frontend's displayedBounds + fitToBounds (float64 centre and size).
+
+    `outward` is the 7c-3 rule: widen the size by one ulp until the backend predicate
+    |p - centre| <= size / 2 holds at both ends (centre and size rounding made it miss
+    a point exactly on a limit).
+    """
+    lo = [active["min"][i] for i in range(3)]
+    hi = [active["max"][i] for i in range(3)]
+    for i, axis in enumerate("xyz"):
+        f = filt.get(axis)
+        if f and f["enabled"]:
+            lo[i] = max(lo[i], f["min"])
+            hi[i] = min(hi[i], f["max"])
+    center = [(lo[i] + hi[i]) / 2 for i in range(3)]
+    dims = [max(hi[i] - lo[i], 1e-6) for i in range(3)]
+    if outward:
+        for i in range(3):
+            while (
+                abs(lo[i] - center[i]) > dims[i] / 2
+                or abs(hi[i] - center[i]) > dims[i] / 2
+            ):
+                dims[i] = math.nextafter(dims[i], math.inf)
+    return {"type": "box", "center": center, "dimensions": dims}
+
+
+def test_api_64_fit_displayed_box_selects_every_displayed_point(api):
+    """F2-10: a filter limit that is not float32-representable made the fitted box miss boundary points.
+
+    Reproduced with the plain fit (49 of 59 selected: the points at y = 8.0 are on the
+    limit); the outward-widened box the frontend now sends selects them all.
+    """
+    api.open()
+    filt = {"y": {"enabled": True, "min": 3.2, "max": 8.0}}
+    r = api.client.put("/api/session/display-filter", json=filt)
+    assert r.status_code == 200, r.text
+    state = api.state()
+    displayed = state["counts"]["displayed"]
+    plain = _fit_displayed(state["active_bounds"], filt, outward=False)
+    job = api.select_wait(plain, scope="displayed")
+    # the cause: eps 0 on a rounded centre and size
+    assert job["result"]["selected"] < displayed
+    box = _fit_displayed(state["active_bounds"], filt, outward=True)
+    job = api.select_wait(box, scope="displayed")
+    assert job["status"] == "complete", job
+    assert job["result"]["selected"] == displayed

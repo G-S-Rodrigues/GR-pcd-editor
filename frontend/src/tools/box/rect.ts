@@ -5,7 +5,7 @@ import { screenRay } from "../../pick/screenray";
 import type { Bounds, Vec3 } from "../../state/types";
 import { type Camera, lookDirection, rightVector } from "../../view/camera";
 import { AXIS_INDEX, type Slice } from "../../view/slice";
-import { MIN_EXTENT, type BoxModel } from "./model";
+import { MIN_EXTENT, type BoxModel, worldExtents } from "./model";
 
 export const MIN_RECT_PX = 4;
 export type Depth = { min: number; max: number };
@@ -54,6 +54,36 @@ export function rectToBox(
   const dimensions: Vec3 = [0, 0, 0];
   for (const i of [0, 1, 2] as const) {
     const [lo, hi] = i === axis ? [depth.min, depth.max] : [Math.min(a[i], b[i]), Math.max(a[i], b[i])];
+    center[i] = (lo + hi) / 2;
+    dimensions[i] = Math.max(hi - lo, MIN_EXTENT);
+  }
+  return { ...prev, center, dimensions, quat: IDENTITY };
+}
+
+/**
+ * Shift rectangle: the old box intersected with a dragged rectangle on the two screen axes; the depth axis keeps
+ * the old box's extent (no reset to the cloud bounds). A rotated old box is narrowed from its world extents.
+ * Null when the view is not aligned, the rectangle is under 4 px, or the rectangle misses the box.
+ */
+export function narrowBox(
+  prev: BoxModel,
+  cam: Camera,
+  vp: Viewport,
+  p0: { x: number; y: number },
+  p1: { x: number; y: number },
+): BoxModel | null {
+  const axis = rectAxis(cam);
+  if (axis === null) return null;
+  if (Math.abs(p1.x - p0.x) < MIN_RECT_PX || Math.abs(p1.y - p0.y) < MIN_RECT_PX) return null;
+  const a = screenRay(cam, vp, p0.x, p0.y).origin;
+  const b = screenRay(cam, vp, p1.x, p1.y).origin;
+  const old = worldExtents(prev);
+  const center: Vec3 = [0, 0, 0];
+  const dimensions: Vec3 = [0, 0, 0];
+  for (const i of [0, 1, 2] as const) {
+    const lo = i === axis ? old.min[i] : Math.max(Math.min(a[i], b[i]), old.min[i]);
+    const hi = i === axis ? old.max[i] : Math.min(Math.max(a[i], b[i]), old.max[i]);
+    if (hi < lo) return null;
     center[i] = (lo + hi) / 2;
     dimensions[i] = Math.max(hi - lo, MIN_EXTENT);
   }

@@ -36,3 +36,15 @@ test("UI-127 no candidate or a stale one shows dashes and no warning", () => {
     expect(h.keptCount).toBe(0);
   }
 });
+
+test("UI-160 kept points offer a one-click 'also delete' whose label comes from the model", () => {
+  const h = headline(st({ candidates: 100, protected_retained: 4 }));
+  expect(h.deleteKeptLabel).toBe("Also delete the 4 kept points (this operation only)");
+  expect(headline(st({ candidates: 100, protected_retained: 1 })).deleteKeptLabel).toBe("Also delete the 1 kept point (this operation only)");
+});
+
+test("UI-161 the 'also delete' offer is hidden when nothing is kept, stale or absent", () => {
+  expect(headline(st({ candidates: 10, protected_retained: 0 })).deleteKeptLabel).toBeNull();
+  expect(headline(st({ protected_retained: 5 }, { cloud: 9, params: 4 })).deleteKeptLabel).toBeNull();
+  expect(headline(st(null)).deleteKeptLabel).toBeNull();
+});

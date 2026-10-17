@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
-import { FLOOR, GHOST, ROOM, ROOM_TOTAL, TOTAL, parsePcd, roomPcd, rowKey, syntheticPcd, truthKeys } from "./synthetic";
+import { BIG, FLOOR, GHOST, ROOM, ROOM_TOTAL, TOTAL, bigRoomPcd, bigRoomXyz, countInXyz, parsePcd, roomPcd, rowKey, syntheticPcd, truthKeys } from "./synthetic";
 
 test("open a cloud, navigate, pick a pivot, colour, read counts", async ({ page }) => {
   const errors: string[] = [];
@@ -1011,4 +1011,98 @@ test("E2E-26 7c2 a second tab replaces the file: the first tab's stale Apply is 
   await expect(page.locator("#notices")).toContainText("replaced in another tab", { timeout: 15000 });
   await a.exact("Original", String(ROOM_TOTAL));
   await other.close();
+});
+
+const blurFocus = (page: import("@playwright/test").Page) => page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+
+test("E2E-27 7c3 ghosts inside the floor slab: Rect, one click on 'Also delete the kept points', Apply; counts equal fixture truth", async ({ page }) => {
+  test.setTimeout(240000);
+  const { exact, ctl, setNum } = helpers(page);
+  const fmt = (v: number) => v.toLocaleString("en-US");
+  const xyz = bigRoomXyz();
+  const total = BIG.floor + BIG.ghost;
+  await page.goto("/");
+  await page.locator("#file-input").setInputFiles({ name: "big.pcd", mimeType: "application/octet-stream", buffer: bigRoomPcd(xyz) });
+  await exact("Original", fmt(total));
+  await page.waitForTimeout(1500);
+  await ctl("prot-enabled").check();
+  await setNum("prot-min", -0.05);
+  await setNum("prot-max", 0.05);
+  await exact("Protected", fmt(BIG.floor + BIG.ghostInSlab));
+  await ctl("tool-box").click();
+  await ctl("cube-top").click();
+  await page.waitForTimeout(500);
+  await ctl("box-rect").click();
+  const P = async (x: number, y: number, z: number) => (await page.evaluate(([a, b, c]) => (window as unknown as { __editor: EditorHook }).__editor.projectWorld([a, b, c]), [x, y, z] as number[]))!;
+  const a = await P(18, 61, 0);
+  const b = await P(42, 74, 0);
+  expect(a).not.toBeNull();
+  await realDrag(page, a, b);
+  await expect.poll(async () => (await readBox(page)).d[1], { timeout: 20000 }).toBeGreaterThan(10);
+  const box = await readBox(page);
+  const inBox = countInXyz(xyz, box.c, box.d);
+  const inSlab = countInXyz(xyz, box.c, box.d, [-0.05, 0.05]);
+  expect(inBox).toBe(BIG.ghost); // the rectangle holds the whole ghost block and no floor
+  expect(inSlab).toBe(BIG.ghostInSlab);
+  await exact("Candidates", fmt(inBox - inSlab));
+  await expect(page.locator("#kept-warning")).toBeVisible();
+  const btn = page.locator("#sel-delete-kept");
+  await expect(btn).toHaveText("Also delete the 5,000 kept points (this operation only)");
+  await btn.click();
+  await exact("Candidates", fmt(inBox));
+  await expect(ctl("prot-mode")).toHaveValue("override");
+  await expect(ctl("apply")).toBeEnabled();
+  await expect(btn).toBeHidden();
+  await ctl("apply").click();
+  await exact("Displayed", fmt(BIG.floor)); // every ghost gone, every floor point still there
+  await exact("Original", fmt(total));
+  await expect(ctl("prot-enabled")).toBeChecked(); // the global slab is untouched
+  await expect(ctl("prot-mode")).toHaveValue("inherit"); // the override was for one operation only
+});
+
+test("E2E-29 7c3 a Shift rectangle in the Front view narrows the Top-view box and keeps its depth; counts equal fixture truth", async ({ page }) => {
+  const { exact, ctl } = helpers(page);
+  await openRoom(page, exact);
+  const rows = parsePcd(roomPcd()).rows;
+  await ctl("tool-box").click();
+  await ctl("cube-top").click();
+  await page.waitForTimeout(300);
+  await ctl("box-rect").click();
+  const P = async (x: number, y: number, z: number) => (await page.evaluate(([a, b, c]) => (window as unknown as { __editor: EditorHook }).__editor.projectWorld([a, b, c]), [x, y, z] as number[]))!;
+  await realDrag(page, await P(1.5, 11.5, 0), await P(5.5, 15.5, 0));
+  await expect.poll(async () => (await readBox(page)).d[2], { timeout: 15000 }).toBeCloseTo(4, 6);
+  const first = await readBox(page);
+  await exact("Candidates", String(countInBox(rows, first.c, first.d)));
+  await blurFocus(page);
+  await page.keyboard.press("3"); // Front: screen axes x and z, depth y
+  await page.waitForTimeout(400);
+  await page.keyboard.down("Shift");
+  await realDrag(page, await P(0, 0, 3.5), await P(4, 0, 0.5));
+  await page.keyboard.up("Shift");
+  await expect.poll(async () => (await readBox(page)).d[2], { timeout: 15000 }).toBeLessThan(3.5);
+  const box = await readBox(page);
+  expect(box.c[1]).toBe(first.c[1]); // depth (y) untouched, exactly
+  expect(box.d[1]).toBe(first.d[1]);
+  expect(box.c[0] - box.d[0] / 2).toBeGreaterThanOrEqual(first.c[0] - first.d[0] / 2 - 1e-9); // never wider than the old box
+  expect(box.c[0] + box.d[0] / 2).toBeLessThanOrEqual(4.2); // the Shift rectangle's right edge, within pixel error
+  expect(box.d[2]).toBeGreaterThan(2.5);
+  const truth = countInBox(rows, box.c, box.d);
+  expect(truth).toBeGreaterThan(0);
+  expect(truth).toBeLessThan(countInBox(rows, first.c, first.d));
+  await exact("Candidates", String(truth));
+});
+
+test("E2E-30 7c3 Fit displayed with a Y filter on non-float32 limits selects exactly the displayed points", async ({ page }) => {
+  const { exact, ctl, setNum } = helpers(page);
+  await openRoom(page, exact);
+  const rows = parsePcd(roomPcd()).rows;
+  await ctl("filter-y-enabled").check();
+  await setNum("filter-y-min", 3.2);
+  await setNum("filter-y-max", 8);
+  const displayed = rows.filter((r) => [0, 1, 2].every((i) => Number.isFinite(r[i])) && r[1] >= 3.2 && r[1] <= 8).length;
+  await exact("Displayed", String(displayed));
+  await ctl("tool-box").click();
+  await ctl("box-fit-displayed").click();
+  await exact("Selected", String(displayed));
+  await exact("Candidates", String(displayed));
 });

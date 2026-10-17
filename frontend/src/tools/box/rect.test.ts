@@ -3,7 +3,7 @@ import type { Bounds, Vec3 } from "../../state/types";
 import { type Camera, FOV_DEG, defaultCamera, orbit } from "../../view/camera";
 import { PRESET_ORDER, PRESETS, applyPreset } from "../../view/presets";
 import { defaultBox } from "./model";
-import { MIN_RECT_PX, displayedBounds, fitToView, rectAxis, rectDepth, rectToBox } from "./rect";
+import { MIN_RECT_PX, displayedBounds, fitToView, narrowBox, rectAxis, rectDepth, rectToBox } from "./rect";
 import { emptyFilter } from "../../inspector/filters";
 
 const vp = { w: 800, h: 600 };
@@ -93,5 +93,49 @@ describe("fit helpers (7b-1)", () => {
     f.z = { enabled: true, min: 0.5, max: 10 };
     f.x = { enabled: true, min: -5, max: 3 };
     expect(displayedBounds(bounds, f)).toEqual({ min: [-1, 0, 0.5], max: [3, 19, 4] });
+  });
+});
+
+describe("Shift rectangle narrows the box (7c-3)", () => {
+  it("UI-164 in each preset the new box is the old box intersected on the two screen axes; the depth axis keeps its extent", () => {
+    for (const name of PRESET_ORDER) {
+      const cam = camFor(name);
+      const axis = rectAxis(cam)!;
+      const first = rectToBox(defaultBox([0, 0, 0]), cam, vp, { x: 100, y: 100 }, { x: 500, y: 400 }, { min: -3, max: 8 })!;
+      const box = narrowBox(first, cam, vp, { x: 300, y: 250 }, { x: 650, y: 550 })!;
+      expect(box, name).not.toBeNull();
+      const a = world(name, 300, 250);
+      const b = world(name, 650, 550);
+      const f0 = world(name, 100, 100);
+      const f1 = world(name, 500, 400);
+      for (let i = 0; i < 3; i++) {
+        if (i === axis) {
+          expect(box.center[i], `${name}[${i}] depth centre`).toBeCloseTo(first.center[i], 9);
+          expect(box.dimensions[i], `${name}[${i}] depth size`).toBeCloseTo(11, 9);
+        } else {
+          const lo = Math.max(Math.min(a[i], b[i]), Math.min(f0[i], f1[i]));
+          const hi = Math.min(Math.max(a[i], b[i]), Math.max(f0[i], f1[i]));
+          expect(box.center[i], `${name}[${i}]`).toBeCloseTo((lo + hi) / 2, 6);
+          expect(box.dimensions[i], `${name}[${i}]`).toBeCloseTo(hi - lo, 6);
+        }
+      }
+      expect(box.mode).toBe(first.mode);
+    }
+  });
+
+  it("UI-164 a rectangle that misses the box on a screen axis, a tiny one, or a non-aligned view gives null", () => {
+    const cam = camFor("top");
+    const first = rectToBox(defaultBox([0, 0, 0]), cam, vp, { x: 100, y: 100 }, { x: 300, y: 300 }, { min: 0, max: 4 })!;
+    expect(narrowBox(first, cam, vp, { x: 500, y: 100 }, { x: 700, y: 300 })).toBeNull();
+    expect(narrowBox(first, cam, vp, { x: 150, y: 150 }, { x: 152, y: 152 })).toBeNull();
+    expect(narrowBox(first, { ...cam, ortho: false }, vp, { x: 150, y: 150 }, { x: 250, y: 250 })).toBeNull();
+  });
+
+  it("UI-164 a rectangle that covers the box leaves it unchanged", () => {
+    const cam = camFor("front");
+    const first = rectToBox(defaultBox([0, 0, 0]), cam, vp, { x: 200, y: 200 }, { x: 300, y: 300 }, { min: 0, max: 4 })!;
+    const box = narrowBox(first, cam, vp, { x: 50, y: 50 }, { x: 700, y: 500 })!;
+    expect(box.center).toEqual(first.center);
+    expect(box.dimensions).toEqual(first.dimensions);
   });
 });

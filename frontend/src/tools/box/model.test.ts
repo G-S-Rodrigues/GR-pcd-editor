@@ -167,3 +167,36 @@ describe("box validity", () => {
     expect(boxValidity({ ...b, dimensions: [1, Number.NaN, 1] })).toMatch(/^Invalid: size/);
   });
 });
+
+describe("fit to bounds is outward-safe (7c-3, F2-10)", () => {
+  const contains = (b: ReturnType<typeof fitToBounds>, lo: number[], hi: number[]) =>
+    [0, 1, 2].every((i) => Math.abs(lo[i] - b.center[i]) <= b.dimensions[i] / 2 && Math.abs(hi[i] - b.center[i]) <= b.dimensions[i] / 2);
+
+  it("UI-165 both ends of the bounds are inside the box under the backend predicate (|p - centre| <= size / 2)", () => {
+    const lo = [0, 3.2, -1.1];
+    const hi = [9, 8.0, 2.3];
+    const fit = fitToBounds(defaultBox([0, 0, 0]), { min: lo as Vec3, max: hi as Vec3 });
+    expect(contains(fit, lo, hi)).toBe(true);
+    // the plain arithmetic misses (3.2 / 8.0 on y), so this is not a vacuous check
+    const plain = (lo[1] + hi[1]) / 2;
+    expect(Math.abs(hi[1] - plain)).toBeGreaterThan((hi[1] - lo[1]) / 2);
+    // only widened by a hair: under 1e-14
+    expect(fit.dimensions[1] - (hi[1] - lo[1])).toBeLessThan(1e-14);
+  });
+
+  it("UI-165 exact fits stay exact and a flat axis keeps the minimum extent", () => {
+    const fit = fitToBounds(defaultBox([0, 0, 0]), { min: [0, 0, 0], max: [4, 6, 0] });
+    expect(fit.dimensions).toEqual([4, 6, 1e-6]);
+    expect(fit.center).toEqual([2, 3, 0]);
+  });
+
+  it("UI-165 random bounds are always contained", () => {
+    let seed = 12345;
+    const rnd = () => ((seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296) * 40 - 20;
+    for (let k = 0; k < 2000; k++) {
+      const lo = [rnd(), rnd(), rnd()].map((v) => Math.round(v * 10) / 10);
+      const hi = lo.map((v) => Math.round((v + Math.abs(rnd()) + 0.1) * 10) / 10);
+      expect(contains(fitToBounds(defaultBox([0, 0, 0]), { min: lo as Vec3, max: hi as Vec3 }), lo, hi)).toBe(true);
+    }
+  });
+});

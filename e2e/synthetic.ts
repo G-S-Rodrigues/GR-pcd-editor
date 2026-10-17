@@ -100,3 +100,31 @@ export function roomPcd(): Buffer {
     "COUNT 1 1 1 1", `WIDTH ${rows.length}`, "HEIGHT 1", "VIEWPOINT 0 0 0 1 0 0 0", `POINTS ${rows.length}`, "DATA ascii"];
   return Buffer.from(`${head.join("\n")}\n${rows.join("\n")}\n`);
 }
+
+/**
+ * 990,000-point scene (E2E-27): a 1000 x 600 floor grid at z 0 (600,000, x 0..99.9, y 0..59.9) and a ghost block
+ * behind it (x 20..39.8, y 62..71.8, 78 layers from z 0.02 in steps of 0.1: 390,000). The 5,000 ghosts of the
+ * first layer lie inside a +-0.05 floor protection slab. Returned as float32 xyz triples.
+ */
+export const BIG = { floor: 600_000, ghost: 390_000, ghostInSlab: 5_000 };
+export function bigRoomXyz(): Float32Array {
+  const out = new Float32Array((BIG.floor + BIG.ghost) * 3);
+  let o = 0;
+  for (let x = 0; x < 1000; x++) for (let y = 0; y < 600; y++) { out[o++] = x / 10; out[o++] = y / 10; out[o++] = 0; }
+  for (let x = 0; x < 100; x++) for (let y = 0; y < 50; y++) for (let k = 0; k < 78; k++) { out[o++] = 20 + x * 0.2; out[o++] = 62 + y * 0.2; out[o++] = 0.02 + k * 0.1; }
+  return out;
+}
+export function bigRoomPcd(xyz: Float32Array): Buffer {
+  const n = xyz.length / 3;
+  const head = ["# .PCD v.7 - synthetic big room", "VERSION .7", "FIELDS x y z", "SIZE 4 4 4", "TYPE F F F", "COUNT 1 1 1",
+    `WIDTH ${n}`, "HEIGHT 1", "VIEWPOINT 0 0 0 1 0 0 0", `POINTS ${n}`, "DATA binary"];
+  return Buffer.concat([Buffer.from(`${head.join("\n")}\n`), Buffer.from(xyz.buffer, xyz.byteOffset, xyz.byteLength)]);
+}
+/** Independent count of rows inside an axis-aligned box (centre, size; inclusive) and, of those, inside a z slab. */
+export function countInXyz(xyz: Float32Array, c: number[], d: number[], slab?: [number, number]): number {
+  let n = 0;
+  for (let i = 0; i < xyz.length; i += 3) {
+    if (Math.abs(xyz[i] - c[0]) <= d[0] / 2 && Math.abs(xyz[i + 1] - c[1]) <= d[1] / 2 && Math.abs(xyz[i + 2] - c[2]) <= d[2] / 2 && (!slab || (xyz[i + 2] >= slab[0] && xyz[i + 2] <= slab[1]))) n++;
+  }
+  return n;
+}

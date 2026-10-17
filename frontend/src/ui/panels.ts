@@ -1,7 +1,7 @@
 import { PROTECTION_COPY, effectiveText, retainedText } from "../inspector/protection";
 import * as P from "../inspector/protection";
 import { FILTER_COPY, AXES, type Axis } from "../inspector/filters";
-import type { AppState } from "../state/app";
+import { type AppState, addNotice } from "../state/app";
 import type { Store } from "../state/store";
 import type { Vec3 } from "../state/types";
 import * as B from "../tools/box/model";
@@ -72,6 +72,14 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
   const invalid = control("button", { id: "remove-invalid", onclick: a.removeInvalid }, "Remove invalid");
   const draftNote = h("p", { id: "draft-note", class: "note warn", hidden: true });
   const keptWarn = h("p", { id: "kept-warning", class: "note warn", hidden: true });
+  const keptDelete = control(
+    "button",
+    { id: "sel-delete-kept", onclick: () => showKeptErr(a.protectionEdit((m) => P.alsoDeleteKept(m, store.get().session?.bounds ?? null)).error) },
+    "Also delete the kept points",
+  );
+  const showKeptErr = (m: string | null | undefined) => {
+    if (m) addNotice(store, "error", "delete_kept_failed", m);
+  };
   const keptToggle = control("button", { id: "sel-show-kept", onclick: () => store.update((s) => ({ ...s, showKept: !s.showKept })) }, "Show kept points");
   root.append(
     h("h2", { text: "Tools" }),
@@ -90,6 +98,7 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     note,
     draftNote,
     keptWarn,
+    keptDelete,
     keptToggle,
     h("h2", { text: "Cloud" }),
     invalid,
@@ -115,6 +124,8 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     const hl = headline(s);
     keptWarn.hidden = hl.warning === null;
     keptWarn.textContent = hl.warning ?? "";
+    keptDelete.hidden = hl.deleteKeptLabel === null;
+    keptDelete.textContent = hl.deleteKeptLabel ?? "";
     keptToggle.hidden = hl.keptCount === 0;
     keptToggle.classList.toggle("active", s.showKept);
     invalid.hidden = !a.removeInvalidVisible();
