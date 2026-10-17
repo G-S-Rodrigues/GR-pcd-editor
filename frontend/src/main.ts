@@ -9,7 +9,7 @@ import { beforeUnloadHandler } from "./orchestration/unsaved";
 import { applyClientPatch, createPersister, restoreClientState } from "./state/persist";
 import { buildExportDialog } from "./ui/export-dialog";
 import { pollJob } from "./files/jobs";
-import { createFilterController, enableDefaults, filterFromState, selectDisplayedBody } from "./inspector/filters";
+import { createFilterController, filterFromState, selectDisplayedBody } from "./inspector/filters";
 import { type ProtectionModel, floorFromPick, protectionFromState, setGlobal } from "./inspector/protection";
 import { createProtectionController } from "./inspector/protection-controller";
 import { createEditor } from "./orchestration/edit";
@@ -40,6 +40,7 @@ import { buildLegend } from "./ui/legend";
 import { buildHelp } from "./ui/help";
 import { classifyKey } from "./ui/keys";
 import { buildViewCube } from "./ui/viewcube";
+import { buildFilterBoxes } from "./ui/filterboxes";
 import { buildToolbar } from "./ui/toolbar";
 import { buildViewbar } from "./ui/viewbar";
 import { attachControls } from "./viewport/controls3d";
@@ -209,9 +210,7 @@ buildStatusbar($("statusbar"), $("modebar"), store);
 const panelActions = {
   toolChanged: () => runner.onToolChanged(),
   scopeChanged: () => runner.paramsChanged("scope"),
-  filterEdit: (axis: "x" | "y" | "z", patch: Partial<{ enabled: boolean; min: number; max: number }>) => filters.edit(axis, enableDefaults(store.get().tools.filters, axis, patch, store.get().session?.bounds ?? null)),
-  filterResetBounds: () => filters.resetToCloud(),
-  filterResetAll: () => filters.resetAll(),
+  filterResetAll: () => filters.resetToCloud(),
   protectionEdit: (fn: Parameters<typeof protection.edit>[0]) => protection.edit(fn),
   setTool: (t: "none" | "box" | "polygon" | "cluster") => {
     store.update((st) => ({ ...st, tool: t, interaction: "orbit" }));
@@ -258,6 +257,10 @@ buildInspector($("fileinfo"), store);
 buildToolPalette($("tools"), store, panelActions);
 buildLegend($("legend"));
 buildViewCube($("viewcube"), store);
+buildFilterBoxes($("fbox-layer"), canvas, store, {
+  editSide: (axis, side, value, o) => filters.editSide(axis, side, value, o),
+  resetSide: (axis, side) => filters.resetSide(axis, side),
+});
 buildEditPanels($("editpanels"), store, panelActions);
 
 window.addEventListener("keyup", (e) => {

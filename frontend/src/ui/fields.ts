@@ -56,15 +56,19 @@ export const FIELD_SPECS: FieldSpec[] = [
   f("cluster-exclude-protected", "Exclude protected", "cluster", "Do not let the cluster grow through height-protected points"),
   f("cluster-max-points", "Max points", "cluster", "Stop and report if the cluster grows past this many points"),
   f("cluster-cancel", "Cancel", "cluster", "Cancel the running cluster computation"),
-  ...AX.flatMap((a) => [
-    f(`filter-${a}-enabled`, `${up(a)} filter`, "filter", `Hide points outside the ${up(a)} range; this does not delete them`),
-    f(`filter-${a}-min`, `${up(a)} min`, "filter", `Lowest displayed ${up(a)} (inclusive)`),
-    f(`filter-${a}-max`, `${up(a)} max`, "filter", `Highest displayed ${up(a)} (inclusive)`),
-    f(`filter-${a}-min-slider`, `${up(a)} min slider`, "filter", `Drag the lowest displayed ${up(a)} within the cloud bounds`),
-    f(`filter-${a}-max-slider`, `${up(a)} max slider`, "filter", `Drag the highest displayed ${up(a)} within the cloud bounds`),
-  ]),
-  f("filter-reset-bounds", "Reset to cloud", "filter", "Set the filter limits to the whole cloud bounds and turn the filters off"),
-  f("filter-reset-all", "Reset filters", "filter", "Turn all display filters off"),
+  ...AX.flatMap((a) =>
+    (["min", "max"] as const).flatMap((s) => {
+      const lo = s === "min";
+      const U = up(a);
+      return [
+        f(`filter-${a}-${s}`, `${U} ${s}`, "filter", `${lo ? "Lowest" : "Highest"} displayed ${U} (inclusive); type a value and press Enter, Esc undoes. Points outside are hidden, not deleted`),
+        f(`filter-${a}-${s}-grip`, `${U} ${s} grip`, "filter", `Drag along the edge to set the ${lo ? "lowest" : "highest"} displayed ${U}; arrow keys nudge, Shift is finer, Home and End jump to the cloud bounds`),
+        f(`filter-${a}-${s}-reset`, `${U} ${s} reset`, "filter", `Put the ${lo ? "lowest" : "highest"} displayed ${U} back to the cloud's ${lo ? "minimum" : "maximum"}, so this side hides nothing`),
+        f(`filter-${a}-${s}-toggle`, `${U} ${s} collapse`, "filter", `Collapse or expand the ${U} ${s} filter box; a collapsed box keeps its filter, and its chip is highlighted while it hides points`),
+      ];
+    }),
+  ),
+  f("filter-reset-all", "Reset filters", "filter", "Put all six display filter sides back to the whole cloud (nothing hidden)"),
   f("slice-enabled", "Slice view", "slice", "Draw only a slab of the cloud (view only: selection, filters and counts are not affected)"),
   f("slice-axis", "Slice axis", "slice", "Axis the slab is cut across"),
   f("slice-centre", "Slice centre", "slice", "Centre of the slab along its axis, in the file frame"),

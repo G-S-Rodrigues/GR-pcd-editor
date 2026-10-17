@@ -22,7 +22,7 @@ export function serialiseClientState(s: AppState): Json {
     comparison: { mode: s.compare, opacity: s.overlayOpacity },
     unit: s.session?.unit ?? "m",
     tools: { box: s.tools.box, polygon: s.tools.polygon, cluster: s.tools.cluster },
-    ui: { budget: s.budget, gizmo: s.gizmo, slice: s.slice },
+    ui: { budget: s.budget, gizmo: s.gizmo, slice: s.slice, boxesCollapsed: s.filterUi.collapsed, floorPanelOpen: s.floorPanelOpen },
   };
 }
 
@@ -37,11 +37,14 @@ export interface ClientPatch {
   overlayOpacity?: number;
   budget?: number;
   slice?: AppState["slice"];
+  boxesCollapsed?: Record<string, boolean>;
+  floorPanelOpen?: boolean;
   tools?: Partial<Pick<AppState["tools"], "box" | "polygon" | "cluster">>;
 }
 
 const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const unitQuat = (v: unknown): v is number[] => nums(v, 4) && Math.hypot(...v) > 1e-9;
+const BOX_KEYS = ["x", "y", "z"].flatMap((a) => ["min", "max"].map((s) => `${a}-${s}`));
 const COLOURS = ["height", "rgb", "intensity", "flat"];
 
 /** Returns null for an unknown version or non-object; ignores each malformed section on its own. */
@@ -63,6 +66,12 @@ export function restoreClientState(raw: unknown): ClientPatch | null {
   const ui = raw.ui;
   if (isObj(ui)) {
     if (finite(ui.budget) && ui.budget >= 1) out.budget = ui.budget;
+    if (isObj(ui.boxesCollapsed)) {
+      const kept: Record<string, boolean> = {};
+      for (const [k, v] of Object.entries(ui.boxesCollapsed)) if (BOX_KEYS.includes(k) && typeof v === "boolean") kept[k] = v;
+      out.boxesCollapsed = kept;
+    }
+    if (typeof ui.floorPanelOpen === "boolean") out.floorPanelOpen = ui.floorPanelOpen;
     const sl = ui.slice;
     if (isObj(sl) && typeof sl.enabled === "boolean" && ["x", "y", "z"].includes(sl.axis as string) && typeof sl.centre === "number" && Number.isFinite(sl.centre) && typeof sl.thickness === "number" && sl.thickness > 0 && Number.isFinite(sl.thickness)) {
       out.slice = { enabled: sl.enabled, axis: sl.axis as "x" | "y" | "z", centre: sl.centre, thickness: sl.thickness };
@@ -151,6 +160,8 @@ export function applyClientPatch(s: AppState, p: ClientPatch): AppState {
     overlayOpacity: p.overlayOpacity ?? s.overlayOpacity,
     budget: p.budget ?? s.budget,
     slice: p.slice ?? s.slice,
+    filterUi: p.boxesCollapsed ? { ...s.filterUi, collapsed: p.boxesCollapsed } : s.filterUi,
+    floorPanelOpen: p.floorPanelOpen ?? s.floorPanelOpen,
     tools: { ...s.tools, ...p.tools },
   };
 }

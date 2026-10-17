@@ -27,6 +27,12 @@ export interface ToolsState {
   protection: ProtectionModel;
 }
 
+/** On-canvas filter boxes: which are collapsed (key `x-min`..`z-max`) and which one a pointer or the keyboard holds. */
+export interface FilterUi {
+  collapsed: Record<string, boolean>;
+  interacting: string | null;
+}
+
 export interface AppState {
   session: SessionState | null;
   tool: ToolKind;
@@ -60,6 +66,9 @@ export interface AppState {
   job: { busy: boolean; progress: number | null; message: string | null };
   upload: { phase: "sending" | "importing"; loaded: number; total: number | null } | null;
   notices: Notice[];
+  filterUi: FilterUi;
+  /** The "Height protection" panel section is expanded (protected points are drawn stronger while it is). */
+  floorPanelOpen: boolean;
 }
 
 export function initialState(): AppState {
@@ -95,6 +104,8 @@ export function initialState(): AppState {
     job: { busy: false, progress: null, message: null },
     upload: null,
     notices: [],
+    filterUi: { collapsed: {}, interacting: null },
+    floorPanelOpen: true,
   };
 }
 

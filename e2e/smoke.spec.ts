@@ -127,7 +127,6 @@ test("6b real UI: filter, box select by numbers, preview counts, apply, undo, re
   const activeBefore = await num("Active");
 
   await test.step("display filter on Z hides the floor without deleting it", async () => {
-    await ctl("filter-z-enabled").check();
     await setNum("filter-z-min", 0.5);
     await setNum("filter-z-max", 10);
     await exact("Displayed", String(GHOST));
@@ -207,10 +206,10 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
 
   await test.step("E2E-06 a filter change makes the preview stale until a fresh one completes", async () => {
     await expect(ctl("apply")).toBeEnabled();
-    await ctl("filter-z-enabled").check();
+    await setNum("filter-z-min", 1.5);
     await expect(ctl("apply")).toBeDisabled();
     await expect(ctl("apply")).toBeEnabled({ timeout: 15000 });
-    await ctl("filter-z-enabled").uncheck();
+    await ctl("filter-z-min-reset").click();
     await expect(ctl("apply")).toBeDisabled();
     await expect(ctl("apply")).toBeEnabled({ timeout: 15000 });
     await exact("Candidates", String(GHOST));
@@ -372,7 +371,6 @@ test("E2E-10 7a filter redraws the canvas and a filter change never leaves a sta
     };
     tick();
   });
-  await ctl("filter-z-enabled").check();
   await setNum("filter-z-min", 0.5);
   await setNum("filter-z-max", 10);
   await exact("Displayed", String(GHOST));
@@ -597,7 +595,6 @@ test("E2E-16 7b1 rectangle select with the real mouse in Top then Left view, fit
 
   await ctl("box-fit-view").click();
   await exact("Candidates", String(await num("Displayed")));
-  await ctl("filter-z-enabled").check();
   await setNum("filter-z-min", 0.5);
   await setNum("filter-z-max", 10);
   await exact("Displayed", String(ROOM.wall + ROOM.ghost + ROOM.noise));
@@ -1103,7 +1100,6 @@ test("E2E-30 7c3 Fit displayed with a Y filter on non-float32 limits selects exa
   const { exact, ctl, setNum } = helpers(page);
   await openRoom(page, exact);
   const rows = parsePcd(roomPcd()).rows;
-  await ctl("filter-y-enabled").check();
   await setNum("filter-y-min", 3.2);
   await setNum("filter-y-max", 8);
   const displayed = rows.filter((r) => [0, 1, 2].every((i) => Number.isFinite(r[i])) && r[1] >= 3.2 && r[1] <= 8).length;
@@ -1186,4 +1182,159 @@ test("E2E-33 9 accessibility basics: the canvas is labelled and notices are a li
   await expect(page.locator("#notices")).toHaveAttribute("aria-live", "polite");
   await page.locator("#file-input").setInputFiles({ name: "broken.pcd", mimeType: "application/octet-stream", buffer: Buffer.from("not a cloud\n") });
   await expect(page.locator("#notices .notice.error")).toHaveAttribute("role", "alert");
+});
+
+// ---- part 10: on-canvas filter boxes (E2E-35..37, 40, 41)
+type FilterHook = { state: () => { filters?: unknown; tools: { filters: Record<"x" | "y" | "z", { enabled: boolean; min: number; max: number }> }; session: { bounds: { min: number[]; max: number[] } } | null } };
+const filtersNow = (page: import("@playwright/test").Page) =>
+  page.evaluate(() => {
+    const s = (window as unknown as { __editor: FilterHook }).__editor.state();
+    return { f: s.tools.filters, b: s.session!.bounds };
+  });
+const roomValid = () => parsePcd(roomPcd()).rows.filter((r) => Number.isFinite(r[0]) && Number.isFinite(r[1]) && Number.isFinite(r[2]));
+const centre = async (loc: import("@playwright/test").Locator) => {
+  const b = (await loc.boundingBox())!;
+  return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+};
+
+test("E2E-35 10 dragging a filter grip with the real mouse filters live, Esc restores, and typing a value works", async ({ page }) => {
+  const { exact, ctl, setNum } = helpers(page);
+  await openRoom(page, exact);
+  await page.keyboard.press("3");
+  await page.waitForTimeout(400);
+  const rows = roomValid();
+  const grip = ctl("filter-z-max-grip");
+  await expect(grip).toBeVisible();
+  const g = await centre(grip);
+  const before = await filtersNow(page);
+  await page.mouse.move(g.x, g.y);
+  await page.mouse.down();
+  await page.mouse.move(g.x, g.y + 60, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(async () => (await filtersNow(page)).f.z.max, { timeout: 15000 }).toBeLessThan(before.b.max[2] - 0.05);
+  const v = (await filtersNow(page)).f.z.max;
+  expect((await filtersNow(page)).f.z.enabled).toBe(true);
+  await exact("Displayed", String(rows.filter((r) => r[2] <= v).length));
+  // Esc mid-drag puts the value back
+  const g2 = await centre(grip);
+  await page.mouse.move(g2.x, g2.y);
+  await page.mouse.down();
+  await page.mouse.move(g2.x, g2.y + 40, { steps: 6 });
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect.poll(async () => (await filtersNow(page)).f.z.max, { timeout: 5000 }).toBeCloseTo(v, 9);
+  await exact("Displayed", String(rows.filter((r) => r[2] <= v).length));
+  // typing
+  await setNum("filter-z-max", 1.5);
+  await exact("Displayed", String(rows.filter((r) => r[2] <= 1.5).length));
+});
+
+test("E2E-36 10 a collapsed but active box shows a chip with its value and the filter still applies", async ({ page }) => {
+  const { exact, ctl, setNum } = helpers(page);
+  await openRoom(page, exact);
+  await page.keyboard.press("3");
+  const rows = roomValid();
+  await setNum("filter-z-max", 1.5);
+  const n = String(rows.filter((r) => r[2] <= 1.5).length);
+  await exact("Displayed", n);
+  await ctl("filter-z-max-toggle").click();
+  const fbox = page.locator('.fbox[data-box="z-max"]');
+  await expect(fbox).toHaveClass(/active/);
+  await expect(fbox).toHaveClass(/collapsed/);
+  expect(await ctl("filter-z-max-toggle").evaluate((e) => getComputedStyle(e).backgroundColor)).not.toBe(await ctl("filter-z-min-toggle").evaluate((e) => getComputedStyle(e).backgroundColor));
+  await expect(ctl("filter-z-max-toggle")).toContainText("1.5");
+  await exact("Displayed", n);
+  await ctl("filter-z-max-toggle").click();
+  await expect(ctl("filter-z-max")).toBeVisible();
+  await expect(ctl("filter-z-max")).toHaveValue(/1\.5/);
+  await exact("Displayed", n);
+});
+
+test("E2E-37 10 box placement follows the view: end-on axes dock at the bottom of the left edge", async ({ page }) => {
+  const { exact, ctl } = helpers(page);
+  await openRoom(page, exact);
+  const edges = async () =>
+    page.evaluate(() => Object.fromEntries([...document.querySelectorAll<HTMLElement>(".fbox")].map((e) => [e.dataset.box!, e.dataset.edge!])));
+  const stageBox = (await page.locator("#stage").boundingBox())!;
+  for (const [key, cube, endOn] of [["3", "cube-front", "y"], ["5", "cube-left", "x"], ["1", "cube-top", "z"]] as const) {
+    await page.keyboard.press(key);
+    await page.waitForTimeout(400);
+    const e = await edges();
+    for (const side of ["min", "max"]) {
+      expect(e[`${endOn}-${side}`], `${cube} ${endOn}-${side}`).toBe("dock");
+      const b = (await ctl(`filter-${endOn}-${side}`).boundingBox())!;
+      expect(b.x, `${cube} ${endOn}-${side} inside`).toBeGreaterThanOrEqual(stageBox.x - 1);
+    }
+    // the in-view axes are not end-on, so at least one of their boxes sits off the left dock or above the end-on ones
+    expect(Object.keys(e)).toHaveLength(6);
+  }
+  const front = await (async () => {
+    await page.keyboard.press("3");
+    await page.waitForTimeout(400);
+    const z = (await ctl("filter-z-max").boundingBox())!;
+    const zmin = (await ctl("filter-z-min").boundingBox())!;
+    return { zMaxY: z.y, zMinY: zmin.y };
+  })();
+  expect(front.zMaxY).toBeLessThan(front.zMinY); // Z max is above Z min on screen in a Z-up view
+});
+
+test("E2E-40 10 per-box reset and global reset restore the cloud bound and the summary says so", async ({ page }) => {
+  const { exact, ctl, setNum } = helpers(page);
+  await openRoom(page, exact);
+  await page.keyboard.press("3");
+  const rows = roomValid();
+  const all = String(rows.length);
+  await setNum("filter-z-max", 1.5);
+  await setNum("filter-x-min", 5);
+  await exact("Displayed", String(rows.filter((r) => r[2] <= 1.5 && r[0] >= 5).length));
+  await expect(page.locator("#inspector")).toContainText(/Displayed: /);
+  await ctl("filter-z-max-reset").click();
+  await exact("Displayed", String(rows.filter((r) => r[0] >= 5).length));
+  const f = await filtersNow(page);
+  expect(f.f.z.enabled).toBe(false);
+  await ctl("filter-reset-all").click();
+  await exact("Displayed", all);
+  const g = await filtersNow(page);
+  expect(g.f.x.enabled).toBe(false);
+  await expect(ctl("filter-x-min")).toHaveValue(new RegExp(`^${g.b.min[0]}`));
+});
+
+test("E2E-41 10 the boxes never overlap each other, the ViewCube, the legend or a notice at 1280x720 and 1920x1080", async ({ page }) => {
+  const { exact, setNum } = helpers(page);
+  for (const [w, h, shot] of [[1280, 720, "fbox-1280.png"], [1920, 1080, "fbox-1920.png"]] as const) {
+    await page.setViewportSize({ width: w, height: h });
+    await openRoom(page, exact);
+    await setNum("filter-z-max", 1.5);
+    await page.evaluate(() => (document.querySelector("[data-control=filter-x-min]") as HTMLInputElement).focus());
+    for (const [key, cube] of [["3", "front"], ["5", "left"], ["1", "top"], ["4", "back"]] as const) {
+      await page.keyboard.press(key);
+      await page.waitForTimeout(400);
+      const rects = await page.evaluate(() => {
+        const r = (e: Element) => {
+          const b = e.getBoundingClientRect();
+          return { l: b.left, t: b.top, r: b.right, b: b.bottom };
+        };
+        return {
+          boxes: [...document.querySelectorAll(".fbox")].map((e) => ({ id: (e as HTMLElement).dataset.box!, ...r(e) })),
+          fixed: ["#viewcube", "#legend"].map((s) => ({ id: s, ...r(document.querySelector(s)!) })),
+          stage: r(document.querySelector("#stage")!),
+        };
+      });
+      const hit = (a: { l: number; t: number; r: number; b: number }, c: { l: number; t: number; r: number; b: number }) => a.l < c.r && c.l < a.r && a.t < c.b && c.t < a.b;
+      for (const [i, a] of rects.boxes.entries()) {
+        expect(a.l >= rects.stage.l - 1 && a.r <= rects.stage.r + 1 && a.t >= rects.stage.t - 1 && a.b <= rects.stage.b + 1, `${w} ${cube} ${a.id} inside stage`).toBe(true);
+        for (const c of rects.boxes.slice(i + 1)) expect(hit(a, c), `${w} ${cube} ${a.id} x ${c.id}`).toBe(false);
+        for (const c of rects.fixed) expect(hit(a, c), `${w} ${cube} ${a.id} x ${c.id}`).toBe(false);
+      }
+    }
+    // a notice on screen
+    await page.locator("#file-input").setInputFiles({ name: "broken.pcd", mimeType: "application/octet-stream", buffer: Buffer.from("not a cloud\n") });
+    await expect(page.locator("#notices .notice.error")).toBeVisible();
+    const n = (await page.locator("#notices").boundingBox())!;
+    for (const b of await page.locator(".fbox").all()) {
+      const r = (await b.boundingBox())!;
+      expect(r.x < n.x + n.width && n.x < r.x + r.width && r.y < n.y + n.height && n.y < r.y + r.height, `${w} box x notice`).toBe(false);
+    }
+    await page.screenshot({ path: `/out/${shot}` });
+  }
 });

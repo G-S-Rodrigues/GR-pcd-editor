@@ -1,6 +1,6 @@
 import { PROTECTION_COPY, effectiveText, retainedText } from "../inspector/protection";
 import * as P from "../inspector/protection";
-import { FILTER_COPY, AXES, type Axis } from "../inspector/filters";
+import { FILTER_COPY, filterSummary } from "../inspector/filters";
 import { type AppState, addNotice } from "../state/app";
 import type { Store } from "../state/store";
 import type { Vec3 } from "../state/types";
@@ -14,6 +14,7 @@ import { draftText } from "../tools/draft";
 import { invertNote, scopeNotice } from "../orchestration/selection";
 import { historyRows } from "../inspector/history";
 import { control } from "./controls";
+import { commitNumber } from "./numfield";
 import { TOOLTIPS } from "./tooltips";
 import { h } from "./dom";
 
@@ -21,8 +22,6 @@ import { h } from "./dom";
 export interface PanelActions {
   toolChanged: () => void;
   scopeChanged: () => void;
-  filterEdit: (axis: Axis, patch: Partial<{ enabled: boolean; min: number; max: number }>) => { ok: boolean; error?: string };
-  filterResetBounds: () => void;
   filterResetAll: () => void;
   protectionEdit: (fn: (m: P.ProtectionModel) => P.ProtectionEdit) => P.ProtectionEdit;
   setTool: (t: AppState["tool"]) => void;
@@ -154,10 +153,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     view?: { show: (v: number) => string; empty: number },
   ) => {
     const input = control("input", { id, type: "text", inputmode: "decimal", onchange: () => {
-      const raw = input.value.trim();
-      const blank = view !== undefined && (raw === "" || raw.toLowerCase() === "unlimited");
-      const v = blank ? view.empty : Number(raw);
-      const err = (raw === "" && !blank) || Number.isNaN(v) ? `${label} must be a number` : commit(v);
+      const err = commitNumber(input.value, label, commit, view);
       showErr(err);
       sync(store.get());
     } });
@@ -435,42 +431,15 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     text((s) => clusterLimitText(s.candidate) ?? (s.notices.some((n) => n.code === "component_limit_reached") ? CLUSTER_LIMIT_TEXT : ""), "note warn"),
   );
 
-  // ---- filters
-  const filterAxis = (axis: Axis) => {
-    const U = axis.toUpperCase();
-    const bounds = (s: AppState) => ({ lo: s.session?.bounds?.min[AXN.indexOf(axis)] ?? 0, hi: s.session?.bounds?.max[AXN.indexOf(axis)] ?? 1 });
-    const slider = (which: "min" | "max") => {
-      const el = control("input", { id: `filter-${axis}-${which}-slider`, type: "range", step: "any", oninput: () => {
-        const r = a.filterEdit(axis, { enabled: true, [which]: Number(el.value) });
-        showErr(r.ok ? null : r.error);
-      } });
-      syncs.push((s) => {
-        const { lo, hi } = bounds(s);
-        el.min = String(lo);
-        el.max = String(hi);
-        if (document.activeElement !== el) el.value = String(s.tools.filters[axis][which]);
-      });
-      return el;
-    };
-    return h(
-      "div",
-      { class: "filter" },
-      check(`filter-${axis}-enabled`, `${U} filter`, (s) => s.tools.filters[axis].enabled, (v) => showErr(a.filterEdit(axis, { enabled: v }).error)),
-      row(
-        field(`filter-${axis}-min`, "min", (s) => s.tools.filters[axis].min, (v) => a.filterEdit(axis, { min: v }).error ?? null),
-        field(`filter-${axis}-max`, "max", (s) => s.tools.filters[axis].max, (v) => a.filterEdit(axis, { max: v }).error ?? null),
-      ),
-      slider("min"),
-      slider("max"),
-    );
-  };
+  // ---- filters (the six boxes live on the canvas, see filterboxes/; the panel keeps the note, summary and global reset)
   const filterPanel = section(
     "Display filter",
     (s) => s.session !== null,
     h("p", { class: "note", text: FILTER_COPY }),
-    ...AXES.map(filterAxis),
-    h("div", { class: "stack" }, button("filter-reset-bounds", "Reset to cloud", a.filterResetBounds), button("filter-reset-all", "Reset filters", a.filterResetAll)),
-    text((s) => (s.session ? `Displayed: ${s.session.counts.displayed.toLocaleString("en-US")} of ${s.session.counts.active.toLocaleString("en-US")} active points` : "")),
+    text((s) =>
+      s.session ? `${filterSummary(s.tools.filters, s.session.bounds, s.session.counts)}. Displayed: ${s.session.counts.displayed.toLocaleString("en-US")} of ${s.session.counts.active.toLocaleString("en-US")} active points` : "",
+    ),
+    h("div", { class: "stack" }, button("filter-reset-all", "Reset filters", a.filterResetAll)),
   );
 
   // ---- protection
