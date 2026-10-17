@@ -48,5 +48,5 @@ RUN uv sync --frozen --no-install-project
 COPY tests/ /app/tests/
 COPY scripts/ /app/scripts/
 COPY gr-pcd-visualizer.sh /app/
-RUN chown 10001:10001 /app
+RUN chown 10001:10001 /app && chown -R 10001:10001 /app/frontend
 USER 10001:10001
