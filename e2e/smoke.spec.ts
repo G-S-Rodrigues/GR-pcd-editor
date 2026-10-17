@@ -1940,3 +1940,201 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     expect(last.x + last.width).toBeLessThanOrEqual(tlb.r + 1);
   });
 }
+
+test("E2E-53 11 dragging the marker with the real mouse rolls back and forward; counts equal fixture truth; Undo and Redo move it one slot", async ({ page }) => {
+  const t = tl(page);
+  await t.threeSteps();
+  t.rollbacks.length = 0;
+  await t.dragMarkerTo(1);
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
+  await expect(t.marker).toHaveAttribute("aria-valuenow", "1");
+  expect(t.rollbacks).toHaveLength(1); // one POST on release, none while dragging
+  expect(JSON.parse(t.rollbacks[0]).cursor).toBe(1);
+  await expect(t.card(0)).not.toHaveClass(/greyed/);
+  await expect(t.card(1)).toHaveClass(/greyed/);
+  await expect(t.card(2)).toHaveClass(/greyed/);
+  await expect(t.card(1)).toHaveAttribute("title", /rolled back/);
+  await t.dragMarkerTo(3);
+  await t.exact("Active", String(ACTIVE_ALL));
+  await expect(t.card(2)).not.toHaveClass(/greyed/);
+  // a drag that returns to where it started makes no call
+  t.rollbacks.length = 0;
+  const mb = (await t.marker.boundingBox())!;
+  await page.mouse.move(mb.x + mb.width / 2, mb.y + mb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(mb.x - 100, mb.y + mb.height / 2, { steps: 4 });
+  await page.mouse.move(mb.x + mb.width / 2, mb.y + mb.height / 2, { steps: 4 });
+  await page.mouse.up();
+  expect(t.rollbacks).toHaveLength(0);
+  // Undo and Redo are the marker -1 / +1
+  await t.ctl("undo").click();
+  await t.exact("Active", String(ACTIVE_ALL + ROOM.noise));
+  await expect(t.marker).toHaveAttribute("aria-valuenow", "2");
+  await t.ctl("redo").click();
+  await t.exact("Active", String(ACTIVE_ALL));
+  await expect(t.marker).toHaveAttribute("aria-valuenow", "3");
+});
+
+test("E2E-54 11 'Roll back to here' and the slider keys give the same state as the drag", async ({ page }) => {
+  const t = tl(page);
+  await t.threeSteps();
+  await t.card(0).hover();
+  await t.card(0).locator('[data-act="rollback"]').click();
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
+  await expect(t.marker).toHaveAttribute("aria-valuenow", "1");
+  await t.marker.focus();
+  await page.keyboard.press("ArrowRight");
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost - ROOM.wall));
+  await page.keyboard.press("End");
+  await t.exact("Active", String(ACTIVE_ALL));
+  await page.keyboard.press("Home");
+  await t.exact("Active", String(ROOM_TOTAL));
+  await expect(t.marker).toHaveAttribute("aria-valuenow", "0");
+  await expect(t.marker).toHaveAttribute("aria-valuetext", /Before the first step/);
+  await page.keyboard.press("ArrowRight");
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
+  await page.keyboard.press("ArrowLeft");
+  await t.exact("Active", String(ROOM_TOTAL));
+  await page.keyboard.press("End");
+  await t.exact("Active", String(ACTIVE_ALL));
+});
+
+test("E2E-55 11 deleting the middle step returns only its points; dismissing the confirmation changes nothing", async ({ page }) => {
+  const t = tl(page);
+  await t.threeSteps();
+  t.mode.answer = "dismiss";
+  await t.card(1).hover();
+  await t.card(1).locator('[data-act="delete"]').click();
+  await expect.poll(() => t.dialogs.length).toBe(1);
+  expect(t.dialogs[0]).toContain('Remove step "Cluster 2"');
+  expect(t.dialogs[0]).toContain("Its 40 points come back");
+  await expect(t.cards).toHaveCount(3);
+  await t.exact("Active", String(ACTIVE_ALL));
+  t.mode.answer = "accept";
+  await t.card(1).hover();
+  await t.card(1).locator('[data-act="delete"]').click();
+  await expect(t.cards).toHaveCount(2);
+  await t.exact("Active", String(ACTIVE_ALL + ROOM.wall)); // the wall is back; the box step and the noise step still delete
+  await expect(t.card(0)).toHaveAttribute("title", /^Box delete, 27 points/);
+  await expect(t.card(1)).toContainText(String(ROOM.noise));
+  await expect(t.marker).toHaveAttribute("aria-valuenow", "2");
+  await expect(page.locator("#unsaved-badge")).toHaveText("Unsaved edits");
+  // keyboard: Delete on a focused step removes it (with the confirmation) and never fires the global Apply
+  const before = await page.evaluate(() => (window as unknown as { __editor: { state: () => { session: { counts: { active: number } } } } }).__editor.state().session.counts.active);
+  t.dialogs.length = 0;
+  t.mode.answer = "dismiss";
+  await t.card(1).focus();
+  await page.keyboard.press("Delete");
+  await expect.poll(() => t.dialogs.length).toBe(1);
+  await expect(t.cards).toHaveCount(2);
+  expect(await page.evaluate(() => (window as unknown as { __editor: { state: () => { session: { counts: { active: number } } } } }).__editor.state().session.counts.active)).toBe(before);
+  t.mode.answer = "accept";
+  await t.card(1).focus();
+  await page.keyboard.press("Backspace");
+  await expect(t.cards).toHaveCount(1);
+  await t.exact("Active", String(ACTIVE_ALL + ROOM.wall + ROOM.noise));
+});
+
+test("E2E-56 11 applying while rolled back asks first: dismiss changes nothing, accept discards the greyed steps", async ({ page }) => {
+  const t = tl(page);
+  await t.threeSteps();
+  await t.card(0).hover();
+  await t.card(0).locator('[data-act="rollback"]').click();
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
+  await t.boxAt(-1, 4.5, 2.5, 1, 10, 5);
+  await t.exact("Candidates", String(ROOM.wall));
+  t.mode.answer = "dismiss";
+  await t.ctl("apply").click();
+  await expect.poll(() => t.dialogs.length).toBe(1);
+  expect(t.dialogs[0]).toBe("Applying a new deletion discards the 2 rolled-back step(s) after the marker (they cannot be redone). Continue?");
+  await expect(t.cards).toHaveCount(3);
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
+  await expect(t.marker).toHaveAttribute("aria-valuenow", "1");
+  t.mode.answer = "accept";
+  await t.ctl("apply").click();
+  await expect(t.cards).toHaveCount(2);
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost - ROOM.wall));
+  await expect(t.card(1)).toContainText(String(ROOM.wall));
+  await expect(t.card(1)).not.toHaveClass(/greyed/);
+  await expect(t.ctl("redo")).toBeDisabled(); // nothing to redo any more
+});
+
+test("E2E-57 11 rename by double-click on the name, by the pencil and by F2; the icon double-click highlights nothing new", async ({ page }) => {
+  const t = tl(page);
+  await t.threeSteps();
+  await t.card(1).locator(".step-label").dblclick();
+  const input = t.card(1).locator("input.step-rename");
+  await expect(input).toBeFocused();
+  await input.fill("Wall");
+  await input.press("Enter");
+  await expect(t.card(1).locator(".step-label")).toHaveText("Wall");
+  await expect(t.card(1)).toHaveAttribute("title", /^Wall delete, 40 points/);
+  expect((await stepLayer(page)).visible).toBe(false); // the double-click did not toggle a highlight
+  await t.card(0).hover();
+  await t.card(0).locator('[data-act="rename"]').click();
+  await t.card(0).locator("input.step-rename").fill("Ghost");
+  await t.card(0).locator("input.step-rename").press("Enter");
+  await expect(t.card(0).locator(".step-label")).toHaveText("Ghost");
+  await t.card(2).focus();
+  await page.keyboard.press("F2");
+  await t.card(2).locator("input.step-rename").fill("Noise");
+  await page.keyboard.press("Escape");
+  await expect(t.card(2).locator(".step-label")).not.toHaveText("Noise"); // Esc cancels
+  await page.keyboard.press("F2");
+  await t.card(2).locator("input.step-rename").fill("Noise");
+  await page.locator("#viewport").click({ position: { x: 5, y: 5 } }); // blur commits
+  await expect(t.card(2).locator(".step-label")).toHaveText("Noise");
+  expect((await sidsOf(page)).entries.map((e) => e.name)).toEqual(["Ghost", "Wall", "Noise"]);
+  // clearing the name goes back to the default label
+  await t.card(1).locator(".step-label").dblclick();
+  await t.card(1).locator("input.step-rename").fill("");
+  await t.card(1).locator("input.step-rename").press("Enter");
+  await expect(t.card(1).locator(".step-label")).toHaveText("Cluster 2");
+  // double-click on the icon highlights twice (on, off): net nothing
+  await t.card(0).locator(".step-icon").dblclick();
+  await page.mouse.move(5, 5);
+  await expect.poll(async () => (await stepLayer(page)).visible).toBe(false);
+  await expect(t.cards).toHaveCount(3);
+  await t.exact("Active", String(ACTIVE_ALL)); // a name changes no count
+});
+
+test("E2E-58 11 the strip survives save and reopen (names, order, marker, counts) and an export after a rollback holds exactly the active steps' result", async ({ page }, testInfo) => {
+  const t = tl(page);
+  await t.threeSteps();
+  await t.card(0).locator(".step-label").dblclick();
+  await t.card(0).locator("input.step-rename").fill("Ghost block");
+  await t.card(0).locator("input.step-rename").press("Enter");
+  await t.card(1).hover();
+  await t.card(1).locator('[data-act="rollback"]').click(); // marker after step 2: the noise step is greyed
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost - ROOM.wall));
+  const [dl] = await Promise.all([page.waitForEvent("download"), t.ctl("save-session").click()]);
+  const path = testInfo.outputPath("steps.pcdsession");
+  await dl.saveAs(path);
+  const before = await sidsOf(page);
+  await page.locator("#file-input").setInputFiles({ name: "other.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
+  await t.exact("Active", String(TOTAL));
+  await expect(t.cards).toHaveCount(0);
+  await page.locator("#file-input").setInputFiles({ name: "steps.pcdsession", mimeType: "application/octet-stream", buffer: readFileSync(path) });
+  await t.exact("Original", String(ROOM_TOTAL));
+  await expect(t.cards).toHaveCount(3);
+  const after = await sidsOf(page);
+  expect(after).toEqual(before);
+  expect(after.entries.map((e) => e.name)).toEqual(["Ghost block", null, null]);
+  await expect(t.card(0).locator(".step-label")).toHaveText("Ghost block");
+  await expect(t.marker).toHaveAttribute("aria-valuenow", "2");
+  await expect(t.card(2)).toHaveClass(/greyed/);
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost - ROOM.wall));
+  // export while rolled back: exactly the cloud minus the box step and the cluster step
+  await t.ctl("export").click();
+  const [ex] = await Promise.all([page.waitForEvent("download"), t.ctl("export-go").click()]);
+  const exPath = testInfo.outputPath("rolled.pcd");
+  await ex.saveAs(exPath);
+  const rows = parsePcd(readFileSync(exPath)).rows;
+  const room = parsePcd(roomPcd()).rows;
+  const rowKey = (r: number[]) => r.map(Math.fround).join(","); // the export is float32
+  const inGhost = (r: number[]) => r[0] >= 2 && r[0] <= 4 && r[1] >= 12 && r[1] <= 14 && r[2] >= 1 && r[2] <= 3;
+  const isWall = (r: number[]) => r[0] === -1 && r[1] >= 0 && r[1] <= 9 && r[2] >= 1 && r[2] <= 4;
+  const expected = room.filter((r) => !inGhost(r) && !isWall(r)).map(rowKey).sort();
+  expect(rows.length).toBe(ROOM_TOTAL - ROOM.ghost - ROOM.wall);
+  expect(rows.map(rowKey).sort()).toEqual(expected);
+});
