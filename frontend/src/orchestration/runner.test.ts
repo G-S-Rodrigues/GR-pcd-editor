@@ -35,6 +35,7 @@ function setup(opts: { op?: "replace" | "add" } = {}) {
         }),
     ),
     refreshState: vi.fn(async () => undefined),
+    beaconCancel: vi.fn((_id: string) => undefined),
   };
   const runner = createRunner(store, api);
   const editBox = (x: number) => {
@@ -266,5 +267,21 @@ describe("cluster reacts to parameter changes and partial results (F-04, F-07)",
     expect(canApply(t.store.get())).toBe(true);
     t.store.set({ candidate: candidateFixture({ cluster: cluster(false) }) });
     expect(canApply(t.store.get())).toBe(false);
+  });
+
+  it("UI-151 pagehide beacons a cancel for the in-flight job only", async () => {
+    const t = setup();
+    t.runner.onPageHide();
+    expect(t.api.beaconCancel).not.toHaveBeenCalled();
+    t.editBox(1);
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    expect(t.polls).toHaveLength(1);
+    t.runner.onPageHide();
+    expect(t.api.beaconCancel).toHaveBeenCalledWith(t.polls[0].id);
+    t.polls[0].resolve({ candidate: null });
+    await flush();
+    t.runner.onPageHide();
+    expect(t.api.beaconCancel).toHaveBeenCalledTimes(1);
   });
 });

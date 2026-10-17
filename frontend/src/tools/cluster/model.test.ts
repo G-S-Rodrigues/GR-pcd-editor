@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { candidateFixture } from "../../testing/fixtures";
 import {
   CLUSTER_LIMIT_TEXT,
+  MEMORY_GUARD_TEXT,
   clusterErrorText,
   clusterLimitText,
   clusterPanel,
@@ -81,5 +82,11 @@ describe("cluster partial results (F-04)", () => {
     expect(clusterLimitText(done)).toBeNull();
     expect(clusterLimitText(candidateFixture())).toBeNull();
     expect(clusterLimitText(null)).toBeNull();
+  });
+
+  it("UI-150 memory_guard has its own text; radius_too_small keeps the server message with the minimum", () => {
+    expect(clusterErrorText("memory_guard")).toBe(MEMORY_GUARD_TEXT);
+    expect(MEMORY_GUARD_TEXT).toMatch(/memory/);
+    expect(clusterErrorText("radius_too_small")).toBeNull();
   });
 });

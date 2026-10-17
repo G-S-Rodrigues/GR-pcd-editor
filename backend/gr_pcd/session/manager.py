@@ -34,7 +34,7 @@ class Download:
 class SessionManager:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self.jobs = JobManager()
+        self.jobs = JobManager(orphan_s=settings.job_orphan_seconds)
         self.session: EditingSession | None = None
         self.downloads: dict[str, Download] = {}
         self.uploads = UploadRegistry()

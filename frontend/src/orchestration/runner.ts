@@ -11,6 +11,8 @@ export interface RunnerApi {
   submitSelection(body: unknown): Promise<{ id: string }>;
   submitCandidate(cloudRevision: number): Promise<{ id: string }>;
   cancelJob(id: string): Promise<unknown>;
+  /** Best-effort cancel that survives the page closing (navigator.sendBeacon). */
+  beaconCancel?(id: string): void;
   poll(
     id: string,
     opts: { signal?: AbortSignal; onProgress?: (p: number | null, m: string | null) => void },
@@ -174,6 +176,10 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
         store.set({ draft: false });
         paramsDebounce.call(selectionNow);
       } else if ((s.session?.selection.count ?? 0) > 0) paramsDebounce.call(candidateNow);
+    },
+    /** The page is going away: ask the server to stop the in-flight job (the server also sweeps unpolled jobs). */
+    onPageHide(): void {
+      if (jobId) api.beaconCancel?.(jobId);
     },
     /** Drops the in-flight job and any pending timers (selection cleared, new file, ...). */
     reset(): void {

@@ -311,7 +311,7 @@ def build_router(manager: SessionManager, settings: Settings) -> APIRouter:
 
     @router.get("/jobs/{job_id}")
     def get_job(job_id: str):
-        job = manager.jobs.get(job_id)
+        job = manager.jobs.get(job_id, touch=True)
         if job is None:
             raise NotFoundError("no such job")
         return job.to_dict()

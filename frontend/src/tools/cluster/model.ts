@@ -59,8 +59,12 @@ export function clusterLimitText(c: Candidate | null): string | null {
   return `Stopped at ${(cl.limit ?? 0).toLocaleString("en-US")} points; raise Max points or clear the field for no limit`;
 }
 
+export const MEMORY_GUARD_TEXT =
+  "The server ran short of memory and stopped the search to keep your session. Try a larger radius or a smaller region.";
+
+/** Texts that replace the server message; null keeps the server's own (radius_too_small names the minimum radius). */
 export const clusterErrorText = (code: string): string | null =>
-  code === "component_limit_reached" ? CLUSTER_LIMIT_TEXT : null;
+  code === "component_limit_reached" ? CLUSTER_LIMIT_TEXT : code === "memory_guard" ? MEMORY_GUARD_TEXT : null;
 
 export function clusterPanel(c: Candidate | null): { label: string; value: string }[] {
   const cl = c?.cluster as

@@ -15,6 +15,8 @@ class Cancelled(Exception):
 class CancelToken:
     def __init__(self) -> None:
         self._event = threading.Event()
+        # optional watchdog (e.g. the job memory guard), run by every check()
+        self.guard: Callable[[], None] | None = None
 
     def cancel(self) -> None:
         self._event.set()
@@ -26,6 +28,8 @@ class CancelToken:
     def check(self) -> None:
         if self._event.is_set():
             raise Cancelled()
+        if self.guard is not None:
+            self.guard()
 
 
 def chunked_mask(

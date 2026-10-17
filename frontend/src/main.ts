@@ -70,9 +70,11 @@ const runner = createRunner(store, {
   submitSelection: (b) => api.submitSelection(b as api.SelectionBody),
   submitCandidate: (rev) => api.submitCandidate(rev),
   cancelJob: (id) => postJson(`/api/jobs/${id}/cancel`),
+  beaconCancel: (id) => void navigator.sendBeacon(`/api/jobs/${id}/cancel`),
   poll: (id, opts) => pollJob(id, opts),
   refreshState,
 });
+window.addEventListener("pagehide", () => runner.onPageHide());
 const editor = createEditor(
   store,
   {

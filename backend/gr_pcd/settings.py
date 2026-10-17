@@ -23,6 +23,7 @@ class Settings:
     public_port: int = 8080
     upload_reserve_bytes: int = 256 * 1024**2
     download_ttl_seconds: int = 3600
+    job_orphan_seconds: float = 20.0
 
     @classmethod
     def from_env(cls) -> "Settings":

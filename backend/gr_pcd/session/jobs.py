@@ -1,6 +1,9 @@
 """In-memory job manager: one worker, cooperative cancellation."""
 
+import errno
+import logging
 import threading
+import time
 import uuid
 from collections import OrderedDict
 from collections.abc import Callable
@@ -12,9 +15,14 @@ from gr_pcd.editing.cluster import ComponentLimitReached
 from gr_pcd.editing.errors import EditError
 from gr_pcd.geometry.errors import GeometryError
 from gr_pcd.pcd.errors import PcdError
+from gr_pcd.session.budget import make_rss_guard
+
+log = logging.getLogger(__name__)
 
 MAX_JOBS = 200
 SUPERSEDED = ("select", "candidate")
+JOB_ORPHAN_S = 20.0
+SWEEP_TICK_S = 1.0
 
 
 class Stale(Exception):
@@ -31,6 +39,7 @@ class Job:
     result: dict | None = None
     error: dict | None = None
     token: CancelToken = field(default_factory=CancelToken)
+    last_seen: float = 0.0
 
     def to_dict(self) -> dict:
         out = {
@@ -63,13 +72,40 @@ _DONE = ("complete", "cancelled", "stale", "failed")
 
 
 class JobManager:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        orphan_s: float = JOB_ORPHAN_S,
+        clock: Callable[[], float] = time.monotonic,
+        sweep: bool = True,
+    ) -> None:
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="job")
         self._jobs: OrderedDict[str, Job] = OrderedDict()
         self._lock = threading.Lock()
+        self._orphan_s = orphan_s
+        self._clock = clock
+        self._stop = threading.Event()
+        if sweep:
+            threading.Thread(
+                target=self._sweeper, name="job-sweeper", daemon=True
+            ).start()
+
+    def _sweeper(self) -> None:
+        while not self._stop.wait(SWEEP_TICK_S):
+            self.sweep()
+
+    def sweep(self) -> None:
+        """Cancel select/candidate jobs whose client stopped polling."""
+        now = self._clock()
+        for job in list(self._jobs.values()):
+            if (
+                job.kind in SUPERSEDED
+                and job.status in ("queued", "running")
+                and now - job.last_seen > self._orphan_s
+            ):
+                self.cancel(job.id)
 
     def submit(self, kind: str, fn: Callable[[JobContext], dict]) -> Job:
-        job = Job(id=uuid.uuid4().hex, kind=kind)
+        job = Job(id=uuid.uuid4().hex, kind=kind, last_seen=self._clock())
         with self._lock:
             self._jobs[job.id] = job
             while len(self._jobs) > MAX_JOBS:
@@ -85,6 +121,7 @@ class JobManager:
             job.status = "cancelled"
             return
         job.status = "running"
+        job.token.guard = make_rss_guard()
         try:
             job.result = fn(JobContext(job))
             job.progress = 1.0
@@ -103,12 +140,29 @@ class JobManager:
         except (PcdError, EditError, GeometryError) as exc:
             job.error = {"code": exc.code, "message": exc.message}
             job.status = "failed"
-        except Exception as exc:  # noqa: BLE001 - reported to the client
-            job.error = {"code": "internal_error", "message": str(exc)}
+        except OSError as exc:
+            if exc.errno == errno.ENOSPC:
+                job.error = {
+                    "code": "storage_full",
+                    "message": "the work volume has no space left",
+                }
+            else:
+                log.exception("job %s (%s) failed", job.id, job.kind)
+                job.error = {
+                    "code": "internal_error",
+                    "message": "internal error",
+                }
+            job.status = "failed"
+        except Exception:
+            log.exception("job %s (%s) failed", job.id, job.kind)
+            job.error = {"code": "internal_error", "message": "internal error"}
             job.status = "failed"
 
-    def get(self, job_id: str) -> Job | None:
-        return self._jobs.get(job_id)
+    def get(self, job_id: str, touch: bool = False) -> Job | None:
+        job = self._jobs.get(job_id)
+        if job is not None and touch:
+            job.last_seen = self._clock()
+        return job
 
     def cancel(self, job_id: str) -> Job | None:
         job = self.get(job_id)
@@ -129,5 +183,6 @@ class JobManager:
                 job.token.cancel()
 
     def shutdown(self) -> None:
+        self._stop.set()
         self.cancel_all()
         self._pool.shutdown(wait=False)
