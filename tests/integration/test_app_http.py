@@ -53,3 +53,31 @@ def test_be_13_no_remote_asset_urls() -> None:
         text = js.read_text()
         assert 'import("http' not in text
         assert 'from"http' not in text
+
+
+def test_sec_01_security_headers_on_every_response(tmp_path: Path) -> None:
+    client = make_client(create_app(_settings(tmp_path)))
+    responses = [
+        client.get("/"),
+        client.get("/health"),
+        client.get("/api/session"),
+        client.get("/nope.js"),
+        client.get("/api/session", headers={"Host": "evil.com"}),  # 403 guard
+    ]
+    assert [r.status_code for r in responses][-1] == 403
+    for r in responses:
+        h = r.headers
+        csp = h["content-security-policy"]
+        for part in (
+            "default-src 'self'",
+            "script-src 'self'",
+            "frame-ancestors 'none'",
+            "object-src 'none'",
+            "base-uri 'none'",
+            "form-action 'none'",
+        ):
+            assert part in csp, (r.url, csp)
+        assert "unsafe-eval" not in csp
+        assert h["x-frame-options"] == "DENY"
+        assert h["x-content-type-options"] == "nosniff"
+        assert h["referrer-policy"] == "no-referrer"

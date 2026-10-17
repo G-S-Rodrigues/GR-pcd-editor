@@ -14,7 +14,7 @@
 - **Rendered/LOD point:** A display representation that may be sampled for
   responsiveness without changing authoritative data.
 - **Work volume:** The Docker volume that holds uploads, exports, session
-  archives and live session data; it is the only thing the container writes.
+  archives and live session data; it is the only persistent thing the container writes (plus a 256 MiB `/tmp` tmpfs).
 - **Session:** Versioned editing state, optionally including the source cloud,
   that can be reopened later.
 - **Candidate:** The exact set of points a previewed selection would delete,

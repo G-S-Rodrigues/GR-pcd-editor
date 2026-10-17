@@ -1162,3 +1162,19 @@ test("E2E-31 7c3 the legend has a Protection slab chip and Pick floor point hint
   await page.keyboard.press("3"); // Front (key 3)
   await expect(page.locator("#modebar")).not.toContainText("so the floor is a line");
 });
+
+test("E2E-34 9 security headers reach the browser and the page frames nothing", async ({ page, request }) => {
+  const r = await request.get("/");
+  expect(r.headers()["x-frame-options"]).toBe("DENY");
+  expect(r.headers()["x-content-type-options"]).toBe("nosniff");
+  expect(r.headers()["content-security-policy"]).toContain("frame-ancestors 'none'");
+  const violations: string[] = [];
+  page.on("console", (m) => {
+    if (/content security policy/i.test(m.text())) violations.push(m.text());
+  });
+  await page.goto("/");
+  await page.locator("#file-input").setInputFiles({ name: "synthetic.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
+  await expect(page.locator('#statusbar [data-status="Original"]')).toContainText(String(TOTAL));
+  await page.waitForTimeout(500);
+  expect(violations).toEqual([]);
+});

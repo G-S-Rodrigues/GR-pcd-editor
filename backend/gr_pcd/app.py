@@ -5,6 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from gr_pcd.api.errors import install_error_handlers
 from gr_pcd.api.origin import LocalOriginGuard
 from gr_pcd.api.routes import build_router
+from gr_pcd.api.security import SecurityHeaders
 from gr_pcd.files.cleanup import sweep_startup
 from gr_pcd.health import readiness_problems
 from gr_pcd.session.manager import SessionManager
@@ -18,6 +19,7 @@ def create_app(settings: Settings) -> FastAPI:
     app.state.manager = manager
     install_error_handlers(app)
     app.add_middleware(LocalOriginGuard, settings=settings)
+    app.add_middleware(SecurityHeaders)  # added last: outermost, covers 403s
 
     @app.get("/health")
     def health() -> JSONResponse:

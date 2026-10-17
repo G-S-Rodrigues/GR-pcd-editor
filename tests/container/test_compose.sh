@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Container-tier checks CTR-01..05, CTR-07, CTR-08 and CTR-09 (CTR-06 went with the mounted folder).
+# Container-tier checks CTR-01..05, CTR-07, CTR-08, CTR-09 and CTR-10 (CTR-06 went with the mounted folder).
 # Needs docker, curl and python3.
 set -euo pipefail
 
@@ -111,6 +111,17 @@ if [ "$bounds" = "6442450944 6442450944 256 true" ]; then
     pass CTR-09
 else
     fail CTR-09 "mem/swap/pids/init = '$bounds'"
+fi
+
+# CTR-10 /tmp tmpfs is capped (counts against the memory limit) and the app sends security headers
+tmpfs=$(docker inspect -f '{{index .HostConfig.Tmpfs "/tmp"}}' "$cid" 2>/dev/null || true)
+hdrs=$(curl -sS -D - -o /dev/null "http://127.0.0.1:$port/" 2>/dev/null | tr -d '\r' | tr 'A-Z' 'a-z' || true)
+if printf '%s' "$tmpfs" | grep -q 'size=256m' \
+    && printf '%s' "$hdrs" | grep -q "^content-security-policy: default-src 'self'" \
+    && printf '%s' "$hdrs" | grep -q '^x-frame-options: deny'; then
+    pass CTR-10
+else
+    fail CTR-10 "tmpfs='$tmpfs' or security headers missing"
 fi
 
 # CTR-08 public port reaches the app, Host guard, no mounted listing
