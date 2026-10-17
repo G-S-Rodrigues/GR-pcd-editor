@@ -117,6 +117,10 @@ const tools = createToolInteraction(canvas, store, size, {
   onToolChanged: () => runner.onToolChanged(),
   protectionEdit: (fn) => protection.edit(fn),
   notify: note,
+  filterEdit: (axis, side, value, o) => filters.editSide(axis, side, value, o),
+});
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") tools.cancel(); // an arrow drag in progress goes back to its start value
 });
 installDebugHook(canvas, store, size, () => viewport?.drawnCount() ?? 0);
 if (viewport) {

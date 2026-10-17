@@ -1,3 +1,4 @@
+import { filterPlanes } from "../filterboxes/plane";
 import { project } from "../pick/ray";
 import type { AppState } from "../state/app";
 import type { Store } from "../state/store";
@@ -28,6 +29,16 @@ export function installDebugHook(canvas: HTMLCanvasElement, store: Store<AppStat
         const p = project(s.camera, h.anchor, zero, size());
         return p ? [{ id: h.id, x: r.left + p.x, y: r.top + p.y }] : [];
       });
+    },
+    /** Page position (px) of each shown filter plane's arrow base and tip, so a real mouse can grab the arrow. */
+    filterPlanes: (): { key: string; base: { x: number; y: number } | null; tip: { x: number; y: number } | null }[] => {
+      const s = store.get();
+      const r = canvas.getBoundingClientRect();
+      const at = (p: Vec3) => {
+        const q = project(s.camera, p, [0, 0, 0], size());
+        return q ? { x: r.left + q.x, y: r.top + q.y } : null;
+      };
+      return filterPlanes(s, size().h).map((p) => ({ key: p.key, base: at(p.base), tip: at(p.tip) }));
     },
   };
   (window as unknown as { __editor: typeof hook }).__editor = hook;

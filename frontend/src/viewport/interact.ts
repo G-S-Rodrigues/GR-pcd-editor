@@ -1,3 +1,6 @@
+import { type FilterDrag, beginFilterDrag, moveFilterDrag } from "../filterboxes/drag";
+import { filterPlanes } from "../filterboxes/plane";
+import { type FilterEdit, type Side, sideValue } from "../inspector/filters";
 import { type ProtectionEdit, type ProtectionModel, dragPlane } from "../inspector/protection";
 import { project } from "../pick/ray";
 import { intersectZPlane, screenRay } from "../pick/screenray";
@@ -16,17 +19,29 @@ type Drag =
   | { kind: "box"; state: DragState }
   | { kind: "vertex"; index: number }
   | { kind: "rect"; p0: { x: number; y: number }; depth: Depth; narrow: BoxModel | null }
+  | { kind: "filter"; d: FilterDrag; key: string; last: number; moved: boolean }
   | { kind: "plane"; key: PlaneKey; model0: ProtectionModel; anchor: Vec3; ray0: ReturnType<typeof screenRay> };
 
 export interface ToolInteractionDeps {
   onToolChanged: () => void;
   protectionEdit: (fn: (m: ProtectionModel) => ProtectionEdit) => ProtectionEdit;
   notify: (text: string) => void;
+  /** Sets one display-filter side from an arrow drag (live while dragging, committed on release). */
+  filterEdit?: (axis: "x" | "y" | "z", side: Side, value: number, opts: { live: boolean }) => FilterEdit;
   /** True while the hold-R key is down (acts like the Rect toggle). */
   rectHeld?: () => boolean;
 }
 
 const PICK_PX = 10;
+
+/** Screen distance from point p to the segment a-b. */
+function segDist(p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const l2 = dx * dx + dy * dy;
+  const t = l2 === 0 ? 0 : Math.min(1, Math.max(0, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
 
 /** Plane anchors (handles on the protection slab) at the XY centre of the active bounds. */
 export function planeAnchors(s: AppState): { key: PlaneKey; anchor: Vec3 }[] {
@@ -60,6 +75,14 @@ export function createToolInteraction(
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   };
   const zero: Vec3 = [0, 0, 0];
+  const setInteracting = (key: string | null) => store.update((st) => ({ ...st, filterUi: { ...st.filterUi, interacting: key } }));
+  const finishFilter = (value: number | null) => {
+    if (drag?.kind !== "filter") return;
+    const d = drag.d;
+    drag = null;
+    if (value !== null) deps.filterEdit?.(d.axis, d.side, value, { live: false });
+    setInteracting(null);
+  };
 
   return {
     pointerDown(e: PointerEvent): boolean {
@@ -68,6 +91,27 @@ export function createToolInteraction(
       const p = px(e);
       const vp = size();
       const ray = screenRay(s.camera, vp, p.x, p.y);
+      if (deps.filterEdit) {
+        // a shown filter plane's arrow wins over everything else; with no plane shown nothing changes
+        let best: { key: string; d: FilterDrag; value: number } | null = null;
+        let bd = PICK_PX;
+        for (const pl of filterPlanes(s, vp.h)) {
+          const a = project(s.camera, pl.base, zero, vp);
+          const t = project(s.camera, pl.tip, zero, vp);
+          if (!a || !t) continue;
+          const dist = segDist(p, a, t);
+          if (dist > bd) continue;
+          const d = beginFilterDrag({ axis: pl.axis, side: pl.side, value: pl.value, ray, origin: pl.centre });
+          if (!d) continue;
+          bd = dist;
+          best = { key: pl.key, d, value: pl.value };
+        }
+        if (best) {
+          drag = { kind: "filter", d: best.d, key: best.key, last: best.value, moved: false };
+          setInteracting(best.key);
+          return true;
+        }
+      }
       if (s.tool === "box" && (s.rect || deps.rectHeld?.())) {
         const axis = rectAxis(s.camera);
         const depth = axis === null ? null : rectDepth(axis, s.session.active_bounds, s.slice);
@@ -118,7 +162,17 @@ export function createToolInteraction(
       const s = store.get();
       const p = px(e);
       const ray = screenRay(s.camera, size(), p.x, p.y);
-      if (drag.kind === "rect") {
+      if (drag.kind === "filter") {
+        const b = s.session?.bounds;
+        const d = drag.d;
+        if (!b) return true;
+        const other = sideValue(s.tools.filters, b, d.axis, d.side === "min" ? "max" : "min");
+        const v = moveFilterDrag(d, ray, b, other, e.shiftKey);
+        if (v === null) return true;
+        drag.last = v;
+        drag.moved = true;
+        deps.filterEdit?.(d.axis, d.side, v, { live: true });
+      } else if (drag.kind === "rect") {
         const box = drag.narrow ? narrowBox(drag.narrow, s.camera, size(), drag.p0, p) : rectToBox(s.tools.box, s.camera, size(), drag.p0, p, drag.depth);
         if (box) {
           store.update((st) => ({ ...st, tools: { ...st.tools, box } }));
@@ -140,7 +194,7 @@ export function createToolInteraction(
           store.update((st) => ({ ...st, tools: { ...st.tools, polygon: r.state } }));
           deps.onToolChanged();
         } else if (r.message) deps.notify(`${r.message}; the vertex was not moved`);
-      } else {
+      } else if (drag.kind === "plane") {
         const d = drag;
         const delta = translateDelta(d.ray0, ray, d.anchor, [0, 0, 1]);
         deps.protectionEdit(() => ({ ok: true, model: dragPlane(d.model0, d.key.which, d.key.edge, delta) }));
@@ -150,8 +204,16 @@ export function createToolInteraction(
 
     pointerUp(): boolean {
       const was = drag !== null;
+      if (drag?.kind === "filter") finishFilter(drag.moved ? drag.last : null);
       drag = null;
       return was;
+    },
+
+    /** Esc during an arrow drag: restore the start value and stop. Returns whether a drag was cancelled. */
+    cancel(): boolean {
+      if (drag?.kind !== "filter") return false;
+      finishFilter(drag.d.start);
+      return true;
     },
 
     /** A click (no drag) while drawing a polygon adds a vertex on the pivot's Z plane. */

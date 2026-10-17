@@ -7,6 +7,7 @@ import type { RenderData } from "../render/parse";
 import { PALETTE } from "../colour/palette";
 import { type AppState } from "../state/app";
 import type { Store } from "../state/store";
+import { createFilterPlanesOverlay } from "./filterplanes3d";
 import { createToolsOverlay } from "./tools3d";
 import { FOV_DEG, eyePosition, halfHeight } from "../view/camera";
 import { slicePlanes } from "../view/slice";
@@ -108,6 +109,7 @@ export function createViewport(
   scene.add(pivot);
 
   const overlay = createToolsOverlay(scene);
+  const filterOverlay = createFilterPlanesOverlay(scene);
 
   const persp = new THREE.PerspectiveCamera(FOV_DEG, 1, 0.1, 1000);
   const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, -1, 1);
@@ -235,6 +237,7 @@ export function createViewport(
     pivot.scale.setScalar(Math.max(halfHeight(cam) * 0.03, 1e-9));
     pivot.visible = s.session !== null;
     overlay.update(s, origin as [number, number, number], h, w);
+    filterOverlay.update(s, origin as [number, number, number], h);
 
     renderer.setScissorTest(false);
     renderer.setViewport(0, 0, w, h);

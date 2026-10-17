@@ -7,6 +7,7 @@ import { boxHandles } from "../tools/box/handles";
 import { defaultBox } from "../tools/box/model";
 import { defaultCamera } from "../view/camera";
 import { applyPreset } from "../view/presets";
+import { filterPlanes } from "../filterboxes/plane";
 import { createToolInteraction } from "./interact";
 
 const vp = { w: 800, h: 600 };
@@ -105,3 +106,76 @@ describe("rectangle select routing (7b-1)", () => {
   });
 });
 
+
+describe("filter arrow routing (part 10)", () => {
+  const filterSetup = (over: { z?: { enabled: boolean; min: number; max: number }; collapsed?: boolean } = {}) => {
+    const store = createAppStore();
+    const camera = applyPreset({ ...defaultCamera(), distance: 30, target: [5, 5, 5] as Vec3 }, "front");
+    store.set({ session: sessionFixture(), camera, tool: "box" });
+    store.update((s) => ({
+      ...s,
+      tools: { ...s.tools, filters: { ...s.tools.filters, z: over.z ?? { enabled: true, min: 2, max: 8 } } },
+      filterUi: { ...s.filterUi, collapsed: over.collapsed ? { "z-max": true } : ({} as Record<string, boolean>) },
+    }));
+    const edits: [string, string, number, boolean][] = [];
+    const tools = createToolInteraction(canvas, store, () => vp, {
+      onToolChanged: () => undefined,
+      protectionEdit: (() => undefined) as never,
+      notify: () => undefined,
+      filterEdit: (axis, side, value, o) => {
+        edits.push([axis, side, value, o.live]);
+        return { ok: true } as never;
+      },
+    });
+    const plane = filterPlanes(store.get(), vp.h).find((p) => p.key === "z-max");
+    const tip = plane ? project(camera, plane.tip, [0, 0, 0], vp)! : null;
+    const ev = (x: number, y: number) => ({ button: 0, clientX: x, clientY: y, shiftKey: false, altKey: false }) as unknown as PointerEvent;
+    return { store, tools, tip, ev, edits };
+  };
+
+  it("UI-203 an arrow of a shown plane is grabbed first, even over box handles, and drags the side live then commits", () => {
+    const t = filterSetup();
+    expect(t.tip).not.toBeNull();
+    expect(t.tools.pointerDown(t.ev(t.tip!.x, t.tip!.y))).toBe(true);
+    expect(t.tools.dragging()).toBe(true);
+    expect(t.store.get().filterUi.interacting).toBe("z-max");
+    t.tools.pointerMove(t.ev(t.tip!.x, t.tip!.y - 30));
+    const live = t.edits.at(-1)!;
+    expect(live.slice(0, 2)).toEqual(["z", "max"]);
+    expect(live[3]).toBe(true);
+    expect(live[2]).toBeGreaterThan(8);
+    t.tools.pointerUp();
+    expect(t.edits.at(-1)![3]).toBe(false);
+    expect(t.store.get().filterUi.interacting).toBeNull();
+  });
+
+  it("UI-203 with the plane hidden (collapsed or inactive) the same spot is not grabbed, so the camera orbits", () => {
+    const shown = filterSetup();
+    const spot = shown.tip!;
+    for (const over of [{ collapsed: true }, { z: { enabled: false, min: 0, max: 10 } }]) {
+      const t = filterSetup(over);
+      expect(t.tools.pointerDown(t.ev(spot.x, spot.y))).toBe(false);
+      expect(t.tools.dragging()).toBe(false);
+      expect(t.edits).toEqual([]);
+    }
+  });
+
+  it("UI-203 Esc cancels: the start value is restored with one committed edit", () => {
+    const t = filterSetup();
+    t.tools.pointerDown(t.ev(t.tip!.x, t.tip!.y));
+    t.tools.pointerMove(t.ev(t.tip!.x, t.tip!.y - 30));
+    t.tools.cancel();
+    expect(t.edits.at(-1)).toEqual(["z", "max", 8, false]);
+    expect(t.tools.dragging()).toBe(false);
+    expect(t.store.get().filterUi.interacting).toBeNull();
+    expect(t.tools.pointerUp()).toBe(false);
+  });
+
+  it("UI-203 an arrow drag in an end-on view is not started", () => {
+    const t = filterSetup();
+    t.store.update((s) => ({ ...s, camera: applyPreset(s.camera, "top") }));
+    const top = filterPlanes(t.store.get(), vp.h).find((p) => p.key === "z-max")!;
+    const at = project(t.store.get().camera, top.tip, [0, 0, 0], vp)!;
+    expect(t.tools.pointerDown(t.ev(at.x, at.y))).toBe(false);
+  });
+});

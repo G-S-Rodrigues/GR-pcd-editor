@@ -1338,3 +1338,82 @@ test("E2E-41 10 the boxes never overlap each other, the ViewCube, the legend or 
     await page.screenshot({ path: `/out/${shot}` });
   }
 });
+
+// ---- part 10: filter planes and arrows (E2E-38, E2E-35b, E2E-42)
+type PlanesHook = { filterPlanes: () => { key: string; base: { x: number; y: number } | null; tip: { x: number; y: number } | null }[] };
+const planesNow = (page: import("@playwright/test").Page) => page.evaluate(() => (window as unknown as { __editor: PlanesHook }).__editor.filterPlanes());
+const cameraNow = (page: import("@playwright/test").Page) =>
+  page.evaluate(() => {
+    const c = (window as unknown as { __editor: { state: () => { camera: { orientation: number[]; target: number[] } } } }).__editor.state().camera;
+    return JSON.stringify([c.orientation, c.target]);
+  });
+
+test("E2E-38 10 a real-mouse drag on a filter plane's arrow filters live and leaves the camera alone; collapsed, the same drag orbits", async ({ page }) => {
+  const { exact, ctl, setNum } = helpers(page);
+  await openRoom(page, exact);
+  await page.keyboard.press("3"); // Front: Z is vertical on screen
+  await page.waitForTimeout(400);
+  const rows = roomValid();
+  await setNum("filter-z-max", 2);
+  await exact("Displayed", String(rows.filter((r) => r[2] <= 2).length));
+  const arrow = async () => {
+    const p = (await planesNow(page)).find((q) => q.key === "z-max")!;
+    return { x: (p.base!.x + p.tip!.x) / 2, y: (p.base!.y + p.tip!.y) / 2, tipUp: p.tip!.y < p.base!.y };
+  };
+  const a = await arrow();
+  expect(a.tipUp).toBe(true); // the arrow points to the hidden side (above the Z max cut)
+  const cam0 = await cameraNow(page);
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.mouse.move(a.x, a.y + 30, { steps: 6 });
+  expect(await cameraNow(page)).toBe(cam0); // the camera stays put during the drag
+  await page.mouse.up();
+  const v = (await filtersNow(page)).f.z.max;
+  expect(v).toBeLessThan(2 - 0.05);
+  await exact("Displayed", String(rows.filter((r) => r[2] <= v).length));
+  expect(await cameraNow(page)).toBe(cam0);
+  // Esc mid-drag restores the value
+  const a2 = await arrow();
+  await page.mouse.move(a2.x, a2.y);
+  await page.mouse.down();
+  await page.mouse.move(a2.x, a2.y + 20, { steps: 4 });
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect.poll(async () => (await filtersNow(page)).f.z.max, { timeout: 5000 }).toBeCloseTo(v, 9);
+  // collapsed: the plane is gone and the same drag orbits
+  await ctl("filter-z-max-toggle").click();
+  expect((await planesNow(page)).map((q) => q.key)).not.toContain("z-max");
+  await page.mouse.move(a2.x, a2.y);
+  await page.mouse.down();
+  await page.mouse.move(a2.x + 40, a2.y + 10, { steps: 6 });
+  await page.mouse.up();
+  expect(await cameraNow(page)).not.toBe(cam0);
+  expect((await filtersNow(page)).f.z.max).toBeCloseTo(v, 9);
+});
+
+test("E2E-35b 10 focusing an inactive box shows its plane; leaving it with an inactive value hides it", async ({ page }) => {
+  const { exact, ctl } = helpers(page);
+  await openRoom(page, exact);
+  await page.keyboard.press("3");
+  expect((await planesNow(page)).map((q) => q.key)).toEqual([]);
+  await ctl("filter-x-min").focus();
+  await expect.poll(async () => (await planesNow(page)).map((q) => q.key)).toEqual(["x-min"]);
+  await ctl("filter-x-min").evaluate((e) => (e as HTMLInputElement).blur());
+  await expect.poll(async () => (await planesNow(page)).map((q) => q.key)).toEqual([]);
+});
+
+test("E2E-42 10 the slice view does not hide the filter planes and changes no count", async ({ page }) => {
+  const { exact, ctl, setNum, num } = helpers(page);
+  await openRoom(page, exact);
+  await page.keyboard.press("3");
+  await setNum("filter-z-max", 2);
+  const rows = roomValid();
+  await exact("Displayed", String(rows.filter((r) => r[2] <= 2).length));
+  const before = await num("Displayed");
+  await setNum("slice-centre", 10);
+  await setNum("slice-thickness", 1);
+  await page.waitForTimeout(600);
+  expect((await planesNow(page)).map((q) => q.key)).toContain("z-max");
+  expect(await num("Displayed")).toBe(before);
+  await ctl("slice-off").click();
+});

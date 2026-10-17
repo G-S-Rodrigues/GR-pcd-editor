@@ -5,10 +5,9 @@ import { boxCorners } from "../tools/box/model";
 import { HANDLE_CROSS_PX, boxHandles } from "../tools/box/handles";
 import { DRAFT_OUTLINE, draftOutline } from "../tools/draft";
 import { pxPerUnit } from "../view/pointsize";
-import { rightVector, upVector } from "../view/camera";
 import { planeAnchors } from "./interact";
+import { clearGroup, drawHeavy, drawLines } from "./lines3d";
 
-const mat = (hex: number) => new THREE.LineBasicMaterial({ color: hex, depthTest: false });
 const COL = { handle: 0xff9f1c, ring: 0x6ec1ff, poly: 0x7be07b, plane: 0xc77dff /* = PALETTE.slab */, seed: 0xff4d6d };
 
 /** Overlay for the editing tools: box wireframe and handles, polygon outline, protection planes, cluster seed. */
@@ -17,41 +16,9 @@ export function createToolsOverlay(scene: THREE.Scene) {
   group.renderOrder = 9;
   scene.add(group);
 
-  const lines = (pts: Vec3[], pairs: [number, number][], colour: number, origin: Vec3) => {
-    const a = new Float32Array(pairs.length * 6);
-    pairs.forEach(([i, j], k) => {
-      for (let c = 0; c < 3; c++) {
-        a[k * 6 + c] = pts[i][c] - origin[c];
-        a[k * 6 + 3 + c] = pts[j][c] - origin[c];
-      }
-    });
-    const g = new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(a, 3));
-    const l = new THREE.LineSegments(g, mat(colour));
-    l.renderOrder = 9;
-    l.frustumCulled = false;
-    group.add(l);
-  };
-  /** Heavier outline: WebGL lines are 1 px, so the shape is drawn three times, half a pixel apart across the view. */
-  const heavy = (pts: Vec3[], pairs: [number, number][], colour: number, origin: Vec3, s: AppState, viewH: number) => {
-    const u = 0.6 / pxPerUnit(s.camera, Math.max(viewH, 1));
-    const r = rightVector(s.camera);
-    const up = upVector(s.camera);
-    for (const [dx, dy] of [[0, 0], [1, 0], [0, 1]] as const) {
-      const o: Vec3 = [
-        origin[0] - u * (r[0] * dx + up[0] * dy),
-        origin[1] - u * (r[1] * dx + up[1] * dy),
-        origin[2] - u * (r[2] * dx + up[2] * dy),
-      ];
-      lines(pts, pairs, colour, o);
-    }
-  };
-  const clear = () => {
-    for (const c of [...group.children]) {
-      (c as THREE.LineSegments).geometry.dispose();
-      ((c as THREE.LineSegments).material as THREE.Material).dispose();
-      group.remove(c);
-    }
-  };
+  const lines = (pts: Vec3[], pairs: [number, number][], colour: number, origin: Vec3) => drawLines(group, pts, pairs, colour, origin);
+  const heavy = (pts: Vec3[], pairs: [number, number][], colour: number, origin: Vec3, s: AppState, viewH: number) => drawHeavy(group, pts, pairs, colour, origin, s, viewH);
+  const clear = () => clearGroup(group);
 
   return {
     update(s: AppState, origin: Vec3, viewH = 720, viewW = viewH * 1.5): void {

@@ -94,6 +94,6 @@ export const MOUSE_DOCS: { keys: string; label: string }[] = [
   { keys: "Middle/right-drag, Shift+left-drag", label: "Pan" },
   { keys: "Wheel", label: "Zoom" },
   { keys: "Click a ViewCube face", label: "Look along that axis; edges and corners look diagonally" },
-  { keys: "Drag a filter box grip", label: "Set that side of the display filter along the view; Shift is finer, Esc cancels the drag" },
+  { keys: "Drag a filter box grip, or the arrow on its plane", label: "Set that side of the display filter along the view; Shift is finer, Esc cancels the drag" },
   { keys: "Arrow keys on a focused grip", label: "Nudge the filter value (Shift finer, PageUp/PageDown ten steps, Home/End the cloud bounds)" },
 ];
