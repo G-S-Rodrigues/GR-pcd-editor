@@ -142,3 +142,27 @@ MIXED_VALID = [True, True, False, False, False, True]
 
 def xyz_fields(typ=4):
     return [("x", "F", typ, 1), ("y", "F", typ, 1), ("z", "F", typ, 1)]
+
+
+# Scene: FLOOR ids 0..99 (x, y in 0..9, z=0); GHOST ids 100..126 (x, y in
+# 2..4, z in 1..3); ids 127 (x NaN) and 128 (z +inf) are invalid XYZ.
+SCENE_FIELDS = xyz_fields(4) + [("intensity", "F", 4, 1)]
+
+
+def scene_rows():
+    rows = [
+        (float(x), float(y), 0.0, 0.5) for x in range(10) for y in range(10)
+    ]
+    rows += [
+        (float(x), float(y), float(z), 1.5)
+        for x in range(2, 5)
+        for y in range(2, 5)
+        for z in range(1, 4)
+    ]
+    rows += [(NAN, 0.0, 0.0, 2.0), (0.0, 0.0, INF, 2.0)]
+    return rows
+
+
+SCENE_FLOOR = set(range(100))
+SCENE_GHOST = set(range(100, 127))
+SCENE_INVALID = {127, 128}
