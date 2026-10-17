@@ -28,7 +28,7 @@ test("UI-23 status lists labelled counts in order", () => {
   expect(m.Candidates).toBe("43");
   expect(m["Invalid (active/total)"]).toBe("2 / 5");
   expect(m["Deleted"]).toBe("10.00%");
-  expect(m.Rendered).toBe("Rendered 300 of 800 eligible (sampled to budget)");
+  expect(m.Rendered).toBe("300 of 800 eligible (sampled to budget)");
   expect(m.Unsaved).toBe("No");
   expect(items.map((i) => i.label)).not.toContain("Total");
 });
@@ -68,4 +68,25 @@ test("UI-170 Pick floor point in a non-face view says which view makes the floor
   expect(modeIndicator({ ...persp, camera: applyPreset(persp.camera, "left") })).not.toContain(HINT);
   expect(modeIndicator({ ...initialState(), interaction: "pick-pivot" })).not.toContain(HINT);
   expect(modeIndicator({ ...initialState(), interaction: "orbit" })).not.toContain(HINT);
+});
+
+test("UI-183 the Rendered value does not repeat its own label (m-4)", () => {
+  const v = (count: number, eligible: number) =>
+    statusItems({ ...initialState(), session: session(), render: { count, eligible } as never, budget: 1000 }).find((i) => i.label === "Rendered")?.value;
+  expect(v(993000, 993000)).toBe("all 993,000 eligible points");
+  expect(v(100, 993000)).toBe("100 of 993,000 eligible (sampled to budget)");
+});
+
+test("UI-184 Protected shows an update marker until the server has the protection the panel holds (m-13)", () => {
+  const server = session({ protection: { global: { enabled: false, min: 0, max: 0 }, operation: { mode: "inherit", local: null, acknowledge_override: false } } } as never);
+  const base = { ...initialState(), session: server };
+  const protectedOf = (s: typeof base) => statusItems(s).find((i) => i.label === "Protected")?.value;
+  expect(protectedOf(base)).toBe("7");
+  const picked = { ...base, tools: { ...base.tools, protection: { ...base.tools.protection, global: { enabled: true, min: -0.05, max: 0.05 } } } };
+  expect(protectedOf(picked)).toBe("updating…");
+  const synced = { ...picked, session: session({ protection: { global: { enabled: true, min: -0.05, max: 0.05 }, operation: { mode: "inherit", local: null, acknowledge_override: false } } } as never) };
+  expect(protectedOf(synced)).toBe("7");
+  // a disabled panel with other numbers is not pending
+  const off = { ...base, tools: { ...base.tools, protection: { ...base.tools.protection, global: { enabled: false, min: 5, max: 6 } } } };
+  expect(protectedOf(off)).toBe("7");
 });

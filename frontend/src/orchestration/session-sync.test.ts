@@ -91,3 +91,14 @@ test("UI-156b no session open locally: nothing to compare", async () => {
   await t.sync.check();
   expect(t.refresh).not.toHaveBeenCalled();
 });
+
+test("UI-182 check() answers whether this tab is still on the server's session (m-1)", async () => {
+  const same = setup(sessionFixture({ session_id: "A" }));
+  expect(await same.sync.check()).toBe(true);
+  expect(same.clear).not.toHaveBeenCalled();
+  const other = setup(sessionFixture({ session_id: "B" }));
+  expect(await other.sync.check()).toBe(false);
+  expect(other.store.get().session?.session_id).toBe("B");
+  const gone = setup(null);
+  expect(await gone.sync.check()).toBe(false);
+});

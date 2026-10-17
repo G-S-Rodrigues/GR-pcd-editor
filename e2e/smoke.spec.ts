@@ -32,7 +32,7 @@ test("open a cloud, navigate, pick a pivot, colour, read counts", async ({ page 
     await expect(status.locator('[data-status="Displayed"]')).toContainText(String(FLOOR + GHOST));
     await expect(status.locator('[data-status="Candidates"]')).toContainText("—");
     await expect(status.locator('[data-status="Invalid (active/total)"]')).toContainText("1 / 1");
-    await expect(status.locator('[data-status="Rendered"]')).toContainText(`Rendered all ${FLOOR + GHOST} eligible points`);
+    await expect(status.locator('[data-status="Rendered"]')).toContainText(`all ${FLOOR + GHOST} eligible points`);
     await page.waitForTimeout(500);
     const drawn = await page.locator("#viewport").screenshot();
     expect(Buffer.compare(blank, drawn)).not.toBe(0);
@@ -376,7 +376,7 @@ test("E2E-10 7a filter redraws the canvas and a filter change never leaves a sta
   await setNum("filter-z-min", 0.5);
   await setNum("filter-z-max", 10);
   await exact("Displayed", String(GHOST));
-  await expect(stat("Rendered")).toContainText(`Rendered all ${GHOST} eligible points`, { timeout: 15000 });
+  await expect(stat("Rendered")).toContainText(`all ${GHOST} eligible points`, { timeout: 15000 });
   await exact("Selected", String(GHOST));
   await exact("Candidates", String(GHOST));
   await expect(ctl("apply")).toBeEnabled({ timeout: 15000 });
@@ -694,10 +694,10 @@ test("E2E-18b 7b1 draw budget: Rendered equals the budget exactly, the default d
   await page.goto("/");
   await page.locator("#file-input").setInputFiles({ name: "grid.pcd", mimeType: "application/octet-stream", buffer: Buffer.from(`${head.join("\n")}\n${rows.join("\n")}\n`) });
   await exact("Original", "150,000");
-  await expect(stat("Rendered")).toHaveText("Rendered: Rendered all 150,000 eligible points", { timeout: 20000 });
+  await expect(stat("Rendered")).toHaveText("Rendered: all 150,000 eligible points", { timeout: 20000 });
   await expect(page.locator('[data-control="budget"] option', { hasText: "Auto (max)" })).toHaveCount(1);
   await page.locator('[data-control="budget"]').selectOption("100000");
-  await expect(stat("Rendered")).toHaveText("Rendered: Rendered 100,000 of 150,000 eligible (sampled to budget)", { timeout: 20000 });
+  await expect(stat("Rendered")).toHaveText("Rendered: 100,000 of 150,000 eligible (sampled to budget)", { timeout: 20000 });
 });
 
 const PRESET_LOOK_UP: Record<string, { look: number[]; up: number[] }> = {
@@ -1177,4 +1177,13 @@ test("E2E-34 9 security headers reach the browser and the page frames nothing", 
   await expect(page.locator('#statusbar [data-status="Original"]')).toContainText(String(TOTAL));
   await page.waitForTimeout(500);
   expect(violations).toEqual([]);
+});
+
+test("E2E-33 9 accessibility basics: the canvas is labelled and notices are a live region (m-9)", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#viewport")).toHaveAttribute("role", "img");
+  await expect(page.locator("#viewport")).toHaveAttribute("aria-label", /point cloud/i);
+  await expect(page.locator("#notices")).toHaveAttribute("aria-live", "polite");
+  await page.locator("#file-input").setInputFiles({ name: "broken.pcd", mimeType: "application/octet-stream", buffer: Buffer.from("not a cloud\n") });
+  await expect(page.locator("#notices .notice.error")).toHaveAttribute("role", "alert");
 });

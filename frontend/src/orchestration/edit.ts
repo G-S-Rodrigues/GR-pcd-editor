@@ -13,6 +13,8 @@ export interface EditApi {
   clearSelection(cloudRevision: number): Promise<SessionState>;
   refreshState(): Promise<void>;
   refreshRender(): Promise<boolean>;
+  /** False when another tab replaced or changed the session (already reloaded, with a notice). */
+  checkSession?(): Promise<boolean>;
 }
 
 /** Deleting half of the active points or more is almost never intended: ask first. */
@@ -52,24 +54,38 @@ export function createEditor(store: Store<AppState>, api: EditApi, confirmFn: (m
     }
   }
 
+  let applying = false; // a second click while the first Apply is in flight is ignored
+
+  async function applyOnce(): Promise<void> {
+    const s = store.get();
+    if (!canApply(s) || !s.candidate) return;
+    const c = s.candidate;
+    const tool = s.tool === "none" ? "selection" : s.tool;
+    const active = s.session?.counts.active ?? 0;
+    if (applyNeedsConfirm(c.candidates, active)) {
+      // ask about the session the server really has: a replaced one reloads with its own notice instead
+      if (api.checkSession && !(await api.checkSession())) return;
+      const pct = Math.round((c.candidates / active) * 100);
+      const fmt = (n: number) => n.toLocaleString("en-US");
+      if (!confirmFn(`This deletes ${fmt(c.candidates)} of ${fmt(active)} points (${pct} %). It can be undone. Continue?`)) return;
+    }
+    await guarded(async () => {
+      const state = await api.apply(rev(), c.candidate_id, `Delete ${c.candidates} points (${tool})`);
+      await afterChange(state, {
+        tools: { ...store.get().tools, protection: resetOperation(store.get().tools.protection) },
+      });
+    });
+  }
+
   return {
     async apply(): Promise<void> {
-      const s = store.get();
-      if (!canApply(s) || !s.candidate) return;
-      const c = s.candidate;
-      const tool = s.tool === "none" ? "selection" : s.tool;
-      const active = s.session?.counts.active ?? 0;
-      if (applyNeedsConfirm(c.candidates, active)) {
-        const pct = Math.round((c.candidates / active) * 100);
-        const fmt = (n: number) => n.toLocaleString("en-US");
-        if (!confirmFn(`This deletes ${fmt(c.candidates)} of ${fmt(active)} points (${pct} %). It can be undone. Continue?`)) return;
+      if (applying) return;
+      applying = true;
+      try {
+        await applyOnce();
+      } finally {
+        applying = false;
       }
-      await guarded(async () => {
-        const state = await api.apply(rev(), c.candidate_id, `Delete ${c.candidates} points (${tool})`);
-        await afterChange(state, {
-          tools: { ...store.get().tools, protection: resetOperation(store.get().tools.protection) },
-        });
-      });
     },
     async undo(): Promise<void> {
       if (!store.get().session?.history.can_undo || store.get().job.busy) return;

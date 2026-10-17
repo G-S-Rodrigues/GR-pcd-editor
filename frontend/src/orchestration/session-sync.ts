@@ -23,14 +23,15 @@ export function createSessionSync(
   return {
     /** A request answered 409 session_changed. */
     onChanged: () => reload(REPLACED_TEXT),
-    /** On window focus: compare the server's session with ours. */
-    async check(): Promise<void> {
+    /** On window focus and before a bulk-delete confirm: true when the server's session is still ours. */
+    async check(): Promise<boolean> {
       const mine = store.get().session;
-      if (!mine) return;
+      if (!mine) return true;
       const state = await getState().catch(() => undefined);
-      if (state === undefined) return;
-      if (state && state.session_id === mine.session_id && state.revision.cloud === mine.revision.cloud) return;
+      if (state === undefined) return true; // unreachable: let the real request report it
+      if (state && state.session_id === mine.session_id && state.revision.cloud === mine.revision.cloud) return true;
       await reload(CHANGED_TEXT);
+      return false;
     },
   };
 }

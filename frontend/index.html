@@ -85,13 +85,13 @@
     <div id="body">
       <aside id="tools"><div id="start-banner" class="banner" hidden></div></aside>
       <div id="stage">
-        <canvas id="viewport"></canvas>
+        <canvas id="viewport" role="img" aria-label="Point cloud viewport: 3D view of the open cloud. Orbit by dragging, zoom with the wheel; the tools and counts are in the side panels."></canvas>
         <div id="viewcube"></div>
         <div id="legend"></div>
         <div id="empty">Open a .pcd file to begin.<br />Drop one anywhere, or use “Open from this computer”.</div>
         <div id="progress"></div>
         <div id="webgl-notice" hidden></div>
-        <div id="notices"></div>
+        <div id="notices" aria-live="polite" aria-relevant="additions text"></div>
         <div id="help-overlay" role="dialog" aria-label="Controls help"></div>
       </div>
       <aside id="inspector"><div id="fileinfo"></div><div id="editpanels"></div></aside>

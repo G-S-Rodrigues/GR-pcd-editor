@@ -144,4 +144,42 @@ describe("editor actions", () => {
     expect(small.confirm).not.toHaveBeenCalled();
     expect(small.api.apply).toHaveBeenCalledTimes(1);
   });
+  it("UI-180 the session is checked before the bulk-delete confirm: a replaced session never asks about the old one (m-1)", async () => {
+    const t = setup();
+    const checkSession = vi.fn(async () => false); // another tab replaced the session; the sync already reloaded
+    const ed = createEditor(t.store, { ...t.api, checkSession }, t.confirm);
+    t.store.set({ candidate: candidateFixture({ candidates: 450 }) });
+    await ed.apply();
+    expect(checkSession).toHaveBeenCalledTimes(1);
+    expect(t.confirm).not.toHaveBeenCalled();
+    expect(t.api.apply).not.toHaveBeenCalled();
+    checkSession.mockResolvedValueOnce(true);
+    await ed.apply();
+    expect(t.confirm).toHaveBeenCalledTimes(1);
+    expect(t.api.apply).toHaveBeenCalledTimes(1);
+    // small deletes ask for nothing and do not pay for the check
+    const small = setup();
+    const check2 = vi.fn(async () => true);
+    const ed2 = createEditor(small.store, { ...small.api, checkSession: check2 }, small.confirm);
+    small.store.set({ candidate: candidateFixture({ candidates: 10 }) });
+    await ed2.apply();
+    expect(check2).not.toHaveBeenCalled();
+  });
+
+  it("UI-181 a double click on Apply sends one delete and no stale-preview notice (m-6)", async () => {
+    const t = setup();
+    let release: (s: ReturnType<typeof sessionFixture>) => void = () => undefined;
+    t.api.apply.mockImplementationOnce(() => new Promise((res) => (release = res)));
+    t.store.set({ candidate: candidateFixture({ candidates: 42 }) });
+    const first = t.ed.apply();
+    await t.ed.apply(); // the second click while the first is in flight
+    release(sessionFixture({ revision: { cloud: 4, params: 5 } }));
+    await first;
+    expect(t.api.apply).toHaveBeenCalledTimes(1);
+    expect(t.store.get().notices).toEqual([]);
+    // a later apply works again
+    t.store.set({ candidate: candidateFixture({ candidates: 42, cloud_revision: 4, params_revision: 5 }) });
+    await t.ed.apply();
+    expect(t.api.apply).toHaveBeenCalledTimes(2);
+  });
 });

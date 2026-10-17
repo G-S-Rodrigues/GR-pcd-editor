@@ -13,6 +13,11 @@ export function lodLabel({ count, eligible }: LodInfo): string {
   return `Rendered ${fmt(count)} of ${fmt(eligible)} eligible (sampled to budget)`;
 }
 
+/** The same text without the leading "Rendered": for the status item that is already labelled Rendered. */
+export function lodValue(info: LodInfo): string {
+  return lodLabel(info).replace(/^Rendered /, "");
+}
+
 /** Points drawn while the camera moves (orbit, pan, wheel). */
 export const LOD_INTERACT = 150_000;
 /** At most this many selected or protected points are kept on top of the stride sample while moving. */

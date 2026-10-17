@@ -26,3 +26,9 @@ test("UI-174 no control or tooltip refers to a mounted folder", () => {
   const ids = [...describeControls().map((c) => c.id), ...Object.keys(TOOLTIPS)];
   expect(ids.filter((id) => id.startsWith("open-mounted") || id.startsWith("mounted-"))).toEqual([]);
 });
+
+test("UI-187 the Rect tooltip says it stays armed and what a handle drag does (m-7)", () => {
+  const t = TOOLTIPS["box-rect"] ?? "";
+  expect(t).toMatch(/stays on until you click Rect again/);
+  expect(t).toMatch(/starts on a box handle/);
+});

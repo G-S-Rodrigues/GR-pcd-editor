@@ -1,4 +1,4 @@
-import { lodLabel } from "../render/lod";
+import { lodValue } from "../render/lod";
 import { rectAxis } from "../tools/box/rect";
 import type { AppState } from "../state/app";
 
@@ -8,6 +8,15 @@ export interface StatusItem {
 }
 
 const n = (v: number) => v.toLocaleString("en-US");
+
+/** True while the protection the panel holds (e.g. just picked on the floor) has not come back from the server yet. */
+function protectionPending(s: AppState): boolean {
+  const server = s.session?.protection?.global;
+  if (!server) return false;
+  const mine = s.tools.protection.global;
+  if (mine.enabled !== server.enabled) return true;
+  return mine.enabled && (mine.min !== (server.min ?? 0) || mine.max !== (server.max ?? 0));
+}
 
 export function statusItems(s: AppState): StatusItem[] {
   const session = s.session;
@@ -29,14 +38,14 @@ export function statusItems(s: AppState): StatusItem[] {
     { label: "Active", value: n(c.active) },
     { label: "Displayed", value: n(c.displayed) },
     { label: "Selected", value: n(c.selected) },
-    { label: "Protected", value: n(c.protected) },
+    { label: "Protected", value: protectionPending(s) ? "updating…" : n(c.protected) },
     { label: "Candidates", value: current ? n(current.candidates) : "—" },
     { label: "Invalid (active/total)", value: `${n(c.invalid_active)} / ${n(c.invalid_total)}` },
     { label: "Deleted", value: `${pct.toFixed(2)}%` },
     {
       label: "Rendered",
       value: s.render
-        ? lodLabel({ count: s.render.count, eligible: s.render.eligible, budget: s.budget })
+        ? lodValue({ count: s.render.count, eligible: s.render.eligible, budget: s.budget })
         : "—",
     },
     { label: "Unsaved", value: session.unsaved ? "Yes" : "No" },

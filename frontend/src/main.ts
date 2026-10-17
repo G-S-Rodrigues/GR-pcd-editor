@@ -94,6 +94,7 @@ const editor = createEditor(
     clearSelection: api.clearSelection,
     refreshState,
     refreshRender: () => refresher.refresh(),
+    checkSession: () => sessionSync.check(),
   },
   (m) => window.confirm(m),
 );
@@ -297,7 +298,7 @@ store.select(
   (notices) => {
     noticeBox.replaceChildren(
       ...notices.map((n) =>
-        h("div", { class: `notice ${n.level}`, role: "alert", title: "Click to dismiss", onclick: () => dismissNotice(store, n.id) }, n.text),
+        h("div", { class: `notice ${n.level}`, role: n.level === "error" ? "alert" : "status", title: "Click to dismiss", onclick: () => dismissNotice(store, n.id) }, n.text),
       ),
     );
   },

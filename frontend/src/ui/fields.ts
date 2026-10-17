@@ -36,7 +36,7 @@ export const FIELD_SPECS: FieldSpec[] = [
   f("box-reset", "Reset box", "box", "Replace the box by a unit box at the orbit pivot"),
   f("box-fit-cloud", "Fit cloud", "box", "Make the box exactly cover the active cloud"),
   f("box-fit-selection", "Fit selection", "box", "Make the box exactly cover the current candidate"),
-  f("box-rect", "Rect", "box", "Rectangle select: drag a rectangle in a face view (ViewCube) to make the box; the depth is the slice slab or the whole cloud. Shift+drag narrows the current box instead. Hold R for the same"),
+  f("box-rect", "Rect", "box", "Rectangle select: drag a rectangle in a face view (ViewCube) to make the box; the depth is the slice slab or the whole cloud. Shift+drag narrows the current box instead. Hold R for the same. Rect stays on until you click Rect again (then Shift+drag pans); a drag that starts on a box handle still draws the rectangle while Rect is on"),
   f("box-fit-view", "Fit to view", "box", "Make the box cover everything visible in this face view, across the whole depth of the cloud"),
   f("box-fit-displayed", "Fit displayed", "box", "Make the box cover the displayed points: the active cloud narrowed by the display filter"),
   f("gizmo-snap", "Snap", "box", "Snap handle drags to the step sizes below; hold Shift for fine (x0.1) drags"),
