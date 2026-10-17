@@ -19,6 +19,9 @@ export interface RunnerApi {
   refreshState(): Promise<void>;
 }
 
+export type ParamsKind = "filter" | "scope" | "protection";
+export const OUTDATED_TEXT = "The display filter changed since this selection was made. Select again to refresh the preview.";
+
 export const TOOL_DEBOUNCE_MS = 250;
 export const PARAMS_DEBOUNCE_MS = 300;
 const IDLE = { busy: false, progress: null, message: null } as const;
@@ -93,6 +96,10 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
       }
       if (code === "cancelled") return;
       store.set({ candidate: null });
+      if (code === "selection_outdated") {
+        addNotice(store, "warn", code, OUTDATED_TEXT);
+        return;
+      }
       const text = clusterErrorText(code) ?? (e instanceof Error ? e.message : "The preview failed");
       addNotice(store, "error", code || "preview_failed", text);
     }
@@ -150,13 +157,22 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
       if (!isDraftOp(s.op) && buildSelection(s).ok) selectionNow();
       else if ((s.session?.selection.count ?? 0) > 0) candidateNow();
     },
-    /** Filter or protection changed on the server: the candidate is obsolete. */
-    paramsChanged(): void {
+    /**
+     * Filter, scope or protection changed: the candidate is obsolete at once. A live tool re-selects
+     * (the stored selection was built under the old filter or scope); protection alone only needs a new candidate.
+     */
+    paramsChanged(kind: ParamsKind = "protection"): void {
       supersede();
       toolDebounce.cancel();
       paramsDebounce.cancel();
       store.set({ candidate: null, job: { ...IDLE } });
-      if ((store.get().session?.selection.count ?? 0) > 0) paramsDebounce.call(candidateNow);
+      const s = store.get();
+      const live = s.op === "replace" && s.tool !== "none" && buildSelection(s).ok;
+      const reselect = live && kind !== "protection";
+      if (reselect) {
+        store.set({ draft: false });
+        paramsDebounce.call(selectionNow);
+      } else if ((s.session?.selection.count ?? 0) > 0) paramsDebounce.call(candidateNow);
     },
     /** Drops the in-flight job and any pending timers (selection cleared, new file, ...). */
     reset(): void {

@@ -17,6 +17,7 @@ import { h } from "./dom";
 /** What the panels need from the rest of the app. */
 export interface PanelActions {
   toolChanged: () => void;
+  scopeChanged: () => void;
   filterEdit: (axis: Axis, patch: Partial<{ enabled: boolean; min: number; max: number }>) => { ok: boolean; error?: string };
   filterResetBounds: () => void;
   filterResetAll: () => void;
@@ -54,7 +55,7 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
       id: "scope-select",
       onchange: () => {
         store.set({ scope: scope.value as AppState["scope"] });
-        a.toolChanged();
+        a.scopeChanged();
       },
     },
     h("option", { value: "displayed", text: "Displayed" }),

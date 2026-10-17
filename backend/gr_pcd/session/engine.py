@@ -125,6 +125,10 @@ class EditingSession:
         self.edit_counter = 0
         self.candidate: Candidate | None = None
         self._last_cluster: dict | None = None
+        # the stored selection was made in scope `displayed` and the display
+        # filter changed since: it still holds points the filter now hides
+        self._selection_scope: str | None = None
+        self.scope_stale = False
         self._last_tool_text = "selection"
         self.lock = threading.RLock()
         self._display_cache: tuple[DisplayFilter, np.ndarray] | None = None
@@ -179,6 +183,7 @@ class EditingSession:
         self.edit_counter += 1
         self.unsaved = True
         self.candidate = None
+        self.scope_stale = False
         self._reset_operation_protection()
         self.clock.bump_cloud()
 
@@ -261,6 +266,12 @@ class EditingSession:
     def set_display_filter(self, filt: DisplayFilter) -> None:
         validate_filter(filt)
         with self.lock:
+            if (
+                filt != self.display_filter
+                and self._selection_scope == "displayed"
+                and self.selection.any()
+            ):
+                self.scope_stale = True
             self.display_filter = filt
             self.candidate = None
             self.clock.bump_params()
@@ -378,6 +389,8 @@ class EditingSession:
                 }
             )
             self._last_cluster = snap.get("cluster")
+            self._selection_scope = spec.scope
+            self.scope_stale = False
             self._last_tool_text = _tool_text(spec.tool)
             self.candidate = None
             self.clock.bump_params()
@@ -395,6 +408,12 @@ class EditingSession:
             protection = self.protection
             cluster = self._last_cluster
             tool_text = self._last_tool_text
+            if self.scope_stale:
+                raise EditError(
+                    "selection_outdated",
+                    "the display filter changed after this selection was "
+                    "made in scope displayed; select again",
+                )
         display = self._display(token)
         intervals = effective_intervals(protection)
         protected = protected_mask(self.xyz, self.valid, intervals)
@@ -440,6 +459,8 @@ class EditingSession:
             self.selection = _ro(np.zeros(self.cloud.n, dtype=bool))
             self.selection_ops = []
             self._last_cluster = None
+            self._selection_scope = None
+            self.scope_stale = False
             self.candidate = None
             self.clock.bump_params()
 

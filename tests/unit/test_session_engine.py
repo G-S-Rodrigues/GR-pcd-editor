@@ -309,3 +309,45 @@ def test_ses_filter_tool_includes_all_displayed(mgr):
     assert job.result["selected"] == 27
     assert job.result["candidate"]["selected_outside_display_filter"] == 0
     assert not (SCENE_INVALID & set(np.flatnonzero(s.selection).tolist()))
+
+
+def test_edt_40_filter_change_outdates_displayed_selection(mgr):
+    """F-02: a selection made in scope displayed is frozen under the old filter."""
+    from gr_pcd.geometry.box import BoxSpec
+
+    s = mgr.require()
+    everything = BoxSpec(center=(4.5, 4.5, 1.5), dimensions=(12, 12, 6))
+    job = select_box(mgr, everything, scope="displayed")
+    assert job.result["selected"] == 127
+    old = job.result["candidate"]["candidate_id"]
+    s.set_display_filter(DisplayFilter(z=AxisRange(True, 0.5, 9.0)))
+    # the stored selection still holds the hidden floor: no candidate may be built from it
+    cand = wait(mgr.submit_candidate())
+    assert cand.status == "failed"
+    assert cand.error["code"] == "selection_outdated"
+    with pytest.raises(StaleRevision):
+        s.apply(old, s.clock.cloud, None)
+    # selecting again under the new filter gives the truth (ghost only)
+    job = select_box(mgr, everything, scope="displayed")
+    assert job.result["candidate"]["candidates"] == 27
+    cid = job.result["candidate"]["candidate_id"]
+    s.apply(cid, s.clock.cloud, None)
+    assert deleted(s) == SCENE_GHOST
+    # undo/redo and clear drop the flag
+    s.undo(s.clock.cloud)
+    s.set_display_filter(DisplayFilter())
+    s.set_display_filter(DisplayFilter(z=AxisRange(True, 0.5, 9.0)))
+    s.clear_selection(s.clock.cloud)
+    assert wait(mgr.submit_candidate()).status == "complete"
+
+
+def test_edt_41_active_scope_selection_survives_filter_change(mgr):
+    from gr_pcd.geometry.box import BoxSpec
+
+    s = mgr.require()
+    everything = BoxSpec(center=(4.5, 4.5, 1.5), dimensions=(12, 12, 6))
+    select_box(mgr, everything, scope="active")
+    s.set_display_filter(DisplayFilter(z=AxisRange(True, 0.5, 9.0)))
+    job = wait(mgr.submit_candidate())
+    assert job.status == "complete"
+    assert job.result["selected_outside_display_filter"] == 100

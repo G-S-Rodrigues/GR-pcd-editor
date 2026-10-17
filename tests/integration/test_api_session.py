@@ -782,3 +782,29 @@ def test_api_43_unknown_attr_field(api):
     r = _render_attr(api, attr="nope")
     assert r.status_code == 422
     assert r.json()["error"]["code"] == "unknown_field"
+
+
+def test_api_50_filter_change_outdates_displayed_selection(api):
+    api.open()
+    everything = {
+        "type": "box",
+        "center": [4.5, 4.5, 1.5],
+        "dimensions": [12, 12, 6],
+    }
+    job = api.select_wait(everything, scope="displayed")
+    assert job["result"]["selected"] == 127
+    old = job["result"]["candidate"]["candidate_id"]
+    r = api.client.put(
+        "/api/session/display-filter",
+        json={"z": {"enabled": True, "min": 0.5, "max": 5}},
+    )
+    assert r.status_code == 200, r.text
+    fresh = api.client.post(
+        "/api/session/candidate", json={"cloud_revision": api.cloud()}
+    )
+    job = api.wait(fresh)
+    assert job["status"] == "failed"
+    assert job["error"]["code"] == "selection_outdated"
+    assert api.apply(old).status_code == 409
+    job = api.select_wait(everything, scope="displayed")
+    assert job["result"]["candidate"]["candidates"] == 27

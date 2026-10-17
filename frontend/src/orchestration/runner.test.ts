@@ -185,3 +185,58 @@ describe("runner", () => {
     expect(t.store.get().candidate?.candidate_id).toBe("one");
   });
 });
+
+describe("runner invalidation (F-01/F-02)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+  const withSelection = (t: ReturnType<typeof setup>, count = 127) =>
+    t.store.set({ session: sessionFixture({ selection: { count, ops: [] } }), candidate: candidateFixture({ candidates: count }) });
+
+  it("UI-100 a filter change with a live box clears the candidate and re-selects; the stale count never applies", async () => {
+    const t = setup();
+    withSelection(t);
+    t.runner.paramsChanged("filter");
+    expect(t.store.get().candidate).toBeNull();
+    expect(canApply(t.store.get())).toBe(false);
+    await vi.advanceTimersByTimeAsync(300);
+    await flush();
+    expect(t.api.submitSelection).toHaveBeenCalledTimes(1); // the selection, not only /candidate
+    expect(t.api.submitCandidate).not.toHaveBeenCalled();
+    expect(canApply(t.store.get())).toBe(false);
+    t.polls[0].resolve({ selected: 27, operand: 27, candidate: candidateFixture({ candidates: 27 }) });
+    await flush();
+    expect(t.store.get().candidate?.candidates).toBe(27);
+    expect(canApply(t.store.get())).toBe(true);
+  });
+
+  it("UI-101 a protection change with a live box still uses the candidate endpoint only; a scope change re-selects", async () => {
+    const t = setup();
+    withSelection(t, 5);
+    t.runner.paramsChanged("protection");
+    await vi.advanceTimersByTimeAsync(300);
+    await flush();
+    expect(t.api.submitCandidate).toHaveBeenCalledTimes(1);
+    expect(t.api.submitSelection).not.toHaveBeenCalled();
+    t.runner.paramsChanged("scope");
+    expect(t.store.get().candidate).toBeNull();
+    await vi.advanceTimersByTimeAsync(300);
+    await flush();
+    expect(t.api.submitSelection).toHaveBeenCalledTimes(1);
+  });
+
+  it("UI-102 a filter change with no live tool: the backend refuses the frozen selection; Apply stays off and the user is told", async () => {
+    const t = setup();
+    t.store.set({ tool: "none" });
+    withSelection(t, 127);
+    t.runner.paramsChanged("filter");
+    expect(canApply(t.store.get())).toBe(false);
+    await vi.advanceTimersByTimeAsync(300);
+    await flush();
+    expect(t.api.submitSelection).not.toHaveBeenCalled();
+    t.polls[0].reject(new ApiError(422, "selection_outdated", "backend text"));
+    await flush();
+    expect(t.store.get().candidate).toBeNull();
+    expect(canApply(t.store.get())).toBe(false);
+    expect(t.store.get().notices.map((n) => n.text).join(" ")).toMatch(/select again/i);
+  });
+});

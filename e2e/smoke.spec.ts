@@ -319,3 +319,77 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
   writeFileSync(testInfo.outputPath("done"), "ok");
   expect(errors).toEqual([]);
 });
+
+/** Shared helpers for the part 7 tests. */
+function helpers(page: import("@playwright/test").Page) {
+  const status = page.locator("#statusbar");
+  const stat = (name: string) => status.locator(`[data-status="${name}"]`);
+  const exact = (name: string, v: number | string) =>
+    expect(stat(name)).toHaveText(new RegExp(`^${name.replace(/[()/]/g, "\\$&")}: ${v}$`), { timeout: 15000 });
+  const num = async (name: string) => Number((await stat(name).innerText()).replace(/[^0-9]/g, ""));
+  const ctl = (id: string) => page.locator(`[data-control="${id}"]`);
+  const setNum = async (id: string, v: number) => {
+    await ctl(id).fill(String(v));
+    await ctl(id).press("Tab");
+  };
+  const boxEverything = async () => {
+    for (const [id, v] of [["box-center-x", 4.5], ["box-center-y", 4.5], ["box-center-z", 1.5], ["box-size-x", 12], ["box-size-y", 12], ["box-size-z", 6]] as const) {
+      await setNum(id, v);
+    }
+  };
+  return { stat, exact, num, ctl, setNum, boxEverything };
+}
+
+test("E2E-10 7a filter redraws the canvas and a filter change never leaves a stale candidate (F-01, F-02, scope note)", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await page.goto("/");
+  await page.locator("#file-input").setInputFiles({ name: "synthetic.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
+  const { stat, exact, num, ctl, setNum, boxEverything } = helpers(page);
+  await exact("Displayed", String(FLOOR + GHOST));
+  const activeBefore = await num("Active");
+  await ctl("tool-box").click();
+  await boxEverything();
+  await exact("Selected", String(FLOOR + GHOST));
+  await exact("Candidates", String(FLOOR + GHOST));
+  await page.waitForTimeout(500);
+  const unfiltered = await page.locator("#viewport").screenshot();
+
+  // watch every animation frame: Apply must never be enabled while a candidate larger than the displayed set is shown
+  await page.evaluate(() => {
+    const w = window as unknown as { __viol: string[] };
+    w.__viol = [];
+    const tick = () => {
+      const a = document.querySelector('[data-control="apply"]') as HTMLButtonElement | null;
+      const read = (n: string) => Number((document.querySelector(`[data-status="${n}"]`)?.textContent ?? "").replace(/[^0-9]/g, ""));
+      // scope Displayed: an appliable candidate can never exceed what is displayed
+      if (a && !a.disabled && read("Candidates") > read("Displayed")) w.__viol.push(`${read("Candidates")} > ${read("Displayed")}`);
+      requestAnimationFrame(tick);
+    };
+    tick();
+  });
+  await ctl("filter-z-enabled").check();
+  await setNum("filter-z-min", 0.5);
+  await setNum("filter-z-max", 10);
+  await exact("Displayed", String(GHOST));
+  await expect(stat("Rendered")).toContainText(`Rendered all ${GHOST} eligible points`, { timeout: 15000 });
+  await exact("Selected", String(GHOST));
+  await exact("Candidates", String(GHOST));
+  await expect(ctl("apply")).toBeEnabled({ timeout: 15000 });
+  await page.waitForTimeout(500);
+  const filtered = await page.locator("#viewport").screenshot();
+  expect(Buffer.compare(unfiltered, filtered)).not.toBe(0); // F-01: the floor is gone from the canvas
+  expect(await page.evaluate(() => (window as unknown as { __viol: string[] }).__viol)).toEqual([]);
+
+  await ctl("apply").click();
+  await exact("Active", String(activeBefore - GHOST)); // never 127 deleted
+  await ctl("undo").click();
+  await exact("Active", String(activeBefore));
+
+  // scope Active keeps the hidden floor selected and says so
+  await boxEverything();
+  await page.locator('[data-control="scope-select"]').selectOption("active");
+  await exact("Selected", String(FLOOR + GHOST));
+  await expect(page.locator("#scope-note")).toContainText(`${FLOOR} selected points are outside the display filter`, { timeout: 15000 });
+  expect(errors).toEqual([]);
+});

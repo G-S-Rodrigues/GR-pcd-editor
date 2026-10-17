@@ -14,6 +14,7 @@ import { type ProtectionModel, protectionFromState } from "./inspector/protectio
 import { createProtectionController } from "./inspector/protection-controller";
 import { createEditor, keyAction } from "./orchestration/edit";
 import { createRunner } from "./orchestration/runner";
+import { createParamsHook } from "./orchestration/params";
 import { startDrawing, cancelDrawing, closePolygon, emptyPolygon, enterTool } from "./tools/polygon/model";
 import { fitToBounds } from "./tools/box/model";
 import { applyPreset } from "./view/presets";
@@ -73,17 +74,15 @@ const editor = createEditor(
   },
   (m) => window.confirm(m),
 );
+const paramsHook = createParamsHook(runner, () => refresher.refresh());
 const filters = createFilterController(store, {
   putFilter: api.putFilter,
-  onParamsChanged: () => runner.paramsChanged(),
+  onParamsChanged: () => paramsHook("filter"),
   onError: (e) => addNotice(store, "error", "filter_failed", e instanceof Error ? e.message : "The filter could not be set"),
 });
 const protection = createProtectionController(store, {
   putProtection: api.putProtection,
-  onParamsChanged: () => {
-    runner.paramsChanged();
-    void refresher.refresh();
-  },
+  onParamsChanged: () => paramsHook("protection"),
   onError: (e) => addNotice(store, "error", "protection_failed", e instanceof Error ? e.message : "Protection could not be set"),
 });
 const note = (text: string) => addNotice(store, "warn", "tool_edit", text);
@@ -165,6 +164,7 @@ buildViewbar($("viewbar"), store, {
 buildStatusbar($("statusbar"), $("modebar"), store);
 const panelActions = {
   toolChanged: () => runner.onToolChanged(),
+  scopeChanged: () => runner.paramsChanged("scope"),
   filterEdit: (axis: "x" | "y" | "z", patch: Partial<{ enabled: boolean; min: number; max: number }>) => filters.edit(axis, enableDefaults(store.get().tools.filters, axis, patch, store.get().session?.bounds ?? null)),
   filterResetBounds: () => filters.resetToCloud(),
   filterResetAll: () => filters.resetAll(),

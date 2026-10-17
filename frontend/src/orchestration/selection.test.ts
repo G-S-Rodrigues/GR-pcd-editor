@@ -70,3 +70,11 @@ describe("selection builder", () => {
     expect(isDraftOp("invert")).toBe(false);
   });
 });
+
+describe("scope notice wiring (QA d6)", () => {
+  it("UI-104 scope Active with 10 selected outside the display filter shows the count, also after a filter change cleared the old candidate", () => {
+    const cand = candidateFixture({ selected_outside_display_filter: 10 });
+    expect(scopeNotice(base({ scope: "active", candidate: cand }))).toBe("10 selected points are outside the display filter");
+    expect(scopeNotice(base({ scope: "active", candidate: null }))).toBeNull();
+  });
+});
