@@ -196,6 +196,13 @@ main() {
         fi
         own=1 # same settings: a bound port is this instance's own
         health=$(docker inspect --format '{{.State.Health.Status}}' "$cid" 2>/dev/null) || health=""
+        # a container left running an older image is not reused (ids unknown: reuse)
+        local c_image t_image
+        c_image=$(docker inspect --format '{{.Image}}' "$cid" 2>/dev/null) || c_image=""
+        t_image=$(docker image inspect --format '{{.Id}}' "$image" 2>/dev/null) || t_image=""
+        if [ -n "$c_image" ] && [ -n "$t_image" ] && [ "$c_image" != "$t_image" ]; then
+            health=stale-image
+        fi
         if [ "$health" = healthy ] && [ "$rebuild" = 0 ]; then
             echo "$ready"
             [ "$browser" = 1 ] && open_browser "$url"

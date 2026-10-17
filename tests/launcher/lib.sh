@@ -49,13 +49,15 @@ case "$args" in
     "context inspect"*)
         echo "${STUB_CONTEXT_HOST:-unix:///var/run/docker.sock}" ;;
     "image inspect"*)
-        [ "${STUB_IMAGE_PRESENT:-0}" = 1 ] || exit 1 ;;
+        [ "${STUB_IMAGE_PRESENT:-0}" = 1 ] || exit 1
+        echo "${STUB_IMAGE_ID-}" ;;
     *" ps -aq"*)
         [ -n "${STUB_PS_ID:-}" ] && echo "$STUB_PS_ID"
         exit 0 ;;
     "inspect "*gr-pcd.data-dir*) echo "${STUB_LABEL_DATA-}" ;;
     "inspect "*gr-pcd.port*) echo "${STUB_LABEL_PORT-}" ;;
     "inspect "*gr-pcd.user*) echo "${STUB_LABEL_USER-}" ;;
+    "inspect "*"{{.Image}}"*) echo "${STUB_CONTAINER_IMAGE-}" ;;
     "inspect "*Health*) echo "${STUB_HEALTH:-healthy}" ;;
     *" build "*) exit 0 ;;
     *" up "*)

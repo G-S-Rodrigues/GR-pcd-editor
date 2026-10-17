@@ -305,4 +305,29 @@ PYEOF
     else fail LCH-19d "rc=$rc err=$(cat "$T/err")"; fi
 fi
 
+# LCH-28/29: a healthy container with matching labels is reused only when it
+# runs the image the tag points at now (m14: a rebuilt image is not served stale)
+reuse_case() {
+    new_case
+    canon=$(cd "$DATA" && pwd -P)
+    export STUB_PS_ID=abc123 STUB_LABEL_DATA="$canon" STUB_LABEL_PORT=8080 \
+        STUB_LABEL_USER="$(id -u):$(id -g)" STUB_HEALTH=healthy \
+        STUB_IMAGE_PRESENT=1 STUB_IMAGE_ID="$1" STUB_CONTAINER_IMAGE="$2"
+    run_launcher "$T" --data-dir "$DATA" --no-browser
+    unset STUB_PS_ID STUB_LABEL_DATA STUB_LABEL_PORT STUB_LABEL_USER STUB_HEALTH \
+        STUB_IMAGE_PRESENT STUB_IMAGE_ID STUB_CONTAINER_IMAGE
+}
+
+if want LCH-28 "$only"; then
+    reuse_case sha256:new sha256:old
+    if [ "$RC" = 0 ] && log_has ' up '; then pass LCH-28
+    else fail LCH-28 "stale container reused rc=$RC err=$ERR"; fi
+fi
+
+if want LCH-29 "$only"; then
+    reuse_case sha256:same sha256:same
+    if [ "$RC" = 0 ] && ! log_has ' up ' && ! log_has ' build '; then pass LCH-29
+    else fail LCH-29 "same image not reused rc=$RC err=$ERR"; fi
+fi
+
 exit "$failed"
