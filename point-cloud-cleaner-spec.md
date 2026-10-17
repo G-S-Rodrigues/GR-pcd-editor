@@ -424,3 +424,13 @@ Initial targets, to be benchmarked on a documented desktop Linux reference PC wi
 - Section 10: the protected slab may be tilted about X and Y (each within 60 degrees) around a pivot at the
   active-bounds XY centre, to follow a sloping floor. A level slab behaves as before. It is still a plane, not a surface.
 - AC-17 stands and covers the tilt (a non-level tilt is stored in the session). AC-15 is unchanged.
+
+## Part 11 addendum
+
+- Section 14 (undo, redo and sessions): the undo list becomes a timeline of steps under the view. A step has a stable id, a tool,
+  an optional name (80 characters at most) and its point count; the history keeps at most 500 steps. A marker
+  separates applied steps from rolled-back ones; dragging it, the Roll back button or the keys move it, and Undo and
+  Redo are the marker moved by one. Applying a new deletion while rolled back discards the later steps after a
+  confirmation. A single step may be removed (its points return, later steps stay), renamed, or highlighted.
+- The timeline is part of the session archive (manifest only, archive VERSION unchanged); an older archive gets a
+  strip rebuilt from its step descriptions. AC-17 stands and covers the timeline; AC-15 is unchanged.

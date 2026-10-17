@@ -35,3 +35,11 @@
 - **Tilted slab:** The protected interval measured along a normal turned by
   rx and ry (each within 60 degrees) about a pivot at the active-bounds XY centre,
   instead of along Z. Level (both angles 0) is the plain Z slab.
+- **Step:** One applied deletion in the history, with a stable id, the tool that made it, an optional name and the
+  count of points it removed; shown as a card in the timeline.
+- **Timeline:** The strip under the view with one card per step and a marker; it is saved in the session archive.
+- **Marker:** The cursor between steps; steps before it are applied, steps after it are rolled back (greyed). Undo and
+  Redo move it one slot.
+- **Rolled back:** A step after the marker: its points are active again, and applying a new deletion discards it.
+- **Step highlight:** The overlay of one step's deleted points in a distinct colour, a view-only layer that changes no
+  count.

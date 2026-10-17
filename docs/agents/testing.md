@@ -252,3 +252,24 @@ IDs: `UI-230..232` (`frontend/src/ui/sections.test.ts`: all open by default, per
 fold, client-state round trip, old sessions all open) and `E2E-46` (click and Enter fold
 each section, reload restores, counts unchanged). Fold state is `AppState.sectionsOpen`
 (only closed ids stored; ids avoid the UI-92 words) next to `floorPanelOpen`.
+
+## Part 11 additions (history timeline)
+
+- Backend: `HST-01..21` (history model; HST-20 is a property test against a brute-force oracle of the active set after
+  random rollback, delete-step and rename sequences, HST-21 round-trips 60 random sequences through save and open),
+  `API-80..86` (the three `POST /session/history/*` routes and `GET /session/render?mode=step`), `SES-60..66`
+  (manifest `sid`, `tool`, `name`, `next_sid`; hostile fields give `bad_archive`; an old archive rebuilds its strip).
+  The archive stays at VERSION 1 with no new zip entries.
+- Frontend: `UI-240..280` (`frontend/src/timeline/model.test.ts` pure model: steps, marker slots, highlight, hover,
+  rename and drag transitions, key table, confirmation texts, layer style; `orchestration/edit-steps.test.ts`;
+  `api/history-steps.test.ts`; `timeline/wire.test.ts`: controls, tooltips, legend row only while active, help rows;
+  UI-276 the view state is not saved, UI-280 reconcile with no session returns the same object).
+- Smoke: `E2E-50` (three tools, three cards, icons, counts, tooltips), `E2E-51` (click highlight: overlay count equals the
+  recorded count, colour differs from Selected and Deleted, hover preview, click again, strip background and Esc clear,
+  legend row), `E2E-52` (layout at 1280x720 and 1920x1080 with 25 steps; `#timeline` is excluded from the E2E-21 overflow
+  scan because it scrolls on its own), `E2E-53` (real-mouse marker drag, one POST on release, counts equal fixture truth,
+  Undo and Redo), `E2E-54` (button and slider keys), `E2E-55` (delete a middle step, confirmation, `Delete` on a focused
+  step never fires Apply), `E2E-56` (apply while rolled back asks first), `E2E-57` (rename by double-click, pencil, F2),
+  `E2E-58` (save and reopen keep the strip; an export after a rollback holds exactly the active steps' result).
+- Read-only hook `stepLayer()`. The smoke helpers wait until the app is idle before a marker drag, because a gesture
+  during a running job is ignored by design, and cope with a tool or fold state the previous test left restored.
