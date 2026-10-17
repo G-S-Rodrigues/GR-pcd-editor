@@ -36,6 +36,8 @@ export interface Protection {
     local: { min: number; max: number } | null;
     acknowledge_override: boolean;
   };
+  /** Absent when the slab is level. */
+  tilt?: { rx_deg: number; ry_deg: number; pivot: [number, number] };
 }
 export interface HistoryEntry {
   index: number;

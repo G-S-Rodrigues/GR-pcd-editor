@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
-import { BIG, FLOOR, GHOST, ROOM, ROOM_TOTAL, TOTAL, bigRoomPcd, bigRoomXyz, countInXyz, parsePcd, roomPcd, rowKey, syntheticPcd, truthKeys } from "./synthetic";
+import { BIG, FLOOR, GHOST, ROOM, ROOM_TOTAL, TILTED, TOTAL, bigRoomPcd, bigRoomXyz, countInTiltedSlab, countInXyz, parsePcd, roomPcd, rowKey, syntheticPcd, tiltedFloorAngles, tiltedFloorPcd, truthKeys } from "./synthetic";
 
 test("open a cloud, navigate, pick a pivot, colour, read counts", async ({ page }) => {
   const errors: string[] = [];
@@ -1516,4 +1516,140 @@ test("E2E-43 10 folding the protection section toggles the strong colour; counts
   await expect(ctl("prot-min")).toBeVisible();
   await page.waitForTimeout(600);
   expect(Buffer.compare(open, await view.screenshot())).toBe(0); // and back
+});
+
+// ---- part 10: tilted protection slab (E2E-44, E2E-45)
+type TiltHook = {
+  state: () => { tools: { protection: { global: { enabled: boolean; min: number; max: number }; tilt: { rx: number; ry: number; pivot: number[] } } } };
+  tiltRings: () => { id: string; pts: ({ x: number; y: number } | null)[] }[];
+  protectionArrows: () => { key: string; base: { x: number; y: number } | null; tip: { x: number; y: number } | null }[];
+};
+const tiltNow = (page: import("@playwright/test").Page) =>
+  page.evaluate(() => {
+    const p = (window as unknown as { __editor: TiltHook }).__editor.state().tools.protection;
+    return { min: p.global.min, max: p.global.max, rx: p.tilt.rx, ry: p.tilt.ry, pivot: [...p.tilt.pivot] };
+  });
+const tiltedRows = () => parsePcd(tiltedFloorPcd()).rows;
+const openTilted = async (page: import("@playwright/test").Page, exact: (n: string, v: number | string) => Promise<void>) => {
+  await page.goto("/");
+  await page.locator("#file-input").setInputFiles({ name: "tilted.pcd", mimeType: "application/octet-stream", buffer: tiltedFloorPcd() });
+  await exact("Original", String(TILTED.floor + TILTED.ghost));
+  await page.waitForTimeout(600);
+};
+/** Slab on in Front view (the Y ring is a full circle there), then a real-mouse drag along the Y ring. */
+const dragYRing = async (page: import("@playwright/test").Page, setNum: (id: string, v: number) => Promise<void>, ctl: (id: string) => import("@playwright/test").Locator) => {
+  await page.keyboard.press("3");
+  await ctl("prot-enabled").check();
+  await setNum("prot-max", 0.5);
+  await setNum("prot-min", -0.5);
+  await page.waitForTimeout(400);
+  const ring = (await page.evaluate(() => (window as unknown as { __editor: TiltHook }).__editor.tiltRings())).find((r) => r.id === "y")!;
+  const a = ring.pts[0]!;
+  const b = ring.pts[3]!;
+  await realDrag(page, a, b);
+};
+
+test("E2E-44 10 the tilted slab is fitted to a tilted floor with the real mouse and the fields; Protected equals fixture truth; ghosts go, the floor stays; Level resets", async ({ page }) => {
+  const { exact, ctl, setNum, num } = helpers(page);
+  await openTilted(page, exact);
+  const rows = tiltedRows();
+  await dragYRing(page, setNum, ctl);
+  const dragged = await tiltNow(page);
+  expect(Math.abs(dragged.ry)).toBeGreaterThan(5); // the ring turned the slab
+  expect(Math.abs(dragged.ry)).toBeLessThan(60);
+  expect(dragged.rx).toBeCloseTo(0, 6); // only the Y ring was dragged
+  await exact("Protected", String(countInTiltedSlab(rows, dragged.rx, dragged.ry, dragged.pivot, dragged.min, dragged.max)));
+
+  // fit the slab to the floor: type the plane's own angles, then a +-0.03 slab around the floor's slab coordinate
+  const ang = tiltedFloorAngles();
+  await setNum("prot-tilt-y", ang.ry);
+  await setNum("prot-tilt-x", ang.rx);
+  const t = await tiltNow(page);
+  const rx = (t.rx * Math.PI) / 180;
+  const ry = (t.ry * Math.PI) / 180;
+  const c = -(Math.cos(rx) * Math.sin(ry) * t.pivot[0] - Math.sin(rx) * t.pivot[1]); // the floor plane passes through the origin
+  const lo = c - TILTED.half;
+  const hi = c + TILTED.half;
+  const order = hi > t.min ? ["prot-max", "prot-min"] : ["prot-min", "prot-max"];
+  for (const id of order) await setNum(id, id === "prot-max" ? hi : lo);
+  const truth = countInTiltedSlab(rows, t.rx, t.ry, t.pivot, lo, hi);
+  expect(truth).toBe(TILTED.floor); // the fixture: the slab holds the floor and nothing else
+  await exact("Protected", String(truth));
+
+  // the upper arrow, grabbed halfway along its shaft, widens the slab upwards
+  const arrows = await page.evaluate(() => (window as unknown as { __editor: TiltHook }).__editor.protectionArrows());
+  const upper = arrows.filter((a) => a.base && a.tip).sort((p, q) => p.tip!.y - q.tip!.y)[0]!;
+  const dx = upper.tip!.x - upper.base!.x;
+  const dy = upper.tip!.y - upper.base!.y;
+  const len = Math.hypot(dx, dy);
+  const g = { x: upper.base!.x + dx / 2, y: upper.base!.y + dy / 2 };
+  await realDrag(page, g, { x: g.x + (dx / len) * 25, y: g.y + (dy / len) * 25 });
+  const widened = await tiltNow(page);
+  expect(widened.max).toBeGreaterThan(hi);
+  expect(widened.min).toBeCloseTo(lo, 6);
+  expect(widened.rx).toBeCloseTo(t.rx, 9);
+  expect(widened.ry).toBeCloseTo(t.ry, 9);
+  await exact("Protected", String(countInTiltedSlab(rows, widened.rx, widened.ry, widened.pivot, widened.min, widened.max)));
+  await setNum("prot-max", hi); // back to the exact floor slab
+  await exact("Protected", String(TILTED.floor));
+
+  // select the ghost block with the box and delete it: the protected floor stays
+  await ctl("tool-box").click();
+  for (const [id, v] of [["box-center-x", 3], ["box-center-y", 13], ["box-center-z", 3], ["box-size-x", 3], ["box-size-y", 3], ["box-size-z", 3]] as const) await setNum(id, v);
+  const ghosts = rows.filter((r) => r[0] >= 1.5 && r[0] <= 4.5 && r[1] >= 11.5 && r[1] <= 14.5 && r[2] >= 1.5 && r[2] <= 4.5).length;
+  expect(ghosts).toBe(TILTED.ghost);
+  await exact("Candidates", String(ghosts));
+  await ctl("apply").click();
+  await exact("Active", String(TILTED.floor));
+  expect(await num("Original")).toBe(TILTED.floor + TILTED.ghost);
+  await ctl("tool-box").click(); // leave the tool
+  await exact("Protected", String(TILTED.floor));
+
+  // Level returns both angles to zero
+  await ctl("prot-level").click();
+  await expect(ctl("prot-tilt-x")).toHaveValue("0");
+  await expect(ctl("prot-tilt-y")).toHaveValue("0");
+  const level = await tiltNow(page);
+  expect(level.rx).toBe(0);
+  expect(level.ry).toBe(0);
+});
+
+test("E2E-45 10 a typed tilt equals the dragged tilt; the tilt survives a reload and a session download and reopen", async ({ page }, testInfo) => {
+  const { exact, ctl, setNum } = helpers(page);
+  await openTilted(page, exact);
+  const rows = tiltedRows();
+  await dragYRing(page, setNum, ctl);
+  const dragged = await tiltNow(page);
+  expect(Math.abs(dragged.ry)).toBeGreaterThan(5);
+  const protectedDragged = countInTiltedSlab(rows, dragged.rx, dragged.ry, dragged.pivot, dragged.min, dragged.max);
+  await exact("Protected", String(protectedDragged));
+
+  await ctl("prot-level").click();
+  await expect(ctl("prot-tilt-y")).toHaveValue("0");
+  await setNum("prot-tilt-y", dragged.ry);
+  const typed = await tiltNow(page);
+  expect(typed.ry).toBeCloseTo(dragged.ry, 9);
+  expect(typed.rx).toBe(0);
+  expect(typed.pivot[0]).toBeCloseTo(dragged.pivot[0], 9);
+  expect(typed.pivot[1]).toBeCloseTo(dragged.pivot[1], 9);
+  await exact("Protected", String(protectedDragged));
+
+  // an edit (apply of a candidate-free preview is not possible), so the tilt is kept through the archive: save, replace, reopen
+  const [dl] = await Promise.all([page.waitForEvent("download"), ctl("save-session").click()]);
+  const path = testInfo.outputPath("tilt.pcdsession");
+  await dl.saveAs(path);
+  await page.locator("#file-input").setInputFiles({ name: "other.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
+  await exact("Original", String(TOTAL));
+  await page.locator("#file-input").setInputFiles({ name: "tilt.pcdsession", mimeType: "application/octet-stream", buffer: readFileSync(path) });
+  await exact("Original", String(TILTED.floor + TILTED.ghost));
+  await expect.poll(async () => (await tiltNow(page)).ry, { timeout: 15000 }).toBeCloseTo(typed.ry, 6);
+  const reopened = await tiltNow(page);
+  expect(reopened.ry).toBeCloseTo(typed.ry, 6);
+  expect(reopened.rx).toBe(0);
+  await exact("Protected", String(protectedDragged));
+
+  await page.reload();
+  await exact("Original", String(TILTED.floor + TILTED.ghost));
+  await expect.poll(async () => (await tiltNow(page)).ry, { timeout: 15000 }).toBeCloseTo(typed.ry, 6);
+  await exact("Protected", String(protectedDragged));
 });

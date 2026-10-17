@@ -128,3 +128,37 @@ export function countInXyz(xyz: Float32Array, c: number[], d: number[], slab?: [
   }
   return n;
 }
+
+/**
+ * Tilted floor scene (E2E-44, E2E-45): a 20 x 20 floor grid on the plane z = 0.1 x + 0.05 y (one point per
+ * cell, a vertical offset of -0.02, 0 or +0.02 in a fixed pattern) and a 3 x 3 x 3 ghost block 1..3 m above
+ * that plane at x 2..4, y 12..14. Truth is counted here, independently of the app.
+ */
+export const TILTED = { floor: 400, ghost: 27, a: 0.1, b: 0.05, half: 0.03 };
+
+export function tiltedFloorPcd(): Buffer {
+  const rows: string[] = [];
+  const plane = (x: number, y: number) => TILTED.a * x + TILTED.b * y;
+  for (let x = 0; x < 20; x++) for (let y = 0; y < 20; y++) rows.push(`${x} ${y} ${plane(x, y) + ((x + y) % 3 - 1) * 0.02} 0.5`);
+  for (let x = 2; x < 5; x++) for (let y = 12; y < 15; y++) for (let k = 1; k < 4; k++) rows.push(`${x} ${y} ${plane(x, y) + k} 1.5`);
+  const head = ["# .PCD v.7 - synthetic tilted floor", "VERSION .7", "FIELDS x y z intensity", "SIZE 4 4 4 4", "TYPE F F F F",
+    "COUNT 1 1 1 1", `WIDTH ${rows.length}`, "HEIGHT 1", "VIEWPOINT 0 0 0 1 0 0 0", `POINTS ${rows.length}`, "DATA ascii"];
+  return Buffer.from(`${head.join("\n")}\n${rows.join("\n")}\n`);
+}
+
+/** Tilt angles (deg) whose slab normal is the floor normal. Independent of the app: from the plane equation. */
+export function tiltedFloorAngles(): { rx: number; ry: number } {
+  const len = Math.hypot(TILTED.a, TILTED.b, 1);
+  return { rx: (Math.asin(TILTED.b / len) * 180) / Math.PI, ry: (Math.atan(-TILTED.a) * 180) / Math.PI };
+}
+
+/** Points whose slab coordinate lies in [min, max] (inclusive): the oracle for the tilted protection slab. */
+export function countInTiltedSlab(rows: number[][], rxDeg: number, ryDeg: number, pivot: number[], min: number, max: number): number {
+  const rx = (rxDeg * Math.PI) / 180;
+  const ry = (ryDeg * Math.PI) / 180;
+  const n = [Math.cos(rx) * Math.sin(ry), -Math.sin(rx), Math.cos(rx) * Math.cos(ry)];
+  return rows.filter((r) => {
+    const s = n[0] * (r[0] - pivot[0]) + n[1] * (r[1] - pivot[1]) + n[2] * r[2];
+    return s >= min - 1e-9 && s <= max + 1e-9;
+  }).length;
+}

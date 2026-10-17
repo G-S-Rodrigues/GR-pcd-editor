@@ -1,5 +1,6 @@
 import type { AppState } from "../state/app";
 import type { Interval, ProtectionModel } from "./protection";
+import { type Tilt, isLevel } from "./tilt";
 
 /**
  * The protected slab intervals the client model describes right now (no round trip): inherit uses the global
@@ -15,11 +16,15 @@ export function protectionIntervals(m: ProtectionModel): Interval[] {
 
 export interface ColourRegion {
   intervals: Interval[];
+  /** Only present when the slab is tilted (the intervals are then slab coordinates). */
+  tilt?: Tilt;
 }
 
 /** The strong-colour region: only while the protection section is open and at least one interval is on. */
 export function colourRegion(s: AppState): ColourRegion | null {
   if (!s.session || !s.floorPanelOpen) return null;
   const intervals = protectionIntervals(s.tools.protection);
-  return intervals.length > 0 ? { intervals } : null;
+  if (intervals.length === 0) return null;
+  const tilt = s.tools.protection.tilt;
+  return isLevel(tilt) ? { intervals } : { intervals, tilt };
 }

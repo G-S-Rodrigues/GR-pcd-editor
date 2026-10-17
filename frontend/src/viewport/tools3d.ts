@@ -7,6 +7,7 @@ import { DRAFT_OUTLINE, draftOutline } from "../tools/draft";
 import { ARROW_PX } from "../filterboxes/plane";
 import { rightVector } from "../view/camera";
 import { pxPerUnit } from "../view/pointsize";
+import { tiltRings } from "../inspector/rings";
 import { planeAnchors } from "./interact";
 import { clearGroup, drawHeavy, drawLines } from "./lines3d";
 
@@ -94,11 +95,16 @@ export function createToolsOverlay(scene: THREE.Scene) {
           const dir: Vec3 = [a.tip[0] - a.anchor[0], a.tip[1] - a.anchor[1], a.tip[2] - a.anchor[2]];
           const len = Math.hypot(...dir) || 1;
           const h = (HEAD_PX / ARROW_PX) * len;
-          const sgn = Math.sign(dir[2]) || 1;
+          const u: Vec3 = [dir[0] / len, dir[1] / len, dir[2] / len];
           const r = rightVector(s.camera);
-          const barb = (k: number): Vec3 => [a.tip[0] - 0 + k * r[0] * h * 0.5, a.tip[1] + k * r[1] * h * 0.5, a.tip[2] - sgn * h + k * r[2] * h * 0.5];
+          const barb = (k: number): Vec3 => [a.tip[0] - u[0] * h + k * r[0] * h * 0.5, a.tip[1] - u[1] * h + k * r[1] * h * 0.5, a.tip[2] - u[2] * h + k * r[2] * h * 0.5];
           heavy([a.anchor, a.tip, barb(1), barb(-1)], [[0, 1], [1, 2], [1, 3]], COL.plane, origin, s, viewH);
         }
+      }
+
+      // rotation rings of the tilted slab, same look as the box rings
+      for (const ring of tiltRings(s, viewH)) {
+        lines(ring.pts, ring.pts.map((_, i): [number, number] => [i, (i + 1) % ring.pts.length]), COL.ring, origin);
       }
 
       if (s.tool === "cluster" && t.cluster.seed) {

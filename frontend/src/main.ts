@@ -10,6 +10,7 @@ import { applyClientPatch, createPersister, restoreClientState } from "./state/p
 import { buildExportDialog } from "./ui/export-dialog";
 import { pollJob } from "./files/jobs";
 import { createFilterController, filterFromState, selectDisplayedBody } from "./inspector/filters";
+import { slabCoordinate } from "./inspector/tilt";
 import { type ProtectionModel, floorFromPick, protectionFromState, setGlobal } from "./inspector/protection";
 import { createProtectionController } from "./inspector/protection-controller";
 import { createEditor } from "./orchestration/edit";
@@ -130,7 +131,8 @@ if (viewport) {
       store.set({ slice: sliceFromPick(st.slice.axis, point[AXIS_INDEX[st.slice.axis]], st.slice.thickness) });
       return;
     }
-    const r = floorFromPick(st.compare, point[2], st.floorT);
+    // on a tilted slab the picked point's slab coordinate is what the interval is measured in (level: its z)
+    const r = floorFromPick(st.compare, slabCoordinate(point, st.tools.protection.tilt), st.floorT);
     if (!r.ok) return note(r.reason);
     protection.edit((m) => setGlobal(m, { enabled: true, min: r.min, max: r.max }));
   });

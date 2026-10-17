@@ -9,6 +9,8 @@ import { defaultCamera } from "../view/camera";
 import { applyPreset } from "../view/presets";
 import { filterPlanes } from "../filterboxes/plane";
 import type { ProtectionModel } from "../inspector/protection";
+import { tiltRings } from "../inspector/rings";
+import { normalOf } from "../inspector/tilt";
 import { createToolInteraction, planeAnchors } from "./interact";
 
 const vp = { w: 800, h: 600 };
@@ -262,5 +264,67 @@ describe("protection band routing (part 10)", () => {
     const at = t.at(a.anchor);
     expect(t.tools.pointerDown(t.ev(at.x, at.y))).toBe(false);
     expect(t.edits).toEqual([]);
+  });
+});
+
+describe("tilted protection band routing (10-6)", () => {
+  const tiltSetup = (rx: number, ry: number) => {
+    const store = createAppStore();
+    const camera = applyPreset({ ...defaultCamera(), distance: 30, target: [5, 5, 5] as Vec3 }, "front");
+    store.set({ session: sessionFixture(), camera });
+    store.update((s) => ({
+      ...s,
+      tools: { ...s.tools, protection: { ...s.tools.protection, global: { enabled: true, min: 2, max: 4 }, tilt: { rx, ry, pivot: [5, 5] as [number, number] } } },
+    }));
+    const tools = createToolInteraction(canvas, store, () => vp, {
+      onToolChanged: () => undefined,
+      notify: () => undefined,
+      protectionEdit: (fn) => {
+        const r = fn(store.get().tools.protection);
+        if (r.ok) store.update((s) => ({ ...s, tools: { ...s.tools, protection: r.model } }));
+        return r;
+      },
+    });
+    const at = (p: Vec3) => project(store.get().camera, p, [0, 0, 0], vp)!;
+    const ev = (x: number, y: number) => ({ button: 0, clientX: x, clientY: y, shiftKey: false, altKey: false }) as unknown as PointerEvent;
+    return { store, tools, at, ev };
+  };
+
+  it("UI-223 on a tilted slab each arrow points along the normal and the plane corners lie on the slab", () => {
+    const t = tiltSetup(20, 0);
+    const n = normalOf({ rx: 20, ry: 0, pivot: [5, 5] });
+    const hi = planeAnchors(t.store.get(), vp.h).find((a) => a.key.edge === "max")!;
+    const d = [hi.tip[0] - hi.anchor[0], hi.tip[1] - hi.anchor[1], hi.tip[2] - hi.anchor[2]];
+    const len = Math.hypot(...d);
+    for (let i = 0; i < 3; i++) expect(d[i] / len).toBeCloseTo(n[i], 9);
+    for (const c of hi.corners) {
+      expect(n[0] * (c[0] - 5) + n[1] * (c[1] - 5) + n[2] * c[2]).toBeCloseTo(4, 9);
+    }
+    // dragging the upper arrow up raises only the max
+    const tip = t.at(hi.tip);
+    expect(t.tools.pointerDown(t.ev(tip.x, tip.y))).toBe(true);
+    t.tools.pointerMove(t.ev(tip.x, tip.y - 40));
+    t.tools.pointerUp();
+    const g = t.store.get().tools.protection.global;
+    expect(g.min).toBe(2);
+    expect(g.max).toBeGreaterThan(4);
+  });
+
+  it("UI-224 a ring drag tilts the slab live, Esc restores the start tilt, rings show only while the section is open", () => {
+    const t = tiltSetup(0, 0);
+    const ring = tiltRings(t.store.get(), vp.h).find((r) => r.id === "y")!;
+    expect(ring.pts.length).toBeGreaterThan(8);
+    const a = t.at(ring.pts[0]);
+    const b = t.at(ring.pts[2]);
+    expect(t.tools.pointerDown(t.ev(a.x, a.y))).toBe(true);
+    t.tools.pointerMove(t.ev(b.x, b.y));
+    const tilt = t.store.get().tools.protection.tilt;
+    expect(Math.abs(tilt.ry)).toBeCloseTo((2 * 360) / ring.pts.length, 3);
+    expect(tilt.rx).toBe(0);
+    expect(t.tools.cancel()).toBe(true);
+    expect(t.store.get().tools.protection.tilt.ry).toBe(0);
+    expect(t.tools.dragging()).toBe(false);
+    t.store.update((s) => ({ ...s, floorPanelOpen: false }));
+    expect(tiltRings(t.store.get(), vp.h)).toEqual([]);
   });
 });

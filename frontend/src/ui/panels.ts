@@ -456,6 +456,12 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
 
   // ---- protection
   const prot = (fn: (m: P.ProtectionModel) => P.ProtectionEdit) => showErr(a.protectionEdit(fn).error);
+  const tilt = (patch: { rx?: number; ry?: number }) => {
+    const b = store.get().session?.active_bounds;
+    const centre: [number, number] = b ? [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2] : [0, 0];
+    const r = a.protectionEdit((m) => P.setTilt(m, patch, centre));
+    return r.ok ? null : (r.error ?? "Invalid");
+  };
   const protPanel = collapsible(
     "Height protection",
     (s) => s.session !== null,
@@ -475,6 +481,11 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
       field("prot-min", "Min Z", (s) => s.tools.protection.global.min, (v) => { const r = a.protectionEdit((m) => P.setGlobal(m, { min: v })); return r.ok ? null : (r.error ?? "Invalid"); }),
       field("prot-max", "Max Z", (s) => s.tools.protection.global.max, (v) => { const r = a.protectionEdit((m) => P.setGlobal(m, { max: v })); return r.ok ? null : (r.error ?? "Invalid"); }),
     ),
+    row(
+      field("prot-tilt-x", "Tilt X (deg)", (s) => s.tools.protection.tilt.rx, (v) => tilt({ rx: v })),
+      field("prot-tilt-y", "Tilt Y (deg)", (s) => s.tools.protection.tilt.ry, (v) => tilt({ ry: v })),
+    ),
+    button("prot-level", "Level", () => prot((m) => ({ ok: true, model: P.levelled(m) }))),
     select("prot-mode", "This operation", [["inherit", "Use global"], ["add_local", "Add local slab"], ["override", "Override global"]], (s) => s.tools.protection.mode, (v) => prot((m) => ({ ok: true, model: P.setOperationMode(m, v as P.OpMode) }))),
     row(
       field("prot-local-min", "Local min", (s) => s.tools.protection.local?.min ?? 0, (v) => { const r = a.protectionEdit((m) => P.setLocal(m, { min: v, max: m.local?.max ?? v })); return r.ok ? null : (r.error ?? "Invalid"); }, (s) => s.tools.protection.mode === "inherit"),

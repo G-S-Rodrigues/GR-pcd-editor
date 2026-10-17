@@ -1,4 +1,6 @@
 import { filterPlanes } from "../filterboxes/plane";
+import { tiltRings } from "../inspector/rings";
+import { planeAnchors } from "./interact";
 import { project } from "../pick/ray";
 import type { AppState } from "../state/app";
 import type { Store } from "../state/store";
@@ -39,6 +41,28 @@ export function installDebugHook(canvas: HTMLCanvasElement, store: Store<AppStat
         return q ? { x: r.left + q.x, y: r.top + q.y } : null;
       };
       return filterPlanes(s, size().h).map((p) => ({ key: p.key, base: at(p.base), tip: at(p.tip) }));
+    },
+    /** Page positions of the protection planes' arrow bases and tips, so a real mouse can grab an arrow. */
+    protectionArrows: (): { key: string; base: { x: number; y: number } | null; tip: { x: number; y: number } | null }[] => {
+      const s = store.get();
+      const r = canvas.getBoundingClientRect();
+      const at = (p: Vec3) => {
+        const q = project(s.camera, p, [0, 0, 0], size());
+        return q ? { x: r.left + q.x, y: r.top + q.y } : null;
+      };
+      return planeAnchors(s, size().h).map((a) => ({ key: `${a.key.which}-${a.key.edge}`, base: at(a.anchor), tip: at(a.tip) }));
+    },
+    /** Page positions of 48 points on each shown rotation ring (null while the section is folded). */
+    tiltRings: (): { id: string; pts: ({ x: number; y: number } | null)[] }[] => {
+      const s = store.get();
+      const r = canvas.getBoundingClientRect();
+      return tiltRings(s, size().h).map((g) => ({
+        id: g.id,
+        pts: g.pts.map((p) => {
+          const q = project(s.camera, p, [0, 0, 0], size());
+          return q ? { x: r.left + q.x, y: r.top + q.y } : null;
+        }),
+      }));
     },
   };
   (window as unknown as { __editor: typeof hook }).__editor = hook;

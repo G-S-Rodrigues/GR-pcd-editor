@@ -86,5 +86,8 @@ export const FIELD_SPECS: FieldSpec[] = [
   f("prot-mode", "Operation protection", "protection", "Inherit uses the global slab; add a local slab for one operation; or override the global slab"),
   f("prot-local-min", "Local min Z", "protection", "Lower Z of the local protected slab for this operation"),
   f("prot-local-max", "Local max Z", "protection", "Upper Z of the local protected slab for this operation"),
+  f("prot-tilt-x", "Tilt about X", "protection", "Tilt of the protected slab about the X axis in degrees, -60 to 60; drag the blue X ring on the canvas for the same"),
+  f("prot-tilt-y", "Tilt about Y", "protection", "Tilt of the protected slab about the Y axis in degrees, -60 to 60; drag the blue Y ring on the canvas for the same"),
+  f("prot-level", "Level slab", "protection", "Make the protected slab horizontal again (tilt 0 and 0); the Min and Max numbers keep their values"),
   f("prot-ack", "Acknowledge override", "protection", "Confirm that this operation ignores the global protection"),
 ];

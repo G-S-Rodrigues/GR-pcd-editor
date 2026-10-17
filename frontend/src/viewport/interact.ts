@@ -1,7 +1,10 @@
 import { END_ON_DOT, type FilterDrag, beginFilterDrag, moveFilterDrag } from "../filterboxes/drag";
 import { ARROW_PX, filterPlanes } from "../filterboxes/plane";
 import { type FilterEdit, type Side, sideValue } from "../inspector/filters";
-import { type ProtectionEdit, type ProtectionModel, dragPlane } from "../inspector/protection";
+import { type ProtectionEdit, type ProtectionModel, dragPlane, rotateSlab } from "../inspector/protection";
+import { RING_EDGE_ON, pivotXY, tiltRings } from "../inspector/rings";
+import { normalOf, slabZ } from "../inspector/tilt";
+import { dot } from "../math/vec";
 import { project } from "../pick/ray";
 import { intersectZPlane, screenRay } from "../pick/screenray";
 import type { AppState } from "../state/app";
@@ -12,7 +15,7 @@ import { type DragState, beginDrag, dragBox } from "../tools/box/drag";
 import type { BoxModel } from "../tools/box/model";
 import { pxPerUnit } from "../view/pointsize";
 import { lookDirection } from "../view/camera";
-import { translateDelta } from "../tools/box/gizmo-math";
+import { ringAngle, rotationDelta, translateDelta } from "../tools/box/gizmo-math";
 import { boxHandles, hitHandle } from "../tools/box/handles";
 import { addVertex, moveVertex } from "../tools/polygon/model";
 
@@ -22,7 +25,8 @@ type Drag =
   | { kind: "vertex"; index: number }
   | { kind: "rect"; p0: { x: number; y: number }; depth: Depth; narrow: BoxModel | null }
   | { kind: "filter"; d: FilterDrag; key: string; last: number; moved: boolean }
-  | { kind: "plane"; key: PlaneKey; model0: ProtectionModel; anchor: Vec3; ray0: ReturnType<typeof screenRay> };
+  | { kind: "plane"; key: PlaneKey; model0: ProtectionModel; anchor: Vec3; axis: Vec3; ray0: ReturnType<typeof screenRay> }
+  | { kind: "ring"; which: "x" | "y"; model0: ProtectionModel; centre: Vec3; axis: Vec3; a0: number; pivot: [number, number] };
 
 export interface ToolInteractionDeps {
   onToolChanged: () => void;
@@ -63,14 +67,19 @@ export function planeAnchors(s: AppState, viewH = 720): PlaneAnchor[] {
   const cy = (b.min[1] + b.max[1]) / 2;
   const len = ARROW_PX / pxPerUnit(s.camera, Math.max(viewH, 1));
   const p = s.tools.protection;
+  const n = normalOf(p.tilt);
   const out: PlaneAnchor[] = [];
-  const add = (which: PlaneKey["which"], edge: PlaneKey["edge"], z: number) =>
+  const add = (which: PlaneKey["which"], edge: PlaneKey["edge"], v: number) => {
+    const at = (x: number, y: number): Vec3 => [x, y, slabZ(p.tilt, v, x, y)];
+    const anchor = at(cx, cy);
+    const k = edge === "max" ? len : -len;
     out.push({
       key: { which, edge },
-      anchor: [cx, cy, z],
-      tip: [cx, cy, z + (edge === "max" ? len : -len)],
-      corners: [[b.min[0], b.min[1], z], [b.max[0], b.min[1], z], [b.max[0], b.max[1], z], [b.min[0], b.max[1], z]],
+      anchor,
+      tip: [anchor[0] + k * n[0], anchor[1] + k * n[1], anchor[2] + k * n[2]],
+      corners: [at(b.min[0], b.min[1]), at(b.max[0], b.min[1]), at(b.max[0], b.max[1]), at(b.min[0], b.max[1])],
     });
+  };
   if (p.global.enabled) {
     add("global", "min", p.global.min);
     add("global", "max", p.global.max);
@@ -167,8 +176,9 @@ export function createToolInteraction(
           return true;
         }
       }
-      // the protection band: each plane's arrow or outline; end-on (Top/Bottom) the drag is disabled
-      if (Math.abs(lookDirection(s.camera)[2]) <= END_ON_DOT) {
+      // the protection band: each plane's arrow or outline; end-on (the look along the slab normal) the drag is disabled
+      const normal = normalOf(s.tools.protection.tilt);
+      if (Math.abs(dot(lookDirection(s.camera), normal)) <= END_ON_DOT) {
         let best: PlaneAnchor | null = null;
         let bd = PICK_PX;
         for (const a of planeAnchors(s, vp.h)) {
@@ -187,8 +197,36 @@ export function createToolInteraction(
           }
         }
         if (best) {
-          drag = { kind: "plane", key: best.key, model0: s.tools.protection, anchor: best.anchor, ray0: ray };
+          drag = { kind: "plane", key: best.key, model0: s.tools.protection, anchor: best.anchor, axis: normal, ray0: ray };
           return true;
+        }
+      }
+      // the rotation rings of the tilted slab (shown only while the protection section is open); arrows and edges win
+      {
+        const look = lookDirection(s.camera);
+        let best: { id: "x" | "y"; centre: Vec3; axis: Vec3 } | null = null;
+        let bd = PICK_PX;
+        for (const r of tiltRings(s, vp.h)) {
+          if (Math.abs(dot(look, r.axis)) < RING_EDGE_ON) continue;
+          const q = r.pts.map((pt) => project(s.camera, pt, zero, vp));
+          for (let i = 0; i < q.length; i++) {
+            const c0 = q[i];
+            const c1 = q[(i + 1) % q.length];
+            if (!c0 || !c1) continue;
+            const d = segDist(p, c0, c1);
+            if (d <= bd) {
+              bd = d;
+              best = r;
+            }
+          }
+        }
+        if (best) {
+          const a0 = ringAngle(ray, best.centre, best.axis);
+          const pv = pivotXY(s);
+          if (a0 !== null && pv) {
+            drag = { kind: "ring", which: best.id, model0: s.tools.protection, centre: best.centre, axis: best.axis, a0, pivot: pv };
+            return true;
+          }
         }
       }
       return false;
@@ -233,8 +271,14 @@ export function createToolInteraction(
         } else if (r.message) deps.notify(`${r.message}; the vertex was not moved`);
       } else if (drag.kind === "plane") {
         const d = drag;
-        const delta = translateDelta(d.ray0, ray, d.anchor, [0, 0, 1]);
+        const delta = translateDelta(d.ray0, ray, d.anchor, d.axis);
         deps.protectionEdit(() => ({ ok: true, model: dragPlane(d.model0, d.key.which, d.key.edge, delta) }));
+      } else if (drag.kind === "ring") {
+        const d = drag;
+        const a = ringAngle(ray, d.centre, d.axis);
+        if (a === null) return true;
+        const deg = (rotationDelta(d.a0, a) * 180) / Math.PI;
+        deps.protectionEdit(() => ({ ok: true, model: rotateSlab(d.model0, d.which, deg, d.pivot) }));
       }
       return true;
     },
@@ -248,7 +292,7 @@ export function createToolInteraction(
 
     /** Esc during a filter or protection arrow drag: restore the start value and stop. Returns whether a drag was cancelled. */
     cancel(): boolean {
-      if (drag?.kind === "plane") {
+      if (drag?.kind === "plane" || drag?.kind === "ring") {
         const m = drag.model0;
         drag = null;
         deps.protectionEdit(() => ({ ok: true, model: m }));
