@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Container-tier checks CTR-01..05 and CTR-07 (CTR-06 is LCH-01/LCH-26).
+# Container-tier checks CTR-01..05, CTR-07 and CTR-08 (CTR-06 is LCH-01/LCH-26).
 # Needs docker, curl and python3.
 set -euo pipefail
 
@@ -22,6 +22,8 @@ mkdir -p "$data_dir/maps dir"
 chmod 755 "$tmp" "$data_dir" "$data_dir/maps dir"
 echo "synthetic source record" >"$data_dir/maps dir/source.txt"
 chmod 644 "$data_dir/maps dir/source.txt"
+printf 'synthetic' >"$data_dir/scan.pcd"
+chmod 644 "$data_dir/scan.pcd"
 src_sha=$(sha256sum "$data_dir/maps dir/source.txt" | cut -d' ' -f1)
 
 dc() {
@@ -70,7 +72,8 @@ assert app["user"] == "1234:5678", app["user"]
 assert app["labels"]["gr-pcd.user"] == "1234:5678", app["labels"]
 '; then pass CTR-01; else fail CTR-01 "compose config"; fi
 
-# CTR-02 up and healthy
+# CTR-02 up and healthy (build first: the image bakes in backend/)
+dc build app >/dev/null 2>&1 || true
 if dc up -d --wait --wait-timeout 60 app >/dev/null 2>&1 \
     && curl -fsS "http://127.0.0.1:$port/health" | grep -q '"status":"ok"' \
     && curl -fsS "http://127.0.0.1:$port/" | grep -q 'data-app="gr-pcd-editor"' \
@@ -105,6 +108,25 @@ if dc up -d --wait --wait-timeout 60 app >/dev/null 2>&1 \
     pass CTR-05
 else
     fail CTR-05 "marker lost after recreate"
+fi
+
+# CTR-08 public port reaches the app, Host guard, read-only mount listing
+evil=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: evil.example' \
+    "http://127.0.0.1:$port/api/session" || true)
+if [ "$(dc config --format json | python3 -c '
+import json, sys
+print(json.load(sys.stdin)["services"]["app"]["environment"]["GR_PCD_PUBLIC_PORT"])
+')" = "$port" ] \
+    && [ "$evil" = "403" ] \
+    && curl -fsS "http://127.0.0.1:$port/api/mounted" \
+    | python3 -c '
+import json, sys
+names = [e["name"] for e in json.load(sys.stdin)["entries"]]
+assert names == ["maps dir", "scan.pcd"], names
+'; then
+    pass CTR-08
+else
+    fail CTR-08 "public port env, Host guard (got $evil) or /data listing"
 fi
 
 # CTR-07 failures propagate (AC-31), then clean runs pass

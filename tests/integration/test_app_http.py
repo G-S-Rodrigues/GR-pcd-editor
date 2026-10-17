@@ -1,8 +1,7 @@
 import re
 from pathlib import Path
 
-from fastapi.testclient import TestClient
-
+from fixtures.sessions import make_client
 from gr_pcd.app import create_app
 from gr_pcd.settings import Settings
 
@@ -18,7 +17,7 @@ def _settings(tmp_path: Path) -> Settings:
 
 
 def test_be_10_health_ok_when_ready(tmp_path: Path) -> None:
-    client = TestClient(create_app(_settings(tmp_path)))
+    client = make_client(create_app(_settings(tmp_path)))
     r = client.get("/health")
     assert r.status_code == 200
     assert r.json() == {"status": "ok"}
@@ -27,7 +26,7 @@ def test_be_10_health_ok_when_ready(tmp_path: Path) -> None:
 def test_be_11_health_503_names_problems(tmp_path: Path) -> None:
     s = _settings(tmp_path)
     s.work_root.rmdir()
-    client = TestClient(create_app(s))
+    client = make_client(create_app(s))
     r = client.get("/health")
     assert r.status_code == 503
     body = r.json()
@@ -37,7 +36,7 @@ def test_be_11_health_503_names_problems(tmp_path: Path) -> None:
 
 def test_be_12_index_and_referenced_assets_served() -> None:
     s = Settings.from_env()
-    client = TestClient(create_app(s))
+    client = make_client(create_app(s))
     r = client.get("/")
     assert r.status_code == 200
     assert 'data-app="gr-pcd-editor"' in r.text

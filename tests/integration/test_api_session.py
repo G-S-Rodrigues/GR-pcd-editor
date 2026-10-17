@@ -8,7 +8,6 @@ import zipfile
 
 import numpy as np
 import pytest
-from fastapi.testclient import TestClient
 
 from fixtures.pcdgen import (
     SCENE_FLOOR,
@@ -17,7 +16,7 @@ from fixtures.pcdgen import (
     scene_rows,
     xyz_fields,
 )
-from fixtures.sessions import make_settings, write_scene
+from fixtures.sessions import make_client, make_settings, write_scene
 from gr_pcd.app import create_app
 
 GHOST_BOX = {
@@ -33,7 +32,7 @@ ALL_VALID = set(range(127))
 class Api:
     def __init__(self, settings):
         self.settings = settings
-        self.client = TestClient(create_app(settings))
+        self.client = make_client(create_app(settings))
 
     def open(self, name="scene.pcd"):
         r = self.client.post("/api/session/open", json={"path": name})
@@ -685,10 +684,10 @@ def test_api_30_router_before_static_mount(tmp_path):
     settings = make_settings(tmp_path)
     app = create_app(settings)
     assert getattr(app.routes[-1], "path", None) == ""  # static mount last
-    c = TestClient(app)
+    c = make_client(app)
     r = c.get("/api/session")  # the API router answers before the mount
     assert r.status_code == 404 and r.json()["error"]["code"] == "no_session"
-    c = TestClient(app)
+    c = make_client(app)
     assert c.get("/").status_code == 200
     assert c.get("/health").json() == {"status": "ok"}
     shutil.rmtree(tmp_path, ignore_errors=True)
