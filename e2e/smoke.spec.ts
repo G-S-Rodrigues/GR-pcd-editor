@@ -1653,3 +1653,54 @@ test("E2E-45 10 a typed tilt equals the dragged tilt; the tilt survives a reload
   await expect.poll(async () => (await tiltNow(page)).ry, { timeout: 15000 }).toBeCloseTo(typed.ry, 6);
   await exact("Protected", String(protectedDragged));
 });
+
+// ---- part 10-8: every inspector section folds and the state survives a reload (E2E-46)
+const SECTIONS_OPEN = (page: import("@playwright/test").Page) =>
+  page.evaluate(() => {
+    const s = (window as unknown as { __editor: { state: () => { sectionsOpen: Record<string, boolean> } } }).__editor.state();
+    return { ...s.sectionsOpen };
+  });
+test("E2E-46 10-8 each inspector section folds by click and keyboard, the fold survives a reload, and counts do not change", async ({ page }) => {
+  const { exact, ctl } = helpers(page);
+  await openRoom(page, exact);
+  const sum = (id: string) => page.locator(`details[data-section="${id}"] > summary`);
+  const det = (id: string) => page.locator(`details[data-section="${id}"]`);
+  const probes: Record<string, () => import("@playwright/test").Locator> = {
+    file: () => page.locator("#fileinfo details[data-section=file] dl"),
+    counts: () => page.locator("#counts-panel"),
+    view: () => page.locator("#fileinfo details[data-section=view] dl"),
+    display: () => ctl("filter-reset-all"),
+    slice: () => ctl("slice-enabled"),
+    history: () => page.locator("details[data-section=history] > p"), // "No edits yet" (an empty list has no height)
+  };
+  for (const id of Object.keys(probes)) {
+    await expect(det(id)).toHaveAttribute("open", "");
+    await expect(probes[id]()).toBeVisible();
+  }
+  await expect(det("view")).toBeVisible();
+  const before = await page.locator("#counts-panel").innerText();
+  // click collapses; the keyboard (Enter on the focused summary) toggles too
+  for (const id of ["file", "counts", "view", "display", "slice"]) await sum(id).click();
+  await sum("history").focus();
+  await page.keyboard.press("Enter");
+  for (const id of Object.keys(probes)) await expect(probes[id]()).toBeHidden();
+  await ctl("tool-box").click();
+  await expect(ctl("box-size-x")).toBeVisible();
+  await sum("box").click();
+  await expect(ctl("box-size-x")).toBeHidden();
+  await expect.poll(async () => Object.keys(await SECTIONS_OPEN(page)).sort()).toEqual(["box", "counts", "display", "file", "history", "slice", "view"]);
+  await page.waitForTimeout(1600); // the client state is saved one second after the last change
+  await page.reload();
+  await exact("Original", String(ROOM_TOTAL));
+  await expect.poll(async () => Object.keys(await SECTIONS_OPEN(page)).sort()).toEqual(["box", "counts", "display", "file", "history", "slice", "view"]);
+  for (const id of Object.keys(probes)) await expect(probes[id]()).toBeHidden();
+  await ctl("tool-box").click();
+  await expect(ctl("box-size-x")).toBeHidden();
+  // reopen all: nothing was lost and the counts read the same
+  for (const id of ["file", "counts", "view", "display", "slice", "history", "box"]) await sum(id).click();
+  for (const id of Object.keys(probes)) await expect(probes[id]()).toBeVisible();
+  await expect(ctl("box-size-x")).toBeVisible();
+  expect(await page.locator("#counts-panel").innerText()).toBe(before);
+  // an inspector never scrolls sideways
+  expect(await page.evaluate(() => { const a = document.getElementById("inspector")!; return a.scrollWidth <= a.clientWidth; })).toBe(true);
+});

@@ -5,6 +5,7 @@ import type { BoxModel } from "../tools/box/model";
 import { type ClusterModel, defaultCluster } from "../tools/cluster/model";
 import type { PolygonState } from "../tools/polygon/model";
 import type { Camera } from "../view/camera";
+import { SECTION_IDS, type SectionId, type SectionsOpen } from "../ui/sections";
 import type { AppState } from "./app";
 import type { Store } from "./store";
 
@@ -22,7 +23,7 @@ export function serialiseClientState(s: AppState): Json {
     comparison: { mode: s.compare, opacity: s.overlayOpacity },
     unit: s.session?.unit ?? "m",
     tools: { box: s.tools.box, polygon: s.tools.polygon, cluster: s.tools.cluster },
-    ui: { budget: s.budget, gizmo: s.gizmo, slice: s.slice, boxesCollapsed: s.filterUi.collapsed, floorPanelOpen: s.floorPanelOpen },
+    ui: { budget: s.budget, gizmo: s.gizmo, slice: s.slice, boxesCollapsed: s.filterUi.collapsed, floorPanelOpen: s.floorPanelOpen, sectionsOpen: s.sectionsOpen },
   };
 }
 
@@ -39,6 +40,7 @@ export interface ClientPatch {
   slice?: AppState["slice"];
   boxesCollapsed?: Record<string, boolean>;
   floorPanelOpen?: boolean;
+  sectionsOpen?: SectionsOpen;
   tools?: Partial<Pick<AppState["tools"], "box" | "polygon" | "cluster">>;
 }
 
@@ -72,6 +74,11 @@ export function restoreClientState(raw: unknown): ClientPatch | null {
       out.boxesCollapsed = kept;
     }
     if (typeof ui.floorPanelOpen === "boolean") out.floorPanelOpen = ui.floorPanelOpen;
+    if (isObj(ui.sectionsOpen)) {
+      const kept: SectionsOpen = {};
+      for (const [k, v] of Object.entries(ui.sectionsOpen)) if ((SECTION_IDS as readonly string[]).includes(k) && v === false) kept[k as SectionId] = false;
+      out.sectionsOpen = kept;
+    }
     const sl = ui.slice;
     if (isObj(sl) && typeof sl.enabled === "boolean" && ["x", "y", "z"].includes(sl.axis as string) && typeof sl.centre === "number" && Number.isFinite(sl.centre) && typeof sl.thickness === "number" && sl.thickness > 0 && Number.isFinite(sl.thickness)) {
       out.slice = { enabled: sl.enabled, axis: sl.axis as "x" | "y" | "z", centre: sl.centre, thickness: sl.thickness };
@@ -162,6 +169,7 @@ export function applyClientPatch(s: AppState, p: ClientPatch): AppState {
     slice: p.slice ?? s.slice,
     filterUi: p.boxesCollapsed ? { ...s.filterUi, collapsed: p.boxesCollapsed } : s.filterUi,
     floorPanelOpen: p.floorPanelOpen ?? s.floorPanelOpen,
+    sectionsOpen: p.sectionsOpen ?? s.sectionsOpen,
     tools: { ...s.tools, ...p.tools },
   };
 }

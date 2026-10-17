@@ -245,3 +245,10 @@ export, save, persist, unsaved, tooltips), under `frontend/src/**`; backend rend
   +-0.02) and 27 ghosts 1..3 m above; truth comes from `countInTiltedSlab`, an oracle independent of the app.
 - The `filter-*` control ids are unchanged by the boxes (the panel sliders went; the numeric ids stayed on the boxes).
   New ids: `prot-tilt-x`, `prot-tilt-y`, `prot-level`; read-only hooks `protectionArrows()` and `tiltRings()`.
+
+## Collapsible inspector sections (part 10-8)
+
+IDs: `UI-230..232` (`frontend/src/ui/sections.test.ts`: all open by default, per-section
+fold, client-state round trip, old sessions all open) and `E2E-46` (click and Enter fold
+each section, reload restores, counts unchanged). Fold state is `AppState.sectionsOpen`
+(only closed ids stored; ids avoid the UI-92 words) next to `floorPanelOpen`.

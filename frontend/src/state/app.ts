@@ -1,3 +1,4 @@
+import type { SectionsOpen } from "../ui/sections";
 import type { ColourMode } from "../colour/modes";
 import { type FilterModel, emptyFilter } from "../inspector/filters";
 import { DEFAULT_FLOOR_T, type ProtectionModel, emptyProtection } from "../inspector/protection";
@@ -69,6 +70,8 @@ export interface AppState {
   filterUi: FilterUi;
   /** The "Height protection" panel section is expanded (protected points are drawn stronger while it is). */
   floorPanelOpen: boolean;
+  /** Inspector sections the user folded (missing = open); see ui/sections.ts. */
+  sectionsOpen: SectionsOpen;
 }
 
 export function initialState(): AppState {
@@ -106,6 +109,7 @@ export function initialState(): AppState {
     notices: [],
     filterUi: { collapsed: {}, interacting: null },
     floorPanelOpen: true,
+    sectionsOpen: {},
   };
 }
 

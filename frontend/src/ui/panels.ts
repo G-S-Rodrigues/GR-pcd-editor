@@ -17,6 +17,8 @@ import { control } from "./controls";
 import { commitNumber } from "./numfield";
 import { TOOLTIPS } from "./tooltips";
 import { h } from "./dom";
+import { foldable } from "./fold";
+import type { SectionId } from "./sections";
 
 /** What the panels need from the rest of the app. */
 export interface PanelActions {
@@ -175,10 +177,13 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     return h("label", { class: "f" }, label, el);
   };
   const button = (id: string, label: string, onclick: () => void) => control("button", { id, onclick }, label);
-  const section = (title: string, visible: (s: AppState) => boolean, ...kids: (Node | null)[]) => {
-    const el = h("section", { class: "panel" }, h("h2", { text: title }), ...kids);
-    syncs.push((s) => (el.hidden = !visible(s)));
-    return el;
+  const section = (id: SectionId, title: string, visible: (s: AppState) => boolean, ...kids: (Node | null)[]) => {
+    const f = foldable(store, id, h("h2", { text: title }), ...kids);
+    syncs.push((s) => {
+      f.el.hidden = !visible(s);
+      f.sync(s);
+    });
+    return f.el;
   };
   /** A panel section the user can fold; its open state is `floorPanelOpen` (also drives the strong protected colour). */
   const collapsible = (title: string, visible: (s: AppState) => boolean, ...kids: (Node | null)[]) => {
@@ -251,6 +256,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     rectButton.title = ok ? TOOLTIPS["box-rect"] : `${TOOLTIPS["box-rect"]} (disabled: ${RECT_REASON})`;
   });
   const boxPanel = section(
+    "box",
     "Box",
     (s) => s.tool === "box",
     text((s) => B.boxValidity(s.tools.box) ?? ""),
@@ -372,6 +378,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     );
   });
   const polyPanel = section(
+    "polygon",
     "Polygon",
     (s) => s.tool === "polygon",
     h("div", { class: "stack" }, button("poly-draw", "Draw polygon", a.startDrawing), button("poly-finish", "Close polygon", () => showErr(a.finishPolygon())), button("poly-cancel", "Cancel drawing", a.cancelDrawing), button("poly-clear", "Clear polygon", a.clearPolygon)),
@@ -388,6 +395,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
 
   // ---- cluster
   const clusterPanelEl = section(
+    "cluster",
     "Cluster",
     (s) => s.tool === "cluster",
     h("div", { class: "stack" }, button("cluster-pick-seed", "Pick seed", () => store.set({ interaction: store.get().interaction === "pick-seed" ? "orbit" : "pick-seed" })), button("cluster-cancel", "Cancel", a.cancelJob)),
@@ -445,6 +453,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
 
   // ---- filters (the six boxes live on the canvas, see filterboxes/; the panel keeps the note, summary and global reset)
   const filterPanel = section(
+    "display",
     "Display filter",
     (s) => s.session !== null,
     h("p", { class: "note", text: FILTER_COPY }),
@@ -504,6 +513,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
   // ---- slice view (render only)
   const setSlice = (fn: (sl: AppState["slice"]) => AppState["slice"]) => store.update((s) => ({ ...s, slice: fn(s.slice) }));
   const slicePanel = section(
+    "slice",
     "Slice view",
     (s) => s.session !== null,
     h("p", { class: "note", text: SLICE_COPY }),
@@ -546,7 +556,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
       ),
     );
   });
-  const histPanel = section("History", (s) => s.session !== null, histList, text((s) => (s.session && s.session.history.entries.length === 0 ? "No edits yet" : "")));
+  const histPanel = section("history", "History", (s) => s.session !== null, histList, text((s) => (s.session && s.session.history.entries.length === 0 ? "No edits yet" : "")));
 
   root.append(errors, boxPanel, polyPanel, clusterPanelEl, filterPanel, slicePanel, protPanel, histPanel);
   const syncAll = (s: AppState) => {
