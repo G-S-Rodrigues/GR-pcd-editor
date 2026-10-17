@@ -310,8 +310,10 @@ fi
 reuse_case() {
     new_case
     canon=$(cd "$DATA" && pwd -P)
+    local me
+    me="$(id -u):$(id -g)"
     export STUB_PS_ID=abc123 STUB_LABEL_DATA="$canon" STUB_LABEL_PORT=8080 \
-        STUB_LABEL_USER="$(id -u):$(id -g)" STUB_HEALTH=healthy \
+        STUB_LABEL_USER="$me" STUB_HEALTH=healthy \
         STUB_IMAGE_PRESENT=1 STUB_IMAGE_ID="$1" STUB_CONTAINER_IMAGE="$2"
     run_launcher "$T" --data-dir "$DATA" --no-browser
     unset STUB_PS_ID STUB_LABEL_DATA STUB_LABEL_PORT STUB_LABEL_USER STUB_HEALTH \
