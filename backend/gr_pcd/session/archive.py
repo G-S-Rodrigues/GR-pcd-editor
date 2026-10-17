@@ -24,6 +24,7 @@ from gr_pcd.editing.protection import (
     ProtectionState,
     validate_protection,
 )
+from gr_pcd.files.names import safe_filename
 from gr_pcd.geometry.errors import GeometryError
 from gr_pcd.geometry.filters import DisplayFilter, validate_filter
 from gr_pcd.pcd.errors import PcdError
@@ -55,7 +56,7 @@ def _bad(message: str, code: str = "bad_archive") -> ArchiveError:
 
 
 def archive_filename(display_name: str) -> str:
-    return f"{Path(display_name).stem}_session_v1.pcdsession"
+    return safe_filename(f"{Path(display_name).stem}_session_v1.pcdsession")
 
 
 @dataclass

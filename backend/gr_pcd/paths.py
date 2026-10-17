@@ -7,6 +7,8 @@ class PathEscapeError(ValueError):
 
 def resolve_data_path(root: Path, relative: str) -> Path:
     """Resolve `relative` under `root`, rejecting any escape."""
+    if "\0" in relative or "\\" in relative:
+        raise PathEscapeError("invalid characters in path")
     if PurePosixPath(relative).is_absolute() or Path(relative).is_absolute():
         raise PathEscapeError(f"absolute path not allowed: {relative}")
     resolved_root = root.resolve()

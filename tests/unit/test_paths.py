@@ -42,3 +42,9 @@ def test_be_05_symlink_inside_root_allowed(tmp_path: Path) -> None:
     os.symlink(tmp_path / "real.pcd", tmp_path / "alias.pcd")
     got = resolve_data_path(tmp_path, "alias.pcd")
     assert got == (tmp_path / "real.pcd").resolve()
+
+
+def test_be_06_nul_and_backslash_rejected(tmp_path: Path) -> None:
+    for bad in ("a\0b", "a\\..\\b"):
+        with pytest.raises(PathEscapeError):
+            resolve_data_path(tmp_path, bad)

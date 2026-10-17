@@ -3,12 +3,13 @@
 import hashlib
 from pathlib import Path
 
+from gr_pcd.files.names import safe_filename
 from gr_pcd.pcd.errors import PcdError
 from gr_pcd.pcd.writer import verify_written, write_pcd_file
 
 
 def cleaned_filename(display_name: str) -> str:
-    return f"{Path(display_name).stem}_cleaned.pcd"
+    return safe_filename(f"{Path(display_name).stem}_cleaned.pcd")
 
 
 def sha256_file(path: Path) -> str:
