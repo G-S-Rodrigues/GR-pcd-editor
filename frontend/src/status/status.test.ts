@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import { createAppStore, initialState } from "../state/app";
 import type { Candidate, SessionState } from "../state/types";
+import { applyPreset } from "../view/presets";
 import { modeIndicator, statusItems } from "./model";
 
 const session = (over: Partial<SessionState> = {}) =>
@@ -55,4 +56,16 @@ test("UI-24 mode and frame indicator is always present", () => {
     "Tool: Box · Op: Subtract · Scope: Active · Frame: file (Z up) · Unit: mm (assumed)",
   );
   expect(modeIndicator({ ...initialState(), interaction: "pick-pivot" })).toContain("Tool: Pick pivot");
+});
+
+test("UI-170 Pick floor point in a non-face view says which view makes the floor a line; a face view and other picks do not", () => {
+  const HINT = "Use Front, Back, Left or Right view so the floor is a line";
+  const base = { ...initialState(), interaction: "pick-floor" as const };
+  const persp = { ...base, camera: { ...base.camera, ortho: false } };
+  expect(modeIndicator(persp)).toContain(HINT);
+  expect(modeIndicator({ ...persp, camera: { ...persp.camera, ortho: false } })).toContain(HINT);
+  expect(modeIndicator({ ...persp, camera: applyPreset(persp.camera, "front") })).not.toContain(HINT);
+  expect(modeIndicator({ ...persp, camera: applyPreset(persp.camera, "left") })).not.toContain(HINT);
+  expect(modeIndicator({ ...initialState(), interaction: "pick-pivot" })).not.toContain(HINT);
+  expect(modeIndicator({ ...initialState(), interaction: "orbit" })).not.toContain(HINT);
 });

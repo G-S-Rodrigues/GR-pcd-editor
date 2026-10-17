@@ -30,6 +30,7 @@ import { dropNotice, openSource } from "./orchestration/open";
 import { createRefresher } from "./orchestration/refresh";
 import { createSessionSync } from "./orchestration/session-sync";
 import { createAppStore, addNotice, dismissNotice } from "./state/app";
+import { createJobHint } from "./orchestration/jobhint";
 import type { SessionState } from "./state/types";
 import { h } from "./ui/dom";
 import { control } from "./ui/controls";
@@ -52,6 +53,7 @@ import { AXIS_INDEX, defaultSlice, sliceFromPick } from "./view/slice";
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 const store = createAppStore();
+createJobHint(store);
 const refresher = createRefresher(store);
 const canvas = $<HTMLCanvasElement>("viewport");
 

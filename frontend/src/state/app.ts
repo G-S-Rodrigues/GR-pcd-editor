@@ -101,16 +101,26 @@ export function initialState(): AppState {
 export const createAppStore = (): Store<AppState> => createStore(initialState());
 
 let noticeId = 0;
+/** How long a notice stays: errors need longer to be read than warnings and info. */
+export const NOTICE_MS: Record<Notice["level"], number> = { info: 8000, warn: 8000, error: 15000 };
 export function addNotice(
   store: Store<AppState>,
   level: Notice["level"],
   code: string,
   text: string,
 ): void {
+  const id = ++noticeId;
   store.update((s) => ({
     ...s,
-    notices: [...s.notices.filter((n) => n.code !== code), { id: ++noticeId, level, code, text }].slice(-5),
+    notices: [...s.notices.filter((n) => n.code !== code), { id, level, code, text }].slice(-5),
   }));
+  setTimeout(() => dismissNotice(store, id), NOTICE_MS[level]); // by id: a newer notice with the same code is not touched
+}
+/** Removes every notice with one of these codes (a later success makes them stale). */
+export function clearNotices(store: Store<AppState>, codes: readonly string[]): void {
+  if (store.get().notices.some((n) => codes.includes(n.code))) {
+    store.update((s) => ({ ...s, notices: s.notices.filter((n) => !codes.includes(n.code)) }));
+  }
 }
 export function dismissNotice(store: Store<AppState>, id: number): void {
   store.update((s) => ({ ...s, notices: s.notices.filter((n) => n.id !== id) }));

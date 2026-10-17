@@ -9,7 +9,7 @@ import { rightVector, upVector } from "../view/camera";
 import { planeAnchors } from "./interact";
 
 const mat = (hex: number) => new THREE.LineBasicMaterial({ color: hex, depthTest: false });
-const COL = { handle: 0xff9f1c, ring: 0x6ec1ff, poly: 0x7be07b, plane: 0xc77dff, seed: 0xff4d6d };
+const COL = { handle: 0xff9f1c, ring: 0x6ec1ff, poly: 0x7be07b, plane: 0xc77dff /* = PALETTE.slab */, seed: 0xff4d6d };
 
 /** Overlay for the editing tools: box wireframe and handles, polygon outline, protection planes, cluster seed. */
 export function createToolsOverlay(scene: THREE.Scene) {
@@ -54,7 +54,7 @@ export function createToolsOverlay(scene: THREE.Scene) {
   };
 
   return {
-    update(s: AppState, origin: Vec3, viewH = 720): void {
+    update(s: AppState, origin: Vec3, viewH = 720, viewW = viewH * 1.5): void {
       clear();
       if (!s.session || s.compare !== "edited") return;
       const t = s.tools;
@@ -66,7 +66,7 @@ export function createToolsOverlay(scene: THREE.Scene) {
         const pairs: [number, number][] = [];
         for (let i = 0; i < 8; i++) for (const bit of [1, 2, 4]) if (!(i & bit)) pairs.push([i, i | bit]);
         heavy(c, pairs, outline, origin, s, viewH);
-        for (const hd of boxHandles(t.box, s.camera, s.gizmo.local, viewH)) {
+        for (const hd of boxHandles(t.box, s.camera, s.gizmo.local, viewH, viewW)) {
           if (hd.ring) {
             const r = hd.ring;
             lines(r, r.map((_, i): [number, number] => [i, (i + 1) % r.length]), COL.ring, origin);

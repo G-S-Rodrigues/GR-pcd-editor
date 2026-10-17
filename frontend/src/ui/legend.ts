@@ -2,7 +2,7 @@ import { PALETTE, type Rgb } from "../colour/palette";
 import { h } from "./dom";
 
 export interface LegendEntry {
-  id: "base" | "selected" | "protected" | "deleted";
+  id: "base" | "selected" | "protected" | "slab" | "deleted";
   label: string;
   colour: Rgb;
 }
@@ -13,6 +13,7 @@ export function legendEntries(): LegendEntry[] {
     { id: "base", label: "Unselected", colour: PALETTE.base },
     { id: "selected", label: "Candidate (will delete)", colour: PALETTE.selected },
     { id: "protected", label: "Protected (kept)", colour: PALETTE.protected },
+    { id: "slab", label: "Protection slab", colour: PALETTE.slab },
     { id: "deleted", label: "Deleted overlay", colour: PALETTE.deleted },
   ];
 }

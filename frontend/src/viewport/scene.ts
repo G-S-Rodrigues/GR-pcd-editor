@@ -234,7 +234,7 @@ export function createViewport(
     pivot.position.set(cam.target[0] - origin[0], cam.target[1] - origin[1], cam.target[2] - origin[2]);
     pivot.scale.setScalar(Math.max(halfHeight(cam) * 0.03, 1e-9));
     pivot.visible = s.session !== null;
-    overlay.update(s, origin as [number, number, number], h);
+    overlay.update(s, origin as [number, number, number], h, w);
 
     renderer.setScissorTest(false);
     renderer.setViewport(0, 0, w, h);

@@ -1,4 +1,5 @@
 import { lodLabel } from "../render/lod";
+import { rectAxis } from "../tools/box/rect";
 import type { AppState } from "../state/app";
 
 export interface StatusItem {
@@ -50,5 +51,6 @@ export function modeIndicator(s: AppState): string {
   const tool = s.interaction === "pick-pivot" ? "Pick pivot" : s.interaction === "pick-floor" ? "Pick floor point" : s.interaction === "pick-slice" ? "Pick slice point" : cap(s.tool);
   const unit = s.session?.unit ?? "m";
   const view = s.compare === "edited" ? "" : ` · View: ${cap(s.compare)} (read-only)`;
-  return `Tool: ${tool} · Op: ${cap(s.op)} · Scope: ${cap(s.scope)} · Frame: file (Z up) · Unit: ${unit} (assumed)${view}`;
+  const floorHint = s.interaction === "pick-floor" && rectAxis(s.camera) === null ? " · Use Front, Back, Left or Right view so the floor is a line" : "";
+  return `Tool: ${tool} · Op: ${cap(s.op)} · Scope: ${cap(s.scope)} · Frame: file (Z up) · Unit: ${unit} (assumed)${view}${floorHint}`;
 }

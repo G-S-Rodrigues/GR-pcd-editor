@@ -7,6 +7,7 @@ export const PALETTE = {
   base: hex(0xb0b0b0),
   selected: hex(0xff9f1c),
   protected: hex(0x00d1ff),
+  slab: hex(0xc77dff),
   deleted: hex(0xe63946),
   pivot: hex(0xffffff),
 } as const;

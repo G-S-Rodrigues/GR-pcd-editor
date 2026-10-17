@@ -179,3 +179,19 @@ export, save, persist, unsaved, tooltips), under `frontend/src/**`; backend rend
   `state/persist-corrupt.test.ts`; `LCH-28/29` in `tests/launcher/test_launcher.sh` (the stub
   docker answers `STUB_IMAGE_ID` and `STUB_CONTAINER_IMAGE`). The upload XHR sends no session
   header: upload and open are exempt because they replace the session.
+
+## Part 7c-3 additions (ghost-cleanup UX)
+
+- Fit displayed is outward-safe: the backend box predicate is `|p - centre| <= dims/2 + eps` (eps 0 for
+  world-aligned boxes), so a rounded centre/size can miss a boundary point by one ulp. `fitToBounds`
+  widens by max(ulp(size), ulp(centre)) steps until the predicate holds. Tests: `API-64`, `E2E-27/29/30`,
+  `UI-160/161/164/165`. "Also delete the kept points" sets a protection override outside the cloud z-range
+  with ack (no backend change); it resets after Apply.
+- Interaction LOD: while the camera moves at most 150k stride points plus selected points (capped 50k) are
+  drawn; the full draw returns 250 ms after the last change. `UI-162/163`, `E2E-28` (reads
+  `window.__editor.drawnCount()`).
+- Notices: timers are per id, successful opens clear stale open/drop notices, an empty cloud warns
+  (`UI-166..168`); rotation rings are clamped to 90 px / 30% of the view (`UI-169`); the floor-pick hint
+  (`UI-170`), the Protection slab legend entry (`UI-171`, `UI-128` extended with the `slab` id/label) and the
+  10 s slow-job hint (`UI-173`, `orchestration/jobhint.ts`); smoke `E2E-31`.
+- Not done: label dedup (`UI-172`) would change existing asserts outside the ruling; needs a ruling.

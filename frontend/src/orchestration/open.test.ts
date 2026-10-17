@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { ApiError } from "../files/errors";
 import { stubFetch } from "../files/testing/fetch";
-import { createAppStore } from "../state/app";
+import { addNotice, createAppStore } from "../state/app";
 import type { SessionState } from "../state/types";
 import { openSource } from "./open";
 
@@ -113,4 +113,28 @@ test("UI-21 mounted choices use the pcd or archive path; session archives are se
   expect(d.mounted).toHaveBeenLastCalledWith("maps/a.pcd", "pcd", false);
   await openSource({ kind: "picker", file: file("x.pcdsession") }, d.deps);
   expect(d.uploads.at(-1)?.name).toBe("x.pcdsession");
+});
+
+test("UI-167 a successful open clears the earlier open-failure and drop notices but keeps unrelated ones", async () => {
+  const s = setup();
+  addNotice(s.store, "error", "open_failed", "Cannot open bad.pcd: x");
+  addNotice(s.store, "warn", "unsupported_type", "Only .pcd and .pcdsession files can be opened");
+  addNotice(s.store, "error", "protection_failed", "unrelated");
+  await openSource({ kind: "picker", file: file("a.pcd") }, s.deps);
+  expect(s.store.get().notices.map((n) => n.code)).toEqual(["protection_failed"]);
+});
+
+test("UI-168 a file with 0 points opens with a message saying there is nothing to edit", async () => {
+  const s = setup();
+  s.calls.length = 0;
+  vi.unstubAllGlobals();
+  stubFetch(() => ({ body: { ...STATE(false, "empty.pcd"), counts: { original: 0 }, bounds: null, active_bounds: null, client_state: {} } }));
+  await openSource({ kind: "picker", file: file("empty.pcd") }, s.deps);
+  const n = s.store.get().notices.find((x) => x.code === "empty_cloud");
+  expect(n?.text).toBe("empty.pcd has 0 points; nothing to edit");
+  expect(n?.level).toBe("warn");
+  // a normal file shows no such message
+  const ok = setup();
+  await openSource({ kind: "picker", file: file("a.pcd") }, ok.deps);
+  expect(ok.store.get().notices.find((x) => x.code === "empty_cloud")).toBeUndefined();
 });

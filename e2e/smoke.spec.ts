@@ -1035,6 +1035,16 @@ test("E2E-27 7c3 ghosts inside the floor slab: Rect, one click on 'Also delete t
   await page.waitForTimeout(500);
   await ctl("box-rect").click();
   const P = async (x: number, y: number, z: number) => (await page.evaluate(([a, b, c]) => (window as unknown as { __editor: EditorHook }).__editor.projectWorld([a, b, c]), [x, y, z] as number[]))!;
+  // the view animates to Top: wait until a projected point stops moving before anchoring the drag to it
+  let last = await P(18, 61, 0);
+  await expect
+    .poll(async () => {
+      const cur = await P(18, 61, 0);
+      const still = Math.abs(cur.x - last.x) < 0.01 && Math.abs(cur.y - last.y) < 0.01;
+      last = cur;
+      return still;
+    }, { timeout: 10000, intervals: [300] })
+    .toBe(true);
   const a = await P(18, 61, 0);
   const b = await P(42, 74, 0);
   expect(a).not.toBeNull();
@@ -1132,4 +1142,27 @@ test("E2E-28 7c3 the interaction LOD draws at most 200k points during a real orb
   expect(Math.min(...during)).toBeGreaterThan(100_000); // a subsample, not an empty draw
   await page.mouse.up();
   await expect.poll(() => hook(page, (e) => e.drawnCount()), { timeout: 5000 }).toBe(total);
+});
+
+test("E2E-31 7c3 the legend has a Protection slab chip and Pick floor point hints at a face view until the view is one", async ({ page }) => {
+  const { exact, ctl } = helpers(page);
+  await openRoom(page, exact);
+  await expect(page.locator('#legend [data-legend="slab"]')).toHaveCSS("background-color", "rgb(199, 125, 255)");
+  await expect(page.locator("#legend")).toContainText("Protection slab");
+  await ctl("cube-top").click();
+  await page.waitForTimeout(300);
+  await ctl("prot-pick-floor").click();
+  await expect(page.locator("#modebar")).toContainText("Pick floor point");
+  await expect(page.locator("#modebar")).not.toContainText("so the floor is a line"); // Top is a face view
+  await ctl("prot-pick-floor").click(); // back to orbit, then tilt the view off the axes
+  const box = (await page.locator("#viewport").boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 90, box.y + box.height / 2 + 60, { steps: 6 });
+  await page.mouse.up();
+  await ctl("prot-pick-floor").click();
+  await expect(page.locator("#modebar")).toContainText("Use Front, Back, Left or Right view so the floor is a line");
+  await page.locator("#viewport").hover();
+  await page.keyboard.press("3"); // Front (key 3)
+  await expect(page.locator("#modebar")).not.toContainText("so the floor is a line");
 });

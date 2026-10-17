@@ -26,7 +26,9 @@ const add3 = (a: Vec3, b: Vec3, k: number): Vec3 => [a[0] + b[0] * k, a[1] + b[1
 /** Arrow length, grab radii and marker size in screen pixels: the same at every zoom and window size. */
 export const HANDLE_ARROW_PX = 72;
 export const HANDLE_HIT_PX = 16;
-export const HANDLE_RING_HIT_PX = 10;
+export const HANDLE_RING_HIT_PX = 8;
+/** A rotation ring is never drawn or grabbed larger than this on screen (also at most 0.3 x the shorter viewport side). */
+export const RING_MAX_PX = 90;
 export const HANDLE_CROSS_PX = 7;
 const DEFAULT_VIEW_H = 720;
 
@@ -34,8 +36,9 @@ const DEFAULT_VIEW_H = 720;
 export const handleLength = (cam: Camera, viewH: number = DEFAULT_VIEW_H): number => HANDLE_ARROW_PX / pxPerUnit(cam, Math.max(viewH, 1));
 
 /** Handle geometry sized in pixels, so handles keep one screen size. `local` selects box or world axes. */
-export function boxHandles(box: BoxModel, cam: Camera, local: boolean, viewH: number = DEFAULT_VIEW_H): Handle[] {
+export function boxHandles(box: BoxModel, cam: Camera, local: boolean, viewH: number = DEFAULT_VIEW_H, viewW: number = viewH * 1.5): Handle[] {
   const len = handleLength(cam, viewH);
+  const ringMax = Math.min(RING_MAX_PX, 0.3 * Math.min(viewW, viewH)) / pxPerUnit(cam, Math.max(viewH, 1));
   const half = box.dimensions.map((d) => d / 2) as Vec3;
   const localDir = (i: number): Vec3 => rotate(box.quat, E[i]);
   const out: Handle[] = [];
@@ -50,7 +53,7 @@ export function boxHandles(box: BoxModel, cam: Camera, local: boolean, viewH: nu
     const k = (i + 2) % 3;
     const u = local ? localDir(j) : E[j];
     const v = local ? localDir(k) : E[k];
-    const radius = Math.hypot(half[j], half[k]) * 1.1 + len * 0.1;
+    const radius = Math.min(Math.hypot(half[j], half[k]) * 1.1 + len * 0.1, ringMax);
     const ring: Vec3[] = [];
     for (let s = 0; s < RING_SAMPLES; s++) {
       const t = (s / RING_SAMPLES) * 2 * Math.PI;

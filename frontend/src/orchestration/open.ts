@@ -3,7 +3,7 @@ import { ApiError, openErrorText } from "../files/errors";
 import { type DataTransferLike, type DropErrorCode, pickDroppedFile } from "../files/dragdrop";
 import { openMounted as realOpenMounted } from "../files/mounted";
 import { type UploadHandle, type UploadOptions, uploadFile } from "../files/upload";
-import { type AppState, addNotice } from "../state/app";
+import { type AppState, addNotice, clearNotices } from "../state/app";
 import type { Store } from "../state/store";
 import type { SessionState } from "../state/types";
 
@@ -79,11 +79,13 @@ export async function openSource(src: OpenSource, deps: OpenDeps): Promise<OpenO
     const state = await getState();
     if (!state) throw new ApiError(0, "no_session", "the file opened but no session was found");
     deps.clearCache?.();
+    clearNotices(store, ["open_failed", ...Object.keys(DROP_TEXT)]);
     store.batch(() => {
       store.set({ session: state, candidate: null, upload: null, render: null });
     });
     deps.onOpened?.(state);
     await deps.refresh();
+    if (state.counts?.original === 0) addNotice(store, "warn", "empty_cloud", `${state.filename} has 0 points; nothing to edit`);
     return { ok: true };
   } catch (e) {
     store.set({ upload: null });
