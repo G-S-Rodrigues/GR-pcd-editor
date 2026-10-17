@@ -64,6 +64,8 @@ export interface ColourContext {
   mode: ColourMode;
   bounds: Bounds | null;
   markDeleted: boolean;
+  /** Protected slab intervals (Z, file frame) to draw strong; absent when the protection section is collapsed. */
+  region?: { intervals: { min: number; max: number }[] } | null;
 }
 
 /** Per-point RGB (float 0..1); selection/protection/deleted flags override the base colour. */
@@ -86,12 +88,15 @@ export function colourize(r: ColourInput, ctx: ColourContext): Float32Array {
       }
     }
   }
+  const region = ctx.region && ctx.region.intervals.length > 0 ? ctx.region : null;
+  const inRegion = (z: number) => region?.intervals.some((v) => z >= v.min && z <= v.max) ?? false;
   for (let i = 0; i < r.count; i++) {
     const f = r.flags[i];
     let c: Rgb;
-    if (f & 2) c = PALETTE.protected;
+    if (f & 2) c = region ? PALETTE.protectedStrong : PALETTE.protected;
     else if (f & 1) c = PALETTE.selected;
     else if (f & 4 && ctx.markDeleted) c = PALETTE.deleted;
+    else if (region && inRegion(r.coords[3 * i + 2] + r.origin[2])) c = PALETTE.protectedStrong;
     else if (ctx.mode === "height") c = heightRamp(r.coords[3 * i + 2] + r.origin[2], lo, hi);
     else if (ctx.mode === "rgb" && bits) c = decodePackedRgb(bits, i);
     else if (ctx.mode === "intensity" && r.attr) {

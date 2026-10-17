@@ -180,6 +180,18 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     syncs.push((s) => (el.hidden = !visible(s)));
     return el;
   };
+  /** A panel section the user can fold; its open state is `floorPanelOpen` (also drives the strong protected colour). */
+  const collapsible = (title: string, visible: (s: AppState) => boolean, ...kids: (Node | null)[]) => {
+    const el = h("details", { class: "panel", open: true }, h("summary", { title: "Fold or unfold this section; while it is open the protected slab is drawn in a stronger colour" }, h("h2", { text: title })), ...kids);
+    el.addEventListener("toggle", () => {
+      if (el.open !== store.get().floorPanelOpen) store.update((s) => ({ ...s, floorPanelOpen: el.open }));
+    });
+    syncs.push((s) => {
+      el.hidden = !visible(s);
+      if (el.open !== s.floorPanelOpen) el.open = s.floorPanelOpen;
+    });
+    return el;
+  };
   const text = (get: (s: AppState) => string, cls = "note") => {
     const el = h("p", { class: cls });
     syncs.push((s) => (el.textContent = get(s)));
@@ -444,7 +456,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
 
   // ---- protection
   const prot = (fn: (m: P.ProtectionModel) => P.ProtectionEdit) => showErr(a.protectionEdit(fn).error);
-  const protPanel = section(
+  const protPanel = collapsible(
     "Height protection",
     (s) => s.session !== null,
     h("p", { class: "note", text: PROTECTION_COPY }),

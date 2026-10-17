@@ -4,10 +4,14 @@ import type { Vec3 } from "../state/types";
 import { boxCorners } from "../tools/box/model";
 import { HANDLE_CROSS_PX, boxHandles } from "../tools/box/handles";
 import { DRAFT_OUTLINE, draftOutline } from "../tools/draft";
+import { ARROW_PX } from "../filterboxes/plane";
+import { rightVector } from "../view/camera";
 import { pxPerUnit } from "../view/pointsize";
 import { planeAnchors } from "./interact";
 import { clearGroup, drawHeavy, drawLines } from "./lines3d";
 
+const BAND_OPACITY = 0.12;
+const HEAD_PX = 9;
 const COL = { handle: 0xff9f1c, ring: 0x6ec1ff, poly: 0x7be07b, plane: 0xc77dff /* = PALETTE.slab */, seed: 0xff4d6d };
 
 /** Overlay for the editing tools: box wireframe and handles, polygon outline, protection planes, cluster seed. */
@@ -64,10 +68,36 @@ export function createToolsOverlay(scene: THREE.Scene) {
 
       const b = s.session.active_bounds;
       if (b) {
-        for (const a of planeAnchors(s)) {
-          const z = a.anchor[2];
-          const q: Vec3[] = [[b.min[0], b.min[1], z], [b.max[0], b.min[1], z], [b.max[0], b.max[1], z], [b.min[0], b.max[1], z]];
-          lines(q, [[0, 1], [1, 2], [2, 3], [3, 0]], COL.plane, origin);
+        const anchors = planeAnchors(s, viewH);
+        // band fill: the slab between each interval's two planes over the footprint (two triangles per face)
+        const edge = (which: "global" | "local") => ({ lo: anchors.find((a) => a.key.which === which && a.key.edge === "min"), hi: anchors.find((a) => a.key.which === which && a.key.edge === "max") });
+        for (const which of ["global", "local"] as const) {
+          const { lo, hi } = edge(which);
+          if (!lo || !hi) continue;
+          const pts = [...lo.corners, ...hi.corners];
+          const quads = [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]];
+          const pos = new Float32Array(quads.length * 18);
+          quads.forEach((q, k) => {
+            [0, 1, 2, 0, 2, 3].forEach((ci, j) => {
+              for (let c = 0; c < 3; c++) pos[k * 18 + j * 3 + c] = pts[q[ci]][c] - origin[c];
+            });
+          });
+          const geo = new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(pos, 3));
+          const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: COL.plane, transparent: true, opacity: BAND_OPACITY, side: THREE.DoubleSide, depthTest: false, depthWrite: false }));
+          mesh.renderOrder = 8;
+          mesh.frustumCulled = false;
+          group.add(mesh);
+        }
+        for (const a of anchors) {
+          lines(a.corners, [[0, 1], [1, 2], [2, 3], [3, 0]], COL.plane, origin);
+          // each plane's own arrow, pointing away from the band
+          const dir: Vec3 = [a.tip[0] - a.anchor[0], a.tip[1] - a.anchor[1], a.tip[2] - a.anchor[2]];
+          const len = Math.hypot(...dir) || 1;
+          const h = (HEAD_PX / ARROW_PX) * len;
+          const sgn = Math.sign(dir[2]) || 1;
+          const r = rightVector(s.camera);
+          const barb = (k: number): Vec3 => [a.tip[0] - 0 + k * r[0] * h * 0.5, a.tip[1] + k * r[1] * h * 0.5, a.tip[2] - sgn * h + k * r[2] * h * 0.5];
+          heavy([a.anchor, a.tip, barb(1), barb(-1)], [[0, 1], [1, 2], [1, 3]], COL.plane, origin, s, viewH);
         }
       }
 

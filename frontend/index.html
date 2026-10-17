@@ -69,6 +69,8 @@
       #modebar { padding: 2px 8px; background: #101317; color: var(--muted); }
       dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; min-width: 420px; max-width: 640px; }
       dialog::backdrop { background: rgba(0,0,0,.55); }
+      details.panel > summary { cursor: pointer; list-style-position: inside; }
+      details.panel > summary h2 { display: inline; }
       .panel { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 4px; }
       .stack { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
       .triple { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }

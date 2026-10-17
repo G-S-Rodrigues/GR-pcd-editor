@@ -8,7 +8,8 @@ import { defaultBox } from "../tools/box/model";
 import { defaultCamera } from "../view/camera";
 import { applyPreset } from "../view/presets";
 import { filterPlanes } from "../filterboxes/plane";
-import { createToolInteraction } from "./interact";
+import type { ProtectionModel } from "../inspector/protection";
+import { createToolInteraction, planeAnchors } from "./interact";
 
 const vp = { w: 800, h: 600 };
 const canvas = { getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }) } as unknown as HTMLCanvasElement;
@@ -177,5 +178,89 @@ describe("filter arrow routing (part 10)", () => {
     const top = filterPlanes(t.store.get(), vp.h).find((p) => p.key === "z-max")!;
     const at = project(t.store.get().camera, top.tip, [0, 0, 0], vp)!;
     expect(t.tools.pointerDown(t.ev(at.x, at.y))).toBe(false);
+  });
+});
+
+describe("protection band routing (part 10)", () => {
+  const protSetup = (view: "front" | "top" = "front") => {
+    const store = createAppStore();
+    const camera = applyPreset({ ...defaultCamera(), distance: 30, target: [5, 5, 5] as Vec3 }, view);
+    store.set({ session: sessionFixture(), camera });
+    store.update((s) => ({ ...s, tools: { ...s.tools, protection: { ...s.tools.protection, global: { enabled: true, min: 2, max: 4 } } } }));
+    const edits: ProtectionModel[] = [];
+    const tools = createToolInteraction(canvas, store, () => vp, {
+      onToolChanged: () => undefined,
+      notify: () => undefined,
+      protectionEdit: (fn) => {
+        const r = fn(store.get().tools.protection);
+        if (r.ok) {
+          store.update((s) => ({ ...s, tools: { ...s.tools, protection: r.model } }));
+          edits.push(r.model);
+        }
+        return r;
+      },
+    });
+    const at = (p: Vec3) => project(store.get().camera, p, [0, 0, 0], vp)!;
+    const ev = (x: number, y: number) => ({ button: 0, clientX: x, clientY: y, shiftKey: false, altKey: false }) as unknown as PointerEvent;
+    const anchors = () => planeAnchors(store.get(), vp.h);
+    return { store, tools, at, ev, edits, anchors };
+  };
+
+  it("UI-210 an edge of the band is grabbed within 10 px of its outline and not 30 px away", () => {
+    const t = protSetup();
+    const onEdge = t.at([2, 5, 2]); // along the lower plane's outline, away from its arrow
+    expect(t.tools.pointerDown(t.ev(onEdge.x, onEdge.y))).toBe(true);
+    t.tools.pointerUp();
+    const off = t.at([2, 5, 2]);
+    expect(t.tools.pointerDown(t.ev(off.x, off.y + 30))).toBe(false);
+  });
+
+  it("UI-211 the upper plane's arrow points up, the lower one's down, and each drag moves only its own edge", () => {
+    const t = protSetup();
+    const [lo, hi] = [t.anchors().find((a) => a.key.edge === "min")!, t.anchors().find((a) => a.key.edge === "max")!];
+    expect(hi.tip[2]).toBeGreaterThan(hi.anchor[2]);
+    expect(lo.tip[2]).toBeLessThan(lo.anchor[2]);
+    const tip = t.at(hi.tip);
+    expect(t.tools.pointerDown(t.ev(tip.x, tip.y))).toBe(true);
+    t.tools.pointerMove(t.ev(tip.x, tip.y - 40));
+    t.tools.pointerUp();
+    const g = t.store.get().tools.protection.global;
+    expect(g.min).toBe(2);
+    expect(g.max).toBeGreaterThan(4);
+    const tip2 = t.at(t.anchors().find((a) => a.key.edge === "min")!.tip);
+    t.tools.pointerDown(t.ev(tip2.x, tip2.y));
+    t.tools.pointerMove(t.ev(tip2.x, tip2.y + 40));
+    t.tools.pointerUp();
+    const g2 = t.store.get().tools.protection.global;
+    expect(g2.min).toBeLessThan(2);
+    expect(g2.max).toBe(g.max);
+  });
+
+  it("UI-211 min never passes max, even dragged far beyond it", () => {
+    const t = protSetup();
+    const tip = t.at(t.anchors().find((a) => a.key.edge === "max")!.tip);
+    t.tools.pointerDown(t.ev(tip.x, tip.y));
+    t.tools.pointerMove(t.ev(tip.x, tip.y + 500));
+    const g = t.store.get().tools.protection.global;
+    expect(g.max).toBeGreaterThanOrEqual(g.min);
+  });
+
+  it("UI-211 Esc restores the start interval", () => {
+    const t = protSetup();
+    const tip = t.at(t.anchors().find((a) => a.key.edge === "max")!.tip);
+    t.tools.pointerDown(t.ev(tip.x, tip.y));
+    t.tools.pointerMove(t.ev(tip.x, tip.y - 40));
+    expect(t.store.get().tools.protection.global.max).toBeGreaterThan(4);
+    expect(t.tools.cancel()).toBe(true);
+    expect(t.store.get().tools.protection.global).toEqual({ enabled: true, min: 2, max: 4 });
+    expect(t.tools.dragging()).toBe(false);
+  });
+
+  it("UI-211 in the Top view the band is end-on and cannot be dragged", () => {
+    const t = protSetup("top");
+    const a = t.anchors().find((x) => x.key.edge === "max")!;
+    const at = t.at(a.anchor);
+    expect(t.tools.pointerDown(t.ev(at.x, at.y))).toBe(false);
+    expect(t.edits).toEqual([]);
   });
 });

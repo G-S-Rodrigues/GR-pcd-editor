@@ -47,4 +47,19 @@ describe("protection controller", () => {
     expect(r.ok).toBe(false);
     expect(store.get().tools.protection).toBe(before);
   });
+
+  it("UI-211 a continuous drag still sends at least every 250 ms (max wait), and the last value wins", async () => {
+    const store = createAppStore();
+    store.set({ session: sessionFixture() });
+    const put = vi.fn(async (_b: unknown) => sessionFixture());
+    const c = createProtectionController(store, { putProtection: put, onParamsChanged: () => undefined });
+    for (let i = 0; i < 20; i++) {
+      c.edit((m) => setGlobal(m, { enabled: true, min: 0, max: i + 1 }));
+      await vi.advanceTimersByTimeAsync(50);
+    }
+    expect(put.mock.calls.length).toBeGreaterThanOrEqual(3);
+    expect(put.mock.calls.length).toBeLessThanOrEqual(6);
+    await vi.advanceTimersByTimeAsync(400);
+    expect((put.mock.calls.at(-1)![0] as { global: { max: number } }).global.max).toBe(20);
+  });
 });

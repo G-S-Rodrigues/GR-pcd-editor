@@ -12,7 +12,7 @@ export interface ProtectionDeps {
 
 /** Debounced protection edits. Settings that need an acknowledgement are never sent. */
 export function createProtectionController(store: Store<AppState>, deps: ProtectionDeps) {
-  const debounce = createDebouncer(150);
+  const debounce = createDebouncer(150, { maxWaitMs: 250 });
   let gen = 0;
   const send = async () => {
     const body = toProtectionBody(store.get().tools.protection);

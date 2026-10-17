@@ -1305,10 +1305,15 @@ test("E2E-41 10 the boxes never overlap each other, the ViewCube, the legend or 
     await page.setViewportSize({ width: w, height: h });
     await openRoom(page, exact);
     await setNum("filter-z-max", 1.5);
-    await page.evaluate(() => (document.querySelector("[data-control=filter-x-min]") as HTMLInputElement).focus());
+    let lastLook = "";
     for (const [key, cube] of [["3", "front"], ["5", "left"], ["1", "top"], ["4", "back"]] as const) {
+      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); // keys typed into a field would not change the view
       await page.keyboard.press(key);
+      await page.evaluate(() => (document.querySelector("[data-control=filter-x-min]") as HTMLInputElement).focus());
       await page.waitForTimeout(400);
+      const look = await page.evaluate(() => JSON.stringify((window as unknown as { __editor: { state: () => { camera: { orientation: number[] } } } }).__editor.state().camera.orientation));
+      expect(look, `${w} ${cube} the view changed`).not.toBe(lastLook);
+      lastLook = look;
       const rects = await page.evaluate(() => {
         const r = (e: Element) => {
           const b = e.getBoundingClientRect();
@@ -1416,4 +1421,99 @@ test("E2E-42 10 the slice view does not hide the filter planes and changes no co
   expect((await planesNow(page)).map((q) => q.key)).toContain("z-max");
   expect(await num("Displayed")).toBe(before);
   await ctl("slice-off").click();
+});
+
+// ---- part 10: protection band (E2E-39, E2E-43)
+type ProtHook = { state: () => { floorT: number; floorPanelOpen: boolean; tools: { protection: { global: { enabled: boolean; min: number; max: number } } } } };
+const protNow = (page: import("@playwright/test").Page) =>
+  page.evaluate(() => {
+    const s = (window as unknown as { __editor: ProtHook }).__editor.state();
+    return { g: s.tools.protection.global, floorT: s.floorT, open: s.floorPanelOpen };
+  });
+const protSummary = (page: import("@playwright/test").Page) => page.locator("details.panel > summary", { hasText: "Height protection" });
+
+test("E2E-39 10 dragging the band's arrows with the real mouse sets the protected slab; counts equal fixture truth", async ({ page }) => {
+  const { exact, ctl, setNum } = helpers(page);
+  await openRoom(page, exact);
+  const rows = roomValid();
+  await page.keyboard.press("3"); // Front: Z is vertical on screen
+  await ctl("prot-enabled").check();
+  await setNum("prot-max", 1.5); // max first: min above the old max would be refused
+  await setNum("prot-min", 0.5);
+  const inSlab = (lo: number, hi: number) => String(rows.filter((r) => r[2] >= lo && r[2] <= hi).length);
+  await exact("Protected", inSlab(0.5, 1.5));
+  await page.waitForTimeout(400);
+  // the arrows start at the XY centre of the active bounds
+  const centre = (z: number) =>
+    page.evaluate((zz) => {
+      const e = (window as unknown as { __editor: { projectWorld: (p: number[]) => { x: number; y: number } | null; state: () => { session: { active_bounds: { min: number[]; max: number[] } } } } }).__editor;
+      const b = e.state().session.active_bounds;
+      return e.projectWorld([(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, zz]);
+    }, z);
+  // the upper plane's arrow points up from the footprint centre: grab it 20 px above that point
+  const up = (await centre(1.5))!;
+  await page.mouse.move(up.x, up.y - 20);
+  await page.mouse.down();
+  await page.mouse.move(up.x, up.y - 40, { steps: 6 });
+  await page.mouse.up();
+  const after = await protNow(page);
+  expect(after.g.min).toBe(0.5); // the lower edge is untouched
+  expect(after.g.max).toBeGreaterThan(1.5);
+  await exact("Protected", inSlab(0.5, after.g.max));
+  // the lower plane's arrow points down
+  const lo = (await centre(0.5))!;
+  await page.mouse.move(lo.x, lo.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(lo.x, lo.y + 35, { steps: 5 });
+  await page.mouse.up();
+  const after2 = await protNow(page);
+  expect(after2.g.min).toBeLessThan(0.5);
+  expect(after2.g.max).toBe(after.g.max);
+  await exact("Protected", inSlab(after2.g.min, after2.g.max));
+  // pick floor, then an edge drag leaves the floor thickness alone
+  await page.keyboard.press("1");
+  await page.waitForTimeout(300);
+  const at = (await hook(page, (e) => e.projectWorld([15, 2, 0])))!;
+  await ctl("prot-pick-floor").click();
+  await page.mouse.click(at.x, at.y);
+  await expect(ctl("prot-min")).toHaveValue("-0.05", { timeout: 15000 });
+  await page.keyboard.press("3");
+  await page.waitForTimeout(400);
+  const top = (await centre(0.05))!;
+  await page.mouse.move(top.x, top.y - 20);
+  await page.mouse.down();
+  await page.mouse.move(top.x, top.y - 35, { steps: 5 });
+  await page.mouse.up();
+  const picked = await protNow(page);
+  expect(picked.g.max).toBeGreaterThan(0.05);
+  expect(picked.floorT).toBe(0.05);
+});
+
+test("E2E-43 10 folding the protection section toggles the strong colour; counts and the prot ids are unchanged while it is open", async ({ page }) => {
+  const { exact, ctl } = helpers(page);
+  await openRoom(page, exact);
+  await page.keyboard.press("1");
+  await page.waitForTimeout(300);
+  const at = (await hook(page, (e) => e.projectWorld([15, 2, 0])))!;
+  await ctl("prot-pick-floor").click();
+  await page.mouse.click(at.x, at.y);
+  await exact("Protected", String(ROOM.floor + ROOM.floorGhost));
+  await page.mouse.move(2, 2); // away from the canvas content
+  await page.waitForTimeout(600);
+  const view = page.locator("#viewport");
+  const open = await view.screenshot();
+  expect((await protNow(page)).open).toBe(true);
+  await expect(ctl("prot-min")).toBeVisible();
+  await protSummary(page).click();
+  await expect.poll(async () => (await protNow(page)).open).toBe(false);
+  await expect(ctl("prot-min")).not.toBeVisible();
+  await page.waitForTimeout(600);
+  const folded = await view.screenshot();
+  expect(Buffer.compare(open, folded)).not.toBe(0); // the strong colour is gone
+  await exact("Protected", String(ROOM.floor + ROOM.floorGhost));
+  await protSummary(page).click();
+  await expect.poll(async () => (await protNow(page)).open).toBe(true);
+  await expect(ctl("prot-min")).toBeVisible();
+  await page.waitForTimeout(600);
+  expect(Buffer.compare(open, await view.screenshot())).toBe(0); // and back
 });

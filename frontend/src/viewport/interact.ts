@@ -1,5 +1,5 @@
-import { type FilterDrag, beginFilterDrag, moveFilterDrag } from "../filterboxes/drag";
-import { filterPlanes } from "../filterboxes/plane";
+import { END_ON_DOT, type FilterDrag, beginFilterDrag, moveFilterDrag } from "../filterboxes/drag";
+import { ARROW_PX, filterPlanes } from "../filterboxes/plane";
 import { type FilterEdit, type Side, sideValue } from "../inspector/filters";
 import { type ProtectionEdit, type ProtectionModel, dragPlane } from "../inspector/protection";
 import { project } from "../pick/ray";
@@ -10,6 +10,8 @@ import type { Vec3 } from "../state/types";
 import { type Depth, narrowBox, rectAxis, rectDepth, rectToBox } from "../tools/box/rect";
 import { type DragState, beginDrag, dragBox } from "../tools/box/drag";
 import type { BoxModel } from "../tools/box/model";
+import { pxPerUnit } from "../view/pointsize";
+import { lookDirection } from "../view/camera";
 import { translateDelta } from "../tools/box/gizmo-math";
 import { boxHandles, hitHandle } from "../tools/box/handles";
 import { addVertex, moveVertex } from "../tools/polygon/model";
@@ -43,21 +45,39 @@ function segDist(p: { x: number; y: number }, a: { x: number; y: number }, b: { 
   return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
 }
 
-/** Plane anchors (handles on the protection slab) at the XY centre of the active bounds. */
-export function planeAnchors(s: AppState): { key: PlaneKey; anchor: Vec3 }[] {
+export interface PlaneAnchor {
+  key: PlaneKey;
+  /** Where the plane's arrow starts: the XY centre of the active bounds at the plane's height. */
+  anchor: Vec3;
+  /** Arrow tip, pointing away from the band (the lower plane down, the upper one up), ARROW_PX long on screen. */
+  tip: Vec3;
+  /** The footprint outline of the plane, four corners in order. */
+  corners: Vec3[];
+}
+
+/** The protection planes' arrows and outlines, at the XY centre and over the footprint of the active bounds. */
+export function planeAnchors(s: AppState, viewH = 720): PlaneAnchor[] {
   const b = s.session?.active_bounds;
   if (!b) return [];
   const cx = (b.min[0] + b.max[0]) / 2;
   const cy = (b.min[1] + b.max[1]) / 2;
+  const len = ARROW_PX / pxPerUnit(s.camera, Math.max(viewH, 1));
   const p = s.tools.protection;
-  const out: { key: PlaneKey; anchor: Vec3 }[] = [];
+  const out: PlaneAnchor[] = [];
+  const add = (which: PlaneKey["which"], edge: PlaneKey["edge"], z: number) =>
+    out.push({
+      key: { which, edge },
+      anchor: [cx, cy, z],
+      tip: [cx, cy, z + (edge === "max" ? len : -len)],
+      corners: [[b.min[0], b.min[1], z], [b.max[0], b.min[1], z], [b.max[0], b.max[1], z], [b.min[0], b.max[1], z]],
+    });
   if (p.global.enabled) {
-    out.push({ key: { which: "global", edge: "min" }, anchor: [cx, cy, p.global.min] });
-    out.push({ key: { which: "global", edge: "max" }, anchor: [cx, cy, p.global.max] });
+    add("global", "min", p.global.min);
+    add("global", "max", p.global.max);
   }
   if (p.mode !== "inherit" && p.local) {
-    out.push({ key: { which: "local", edge: "min" }, anchor: [cx, cy, p.local.min] });
-    out.push({ key: { which: "local", edge: "max" }, anchor: [cx, cy, p.local.max] });
+    add("local", "min", p.local.min);
+    add("local", "max", p.local.max);
   }
   return out;
 }
@@ -147,10 +167,27 @@ export function createToolInteraction(
           return true;
         }
       }
-      for (const a of planeAnchors(s)) {
-        const sp = project(s.camera, a.anchor, zero, vp);
-        if (sp && Math.hypot(sp.x - p.x, sp.y - p.y) <= PICK_PX) {
-          drag = { kind: "plane", key: a.key, model0: s.tools.protection, anchor: a.anchor, ray0: ray };
+      // the protection band: each plane's arrow or outline; end-on (Top/Bottom) the drag is disabled
+      if (Math.abs(lookDirection(s.camera)[2]) <= END_ON_DOT) {
+        let best: PlaneAnchor | null = null;
+        let bd = PICK_PX;
+        for (const a of planeAnchors(s, vp.h)) {
+          const base = project(s.camera, a.anchor, zero, vp);
+          const tip = project(s.camera, a.tip, zero, vp);
+          const q = a.corners.map((c) => project(s.camera, c, zero, vp));
+          let d = base && tip ? segDist(p, base, tip) : Number.POSITIVE_INFINITY;
+          for (let i = 0; i < 4; i++) {
+            const c0 = q[i];
+            const c1 = q[(i + 1) % 4];
+            if (c0 && c1) d = Math.min(d, segDist(p, c0, c1));
+          }
+          if (d <= bd) {
+            bd = d;
+            best = a;
+          }
+        }
+        if (best) {
+          drag = { kind: "plane", key: best.key, model0: s.tools.protection, anchor: best.anchor, ray0: ray };
           return true;
         }
       }
@@ -209,8 +246,14 @@ export function createToolInteraction(
       return was;
     },
 
-    /** Esc during an arrow drag: restore the start value and stop. Returns whether a drag was cancelled. */
+    /** Esc during a filter or protection arrow drag: restore the start value and stop. Returns whether a drag was cancelled. */
     cancel(): boolean {
+      if (drag?.kind === "plane") {
+        const m = drag.model0;
+        drag = null;
+        deps.protectionEdit(() => ({ ok: true, model: m }));
+        return true;
+      }
       if (drag?.kind !== "filter") return false;
       finishFilter(drag.d.start);
       return true;

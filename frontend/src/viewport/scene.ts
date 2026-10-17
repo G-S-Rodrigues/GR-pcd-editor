@@ -7,6 +7,8 @@ import type { RenderData } from "../render/parse";
 import { PALETTE } from "../colour/palette";
 import { type AppState } from "../state/app";
 import type { Store } from "../state/store";
+import { layerColourKey } from "../colour/key";
+import { colourRegion } from "../inspector/band";
 import { createFilterPlanesOverlay } from "./filterplanes3d";
 import { createToolsOverlay } from "./tools3d";
 import { FOV_DEG, eyePosition, halfHeight } from "../view/camera";
@@ -124,7 +126,7 @@ export function createViewport(
     return lodCache.get(d) ?? null;
   };
   const layerFor = new Map<THREE.Points, { data: RenderData | null; key: string; lod: boolean }>();
-  function syncLayer(obj: THREE.Points, data: RenderData | null, s: AppState, colours: boolean) {
+  function syncLayer(obj: THREE.Points, data: RenderData | null, s: AppState, colours: boolean, region = false) {
     if (!data) {
       obj.visible = false;
       layerFor.delete(obj);
@@ -147,11 +149,11 @@ export function createViewport(
       st.lod = gate.active();
     }
     if (colours) {
-      const key = `${s.colour.mode}|${s.session?.session_id}|${s.session?.revision.cloud}|${s.session?.active_bounds?.min[2]}|${s.session?.active_bounds?.max[2]}`;
+      const key = layerColourKey(s, region);
       if (key !== st.key) {
         st.key = key;
         const attr = obj.geometry.getAttribute("color") as THREE.BufferAttribute;
-        attr.set(colourize(data, { mode: s.colour.mode, bounds: s.session?.active_bounds ?? null, markDeleted: false }));
+        attr.set(colourize(data, { mode: s.colour.mode, bounds: s.session?.active_bounds ?? null, markDeleted: false, region: region ? colourRegion(s) : null }));
         attr.needsUpdate = true;
       }
     }
@@ -159,9 +161,9 @@ export function createViewport(
     obj.visible = true;
   }
   function syncGeometry(s: AppState) {
-    syncLayer(points, s.render, s, true);
+    syncLayer(points, s.render, s, true, s.compare === "edited");
     syncLayer(deletedPts, s.compare === "overlay" ? s.render2 : null, s, false);
-    syncLayer(rightPts, s.compare === "split" ? s.render2 : null, s, true);
+    syncLayer(rightPts, s.compare === "split" ? s.render2 : null, s, true, true);
     const o = s.render?.origin ?? [0, 0, 0];
     for (const [obj, d] of [[deletedPts, s.render2], [rightPts, s.render2]] as const) {
       if (d) obj.position.set(d.origin[0] - o[0], d.origin[1] - o[1], d.origin[2] - o[2]);
