@@ -127,4 +127,21 @@ describe("editor actions", () => {
     expect(t.store.get().candidate).toBeNull();
     expect(t.api.refreshRender).toHaveBeenCalled();
   });
+
+  it("UI-106 apply asks for confirmation when the candidates are half of the active points or more (F-03)", async () => {
+    const t = setup();
+    t.store.set({ candidate: candidateFixture({ candidates: 450 }) }); // 450 of 900 active
+    t.confirm.mockReturnValueOnce(false);
+    await t.ed.apply();
+    expect(t.confirm).toHaveBeenCalledTimes(1);
+    expect((t.confirm.mock.calls as unknown as string[][])[0][0]).toMatch(/450 of 900 points \(50 %\)/);
+    expect(t.api.apply).not.toHaveBeenCalled();
+    await t.ed.apply(); // the stub confirms the second time
+    expect(t.api.apply).toHaveBeenCalledTimes(1);
+    const small = setup();
+    small.store.set({ candidate: candidateFixture({ candidates: 449 }) });
+    await small.ed.apply();
+    expect(small.confirm).not.toHaveBeenCalled();
+    expect(small.api.apply).toHaveBeenCalledTimes(1);
+  });
 });

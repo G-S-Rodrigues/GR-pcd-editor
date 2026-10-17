@@ -28,6 +28,8 @@ export const defaultBox = (center: Vec3): BoxModel => ({
   mode: "inside",
 });
 export const resetBox = defaultBox;
+/** A file just opened: start from a small cube at the pivot, never from the whole cloud (one click on Apply could delete it). */
+export const boxForOpen = (_previous: BoxModel, pivot: Vec3): BoxModel => defaultBox(pivot);
 
 const cs = (deg: number): [number, number] =>
   deg === 0 ? [1, 0] : [Math.cos(deg * DEG), Math.sin(deg * DEG)];

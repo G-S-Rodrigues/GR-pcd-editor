@@ -4,6 +4,7 @@ import {
   type BoxModel,
   boxCorners,
   defaultBox,
+  boxForOpen,
   fitToBounds,
   numericView,
   quatToRpy,
@@ -146,4 +147,12 @@ describe("box model", () => {
       box = viaNumeric;
     }
   });
+});
+
+it("UI-105 a newly opened file starts the box as a 1 m cube at the pivot, not at the whole cloud (F-03)", () => {
+  const prev = { ...defaultBox([0, 0, 0]), dimensions: [50, 50, 9] as [number, number, number], mode: "outside" as const };
+  const b = boxForOpen(prev, [4, 5, 6]);
+  expect(b.center).toEqual([4, 5, 6]);
+  expect(b.dimensions).toEqual([1, 1, 1]);
+  expect(b.mode).toBe("inside");
 });

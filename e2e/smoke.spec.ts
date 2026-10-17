@@ -322,6 +322,14 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
 
 /** Shared helpers for the part 7 tests. */
 function helpers(page: import("@playwright/test").Page) {
+  // an earlier test's session may still be open and unsaved: accept replacing it; bulk-delete confirms are recorded and dismissed
+  const dialogs: string[] = [];
+  page.on("dialog", (d) => {
+    if (/points \(/.test(d.message())) {
+      dialogs.push(d.message());
+      void d.dismiss();
+    } else void d.accept();
+  });
   const status = page.locator("#statusbar");
   const stat = (name: string) => status.locator(`[data-status="${name}"]`);
   const exact = (name: string, v: number | string) =>
@@ -337,15 +345,15 @@ function helpers(page: import("@playwright/test").Page) {
       await setNum(id, v);
     }
   };
-  return { stat, exact, num, ctl, setNum, boxEverything };
+  return { stat, exact, num, ctl, setNum, boxEverything, dialogs };
 }
 
 test("E2E-10 7a filter redraws the canvas and a filter change never leaves a stale candidate (F-01, F-02, scope note)", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
+  const { stat, exact, num, ctl, setNum, boxEverything } = helpers(page);
   await page.goto("/");
   await page.locator("#file-input").setInputFiles({ name: "synthetic.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
-  const { stat, exact, num, ctl, setNum, boxEverything } = helpers(page);
   await exact("Displayed", String(FLOOR + GHOST));
   const activeBefore = await num("Active");
   await ctl("tool-box").click();
@@ -392,4 +400,22 @@ test("E2E-10 7a filter redraws the canvas and a filter change never leaves a sta
   await exact("Selected", String(FLOOR + GHOST));
   await expect(page.locator("#scope-note")).toContainText(`${FLOOR} selected points are outside the display filter`, { timeout: 15000 });
   expect(errors).toEqual([]);
+});
+
+test("E2E-11 7a the Box tool opens small and a bulk delete asks for confirmation (F-03)", async ({ page }) => {
+  const { stat, exact, num, ctl, boxEverything, dialogs } = helpers(page);
+  await page.goto("/");
+  await page.locator("#file-input").setInputFiles({ name: "synthetic.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
+  await exact("Displayed", String(FLOOR + GHOST));
+  const activeBefore = await num("Active");
+  await ctl("tool-box").click();
+  await expect.poll(async () => (await stat("Candidates").innerText()).includes("—"), { timeout: 15000 }).toBe(false);
+  expect(await num("Candidates")).toBeLessThan((FLOOR + GHOST) / 10);
+  await boxEverything();
+  await exact("Candidates", String(FLOOR + GHOST));
+  await expect(ctl("apply")).toBeEnabled();
+  await ctl("apply").click();
+  await expect.poll(() => dialogs.length).toBe(1);
+  expect(dialogs[0]).toContain(`${FLOOR + GHOST} of ${activeBefore} points`);
+  await exact("Active", String(activeBefore));
 });

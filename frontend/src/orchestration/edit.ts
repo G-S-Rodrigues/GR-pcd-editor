@@ -15,6 +15,11 @@ export interface EditApi {
   refreshRender(): Promise<boolean>;
 }
 
+/** Deleting half of the active points or more is almost never intended: ask first. */
+export const BULK_DELETE_FRACTION = 0.5;
+export const applyNeedsConfirm = (candidates: number, active: number): boolean =>
+  active > 0 && candidates >= active * BULK_DELETE_FRACTION;
+
 export type KeyAction = "undo" | "redo" | null;
 export function keyAction(e: { key: string; ctrlKey: boolean; shiftKey: boolean; target: string }): KeyAction {
   if (["INPUT", "TEXTAREA", "SELECT"].includes(e.target)) return null;
@@ -53,6 +58,12 @@ export function createEditor(store: Store<AppState>, api: EditApi, confirmFn: (m
       if (!canApply(s) || !s.candidate) return;
       const c = s.candidate;
       const tool = s.tool === "none" ? "selection" : s.tool;
+      const active = s.session?.counts.active ?? 0;
+      if (applyNeedsConfirm(c.candidates, active)) {
+        const pct = Math.round((c.candidates / active) * 100);
+        const fmt = (n: number) => n.toLocaleString("en-US");
+        if (!confirmFn(`This deletes ${fmt(c.candidates)} of ${fmt(active)} points (${pct} %). It can be undone. Continue?`)) return;
+      }
       await guarded(async () => {
         const state = await api.apply(rev(), c.candidate_id, `Delete ${c.candidates} points (${tool})`);
         await afterChange(state, {

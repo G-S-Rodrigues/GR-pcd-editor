@@ -16,7 +16,7 @@ import { createEditor, keyAction } from "./orchestration/edit";
 import { createRunner } from "./orchestration/runner";
 import { createParamsHook } from "./orchestration/params";
 import { startDrawing, cancelDrawing, closePolygon, emptyPolygon, enterTool } from "./tools/polygon/model";
-import { fitToBounds } from "./tools/box/model";
+import { boxForOpen } from "./tools/box/model";
 import { applyPreset } from "./view/presets";
 import { buildEditPanels, buildToolPalette } from "./ui/panels";
 import { createToolInteraction } from "./viewport/interact";
@@ -108,7 +108,7 @@ function onOpened(state: SessionState) {
     candidate: null,
     tools: {
       ...st.tools,
-      box: state.bounds ? fitToBounds(st.tools.box, state.bounds) : st.tools.box,
+      box: boxForOpen(st.tools.box, fitted.target),
       polygon: emptyPolygon(),
       filters: filterFromState(state.display_filter),
       protection: protectionFromState(state.protection) as ProtectionModel,
