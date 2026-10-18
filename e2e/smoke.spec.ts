@@ -2387,3 +2387,45 @@ test("E2E-67 10 a typed tilt beyond the limit is refused with a notice naming th
   await expect(note).toBeHidden();
   await expect(ctl("prot-tilt-x")).toHaveValue("0");
 });
+
+for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-70 12-1 the top toolbar is one row of icon buttons with names, a visible focus ring and the help lamp at ${w}x${hgt}`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: hgt });
+    const { exact, ctl } = helpers(page);
+    await openRoom(page, exact);
+    for (const sel of ["#toolbar", "#viewbar", "#modebar"]) await expect(page.locator(sel)).toHaveCount(1); // E2E-21 skips a missing container
+    const labels: Record<string, string> = { "open-file": "Open from this computer", "save-session": "Save session", export: "Export", undo: "Undo", redo: "Redo" };
+    const ys: number[] = [];
+    for (const [id, label] of Object.entries(labels)) {
+      await expect(ctl(id)).toHaveCount(1);
+      await expect(ctl(id)).toHaveAttribute("aria-label", label);
+      await expect(ctl(id).locator("svg")).toHaveAttribute("aria-hidden", "true");
+      await expect(ctl(id)).toHaveText("");
+      const b = (await ctl(id).boundingBox())!;
+      expect(b.width).toBeGreaterThanOrEqual(30);
+      ys.push(b.y);
+    }
+    expect(Math.max(...ys) - Math.min(...ys)).toBeLessThanOrEqual(2);
+    expect((await page.locator("#toolbar").boundingBox())!.height).toBeLessThan(60); // one row
+    await expect(ctl("help")).toHaveAttribute("aria-label", "Controls help");
+    await expect(ctl("help")).toHaveText("");
+    await expect(page.locator("#editpanels")).not.toContainText("Navigation:");
+    // keyboard: the first Tab stop is Open, with a visible focus ring
+    await page.locator("body").click({ position: { x: 1, y: 1 } });
+    await page.keyboard.press("Tab");
+    await expect(ctl("open-file")).toBeFocused();
+    expect(await ctl("open-file").evaluate((e) => getComputedStyle(e).outlineStyle)).not.toBe("none");
+    // the lamp and the ? key both open the help overlay
+    const help = page.locator("#help-overlay");
+    await expect(help).not.toBeVisible();
+    await ctl("help").click();
+    await expect(help).toBeVisible();
+    await ctl("help").click();
+    await expect(help).not.toBeVisible();
+    await page.locator("#viewport").hover();
+    await page.keyboard.press("?");
+    await expect(help).toBeVisible();
+    await page.keyboard.press("Escape");
+    await page.screenshot({ path: `/out/toolbar-${w}.png` });
+  });
+}

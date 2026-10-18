@@ -103,7 +103,6 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     keptToggle,
     h("h2", { text: "Cloud" }),
     invalid,
-    h("p", { class: "note", text: "Navigation: left-drag orbits, middle/right-drag or Shift-drag pans, wheel zooms. Click ? for all keys." }),
   );
   const sync: Sync = (s) => {
     for (const k of ["box", "polygon", "cluster"] as const) btns[k].classList.toggle("active", s.tool === k);

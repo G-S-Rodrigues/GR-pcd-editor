@@ -8,6 +8,7 @@ import { AUTO_BUDGET, pointSizeFor, pxPerUnit } from "../view/pointsize";
 import { COMPARE_MODES, type CompareMode, clampOpacity } from "../compare/model";
 import { control } from "./controls";
 import { h } from "./dom";
+import { iconControl } from "./iconbutton";
 
 const BUDGETS = [100_000, 300_000, 1_000_000, AUTO_BUDGET];
 
@@ -136,7 +137,7 @@ export function buildViewbar(root: HTMLElement, store: Store<AppState>, a: Viewb
     value: "0.35",
     oninput: () => store.set({ overlayOpacity: clampOpacity(Number(opacity.value)) }),
   });
-  const help = control("button", { id: "help", onclick: a.toggleHelp }, "?");
+  const help = iconControl("help", "help", { onclick: a.toggleHelp });
 
   root.append(
     persp,
