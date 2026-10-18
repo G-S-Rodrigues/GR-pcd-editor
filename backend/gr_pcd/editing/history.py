@@ -23,6 +23,9 @@ class HistoryEntry:
     sid: int = -1  # stable step id, assigned by History.push
     tool: str = "selection"
     name: str | None = None
+    shape: dict | None = (
+        None  # the editable tool shape (session.codec.shape_of); None when unknown
+    )
 
 
 def clean_name(name: str | None) -> str | None:
@@ -71,6 +74,7 @@ class History:
         description: str,
         ids: np.ndarray,
         tool: str = "selection",
+        shape: dict | None = None,
     ) -> None:
         ids = np.asarray(ids, dtype=np.uint32)
         kept = self.entries[: self.cursor]
@@ -87,7 +91,9 @@ class History:
             raise EditError(
                 "history_budget_exceeded", "history would exceed its budget"
             )
-        entry = HistoryEntry(kind, description, ids, self.next_sid, tool)
+        entry = HistoryEntry(
+            kind, description, ids, self.next_sid, tool, None, shape
+        )
         self.next_sid += 1
         self.entries = kept + [entry]
         self.cursor = len(self.entries)

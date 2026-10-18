@@ -8,6 +8,7 @@ and extracts only source.pcd, into the caller's destination.
 
 import hashlib
 import json
+import math
 import os
 import re
 import tempfile
@@ -39,6 +40,7 @@ from gr_pcd.pcd.model import PcdCloud
 from gr_pcd.pcd.reader import read_pcd
 from gr_pcd.session.budget import ensure_free_space
 from gr_pcd.session.codec import (
+    MAX_SHAPE_VERTICES,
     filter_from_dict,
     filter_to_dict,
     protection_from_dict,
@@ -135,6 +137,8 @@ def save_archive(session, path: Path, token) -> dict:
                     "sid": e.sid,
                     "tool": e.tool,
                     "name": e.name,
+                    # additive and optional: older builds ignore the key
+                    **({} if e.shape is None else {"shape": e.shape}),
                 }
                 for i, e in enumerate(entries)
             ],
@@ -258,9 +262,60 @@ def load_archive(
         raise
 
 
+def _fin(v) -> bool:
+    return type(v) in (int, float) and math.isfinite(v)
+
+
+def _vec(v, n: int) -> bool:
+    return isinstance(v, list) and len(v) == n and all(_fin(x) for x in v)
+
+
+def _valid_shape(sh, nested: bool = False) -> None:
+    """A stored step shape: plain JSON, finite numbers, bounded size. Raises bad_archive."""
+    if not isinstance(sh, dict):
+        raise _bad("invalid step shape")
+    kind = sh.get("type")
+    mode_ok = sh.get("mode") in ("inside", "outside")
+    if kind == "box":
+        ok = (
+            mode_ok
+            and _vec(sh.get("center"), 3)
+            and _vec(sh.get("dimensions"), 3)
+            and _vec(sh.get("rpy_deg"), 3)
+        )
+    elif kind == "prism":
+        poly = sh.get("polygon")
+        ok = (
+            mode_ok
+            and isinstance(poly, list)
+            and 3 <= len(poly) <= MAX_SHAPE_VERTICES
+            and all(_vec(v, 2) for v in poly)
+            and _fin(sh.get("z_min"))
+            and _fin(sh.get("z_max"))
+        )
+    elif kind == "cluster" and not nested:
+        mp = sh.get("max_points")
+        ok = (
+            type(sh.get("seed_id")) is int
+            and _fin(sh.get("radius"))
+            and (mp is None or type(mp) is int)
+            and type(sh.get("exclude_protected")) is bool
+        )
+        if ok and sh.get("region") is not None:
+            r = sh["region"]
+            if not isinstance(r, dict) or r.get("type") not in ("box", "prism"):
+                ok = False
+            else:
+                _valid_shape(r, True)
+    else:
+        ok = False
+    if not ok:
+        raise _bad("invalid step shape")
+
+
 @dataclass
 class _Steps:
-    fields: list[tuple[int, str, str | None]]
+    fields: list[tuple[int, str, str | None, dict | None]]
     next_sid: int
 
 
@@ -277,7 +332,7 @@ def _step_fields(hist: dict, entries: list, metas: list) -> _Steps:
                 m = _OLD_TOOL.search(description)
                 tool = m.group(1) if m else "selection"
                 tool = "polygon" if tool == "prism" else tool
-            out.append((i, tool, None))
+            out.append((i, tool, None, None))
         nxt = hist.get("next_sid", 0)
         nxt = nxt if type(nxt) is int and 0 <= nxt < MAX_SID else 0
         return _Steps(out, max(nxt, len(out)))
@@ -299,7 +354,10 @@ def _step_fields(hist: dict, entries: list, metas: list) -> _Steps:
                     raise _bad("invalid step name")
             except EditError:
                 raise _bad("invalid step name")
-        out.append((sid, tool, name))
+        shape = e.get("shape")
+        if shape is not None:
+            _valid_shape(shape)
+        out.append((sid, tool, name, shape))
     nxt = hist.get("next_sid", 0)
     if type(nxt) is not int or not 0 <= nxt < MAX_SID:
         raise _bad("invalid next_sid")
@@ -421,14 +479,16 @@ def _load_open(zf, dest_source, budget, max_source_bytes) -> LoadedArchive:
     scratch = np.ones(cloud.n, dtype=bool)
     at_cursor = scratch.copy()
     for i, (fname, kind, description) in enumerate(metas):
-        sid, tool, name = steps.fields[i]
+        sid, tool, name, shape = steps.fields[i]
         if i == cursor:
             at_cursor = scratch.copy()
         ids = _read_ids(zf, by_name[fname], cloud.n)
         if not scratch[ids].all():
             raise _bad(f"history entry {i} deletes a point twice")
         scratch[ids] = False
-        entries.append(HistoryEntry(kind, description, ids, sid, tool, name))
+        entries.append(
+            HistoryEntry(kind, description, ids, sid, tool, name, shape)
+        )
     if cursor == len(hist_entries):
         at_cursor = scratch
     selection = np.zeros(cloud.n, dtype=bool)

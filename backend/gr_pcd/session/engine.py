@@ -42,6 +42,7 @@ from gr_pcd.session.codec import (
     FilterTool,
     filter_to_dict,
     protection_to_dict,
+    shape_of,
     tilt_to_dict,
     tool_summary,
 )
@@ -74,6 +75,7 @@ class Candidate:
     cluster: dict | None
     tool_text: str
     tilt: dict | None = None
+    tool_shape: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -152,6 +154,8 @@ class EditingSession:
         self._selection_scope: str | None = None
         self.scope_stale = False
         self._last_tool_text = "selection"
+        self._last_tool_shape: dict | None = None
+        self._step_bounds: dict[int, dict | None] = {}
         self.lock = threading.RLock()
         self._display_cache: tuple[DisplayFilter, np.ndarray] | None = None
         self._tree_cache: tuple[int, cKDTree, np.ndarray] | None = None
@@ -228,6 +232,25 @@ class EditingSession:
         self._reset_operation_protection()
         self.clock.bump_cloud()
 
+    def _bounds_of_step(self, entry) -> dict | None:
+        """Exact min/max of the points a step deleted; computed on first use
+        and kept per step id (the coordinates never change)."""
+        cached = self._step_bounds.get(entry.sid, False)
+        if cached is not False:
+            return cached
+        # a remove-invalid step holds NaN/inf points: only finite ones have bounds
+        pts = self.xyz[entry.ids]
+        pts = pts[np.isfinite(pts).all(axis=1)]
+        if len(pts) == 0:
+            out = None
+        else:
+            out = {
+                "min": pts.min(axis=0).tolist(),
+                "max": pts.max(axis=0).tolist(),
+            }
+        self._step_bounds[entry.sid] = out
+        return out
+
     # ---- state ---------------------------------------------------------
     def state(self) -> dict:
         with self.lock:
@@ -296,6 +319,8 @@ class EditingSession:
                         "name": e.name,
                         "description": e.description,
                         "count": len(e.ids),
+                        "shape": e.shape,
+                        "bounds": self._bounds_of_step(e),
                     }
                     for i, e in enumerate(entries)
                 ],
@@ -458,6 +483,9 @@ class EditingSession:
             self._selection_scope = spec.scope
             self.scope_stale = False
             self._last_tool_text = _tool_text(spec.tool)
+            self._last_tool_shape = shape_of(
+                spec.tool, snap["filter"], self.bounds
+            )
             self.candidate = None
             self.pending = None
             self.clock.bump_params()
@@ -567,6 +595,7 @@ class EditingSession:
             protection = self.protection
             cluster = self._last_cluster
             tool_text = self._last_tool_text
+            tool_shape = self._last_tool_shape
             if self.scope_stale:
                 raise EditError(
                     "selection_outdated",
@@ -595,6 +624,7 @@ class EditingSession:
             else tilt_to_dict(protection.tilt),
             cluster=cluster,
             tool_text=tool_text,
+            tool_shape=tool_shape,
         )
         with self.lock:
             if token.cancelled:
@@ -651,7 +681,13 @@ class EditingSession:
             text = description or (
                 f"Deleted {len(ids)} points ({cand.tool_text})"
             )
-            self.history.push("delete", text, ids, _step_tool(cand.tool_text))
+            self.history.push(
+                "delete",
+                text,
+                ids,
+                _step_tool(cand.tool_text),
+                cand.tool_shape,
+            )
             self.active = with_ids(self.active, ids, False)
             self.selection = _ro(np.zeros(self.cloud.n, dtype=bool))
             self.selection_ops = []

@@ -201,6 +201,8 @@ def test_hst_19_state_entries_carry_sid_tool_name(mgr):
         "name",
         "description",
         "count",
+        "shape",
+        "bounds",
     }
     assert entry["sid"] == 0 and entry["tool"] == "box"
     assert entry["name"] is None and entry["count"] == 4

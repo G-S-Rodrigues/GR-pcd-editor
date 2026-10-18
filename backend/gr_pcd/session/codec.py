@@ -129,3 +129,83 @@ def tool_summary(tool) -> dict | None:
         "seed_id": tool.seed_id,
         "radius": tool.radius,
     }
+
+
+MAX_SHAPE_VERTICES = 4096
+
+
+def _box_shape(b: BoxSpec) -> dict:
+    return {
+        "type": "box",
+        "center": [float(v) for v in b.center],
+        "dimensions": [float(v) for v in b.dimensions],
+        "rpy_deg": [float(v) for v in b.rpy_deg],
+        "mode": b.mode,
+    }
+
+
+def _prism_shape(p: PrismSpec) -> dict:
+    return {
+        "type": "prism",
+        "polygon": [[float(x), float(y)] for x, y in p.polygon],
+        "z_min": float(p.z_min),
+        "z_max": float(p.z_max),
+        "mode": p.mode,
+    }
+
+
+def _filter_box(filt: DisplayFilter | None, bounds: dict | None) -> dict | None:
+    """A disabled axis spans the cloud bounds; with neither a range nor bounds there is no box."""
+    if filt is None:
+        return None
+    lo, hi = [], []
+    for i, r in enumerate(filt.axes()):
+        if r.enabled:
+            lo.append(float(r.min))
+            hi.append(float(r.max))
+        elif bounds is not None:
+            lo.append(float(bounds["min"][i]))
+            hi.append(float(bounds["max"][i]))
+        else:
+            return None
+    dims = [max(h - l, 1e-6) for l, h in zip(lo, hi, strict=True)]
+    return {
+        "type": "box",
+        "center": [(l + h) / 2.0 for l, h in zip(lo, hi, strict=True)],
+        "dimensions": dims,
+        "rpy_deg": [0.0, 0.0, 0.0],
+        "mode": "inside",
+    }
+
+
+def shape_of(
+    tool, filt: DisplayFilter | None = None, bounds: dict | None = None
+) -> dict | None:
+    """The full editable shape of a selection tool (what the client needs to
+    recreate it), unlike `tool_summary`, which is the short label kept for the
+    selection log. A filter step becomes the box of its filter bounds."""
+    if tool is None:
+        return None
+    if isinstance(tool, BoxSpec):
+        return _box_shape(tool)
+    if isinstance(tool, PrismSpec):
+        return _prism_shape(tool)
+    if isinstance(tool, FilterTool):
+        return _filter_box(filt, bounds)
+    if isinstance(tool, ClusterTool):
+        region = tool.region
+        return {
+            "type": "cluster",
+            "seed_id": tool.seed_id,
+            "radius": float(tool.radius),
+            "max_points": tool.max_points,
+            "exclude_protected": bool(tool.exclude_protected),
+            "region": None
+            if region is None
+            else (
+                _box_shape(region)
+                if isinstance(region, BoxSpec)
+                else _prism_shape(region)
+            ),
+        }
+    return None
