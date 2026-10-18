@@ -1,5 +1,7 @@
 import * as THREE from "three";
-import { colourize } from "../colour/modes";
+import { colourizeMasked } from "../colour/modes";
+import { distanceRange } from "../colour/distance";
+import { distanceUniforms, useDistanceShader } from "./distanceShader";
 import { clampOpacity, overlayStyle } from "../compare/model";
 import { splitRects } from "../compare/split";
 import { LOD_INTERACT, createLodGate, lodIndex } from "../render/lod";
@@ -42,10 +44,14 @@ export function createViewport(
   renderer.setClearColor(0x15181d, 1);
   renderer.localClippingEnabled = true;
   const scene = new THREE.Scene();
-  const points = new THREE.Points(
-    new THREE.BufferGeometry(),
-    new THREE.PointsMaterial({ size: 2, sizeAttenuation: false, vertexColors: true }),
-  );
+  // the Distance colour mode is a vertex shader on the two coloured layers; its range is a uniform, so a camera move recolours nothing on the CPU
+  const distance = distanceUniforms();
+  const colouredMaterial = () => {
+    const m = new THREE.PointsMaterial({ size: 2, sizeAttenuation: false, vertexColors: true });
+    useDistanceShader(m, distance);
+    return m;
+  };
+  const points = new THREE.Points(new THREE.BufferGeometry(), colouredMaterial());
   points.frustumCulled = false;
   scene.add(points);
   // second render: deleted points (overlay, one flat translucent colour) or the edited cloud (split, right pane)
@@ -64,10 +70,7 @@ export function createViewport(
   deletedPts.frustumCulled = false;
   deletedPts.visible = false;
   scene.add(deletedPts);
-  const rightPts = new THREE.Points(
-    new THREE.BufferGeometry(),
-    new THREE.PointsMaterial({ size: 2, sizeAttenuation: false, vertexColors: true }),
-  );
+  const rightPts = new THREE.Points(new THREE.BufferGeometry(), colouredMaterial());
   rightPts.frustumCulled = false;
   rightPts.visible = false;
   scene.add(rightPts);
@@ -150,7 +153,10 @@ export function createViewport(
       obj.geometry.dispose();
       const g = new THREE.BufferGeometry();
       g.setAttribute("position", new THREE.BufferAttribute(data.coords, 3));
-      if (colours) g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(data.count * 3), 3));
+      if (colours) {
+        g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(data.count * 3), 3));
+        g.setAttribute("ovr", new THREE.BufferAttribute(new Float32Array(data.count), 1));
+      }
       obj.geometry = g;
       st.data = data;
       st.key = "";
@@ -166,8 +172,12 @@ export function createViewport(
       if (key !== st.key) {
         st.key = key;
         const attr = obj.geometry.getAttribute("color") as THREE.BufferAttribute;
-        attr.set(colourize(data, { mode: s.colour.mode, bounds: s.session?.active_bounds ?? null, markDeleted: false, region: region ? colourRegion(s) : null }));
+        const { colours, ovr } = colourizeMasked(data, { mode: s.colour.mode, bounds: s.session?.active_bounds ?? null, markDeleted: false, region: region ? colourRegion(s) : null });
+        attr.set(colours);
         attr.needsUpdate = true;
+        const mask = obj.geometry.getAttribute("ovr") as THREE.BufferAttribute;
+        mask.set(ovr);
+        mask.needsUpdate = true;
       }
     }
     layerFor.set(obj, st);
@@ -257,6 +267,13 @@ export function createViewport(
       return camera;
     };
     (points.material as THREE.PointsMaterial).size = s.colour.pointSize;
+    distance.uMode.value = s.colour.mode === "distance" ? 1 : 0;
+    const dBounds = s.session?.active_bounds;
+    if (distance.uMode.value === 1 && dBounds) {
+      const range = distanceRange(eye, dBounds);
+      distance.uNear.value = range.near;
+      distance.uFar.value = range.far;
+    }
     pivot.position.set(cam.target[0] - origin[0], cam.target[1] - origin[1], cam.target[2] - origin[2]);
     pivot.scale.setScalar(Math.max(halfHeight(cam) * 0.03, 1e-9));
     pivot.visible = s.session !== null;

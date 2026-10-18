@@ -63,7 +63,7 @@ test("open a cloud, navigate, pick a pivot, colour, read counts", async ({ page 
 
   await test.step("E2E-01 colouring options follow the schema", async () => {
     const colour = page.locator('[data-control="colour-mode"]');
-    expect(await colour.locator("option").evaluateAll((o) => o.map((x) => (x as HTMLOptionElement).value))).toEqual(["turbo", "viridis", "flat"]);
+    expect(await colour.locator("option").evaluateAll((o) => o.map((x) => (x as HTMLOptionElement).value))).toEqual(["turbo", "viridis", "flat", "distance"]);
     await expect(colour).toHaveValue("turbo");
     await colour.selectOption("viridis");
     await expect(colour).toHaveValue("viridis");
@@ -2771,13 +2771,13 @@ async function brightestPixel(page: import("@playwright/test").Page, at: { x: nu
   }
 }
 
-test("E2E-77 12-7 colour modes Turbo (default), Viridis and Grey: the select lists exactly them, the legend shows the active ramp with the cloud's height range, the drawn colour of a fixed wall point differs per mode", async ({ page }) => {
+test("E2E-77 12-7 colour modes Turbo (default), Viridis and Grey: the select lists them (and Distance after them), the legend shows the active ramp with the cloud's height range, the drawn colour of a fixed wall point differs per mode", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   const { exact, ctl } = helpers(page);
   await openRoom(page, exact);
   const modes = ctl("colour-mode");
-  expect(await modes.locator("option").evaluateAll((o) => o.map((x) => (x as HTMLOptionElement).value))).toEqual(["turbo", "viridis", "flat"]);
-  expect(await modes.locator("option").evaluateAll((o) => o.map((x) => x.textContent))).toEqual(["Height (Turbo)", "Height (Viridis)", "Grey"]);
+  expect(await modes.locator("option").evaluateAll((o) => o.map((x) => (x as HTMLOptionElement).value))).toEqual(["turbo", "viridis", "flat", "distance"]);
+  expect(await modes.locator("option").evaluateAll((o) => o.map((x) => x.textContent))).toEqual(["Height (Turbo)", "Height (Viridis)", "Grey", "Distance to viewer"]);
   await expect(modes).toHaveValue("turbo");
   await expect(page.locator("#legend-ramp")).toHaveCount(1);
   const wall = await settledScreen(page, [-1, 5, 3]);
@@ -2807,4 +2807,77 @@ test("E2E-77 12-7 colour modes Turbo (default), Viridis and Grey: the select lis
   await page.locator("#legend").screenshot({ path: "/out/legend-flat.png" });
   await expect(page.locator('#legend [data-legend="base"]')).toHaveCSS("background-color", "rgb(176, 176, 176)");
   await modes.selectOption("turbo");
+});
+
+test("E2E-78 12-8 Distance to viewer: the legend reads near to far, the drawn colour of a fixed point follows the view, a selected point keeps its selection colour, the console stays clean", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("console", (m) => {
+    if (m.type() === "error" || /shader|WebGL|GL_INVALID/i.test(m.text())) errors.push(m.text());
+  });
+  const { exact, ctl } = helpers(page);
+  await openRoom(page, exact);
+  const modes = ctl("colour-mode");
+  await expect(modes.locator('option[value="distance"]')).toHaveText("Distance to viewer");
+  const sum = (a: number[], b: number[]) => a.reduce((t, v, i) => t + Math.abs(v - b[i]), 0);
+  // an isolated noise point (nothing else shares its screen position from the front or the back)
+  const lone = [16.5, 3.5, 3];
+  const pixel = async () => brightestPixel(page, await settledScreen(page, lone));
+  await modes.selectOption("distance");
+  await expect(page.locator("#legend-ramp")).toHaveAttribute("data-ramp", "distance");
+  await expect(page.locator("#legend-ramp .ramp-min")).toHaveText("near");
+  await expect(page.locator("#legend-ramp .ramp-max")).toHaveText("far");
+  // the same world point is nearer to a viewer in front of the room (y 0 side) than to one behind it
+  await ctl("arrow-front").click();
+  await expect(ctl("cube-front")).toHaveAttribute("data-facing", "true");
+  const fromFront = await pixel();
+  await page.screenshot({ path: "/out/distance-front.png" });
+  await page.locator("#legend").screenshot({ path: "/out/legend-distance.png" });
+  await ctl("arrow-back").click();
+  await expect(ctl("cube-back")).toHaveAttribute("data-facing", "true");
+  const fromBack = await pixel();
+  await page.screenshot({ path: "/out/distance-back.png" });
+  expect(sum(fromFront, fromBack), `front ${fromFront} back ${fromBack}`).toBeGreaterThan(60);
+  // the near end is the light stop, the far end the dark one
+  expect(fromFront[0] + fromFront[1] + fromFront[2]).toBeGreaterThan(fromBack[0] + fromBack[1] + fromBack[2]);
+  // a wheel dolly keeps drawing without errors
+  const box = (await page.locator("#viewport").boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, -400);
+  await page.mouse.wheel(0, 200);
+  await expect.poll(() => hook(page, (e) => e.drawnCount())).toBeGreaterThan(0);
+  // a selected point keeps the selection colour (the shader leaves flagged points alone)
+  await modes.selectOption("turbo");
+  await ctl("sel-select-displayed").click();
+  await expect.poll(async () => (await page.locator('#statusbar [data-status="Selected"]').innerText()).replace(/\D/g, ""), { timeout: 15000 }).not.toBe("0");
+  const selectedTurbo = await pixel();
+  await modes.selectOption("distance");
+  await expect.poll(async () => sum(selectedTurbo, await pixel()), { timeout: 5000 }).toBeLessThanOrEqual(6);
+  expect(errors).toEqual([]);
+});
+
+test("E2E-78 12-8 the interaction LOD still draws at most 200k points during an orbit drag in Distance mode and the full draw returns after idle", async ({ page }) => {
+  test.setTimeout(240000);
+  const { exact, ctl } = helpers(page);
+  const total = BIG.floor + BIG.ghost;
+  await page.goto("/");
+  await page.locator("#file-input").setInputFiles({ name: "big.pcd", mimeType: "application/octet-stream", buffer: bigRoomPcd(bigRoomXyz()) });
+  await exact("Original", total.toLocaleString("en-US"));
+  await ctl("colour-mode").selectOption("distance");
+  await expect.poll(() => hook(page, (e) => e.drawnCount()), { timeout: 15000 }).toBe(total);
+  const box = (await page.locator("#viewport").boundingBox())!;
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  const during: number[] = [];
+  for (let i = 1; i <= 8; i++) {
+    await page.mouse.move(cx + i * 25, cy + i * 8);
+    during.push(await hook(page, (e) => e.drawnCount()));
+  }
+  expect(Math.max(...during)).toBeLessThanOrEqual(200_000);
+  expect(Math.min(...during)).toBeGreaterThan(100_000);
+  await page.mouse.up();
+  await expect.poll(() => hook(page, (e) => e.drawnCount()), { timeout: 5000 }).toBe(total);
 });

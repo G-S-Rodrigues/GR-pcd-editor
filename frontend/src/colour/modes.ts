@@ -4,7 +4,7 @@ import { type Tilt, slabCoordinate } from "../inspector/tilt";
 import { PALETTE, type Rgb } from "./palette";
 import { RAMP_STOPS, rampAt } from "./ramps";
 
-export type ColourMode = "turbo" | "viridis" | "flat";
+export type ColourMode = "turbo" | "viridis" | "flat" | "distance";
 
 export interface ColourOption {
   id: ColourMode;
@@ -21,6 +21,7 @@ export function colourOptions(_schema: FieldInfo[]): ColourOption[] {
     { id: "turbo", label: "Height (Turbo)", enabled: true },
     { id: "viridis", label: "Height (Viridis)", enabled: true },
     { id: "flat", label: "Grey", enabled: true },
+    { id: "distance", label: "Distance to viewer", enabled: true },
   ];
 }
 
@@ -47,7 +48,16 @@ export interface ColourContext {
 
 /** Per-point RGB (float 0..1); selection/protection/deleted flags override the base colour. */
 export function colourize(r: ColourInput, ctx: ColourContext): Float32Array {
+  return colourizeMasked(r, ctx).colours;
+}
+
+/**
+ * `colours` as `colourize`; `ovr` is 1 for each point whose colour is a flag, protected or region colour and 0 for the
+ * points the mode colours itself. The Distance shader recolours only the 0 points (the camera decides their colour).
+ */
+export function colourizeMasked(r: ColourInput, ctx: ColourContext): { colours: Float32Array; ovr: Float32Array } {
   const out = new Float32Array(r.count * 3);
+  const ovr = new Float32Array(r.count);
   const lo = ctx.bounds ? ctx.bounds.min[2] : 0;
   const hi = ctx.bounds ? ctx.bounds.max[2] : 0;
   const stops = ctx.mode === "turbo" ? RAMP_STOPS.turbo : ctx.mode === "viridis" ? RAMP_STOPS.viridis : null;
@@ -61,17 +71,20 @@ export function colourize(r: ColourInput, ctx: ColourContext): Float32Array {
   for (let i = 0; i < r.count; i++) {
     const f = r.flags[i];
     let c: Rgb;
+    ovr[i] = 1;
     if (f & 2) c = region ? PALETTE.protectedStrong : PALETTE.protected;
     else if (f & 8) c = PALETTE.previewAdd;
     else if (f & 16) c = PALETTE.previewRemove;
     else if (f & 1) c = PALETTE.selected;
     else if (f & 4 && ctx.markDeleted) c = PALETTE.deleted;
     else if (region && inRegion(i)) c = PALETTE.protectedStrong;
-    else if (stops) c = heightRamp(r.coords[3 * i + 2] + r.origin[2], lo, hi, stops);
-    else c = PALETTE.base;
+    else {
+      ovr[i] = 0;
+      c = stops ? heightRamp(r.coords[3 * i + 2] + r.origin[2], lo, hi, stops) : PALETTE.base;
+    }
     out[3 * i] = c[0];
     out[3 * i + 1] = c[1];
     out[3 * i + 2] = c[2];
   }
-  return out;
+  return { colours: out, ovr };
 }

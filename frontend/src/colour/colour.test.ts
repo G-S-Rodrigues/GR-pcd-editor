@@ -6,10 +6,10 @@ import { PALETTE } from "./palette";
 const f = (name: string, type = "F", size = 4): FieldInfo => ({ name, type, size, count: 1 });
 const XYZ = [f("x"), f("y"), f("z")];
 
-test("UI-17 options are Turbo, Viridis and Grey, all enabled, whatever the schema holds", () => {
+test("UI-17 options are Turbo, Viridis, Grey and Distance to viewer, all enabled, whatever the schema holds", () => {
   for (const schema of [XYZ, [...XYZ, f("rgba", "U"), f("intensity")]]) {
     const o = colourOptions(schema);
-    expect(o.map((x) => x.id)).toEqual(["turbo", "viridis", "flat"]);
+    expect(o.map((x) => x.id)).toEqual(["turbo", "viridis", "flat", "distance"]);
     expect(o.every((x) => x.enabled && x.attr === undefined)).toBe(true);
   }
 });

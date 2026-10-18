@@ -48,7 +48,7 @@ export interface ClientPatch {
 const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const unitQuat = (v: unknown): v is number[] => nums(v, 4) && Math.hypot(...v) > 1e-9;
 const BOX_KEYS = ["x", "y", "z"].flatMap((a) => ["min", "max"].map((s) => `${a}-${s}`));
-const COLOURS = ["turbo", "viridis", "flat"];
+const COLOURS = ["turbo", "viridis", "flat", "distance"];
 /** Saved colour modes of older builds: Height, RGB and Intensity all open as Turbo (RGB and Intensity were removed in part 12). */
 const OLD_COLOURS = ["height", "rgb", "intensity"];
 export const migrateColour = (m: string): string | null => (OLD_COLOURS.includes(m) ? "turbo" : COLOURS.includes(m) ? m : null);

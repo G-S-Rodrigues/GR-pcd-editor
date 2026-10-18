@@ -34,7 +34,7 @@ export const TOOLTIPS: Record<string, string> = {
   "fit-cloud": "Frame the whole active cloud (key F)",
   "pivot-reset": "Move the orbit pivot back to the centre of the active cloud",
   "pivot-pick": "Click a point in the view to make it the orbit pivot (exact coordinates are looked up on the server)",
-  "colour-mode": "Colour the points by height with the Turbo or Viridis ramp, or flat grey; the legend shows the ramp and its range",
+  "colour-mode": "Colour the points by height (Turbo or Viridis), by distance to the viewer, or flat grey; the legend shows the ramp and its range",
   "point-size": "Size of drawn points in pixels (display only)",
   "point-size-auto": "Set the point size from the current zoom: closer views get bigger points (display only)",
   budget: "How many points to draw at most; larger is slower. The status bar shows how many are drawn of how many are eligible",
