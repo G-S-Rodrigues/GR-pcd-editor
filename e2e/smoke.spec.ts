@@ -874,18 +874,22 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
 }
 
 test("E2E-23 7b2 an Add shape is shown as a draft with its own outline colour and no invented count, until committed", async ({ page }) => {
-  const { exact, ctl } = helpers(page);
+  const { exact, ctl, setNum } = helpers(page);
   await openRoom(page, exact);
   await ctl("tool-box").click();
+  // owner ruling D: an Add over an EMPTY selection goes live, so first commit a selection with Replace
+  for (const [id, v] of [["box-center-x", -1], ["box-center-y", 4.5], ["box-center-z", 2.5], ["box-size-x", 1], ["box-size-y", 10], ["box-size-z", 5]] as const) await setNum(id, v);
+  await exact("Selected", String(ROOM.wall));
+  await expect(page.locator("#draft-note")).toBeHidden();
   await ctl("op-select").selectOption("add");
   await expect(page.locator("#draft-note")).toBeHidden();
-  await ctl("box-size-x").fill("3");
+  await ctl("box-size-x").fill("4");
   await ctl("box-size-x").press("Enter");
   await expect(page.locator("#draft-note")).toBeVisible();
   await expect(page.locator("#draft-note")).toContainText("Draft, not yet applied");
   await expect(page.locator("#draft-note")).toContainText("count is unknown");
   await expect(ctl("sel-commit")).toBeEnabled();
-  await expect(ctl("apply")).toBeDisabled();
+  await expect(ctl("apply")).toBeEnabled(); // owner ruling A: Apply stays enabled during a draft (it deletes the committed selection only)
   await page.waitForTimeout(300);
   await page.screenshot({ path: "/out/draft.png" });
   await ctl("sel-commit").click();
@@ -2259,7 +2263,7 @@ test("E2E-62 a single Cluster keeps Apply enabled across scope, protection and d
   await expect(t.ctl("apply")).toBeDisabled();
 });
 
-test("E2E-63 Preview with a pending Add cluster draft keeps the draft and never makes the old selection appliable", async ({ page }) => {
+test("E2E-63 Preview with a pending Add cluster draft keeps the draft; Apply stays enabled and deletes only the committed selection", async ({ page }, testInfo) => {
   const t = clusterHelpers(page);
   await openRoom(page, t.exact);
   await t.ctl("tool-cluster").click();
@@ -2272,9 +2276,14 @@ test("E2E-63 Preview with a pending Add cluster draft keeps the draft and never 
   await t.ctl("preview").click();
   await expect(page.locator("#notices")).toContainText("Commit or discard the drafted tool shape first");
   await expect(page.locator("#draft-note")).toBeVisible();
-  await expect(t.ctl("apply")).toBeDisabled();
-  await expect(t.ctl("apply")).toHaveAttribute("title", /commit or discard/);
+  await expect(t.ctl("apply")).toBeEnabled(); // owner ruling A: a draft does not block Apply
   await t.exact("Selected", String(ROOM.wall));
+  // Apply deletes exactly the committed selection (the wall); the floor cluster in the draft is not deleted.
+  // Production (afterChange) clears the draft after any applied change, which plan 12b allows (E2E-84).
+  await t.ctl("apply").click();
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.wall));
+  await expect(page.locator("#draft-note")).toBeHidden();
+  await t.expectActive(testInfo, inWall);
 });
 
 test("E2E-64 Cluster Subtract and Intersect commit against the existing selection and Apply deletes exactly the result", async ({ page }, testInfo) => {
