@@ -44,6 +44,20 @@ export function canApply(s: AppState): boolean {
   );
 }
 
+/** Why Apply is disabled for a session in the edited view (the tooltip); the order matches what canApply checks. */
+export function applyBlockedText(s: AppState): string {
+  if (!s.session) return "no file open";
+  if (s.compare !== "edited") return "return to the edited view";
+  if (s.job.busy) return "a job is running";
+  if (s.draft) return "commit or discard the drafted tool shape first";
+  const p = protectionBlock(s.tools.protection);
+  if (p) return p;
+  if ((s.candidate?.cluster as { complete?: boolean } | null | undefined)?.complete === false) {
+    return "the cluster stopped at its Max points limit and is not complete; raise Max points or clear the field";
+  }
+  return s.candidate ? "the preview is out of date or empty; preview again" : "preview a selection first";
+}
+
 /** Preview orchestration: debounce, supersede (cancel the older job), drop stale results, retry a stale job once. */
 export function createRunner(store: Store<AppState>, api: RunnerApi) {
   const toolDebounce = createDebouncer(TOOL_DEBOUNCE_MS);
@@ -157,6 +171,11 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
     previewNow(): void {
       toolDebounce.cancel();
       const s = store.get();
+      if (s.draft) {
+        // a pending Add/Subtract/Intersect draft has no count to preview; evaluating the old selection would drop the draft silently
+        addNotice(store, "warn", "draft_pending", "Commit or discard the drafted tool shape first; Preview would not include it");
+        return;
+      }
       if (!isDraftOp(s.op) && buildSelection(s).ok) selectionNow();
       else if ((s.session?.selection.count ?? 0) > 0) candidateNow();
     },

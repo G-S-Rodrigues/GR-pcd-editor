@@ -2138,3 +2138,152 @@ test("E2E-58 11 the strip survives save and reopen (names, order, marker, counts
   expect(rows.length).toBe(ROOM_TOTAL - ROOM.ghost - ROOM.wall);
   expect(rows.map(rowKey).sort()).toEqual(expected);
 });
+
+/** Cluster seeds on the room (radius 1 separates the clusters): the wall (40), the ghost blob (27), the floor with its nine slab ghosts (409). */
+const CL = { wall: [-1, 4, 4], blob: [3, 13, 3], floor: [10, 10, 0] } as const;
+const inWall = (r: number[]) => r[0] === -1 && r[1] >= 0 && r[1] <= 9 && r[2] >= 1 && r[2] <= 4;
+const inBlob = (r: number[]) => r[0] >= 2 && r[0] <= 4 && r[1] >= 12 && r[1] <= 14 && r[2] >= 1 && r[2] <= 3;
+const f32key = (r: number[]) => r.map(Math.fround).join(",");
+
+function clusterHelpers(page: import("@playwright/test").Page) {
+  const h = helpers(page);
+  // these tests delete most of the cloud: accept the bulk-delete confirmation and keep its text
+  page.removeAllListeners("dialog");
+  const confirms: string[] = [];
+  page.on("dialog", (d) => {
+    if (/points \(/.test(d.message())) confirms.push(d.message());
+    void d.accept();
+  });
+  /** A real mouse click on the projected seed point, with the seed picker armed (default perspective view). */
+  const pickSeed = async (at: readonly number[]) => {
+    await h.ctl("cluster-pick-seed").click();
+    await page.waitForTimeout(200);
+    const px = await page.evaluate((p) => (window as unknown as { __editor: EditorHook }).__editor.projectWorld(p as [number, number, number]), [...at]);
+    expect(px).not.toBeNull();
+    await page.mouse.click(px!.x, px!.y);
+    await expect(page.locator("#editpanels")).toContainText("Seed: point");
+  };
+  /** Export the active points through the dialog and compare with the room minus `deleted`. */
+  const expectActive = async (testInfo: import("@playwright/test").TestInfo, deleted: (r: number[]) => boolean) => {
+    await h.ctl("export").click();
+    const [dl] = await Promise.all([page.waitForEvent("download"), h.ctl("export-go").click()]);
+    const path = testInfo.outputPath(`cluster-${Date.now()}.pcd`);
+    await dl.saveAs(path);
+    const room = parsePcd(roomPcd()).rows;
+    const expected = room.filter((r) => !deleted(r)).map(f32key).sort();
+    const rows = parsePcd(readFileSync(path)).rows;
+    expect(rows.length).toBe(expected.length);
+    expect(rows.map(f32key).sort()).toEqual(expected);
+  };
+  return { ...h, pickSeed, expectActive, confirms };
+}
+
+test("E2E-60 a single Cluster (seed click, preview) enables Apply and deletes exactly the cluster", async ({ page }, testInfo) => {
+  const t = clusterHelpers(page);
+  await openRoom(page, t.exact);
+  await t.ctl("tool-cluster").click();
+  await t.pickSeed(CL.wall);
+  await t.setNum("cluster-radius", 1);
+  await t.exact("Candidates", String(ROOM.wall));
+  await expect(t.ctl("apply")).toBeEnabled();
+  await t.ctl("apply").click();
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.wall));
+  await t.expectActive(testInfo, inWall);
+});
+
+/** The floor cluster at radius 1.1: the floor, its nine slab ghosts and the ghost blob standing on it (the blob is one grid step above the floor). */
+const FLOOR_CLUSTER = ROOM.floor + ROOM.floorGhost + ROOM.ghost;
+const inFloorCluster = (r: number[]) => Number.isFinite(r[0]) && !inWall(r) && r[3] !== 0.1;
+
+test("E2E-61 Cluster with Operation Add: after Commit draft the selection is |A union B| and Apply deletes exactly that set", async ({ page }, testInfo) => {
+  const t = clusterHelpers(page);
+  await openRoom(page, t.exact);
+  await t.ctl("tool-cluster").click();
+  await t.setNum("cluster-radius", 1.1);
+  await t.pickSeed(CL.wall);
+  await t.exact("Selected", String(ROOM.wall));
+  await t.ctl("op-select").selectOption("add");
+  await t.pickSeed(CL.floor);
+  await expect(page.locator("#draft-note")).toBeVisible(); // a draft: nothing grows until Commit draft
+  await expect(t.ctl("apply")).toBeDisabled();
+  await t.exact("Selected", String(ROOM.wall));
+  await t.ctl("sel-commit").click();
+  await t.exact("Selected", String(ROOM.wall + FLOOR_CLUSTER));
+  await t.exact("Candidates", String(ROOM.wall + FLOOR_CLUSTER));
+  await expect(t.ctl("apply")).toBeEnabled();
+  await t.ctl("apply").click();
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.wall - FLOOR_CLUSTER));
+  expect(t.confirms[0]).toContain(`${ROOM.wall + FLOOR_CLUSTER} of ${ROOM_TOTAL} points`);
+  await t.expectActive(testInfo, (r) => inWall(r) || inFloorCluster(r));
+});
+
+test("E2E-62 a single Cluster keeps Apply enabled across scope, protection and display filter; a protected seed says why", async ({ page }) => {
+  const t = clusterHelpers(page);
+  await openRoom(page, t.exact);
+  await t.ctl("tool-cluster").click();
+  await t.setNum("cluster-radius", 1.1);
+  await t.pickSeed(CL.wall);
+  await t.exact("Candidates", String(ROOM.wall));
+  await expect(t.ctl("apply")).toBeEnabled();
+  await t.ctl("scope-select").selectOption("active");
+  await t.exact("Candidates", String(ROOM.wall));
+  await expect(t.ctl("apply")).toBeEnabled();
+  await t.ctl("scope-select").selectOption("displayed");
+  await t.ctl("prot-enabled").check();
+  await t.setNum("prot-min", -0.1);
+  await t.setNum("prot-max", 0.1);
+  await t.exact("Protected", String(ROOM.floor + ROOM.floorGhost));
+  await t.exact("Candidates", String(ROOM.wall));
+  await expect(t.ctl("apply")).toBeEnabled();
+  await t.setNum("filter-z-min", 0.5);
+  await t.exact("Candidates", String(ROOM.wall));
+  await expect(t.ctl("apply")).toBeEnabled();
+  await t.ctl("filter-z-min-reset").click();
+  // a seed inside the protected slab is refused with its reason, and Apply stays off
+  await t.ctl("cluster-pick-seed").click();
+  const px = await page.evaluate((p) => (window as unknown as { __editor: EditorHook }).__editor.projectWorld(p as [number, number, number]), [12, 12, 0]);
+  await page.mouse.click(px!.x, px!.y);
+  await expect(page.locator("#notices")).toContainText("seed must be an active, valid, in-scope, unexcluded point");
+  await expect(t.ctl("apply")).toBeDisabled();
+});
+
+test("E2E-63 Preview with a pending Add cluster draft keeps the draft and never makes the old selection appliable", async ({ page }) => {
+  const t = clusterHelpers(page);
+  await openRoom(page, t.exact);
+  await t.ctl("tool-cluster").click();
+  await t.setNum("cluster-radius", 1.1);
+  await t.pickSeed(CL.wall);
+  await t.exact("Selected", String(ROOM.wall));
+  await t.ctl("op-select").selectOption("add");
+  await t.pickSeed(CL.floor);
+  await expect(page.locator("#draft-note")).toBeVisible();
+  await t.ctl("preview").click();
+  await expect(page.locator("#notices")).toContainText("Commit or discard the drafted tool shape first");
+  await expect(page.locator("#draft-note")).toBeVisible();
+  await expect(t.ctl("apply")).toBeDisabled();
+  await expect(t.ctl("apply")).toHaveAttribute("title", /commit or discard/);
+  await t.exact("Selected", String(ROOM.wall));
+});
+
+test("E2E-64 Cluster Subtract and Intersect commit against the existing selection and Apply deletes exactly the result", async ({ page }, testInfo) => {
+  const t = clusterHelpers(page);
+  await openRoom(page, t.exact);
+  await t.ctl("tool-cluster").click();
+  await t.setNum("cluster-radius", 1.1);
+  await t.ctl("sel-select-displayed").click();
+  await t.exact("Selected", String(ROOM_TOTAL - ROOM.invalid));
+  await t.ctl("op-select").selectOption("subtract");
+  await t.pickSeed(CL.wall);
+  await t.ctl("sel-commit").click();
+  await t.exact("Selected", String(ROOM_TOTAL - ROOM.invalid - ROOM.wall));
+  await t.ctl("op-select").selectOption("intersect");
+  await t.pickSeed(CL.floor);
+  await t.ctl("sel-commit").click();
+  await t.exact("Selected", String(FLOOR_CLUSTER));
+  await t.exact("Candidates", String(FLOOR_CLUSTER));
+  await expect(t.ctl("apply")).toBeEnabled();
+  await t.ctl("apply").click();
+  await t.exact("Active", String(ROOM_TOTAL - FLOOR_CLUSTER));
+  expect(t.confirms[0]).toContain(`${FLOOR_CLUSTER} of ${ROOM_TOTAL} points`);
+  await t.expectActive(testInfo, inFloorCluster);
+});

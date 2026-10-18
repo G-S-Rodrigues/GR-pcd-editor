@@ -1,5 +1,4 @@
-import { protectionBlock } from "../inspector/protection";
-import { canApply } from "../orchestration/runner";
+import { applyBlockedText, canApply } from "../orchestration/runner";
 import { headline } from "../status/headline";
 import { shouldWarn, unsavedLabel } from "../orchestration/unsaved";
 import type { AppState } from "../state/app";
@@ -76,15 +75,7 @@ export function buildToolbar(root: HTMLElement, store: Store<AppState>, a: Toolb
     set(
       apply,
       canApply(s) && s.compare === "edited",
-      !s.session
-        ? "no file open"
-        : s.compare !== "edited"
-          ? "return to the edited view"
-          : s.job.busy
-          ? "a job is running"
-          : s.draft
-            ? "commit or discard the drafted tool shape first"
-            : protectionBlock(s.tools.protection) ?? (s.candidate ? "the preview is out of date or empty; preview again" : "preview a selection first"),
+      applyBlockedText(s),
     );
   };
   store.subscribe(sync);

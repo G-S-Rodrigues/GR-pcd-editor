@@ -4,7 +4,7 @@ import { createAppStore } from "../state/app";
 import { candidateFixture, sessionFixture } from "../testing/fixtures";
 import { setCenter } from "../tools/box/model";
 import { setSeed } from "../tools/cluster/model";
-import { canApply, createRunner } from "./runner";
+import { applyBlockedText, canApply, createRunner } from "./runner";
 
 interface Deferred {
   id: string;
@@ -166,6 +166,29 @@ describe("runner", () => {
     expect(t.api.submitSelection).toHaveBeenCalledTimes(1);
     expect((t.submitted[0] as { op: string }).op).toBe("add");
     expect(t.store.get().draft).toBe(false);
+  });
+
+  it("UI-290 Preview with a pending Add draft keeps the draft and previews nothing: it must not turn the old selection into an appliable candidate", async () => {
+    const t = setup({ op: "add" });
+    t.store.set({ session: sessionFixture({ selection: { count: 40, ops: [] } }) });
+    t.editBox(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(t.store.get().draft).toBe(true);
+    t.runner.previewNow();
+    await flush();
+    expect(t.api.submitCandidate).not.toHaveBeenCalled();
+    expect(t.api.submitSelection).not.toHaveBeenCalled();
+    expect(t.store.get().draft).toBe(true);
+    expect(t.store.get().candidate).toBeNull();
+    expect(t.store.get().notices.map((n) => n.code)).toContain("draft_pending");
+  });
+
+  it("UI-291 the Apply tooltip names a partial cluster and a pending draft, not a generic out-of-date preview", () => {
+    const base = createAppStore().get();
+    const partial = candidateFixture({ candidates: 5, cluster: { seed_id: 1, radius: 0.5, size: 5, complete: false, limit: 5, bounds: { min: [0, 0, 0], max: [1, 1, 1] } } });
+    expect(applyBlockedText({ ...base, session: sessionFixture(), candidate: partial })).toMatch(/Max points/);
+    expect(applyBlockedText({ ...base, session: sessionFixture(), draft: true })).toMatch(/commit or discard/);
+    expect(applyBlockedText({ ...base, session: sessionFixture() })).toBe("preview a selection first");
   });
 
   it("one-shot requests (select displayed, invert) run immediately without a tool and supersede earlier jobs", async () => {
