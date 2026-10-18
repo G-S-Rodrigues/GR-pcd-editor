@@ -83,7 +83,7 @@ test("UI-373 the ovr attribute is 1 for points whose baked colour is a flag, pro
 
 test("UI-374 the Distance option is enabled after Grey whatever the file holds, and its legend reads near to far", () => {
   const o = colourOptions([]);
-  expect(o.map((x) => x.id)).toEqual(["turbo", "viridis", "flat", "distance"]);
+  expect(o.map((x) => x.id)).toEqual(["turbo", "viridis", "flat", "distance", "normals"]);
   const d = o.find((x) => x.id === "distance");
   expect(d).toMatchObject({ enabled: true, label: "Distance to viewer" });
   expect(d?.attr).toBeUndefined();

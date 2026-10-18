@@ -162,3 +162,18 @@ export function countInTiltedSlab(rows: number[][], rxDeg: number, ryDeg: number
     return s >= min - 1e-9 && s <= max + 1e-9;
   }).length;
 }
+
+/**
+ * Dense floor and wall for Normal shading (E2E-79): a 20 x 20 floor at z 0 (0.2 m grid, x 0..19.8) and a wall at
+ * x -5 (y 0..19.8, z 0..3.8, 0.2 m grid). The wall is farther than one normal voxel from the floor, so no voxel
+ * mixes the two surfaces. Truth: the floor normal is +Z, the wall normal +X.
+ */
+export const NORMAL_ROOM_TOTAL = 100 * 100 + 100 * 20;
+export function normalRoomPcd(): Buffer {
+  const rows: string[] = [];
+  for (let i = 0; i < 100; i++) for (let j = 0; j < 100; j++) rows.push(`${(i * 0.2).toFixed(1)} ${(j * 0.2).toFixed(1)} 0 0.5`);
+  for (let j = 0; j < 100; j++) for (let k = 0; k < 20; k++) rows.push(`-5 ${(j * 0.2).toFixed(1)} ${(k * 0.2).toFixed(1)} 0.7`);
+  const head = ["# .PCD v.7 - synthetic normal room", "VERSION .7", "FIELDS x y z intensity", "SIZE 4 4 4 4", "TYPE F F F F",
+    "COUNT 1 1 1 1", `WIDTH ${rows.length}`, "HEIGHT 1", "VIEWPOINT 0 0 0 1 0 0 0", `POINTS ${rows.length}`, "DATA ascii"];
+  return Buffer.from(`${head.join("\n")}\n${rows.join("\n")}\n`);
+}

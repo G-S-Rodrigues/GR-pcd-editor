@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
-import { BIG, FLOOR, GHOST, ROOM, ROOM_TOTAL, TILTED, TOTAL, bigRoomPcd, bigRoomXyz, countInTiltedSlab, countInXyz, parsePcd, roomPcd, rowKey, syntheticPcd, tiltedFloorAngles, tiltedFloorPcd, truthKeys } from "./synthetic";
+import { BIG, FLOOR, GHOST, NORMAL_ROOM_TOTAL, ROOM, ROOM_TOTAL, TILTED, TOTAL, bigRoomPcd, bigRoomXyz, countInTiltedSlab, countInXyz, normalRoomPcd, parsePcd, roomPcd, rowKey, syntheticPcd, tiltedFloorAngles, tiltedFloorPcd, truthKeys } from "./synthetic";
 
 test("open a cloud, navigate, pick a pivot, colour, read counts", async ({ page }) => {
   const errors: string[] = [];
@@ -63,7 +63,7 @@ test("open a cloud, navigate, pick a pivot, colour, read counts", async ({ page 
 
   await test.step("E2E-01 colouring options follow the schema", async () => {
     const colour = page.locator('[data-control="colour-mode"]');
-    expect(await colour.locator("option").evaluateAll((o) => o.map((x) => (x as HTMLOptionElement).value))).toEqual(["turbo", "viridis", "flat", "distance"]);
+    expect(await colour.locator("option").evaluateAll((o) => o.map((x) => (x as HTMLOptionElement).value))).toEqual(["turbo", "viridis", "flat", "distance", "normals"]);
     await expect(colour).toHaveValue("turbo");
     await colour.selectOption("viridis");
     await expect(colour).toHaveValue("viridis");
@@ -2776,8 +2776,8 @@ test("E2E-77 12-7 colour modes Turbo (default), Viridis and Grey: the select lis
   const { exact, ctl } = helpers(page);
   await openRoom(page, exact);
   const modes = ctl("colour-mode");
-  expect(await modes.locator("option").evaluateAll((o) => o.map((x) => (x as HTMLOptionElement).value))).toEqual(["turbo", "viridis", "flat", "distance"]);
-  expect(await modes.locator("option").evaluateAll((o) => o.map((x) => x.textContent))).toEqual(["Height (Turbo)", "Height (Viridis)", "Grey", "Distance to viewer"]);
+  expect(await modes.locator("option").evaluateAll((o) => o.map((x) => (x as HTMLOptionElement).value))).toEqual(["turbo", "viridis", "flat", "distance", "normals"]);
+  expect(await modes.locator("option").evaluateAll((o) => o.map((x) => x.textContent))).toEqual(["Height (Turbo)", "Height (Viridis)", "Grey", "Distance to viewer", "Normal shading"]);
   await expect(modes).toHaveValue("turbo");
   await expect(page.locator("#legend-ramp")).toHaveCount(1);
   const wall = await settledScreen(page, [-1, 5, 3]);
@@ -2880,4 +2880,47 @@ test("E2E-78 12-8 the interaction LOD still draws at most 200k points during an 
   expect(Math.min(...during)).toBeGreaterThan(100_000);
   await page.mouse.up();
   await expect.poll(() => hook(page, (e) => e.drawnCount()), { timeout: 5000 }).toBe(total);
+});
+
+test("E2E-79 12-9 Normal shading: the legend shows the X/Y/Z swatches, a floor point and a wall point are drawn in different hues (floor blue-ish, wall red-ish), the console stays clean, and the saved mode restores after a save and reopen", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("console", (m) => {
+    if (m.type() === "error") errors.push(m.text());
+  });
+  const { exact, ctl } = helpers(page);
+  await page.goto("/");
+  await page.locator("#file-input").setInputFiles({ name: "room.pcd", mimeType: "application/octet-stream", buffer: normalRoomPcd() });
+  await exact("Original", NORMAL_ROOM_TOTAL.toLocaleString("en-US"));
+  const modes = ctl("colour-mode");
+  await expect(modes.locator('option[value="normals"]')).toHaveText("Normal shading");
+  await modes.selectOption("normals");
+  await expect(page.locator("#legend-ramp")).toHaveAttribute("data-ramp", "normals");
+  await expect(page.locator("#legend-ramp")).toContainText("Normal shading");
+  await expect(page.locator("#legend-ramp [data-swatch]")).toHaveCount(3);
+  await expect(page.locator("#legend-ramp .ramp-bar")).toBeHidden();
+  await expect(page.locator("#legend-ramp")).toHaveAttribute("aria-label", /Normal shading, X, Y, Z/);
+  await expect(page.locator('#legend [data-legend="base"]')).toBeVisible();
+  const wall = await settledScreen(page, [-5, 10, 2]);
+  const floor = await settledScreen(page, [10, 10, 0]);
+  await expect.poll(async () => (await brightestPixel(page, floor)).join(","), { timeout: 15000 }).not.toBe("0,0,0");
+  const f = await brightestPixel(page, floor);
+  const w = await brightestPixel(page, wall);
+  await page.screenshot({ path: "/out/colour-normals.png" });
+  await page.locator("#legend").screenshot({ path: "/out/legend-normals.png" });
+  expect(f[2] - f[0], `floor pixel ${f}`).toBeGreaterThan(20); // +Z reads blue
+  expect(w[0] - w[2], `wall pixel ${w}`).toBeGreaterThan(20); // a wall along x reads red
+  expect(errors).toEqual([]);
+  // save and reopen: the mode comes back
+  await expect(modes).toHaveValue("normals");
+  const [dl] = await Promise.all([page.waitForEvent("download"), ctl("save-session").click()]);
+  const path = testInfo.outputPath("normals.pcdsession");
+  await dl.saveAs(path);
+  await page.locator("#file-input").setInputFiles({ name: "other.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
+  await exact("Active", String(TOTAL));
+  await modes.selectOption("flat");
+  await page.locator("#file-input").setInputFiles({ name: "room_session_v1.pcdsession", mimeType: "application/octet-stream", buffer: readFileSync(path) });
+  await exact("Original", NORMAL_ROOM_TOTAL.toLocaleString("en-US"));
+  await expect(ctl("colour-mode")).toHaveValue("normals");
 });

@@ -45,14 +45,15 @@ test("UI-361 heightRamp takes explicit stops (default Turbo); clamping and a zer
   expect(heightRamp(1, 2, 2, RAMP_STOPS.viridis)).toEqual(rampAt(RAMP_STOPS.viridis, 0.5));
 });
 
-test("UI-362 the colour options are exactly Turbo, Viridis, Grey (id flat) and Distance to viewer, all enabled whatever the file holds", () => {
+test("UI-362 the colour options are exactly Turbo, Viridis, Grey (id flat), Distance to viewer and Normal shading, all enabled whatever the file holds", () => {
   for (const schema of [[f("x"), f("y"), f("z")], [f("x"), f("y"), f("z"), f("rgb"), f("intensity")]]) {
     const o = colourOptions(schema);
-    expect(o.map((x) => x.id)).toEqual(["turbo", "viridis", "flat", "distance"]);
-    expect(o.map((x) => x.label)).toEqual(["Height (Turbo)", "Height (Viridis)", "Grey", "Distance to viewer"]);
+    expect(o.map((x) => x.id)).toEqual(["turbo", "viridis", "flat", "distance", "normals"]);
+    expect(o.map((x) => x.label)).toEqual(["Height (Turbo)", "Height (Viridis)", "Grey", "Distance to viewer", "Normal shading"]);
     for (const x of o) {
       expect(x.enabled).toBe(true);
-      expect(x.attr).toBeUndefined();
+      if (x.id === "normals") expect(x.attr).toBe("@normal");
+      else expect(x.attr).toBeUndefined();
     }
   }
 });

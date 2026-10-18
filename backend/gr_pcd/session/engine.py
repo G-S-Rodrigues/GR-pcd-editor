@@ -33,6 +33,7 @@ from gr_pcd.geometry.filters import (
     filter_contains,
     validate_filter,
 )
+from gr_pcd.geometry.normals import NORMAL_ATTR, normals_u32
 from gr_pcd.geometry.prism import PrismSpec, prism_contains
 from gr_pcd.pcd.model import PcdCloud, valid_mask, xyz64
 from gr_pcd.session.budget import HISTORY_FRACTION
@@ -857,6 +858,9 @@ class EditingSession:
         ), rev
 
     def _attr_values(self, name: str, ids: np.ndarray):
+        if name == NORMAL_ATTR:
+            # computed from the points this render returns (display aid, not a file field)
+            return normals_u32(self.xyz[ids]), "u32"
         idx = [i for i, s in enumerate(self.cloud.schema) if s.name == name]
         if not idx:
             raise EditError("unknown_field", f"no field named {name}")

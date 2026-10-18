@@ -48,7 +48,9 @@ export function buildLegend(root: HTMLElement, store: Store<AppState>, modebar: 
   const rampBar = h("div", { class: "ramp-bar", "data-ramp-bar": "1" });
   const rampMin = h("span", { class: "ramp-min" });
   const rampMax = h("span", { class: "ramp-max" });
-  const ramp = h("div", { id: "legend-ramp", role: "img", hidden: true }, rampTitle, rampBar, h("div", { class: "ramp-ends" }, rampMin, rampMax));
+  const rampEnds = h("div", { class: "ramp-ends" }, rampMin, rampMax);
+  const rampSwatches = h("div", { class: "ramp-swatches", "data-ramp-swatches": "1", hidden: true });
+  const ramp = h("div", { id: "legend-ramp", role: "img", hidden: true }, rampTitle, rampBar, rampEnds, rampSwatches);
   const body = h("div", { id: "legend-body", "data-legend-body": "1" }, ramp, rows, modebar);
   let current: RampLegend | null = null;
   let currentKey = "";
@@ -68,6 +70,7 @@ export function buildLegend(root: HTMLElement, store: Store<AppState>, modebar: 
       rows.append(h("span", { class: "legend-item" }, chip, e.label));
     }
   };
+  const setHidden = (el: HTMLElement, hide: boolean) => (hide ? el.setAttribute("hidden", "") : el.removeAttribute("hidden"));
   const syncRamp = (s: AppState) => {
     const r = rampLegend(s.colour.mode, s.session?.active_bounds ?? null, s.session?.unit ?? "m");
     const key = r ? `${r.id}|${r.minLabel}|${r.maxLabel}` : "";
@@ -81,7 +84,17 @@ export function buildLegend(root: HTMLElement, store: Store<AppState>, modebar: 
       rampMin.textContent = r.minLabel;
       rampMax.textContent = r.maxLabel;
       ramp.setAttribute("data-ramp", r.id);
-      ramp.setAttribute("aria-label", `${r.title}, ${r.minLabel} to ${r.maxLabel}`);
+      ramp.setAttribute("aria-label", r.swatches ? `${r.title}, ${r.swatches.map((x) => x.label).join(", ")} axis colours` : `${r.title}, ${r.minLabel} to ${r.maxLabel}`);
+      setHidden(rampBar, !!r.swatches);
+      setHidden(rampEnds, !!r.swatches);
+      setHidden(rampSwatches, !r.swatches);
+      rampSwatches.replaceChildren(
+        ...(r.swatches ?? []).map((x) => {
+          const chip = h("span", { class: "chip", "data-swatch": x.label });
+          chip.style.background = cssColour(x.colour);
+          return h("span", { class: "legend-item" }, chip, x.label);
+        }),
+      );
       ramp.removeAttribute("hidden");
     } else {
       ramp.removeAttribute("data-ramp");

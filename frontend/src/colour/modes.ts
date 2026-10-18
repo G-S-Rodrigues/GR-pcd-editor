@@ -2,16 +2,17 @@ import type { AttrArray } from "../render/parse";
 import type { Bounds, FieldInfo, Vec3 } from "../state/types";
 import { type Tilt, slabCoordinate } from "../inspector/tilt";
 import { PALETTE, type Rgb } from "./palette";
+import { NORMAL_ATTR, decodeNormal, normalColour } from "./normals";
 import { RAMP_STOPS, rampAt } from "./ramps";
 
-export type ColourMode = "turbo" | "viridis" | "flat" | "distance";
+export type ColourMode = "turbo" | "viridis" | "flat" | "distance" | "normals";
 
 export interface ColourOption {
   id: ColourMode;
   label: string;
   enabled: boolean;
   reason?: string;
-  /** File field the render must carry for this mode (none of the current modes needs one). */
+  /** Render attribute this mode needs (only Normal shading: the computed @normal). */
   attr?: string;
 }
 
@@ -22,6 +23,7 @@ export function colourOptions(_schema: FieldInfo[]): ColourOption[] {
     { id: "viridis", label: "Height (Viridis)", enabled: true },
     { id: "flat", label: "Grey", enabled: true },
     { id: "distance", label: "Distance to viewer", enabled: true },
+    { id: "normals", label: "Normal shading", enabled: true, attr: NORMAL_ATTR },
   ];
 }
 
@@ -61,6 +63,8 @@ export function colourizeMasked(r: ColourInput, ctx: ColourContext): { colours: 
   const lo = ctx.bounds ? ctx.bounds.min[2] : 0;
   const hi = ctx.bounds ? ctx.bounds.max[2] : 0;
   const stops = ctx.mode === "turbo" ? RAMP_STOPS.turbo : ctx.mode === "viridis" ? RAMP_STOPS.viridis : null;
+  const nrm = ctx.mode === "normals" && r.attr && r.attrKind === "u32" ? (r.attr as Uint32Array) : null;
+  const tmp: [number, number, number] = [0, 0, 0];
   const region = ctx.region && ctx.region.intervals.length > 0 ? ctx.region : null;
   const tilt = region?.tilt;
   const inRegion = (i: number) => {
@@ -80,7 +84,7 @@ export function colourizeMasked(r: ColourInput, ctx: ColourContext): { colours: 
     else if (region && inRegion(i)) c = PALETTE.protectedStrong;
     else {
       ovr[i] = 0;
-      c = stops ? heightRamp(r.coords[3 * i + 2] + r.origin[2], lo, hi, stops) : PALETTE.base;
+      c = stops ? heightRamp(r.coords[3 * i + 2] + r.origin[2], lo, hi, stops) : nrm ? normalColour(decodeNormal(nrm[i], tmp)) : PALETTE.base;
     }
     out[3 * i] = c[0];
     out[3 * i + 1] = c[1];

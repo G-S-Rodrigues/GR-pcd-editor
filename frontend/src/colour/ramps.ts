@@ -1,4 +1,5 @@
 import type { Bounds } from "../state/types";
+import { normalSwatches } from "./normals";
 import type { Rgb } from "./palette";
 
 /** Gradient stops of the approved colour modes (review/symbol-sheet.html, colour modes table). */
@@ -32,7 +33,9 @@ export const cssGradient = (stops: readonly Rgb[]): string => {
 };
 
 export interface RampLegend {
-  id: RampId;
+  id: RampId | "normals";
+  /** Normal shading only: labelled swatches instead of a gradient. */
+  swatches?: { label: string; colour: Rgb }[];
   title: string;
   stops: readonly Rgb[];
   minLabel: string;
@@ -53,5 +56,9 @@ export function rampLegend(mode: string, bounds: Bounds | null, unit = "m"): Ram
     };
   }
   if (mode === "distance") return { id: "distance", title: "Distance to viewer", stops: RAMP_STOPS.distance, minLabel: "near", maxLabel: "far" };
+  if (mode === "normals") {
+    const swatches = normalSwatches();
+    return { id: "normals", title: "Normal shading", stops: swatches.map((x) => x.colour), swatches, minLabel: "", maxLabel: "" };
+  }
   return null;
 }
