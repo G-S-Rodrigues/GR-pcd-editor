@@ -293,14 +293,20 @@ def _valid_shape(sh, nested: bool = False) -> None:
             and _fin(sh.get("z_min"))
             and _fin(sh.get("z_max"))
         )
-    elif kind == "cluster" and not nested:
-        mp = sh.get("max_points")
-        ok = (
-            type(sh.get("seed_id")) is int
-            and _fin(sh.get("radius"))
-            and (mp is None or type(mp) is int)
-            and type(sh.get("exclude_protected")) is bool
-        )
+    elif kind in ("cluster", "sparse") and not nested:
+        if kind == "cluster":
+            mp = sh.get("max_points")
+            own = (
+                type(sh.get("seed_id")) is int
+                and _fin(sh.get("radius"))
+                and (mp is None or type(mp) is int)
+            )
+        else:
+            own = (sh.get("radius") is None or _fin(sh.get("radius"))) and (
+                type(sh.get("min_neighbours")) is int
+                and sh["min_neighbours"] >= 1
+            )
+        ok = own and type(sh.get("exclude_protected")) is bool
         if ok and sh.get("region") is not None:
             r = sh["region"]
             if not isinstance(r, dict) or r.get("type") not in ("box", "prism"):

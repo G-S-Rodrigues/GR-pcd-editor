@@ -8,6 +8,7 @@ from gr_pcd.editing.protection import (
     ProtectionState,
     Tilt,
 )
+from gr_pcd.editing.sparse import SparseSpec
 from gr_pcd.geometry.box import BoxSpec
 from gr_pcd.geometry.errors import GeometryError
 from gr_pcd.geometry.filters import AxisRange, DisplayFilter
@@ -124,6 +125,8 @@ def tool_summary(tool) -> dict | None:
         return {"type": "prism", "mode": tool.mode}
     if isinstance(tool, FilterTool):
         return {"type": "filter"}
+    if isinstance(tool, SparseSpec):
+        return {"type": "sparse"}
     return {
         "type": "cluster",
         "seed_id": tool.seed_id,
@@ -152,6 +155,16 @@ def _prism_shape(p: PrismSpec) -> dict:
         "z_max": float(p.z_max),
         "mode": p.mode,
     }
+
+
+def _region_shape(region) -> dict | None:
+    if region is None:
+        return None
+    return (
+        _box_shape(region)
+        if isinstance(region, BoxSpec)
+        else _prism_shape(region)
+    )
 
 
 def _filter_box(filt: DisplayFilter | None, bounds: dict | None) -> dict | None:
@@ -192,6 +205,14 @@ def shape_of(
         return _prism_shape(tool)
     if isinstance(tool, FilterTool):
         return _filter_box(filt, bounds)
+    if isinstance(tool, SparseSpec):
+        return {
+            "type": "sparse",
+            "radius": None if tool.radius is None else float(tool.radius),
+            "min_neighbours": int(tool.min_neighbours),
+            "exclude_protected": bool(tool.exclude_protected),
+            "region": _region_shape(tool.region),
+        }
     if isinstance(tool, ClusterTool):
         region = tool.region
         return {
@@ -200,12 +221,6 @@ def shape_of(
             "radius": float(tool.radius),
             "max_points": tool.max_points,
             "exclude_protected": bool(tool.exclude_protected),
-            "region": None
-            if region is None
-            else (
-                _box_shape(region)
-                if isinstance(region, BoxSpec)
-                else _prism_shape(region)
-            ),
+            "region": _region_shape(region),
         }
     return None

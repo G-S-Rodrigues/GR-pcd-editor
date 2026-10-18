@@ -330,3 +330,26 @@ def test_sts_13b_a_remove_invalid_step_has_no_nan_bounds(mgr):
     assert row["bounds"] is None or all(
         math.isfinite(v) for v in row["bounds"]["min"] + row["bounds"]["max"]
     )
+
+
+def test_sts_14_a_sparse_step_is_a_selection_step_with_a_sparse_shape(
+    mgr, tmp_path
+):
+    from gr_pcd.editing.sparse import SparseSpec
+
+    s = apply_spec(mgr, SelectSpec("replace", "active", SparseSpec(1.0, 7)))
+    e = s.history.entries[0]
+    assert e.tool == "selection"  # an older build has no sparse step tool
+    assert e.shape == {
+        "type": "sparse",
+        "radius": 1.0,
+        "min_neighbours": 7,
+        "exclude_protected": True,
+        "region": None,
+    }
+    fresh, r = reopen(tmp_path, save(mgr))
+    try:
+        assert r.history.entries[0].shape == e.shape
+        assert r.history.entries[0].tool == "selection"
+    finally:
+        fresh.jobs.shutdown()

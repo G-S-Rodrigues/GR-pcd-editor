@@ -27,6 +27,13 @@ from gr_pcd.editing.selection import (
     read_selection,
     scope_mask,
 )
+from gr_pcd.editing.sparse import (
+    SPARSE_BYTES_PER_POINT,
+    SparseSpec,
+    auto_radius,
+    sparse_mask,
+    validate_sparse,
+)
 from gr_pcd.geometry.box import BoxSpec, box_contains
 from gr_pcd.geometry.filters import (
     DisplayFilter,
@@ -36,7 +43,7 @@ from gr_pcd.geometry.filters import (
 from gr_pcd.geometry.normals import NORMAL_ATTR, normals_u32
 from gr_pcd.geometry.prism import PrismSpec, prism_contains
 from gr_pcd.pcd.model import PcdCloud, valid_mask, xyz64
-from gr_pcd.session.budget import HISTORY_FRACTION
+from gr_pcd.session.budget import HISTORY_FRACTION, check_budget
 from gr_pcd.session.codec import (
     ClusterTool,
     FilterTool,
@@ -361,6 +368,31 @@ class EditingSession:
             self.client_state = state
 
     # ---- selection and candidate (job bodies) -------------------------
+    def _tool_eligible(self, tool, snap: dict, token) -> np.ndarray:
+        """Scope, region and (when asked) protection of a cluster or sparse tool."""
+        valid = self.valid
+        region = None
+        if tool.region is not None:
+            fn = (
+                box_contains
+                if isinstance(tool.region, BoxSpec)
+                else prism_contains
+            )
+            region = fn(self.xyz, valid, tool.region, token)
+        protected = (
+            protected_mask(
+                self.xyz,
+                valid,
+                effective_intervals(snap["protection"]),
+                snap["protection"].tilt,
+            )
+            if tool.exclude_protected
+            else None
+        )
+        return build_eligible(
+            snap["scope"], region, protected, tool.exclude_protected
+        )
+
     def _operand(self, spec: SelectSpec, snap: dict, token, on_progress):
         tool = spec.tool
         active, valid = snap["active"], self.valid
@@ -374,28 +406,28 @@ class EditingSession:
             return prism_contains(self.xyz, valid, tool, token) & active
         if isinstance(tool, FilterTool):
             return filter_operand(active, valid, snap["display"])
+        if isinstance(tool, SparseSpec):
+            validate_sparse(tool)
+            eligible = self._tool_eligible(tool, snap, token)
+            counted = active & valid
+            check_budget(
+                SPARSE_BYTES_PER_POINT * int(counted.sum()),
+                self.budget,
+                "sparse point search",
+                "Try a smaller cloud or region.",
+            )
+            radius = tool.radius
+            if radius is None:
+                radius = auto_radius(self.xyz[counted])
+            token.check()
+            return (
+                sparse_mask(
+                    self.xyz, counted, radius, tool.min_neighbours, token
+                )
+                & eligible
+            )
         if isinstance(tool, ClusterTool):
-            region = None
-            if tool.region is not None:
-                fn = (
-                    box_contains
-                    if isinstance(tool.region, BoxSpec)
-                    else prism_contains
-                )
-                region = fn(self.xyz, valid, tool.region, token)
-            protected = (
-                protected_mask(
-                    self.xyz,
-                    valid,
-                    effective_intervals(snap["protection"]),
-                    snap["protection"].tilt,
-                )
-                if tool.exclude_protected
-                else None
-            )
-            eligible = build_eligible(
-                snap["scope"], region, protected, tool.exclude_protected
-            )
+            eligible = self._tool_eligible(tool, snap, token)
             res = connected_component(
                 self.xyz,
                 eligible,
@@ -924,6 +956,9 @@ class EditingSession:
 
 
 def _step_tool(tool_text: str) -> str:
+    # an older build knows no "sparse" step tool: it loads such a step as a plain selection
+    if tool_text == "sparse":
+        return "selection"
     return "polygon" if tool_text == "prism" else tool_text
 
 

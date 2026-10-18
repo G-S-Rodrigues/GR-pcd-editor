@@ -10,6 +10,7 @@ from gr_pcd.editing.protection import (
     ProtectionState,
     Tilt,
 )
+from gr_pcd.editing.sparse import DEFAULT_MIN_NEIGHBOURS, SparseSpec
 from gr_pcd.geometry.box import BoxSpec
 from gr_pcd.geometry.filters import AxisRange, DisplayFilter
 from gr_pcd.geometry.prism import PrismSpec
@@ -85,8 +86,24 @@ class ClusterToolBody(Model):
         )
 
 
+class SparseToolBody(Model):
+    type: Literal["sparse"]
+    radius: float | None = None  # None: derived from the sample spacing
+    min_neighbours: int = DEFAULT_MIN_NEIGHBOURS
+    region: Region | None = None
+    exclude_protected: bool = True
+
+    def to_spec(self) -> SparseSpec:
+        return SparseSpec(
+            self.radius,
+            self.min_neighbours,
+            None if self.region is None else self.region.to_spec(),
+            self.exclude_protected,
+        )
+
+
 Tool = Annotated[
-    BoxTool | PrismTool | FilterToolBody | ClusterToolBody,
+    BoxTool | PrismTool | FilterToolBody | ClusterToolBody | SparseToolBody,
     Field(discriminator="type"),
 ]
 
