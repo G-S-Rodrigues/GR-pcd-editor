@@ -13,17 +13,20 @@ from starlette.requests import ClientDisconnect
 from gr_pcd.api.render import render_body, render_headers
 from gr_pcd.api.schemas import (
     ApplyBody,
+    CommitBody,
     DeleteStepBody,
     DisplayFilterBody,
     ExportBody,
     MarkSavedBody,
     NearestBody,
+    PreviewBody,
     ProtectionBody,
     RenameBody,
     RevisionBody,
     RollbackBody,
     SelectionBody,
 )
+from gr_pcd.editing.errors import EditError
 from gr_pcd.files.cleanup import sweep_runtime
 from gr_pcd.files.names import safe_filename
 from gr_pcd.files.uploads import (
@@ -33,7 +36,7 @@ from gr_pcd.files.uploads import (
     UploadTooLarge,
     store_upload,
 )
-from gr_pcd.session.engine import SelectSpec
+from gr_pcd.session.engine import PREVIEW_OPS, SelectSpec
 from gr_pcd.session.errors import NotFoundError, SessionChanged
 from gr_pcd.session.manager import SessionManager
 from gr_pcd.settings import Settings
@@ -224,6 +227,34 @@ def build_router(manager: SessionManager, settings: Settings) -> APIRouter:
         spec = SelectSpec(body.op, body.scope, tool, body.evaluate_candidate)
         return _job(manager.submit_select(spec))
 
+    @router.post("/session/selection/preview")
+    def post_preview(body: PreviewBody):
+        s = manager.require()
+        s.require_cloud(body.cloud_revision)
+        if body.op not in PREVIEW_OPS:
+            raise EditError(
+                "invalid_op", "a preview is only for add, subtract, intersect"
+            )
+        if body.tool is None:
+            raise EditError("tool_required", "a preview needs a tool")
+        spec = SelectSpec(body.op, body.scope, body.tool.to_spec(), False)
+        return _job(manager.submit_preview(spec))
+
+    @router.post("/session/selection/commit")
+    def post_commit(body: CommitBody):
+        s = manager.require()
+        s.require_cloud(body.cloud_revision)
+        s.check_preview(body.preview_id)
+        return _job(
+            manager.submit_commit(body.preview_id, body.evaluate_candidate)
+        )
+
+    @router.post("/session/selection/preview/discard")
+    def discard_preview(body: RevisionBody):
+        s = manager.require()
+        s.discard_preview()
+        return s.state()
+
     @router.post("/session/selection/clear")
     def clear_selection(body: RevisionBody):
         s = manager.require()
@@ -295,9 +326,10 @@ def build_router(manager: SessionManager, settings: Settings) -> APIRouter:
         mode: str = Query("edited"),
         attr: str | None = Query(None),
         step: int | None = Query(None),
+        preview: str | None = Query(None),
     ):
         s = manager.require()
-        arr, rev = s.render(budget, mode, attr, step)
+        arr, rev = s.render(budget, mode, attr, step, preview)
         return Response(
             render_body(arr),
             media_type="application/octet-stream",

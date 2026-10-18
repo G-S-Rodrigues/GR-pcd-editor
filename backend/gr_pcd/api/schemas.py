@@ -165,6 +165,19 @@ class SelectionBody(Model):
     evaluate_candidate: bool = True
 
 
+class PreviewBody(Model):
+    cloud_revision: int
+    op: str  # add | subtract | intersect, checked by the route (422 invalid_op)
+    scope: Literal["displayed", "active"] = "displayed"
+    tool: Tool | None = None
+
+
+class CommitBody(Model):
+    cloud_revision: int
+    preview_id: str
+    evaluate_candidate: bool = True
+
+
 class RevisionBody(Model):
     cloud_revision: int
 

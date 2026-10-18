@@ -18,6 +18,8 @@ def render_headers(arr: RenderArrays, rev: dict) -> dict[str, str]:
     extra = {}
     if arr.attr is not None:
         extra = {"X-Attr-Field": arr.attr_field, "X-Attr-Kind": arr.attr_kind}
+    if arr.preview_id is not None:
+        extra["X-Preview-Id"] = arr.preview_id
     return {
         **extra,
         "X-Origin": ",".join(repr(float(v)) for v in arr.origin),

@@ -20,7 +20,14 @@ from gr_pcd.session.budget import make_rss_guard
 log = logging.getLogger(__name__)
 
 MAX_JOBS = 200
-SUPERSEDED = ("select", "candidate")
+SUPERSEDED = ("select", "candidate", "preview")
+# what a new job of a kind cancels: a preview only replaces an older preview
+# (it must not cancel a commit or a candidate evaluation in flight)
+CANCELS = {
+    "select": SUPERSEDED,
+    "candidate": SUPERSEDED,
+    "preview": ("preview",),
+}
 JOB_ORPHAN_S = 20.0
 SWEEP_TICK_S = 1.0
 

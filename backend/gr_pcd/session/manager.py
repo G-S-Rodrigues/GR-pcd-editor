@@ -20,7 +20,7 @@ from gr_pcd.session.errors import (
     ReplaceConflict,
 )
 from gr_pcd.session.exporter import export_session
-from gr_pcd.session.jobs import SUPERSEDED, JobManager
+from gr_pcd.session.jobs import CANCELS, JobManager
 from gr_pcd.settings import Settings
 
 
@@ -137,8 +137,8 @@ class SessionManager:
         """`body(session, ctx, ticket)`; supersedes older select/candidate."""
         with self._lock:
             session = self.require()
-            if kind in SUPERSEDED:
-                self.jobs.cancel_kinds(SUPERSEDED)
+            if kind in CANCELS:
+                self.jobs.cancel_kinds(CANCELS[kind])
             ticket = session.clock.ticket()
             return self.jobs.submit(
                 kind, lambda ctx: body(session, ctx, ticket)
@@ -148,6 +148,20 @@ class SessionManager:
         return self._submit(
             "select",
             lambda s, ctx, t: s.run_select(spec, t, ctx.token, ctx.progress),
+        )
+
+    def submit_preview(self, spec: SelectSpec):
+        return self._submit(
+            "preview",
+            lambda s, ctx, t: s.run_preview(spec, t, ctx.token, ctx.progress),
+        )
+
+    def submit_commit(self, preview_id: str, evaluate_candidate: bool = True):
+        return self._submit(
+            "select",
+            lambda s, ctx, t: s.commit_pending(
+                preview_id, t, ctx.token, evaluate_candidate
+            ),
         )
 
     def submit_candidate(self):
