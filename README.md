@@ -46,15 +46,17 @@ view, global height protection (the purple slab) and the live counts in the stat
 | `[` `]` | Move the slice slab (a render-only clip that changes no count) |
 | `Delete` | Apply the previewed deletion (same as **Apply**, with the same confirmation for bulk deletes) |
 | `Ctrl+Z`, `Ctrl+Y` | Undo, redo |
-| `Enter`, `Esc` | Close the polygon, cancel drawing, leave pick mode, close help; Esc during a grip, arrow or ring drag restores the value |
+| `Enter`, `Esc` | Close the polygon, cancel drawing, leave pick mode, discard a pending draft, close help; Esc during a grip, arrow or ring drag restores the value |
 | `?` or the **?** button | Show the key list (generated from the same table the handlers use) |
 
 The legend in the view names the highlight colours (unselected, candidate,
 protected-kept, deleted overlay). Next to **Apply**, "Will delete N" and "Kept by
 protection M" show the exact numbers; when M is above 0 a warning says selected
 points lie in the protected interval (ghosts in the floor slab?). Add, Subtract
-and Intersect shapes are drawn in their own outline colour with a "draft, not yet
-applied" note. **Cancel upload** stops a file that is still being sent.
+and Intersect shapes are drawn in their own outline colour and previewed live:
+points the shape would add are drawn magenta and points it would remove blue
+(the legend lists **Will be added** or **Will be removed** only while a preview is
+on), and a note gives the exact counts. **Cancel upload** stops a file that is still being sent.
 
 Concepts worth knowing:
 
@@ -67,8 +69,13 @@ Concepts worth knowing:
 - A **display filter hides** points from the view; it does not delete them. It is
   edited with six boxes on the canvas, not panel sliders. The
   scope (Displayed or Active) decides whether a selection reaches hidden points.
-- **Replace** updates the preview live while you edit; **Add, Subtract and
-  Intersect** keep the tool shape as a draft until you press the commit button.
+- **Replace** updates the selection live while you edit. **Add, Subtract and
+  Intersect** show a live preview of the result (also while you tune a Cluster's
+  radius, region, Exclude protected or Max points) and change the selection only
+  when you press **Commit draft**; **Discard draft** or `Esc` drops the preview.
+  **Apply** keeps deleting only the committed selection while a draft is shown,
+  never the previewed points. Saving drops a pending draft. When the selection is
+  empty, the first Add goes live.
 - The unit is a label only (metres, assumed); the file frame is used as stored, Z up.
 - Counts in the status bar are exact; "Rendered" is the sampled number of points
   drawn and is never a cloud total.

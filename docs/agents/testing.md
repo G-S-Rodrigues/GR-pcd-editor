@@ -127,7 +127,7 @@ export, save, persist, unsaved, tooltips), under `frontend/src/**`; backend rend
   budget label), `UI-130..133` (ViewCube, keys), `UI-134..135` (slice),
   `UI-140..141` (single key table: no duplicates, every documented key
   classifies to its handler, `?` toggles help), `UI-142` (handle size in
-  pixels), `UI-143` (draft text and outline), `UI-144` (upload cancel),
+  pixels), `UI-143` (draft outline; its note text is the preview text since 12b), `UI-144` (upload cancel),
   `UI-145` (a restored page keeps the view only: op, scope and tool are not
   restored), `UI-146` (start banner).
 - Backend IDs: `API-50..53` (stale displayed selection, cluster partial result,
@@ -141,7 +141,7 @@ export, save, persist, unsaved, tooltips), under `frontend/src/**`; backend rend
   at least 60 % of the width at 1280x720 and 1920x1080, with a field focused and
   each tool panel open; screenshots `layout-1280.png`, `layout-1920.png` go to
   the smoke output), `E2E-22` (upload cancel on a held-back request), `E2E-23`
-  (draft outline note), `E2E-24` (a reloaded session starts Replace, Displayed,
+  (draft outline and preview note), `E2E-24` (a reloaded session starts Replace, Displayed,
   no tool, default cluster limit), `E2E-24b` (start banner with no session).
   `SMOKE_SHOTS_DIR=<dir> bash scripts/smoke.sh` keeps every screenshot to look at.
   Run a subset with `bash scripts/smoke.sh npx playwright test -g "E2E-2[01]"`.
@@ -280,3 +280,20 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
   root-owned volume.
 - Read-only hook `stepLayer()`. The smoke helpers wait until the app is idle before a marker drag, because a gesture
   during a running job is ignored by design, and cope with a tool or fold state the previous test left restored.
+
+## Part 12b additions (live preview of Add, Subtract and Intersect)
+
+- Backend: `SES-70..76` (`tests/unit/test_preview.py`: preview counts equal a numpy oracle and change nothing, commit by
+  id installs exactly the previewed mask, stale rules, cancel, render flags 8 and 16, Apply after a preview deletes the
+  committed set only; SES-76 measures 1M points), `API-90..99` (`POST /session/selection/preview`, `.../commit`,
+  `.../preview/discard`, `GET /session/render?preview=<id>` with `X-Preview-Id`, job cancel rules, save drops a pending
+  preview).
+- Frontend: `UI-400..415` (preview model, palette, colourize precedence, LOD keeps flagged points, legend rows, runner
+  debounce, supersede, commit by id, discard, Replace unchanged, refresher, canApply, cluster tuning, shouldPreview),
+  `UI-416..418` (commit and discard enablement, commit label, Esc key row).
+- Smoke: `E2E-80` (box Add by a real handle drag), `E2E-81` (Subtract and Intersect), `E2E-82` (polygon clicks),
+  `E2E-83` (cluster Add, radius re-preview, Apply deletes the committed union), `E2E-84` (Apply before commit), `E2E-85`
+  (Esc, Discard draft, Replace stays live), `E2E-86` (save with a pending draft), `E2E-87` (cluster tuning, Exclude
+  protected, cancel). Truth is a fixture oracle in the spec (box inclusion, cluster BFS), never production code.
+- Read-only hook `previewLayer()`: drawn points of the main layer flagged will-be-added and will-be-removed, and the
+  preview id. Changed existing tests: `E2E-23` (note text), `E2E-61` (Apply enabled during a draft, owner ruling A).

@@ -20,8 +20,14 @@
 - **Candidate:** The exact set of points a previewed selection would delete,
   after height protection has been applied; Apply deletes exactly this set.
 - **Draft:** A tool shape that has been edited but not yet committed to the
-  selection (Add, Subtract and Intersect operations); nothing is sent until it
-  is committed.
+  selection (Add, Subtract and Intersect operations). The server previews its
+  result live (the **preview**); the selection changes only on Commit draft.
+- **Preview:** The server's computed result of a draft, held until it is
+  committed, discarded or made stale: counts (selected after, added, removed)
+  and the points it would add or remove, drawn in their own colours. It never
+  changes the selection, the candidate or the history.
+- **Committed selection:** The selection as the server holds it, without any
+  preview; Apply deletes exactly its candidate.
 - **LOD:** Level of detail; the sampled subset of points drawn in the viewport
   (shown as "Rendered"), never a cloud total.
 - **Filter box:** One of the six on-canvas controls (X, Y, Z, min and max) that

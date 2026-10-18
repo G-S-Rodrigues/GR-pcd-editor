@@ -434,3 +434,11 @@ Initial targets, to be benchmarked on a documented desktop Linux reference PC wi
   confirmation. A single step may be removed (its points return, later steps stay), renamed, or highlighted.
 - The timeline is part of the session archive (manifest only, archive VERSION unchanged); an older archive gets a
   strip rebuilt from its step descriptions. AC-17 stands and covers the timeline; AC-15 is unchanged.
+
+## Part 12b addendum
+
+- Sections 9 and 11 (selection and preview): Add, Subtract and Intersect show a live preview of their result before
+  Commit draft: the server computes it without changing the selection, candidate or history; points it would add and
+  remove are drawn in their own colours with exact counts. Cluster parameters (seed, radius, region, Exclude protected,
+  Max points) re-preview live. Apply deletes only the committed selection; saving drops a pending preview. A pending
+  preview is never part of the session archive: archive VERSION unchanged, AC-17 stands, AC-15 unchanged.
