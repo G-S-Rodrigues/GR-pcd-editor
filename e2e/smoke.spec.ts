@@ -450,8 +450,7 @@ test("E2E-13 7a cluster: partial result, no limit, and re-run when protection ch
   await exact("Displayed", String(FLOOR + GHOST));
   await ctl("cube-top").click();
   await pickPivotAt(page, [4, 4, 0]);
-  await ctl("tool-cluster").click();
-  await ctl("cluster-pick-seed").click();
+  await ctl("tool-cluster").click(); // arming Cluster waits for the seed click
   await page.locator("#viewport").click(); // top view: the point under the pivot with the greatest Z, a ghost point
   await expect(page.locator("#editpanels")).toContainText("Seed: point");
   await setNum("cluster-radius", 1.2); // links the ghost blob to the floor below it
@@ -942,8 +941,7 @@ test("E2E-25 7c1 cluster r=2 on a 300k-point room finishes, Apply deletes the co
   await page.waitForTimeout(800);
   await ctl("cube-top").click();
   await pickPivotAt(page, [22, 22, 0]);
-  await ctl("tool-cluster").click();
-  await ctl("cluster-pick-seed").click();
+  await ctl("tool-cluster").click(); // arming Cluster waits for the seed click
   await page.locator("#viewport").click(); // top view: the greatest Z under the pivot is a ghost point
   await expect(page.locator("#editpanels")).toContainText("Seed: point");
   await setNum("cluster-radius", 2);
@@ -1754,8 +1752,7 @@ function tl(page: Pg) {
     await pickPivotAt(page, [-1, 4, 4]);
     await base.ctl("tool-cluster").click();
     await unfold();
-    await base.ctl("cluster-pick-seed").click();
-    await page.locator("#viewport").click();
+    await page.locator("#viewport").click(); // the armed Cluster tool waits for the seed click
     await expect(page.locator("#editpanels")).toContainText("Seed: point");
     await base.setNum("cluster-radius", 1.1);
     await base.exact("Candidates", String(ROOM.wall));
@@ -1763,6 +1760,7 @@ function tl(page: Pg) {
     await base.exact("Active", String(ROOM_TOTAL - ROOM.ghost - ROOM.wall));
     await base.setNum("filter-z-min", 1);
     await base.exact("Displayed", String(ROOM.noise));
+    await base.ctl("tool-cluster").click(); // Select displayed is refused while a tool is armed
     await base.ctl("sel-select-displayed").click();
     await base.exact("Candidates", String(ROOM.noise));
     await base.ctl("apply").click();
@@ -2297,8 +2295,10 @@ test("E2E-64 Cluster Subtract and Intersect commit against the existing selectio
   await openRoom(page, t.exact);
   await t.ctl("tool-cluster").click();
   await t.setNum("cluster-radius", 1.1);
+  await t.ctl("tool-cluster").click(); // disarm: Select displayed is refused while a tool is armed
   await t.ctl("sel-select-displayed").click();
   await t.exact("Selected", String(ROOM_TOTAL - ROOM.invalid));
+  await t.ctl("tool-cluster").click(); // arm again
   await t.ctl("op-subtract").click();
   await t.pickSeed(CL.wall);
   await t.ctl("sel-commit").click();
@@ -2985,7 +2985,9 @@ for (const op of ["subtract", "intersect"] as const) {
   test(`E2E-81 12b Box ${op}: the preview count is fixture truth, removed points show in the remove colour, Selected stays until Commit draft`, async ({ page }) => {
     const t = previewHelpers(page);
     await t.wallSelected();
+    await t.ctl("tool-box").click(); // disarm: Select displayed is refused while a tool is armed
     await t.ctl("sel-select-displayed").click();
+    await t.ctl("tool-box").click(); // arm again
     const all = ROOM_TOTAL - ROOM.invalid;
     await t.exact("Selected", String(all));
     await t.ctl(`op-${op}`).click();
@@ -3112,8 +3114,9 @@ test("E2E-85 12b Esc and Discard draft drop the preview and change nothing else;
   await expect(t.note).toBeHidden();
   await t.exact("Selected", String(ROOM.wall));
   // the first selection is live: after Clear selection one selection request, no draft note
-  await t.ctl("sel-clear").click();
+  await t.ctl("sel-clear").click(); // also disarms the tool
   await t.exact("Selected", "0");
+  await t.ctl("tool-box").click();
   const sel = t.posts.select;
   const prev = t.posts.preview;
   await t.setNum("box-size-z", 3);

@@ -12,11 +12,15 @@ const dom = installFakeDom();
 afterAll(() => dom.restore());
 const store = createAppStore();
 const toolChanged = vi.fn();
-const actions = new Proxy({ toolChanged } as Record<string, unknown>, { get: (t, k: string) => t[k] ?? (() => undefined) }) as unknown as PanelActions;
+const selectDisplayed = vi.fn();
+const invert = vi.fn();
+const actions = new Proxy({ toolChanged, selectDisplayed, invert } as Record<string, unknown>, { get: (t, k: string) => t[k] ?? (() => undefined) }) as unknown as PanelActions;
 buildToolPalette(dom.root as unknown as HTMLElement, store, actions);
 const ctl = (id: string) => dom.root.control(id) as FakeEl;
 beforeEach(() => {
   toolChanged.mockClear();
+  selectDisplayed.mockClear();
+  invert.mockClear();
   store.set({ ...createAppStore().get(), session: sessionFixture(), tool: "box", liveFirst: true });
 });
 const build = () => ({ store, ctl, toolChanged });
@@ -102,4 +106,25 @@ test("UI-622 the first-selection note shows only for an armed tool while liveFir
   expect(note().hidden).toBe(true);
   store.set({ liveFirst: true, tool: "none" });
   expect(note().hidden).toBe(true);
+});
+
+test("UI-639 Select displayed and Invert are aria-disabled with the reason while a tool is armed; a click shows a notice and does nothing", () => {
+  const { ctl, store } = build();
+  const sd = ctl("sel-select-displayed");
+  expect(sd.getAttribute("aria-disabled")).toBe("true"); // tool "box" is armed
+  expect(sd.title).toMatch(/Disarm the tool first/);
+  expect(ctl("sel-invert").getAttribute("aria-disabled")).toBe("true");
+  sd.fire("click");
+  ctl("sel-invert").fire("click");
+  expect(store.get().notices.map((n) => n.code)).toContain("selection_disabled");
+  expect(selectDisplayed).not.toHaveBeenCalled();
+  expect(invert).not.toHaveBeenCalled();
+  store.set({ tool: "none" });
+  sd.fire("click");
+  ctl("sel-invert").fire("click");
+  expect(selectDisplayed).toHaveBeenCalledTimes(1);
+  expect(invert).toHaveBeenCalledTimes(1);
+  expect(sd.getAttribute("aria-disabled")).toBe("false");
+  expect(sd.title).toBe(TOOLTIPS["sel-select-displayed"]);
+  expect(ctl("sel-clear").hasAttribute("aria-disabled")).toBe(false); // Clear selection stays usable
 });

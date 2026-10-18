@@ -23,6 +23,7 @@
       .oprow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
       .opgroup { display: inline-flex; gap: 2px; }
       button.toggle[aria-pressed=true] { outline: 2px solid var(--accent); }
+      button.inactive { opacity: .5; cursor: not-allowed; }
       button.danger { background: var(--danger); color: var(--danger-fg); border-color: var(--danger); font-weight: 600; }
       button.danger:disabled { opacity: .45; }
       button.danger svg { vertical-align: -3px; }

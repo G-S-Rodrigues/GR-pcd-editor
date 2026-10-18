@@ -23,6 +23,15 @@ export const isDraftOp = (op: SelectionOp): boolean => op === "add" || op === "s
  */
 export const shouldPreview = (s: AppState): boolean => !s.liveFirst && isDraftOp(s.op) && (s.session?.selection.count ?? 0) > 0;
 
+/**
+ * Why Select displayed and Invert are refused now, or null when they are allowed. One place: later parts extend it.
+ * They would replace the selection under an armed tool, whose next edit would overwrite the result.
+ */
+export function selectionDisabledReason(s: AppState): string | null {
+  if (s.tool !== "none") return "Disarm the tool first (Clear selection, or press the tool again)";
+  return null;
+}
+
 export const invertNote = (scope: Scope): string => `Inverts the selection relative to ${scope} points`;
 
 export function currentTool(s: AppState): ToolBody | null {

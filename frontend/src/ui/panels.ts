@@ -9,9 +9,10 @@ import { displayedBounds, fitToView, rectAxis, rectDepth } from "../tools/box/re
 import { POLYGON_DEPTH_NOTE, Z_UNLIMITED } from "../tools/polygon/model";
 import * as PG from "../tools/polygon/model";
 import { CLUSTER_LIMIT_TEXT, clusterLimitText, clusterPanel, regionOptions, setRadius } from "../tools/cluster/model";
+import { clusterPickState, pickText, pressPick } from "../tools/cluster/pick";
 import { headline } from "../status/headline";
 import { commitEnabled, commitLabel, discardEnabled, previewText } from "../tools/preview";
-import { scopeNotice } from "../orchestration/selection";
+import { scopeNotice, selectionDisabledReason } from "../orchestration/selection";
 import { historyRows } from "../inspector/history";
 import { control } from "./controls";
 import { iconControl } from "./iconbutton";
@@ -110,6 +111,14 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     h("option", { value: "displayed", text: "Displayed" }),
     h("option", { value: "active", text: "Active" }),
   );
+  // Select displayed and Invert stay clickable but inactive (aria-disabled) while a tool is armed: the click explains why
+  const guardedBtns: HTMLButtonElement[] = [];
+  const guarded = (b: HTMLButtonElement) => (guardedBtns.push(b), b);
+  const refuse = (): boolean => {
+    const why = selectionDisabledReason(store.get());
+    if (why) addNotice(store, "warn", "selection_disabled", why);
+    return why !== null;
+  };
   const commit = control("button", { id: "sel-commit", onclick: a.commitDraft }, "Commit draft");
   const discard = control("button", { id: "sel-discard", onclick: a.discardDraft }, "Discard draft");
   const note = h("p", { id: "scope-note", class: "note" });
@@ -136,8 +145,8 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     h(
       "div",
       { class: "stack" },
-      control("button", { id: "sel-select-displayed", onclick: a.selectDisplayed }, "Select displayed"),
-      control("button", { id: "sel-invert", onclick: a.invert }, "Invert"),
+      guarded(control("button", { id: "sel-select-displayed", onclick: () => refuse() || a.selectDisplayed() }, "Select displayed")),
+      guarded(control("button", { id: "sel-invert", onclick: () => refuse() || a.invert() }, "Invert")),
       control("button", { id: "sel-clear", onclick: a.clearSelection }, "Clear selection"),
     ),
     note,
@@ -168,6 +177,13 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     liveNote.hidden = !(s.liveFirst && s.tool !== "none");
     liveNote.textContent = liveNote.hidden ? "" : "First selection: edits are live. Choose Add, Subtract or Intersect to preview changes instead.";
     scope.value = s.scope;
+    const why = selectionDisabledReason(s);
+    for (const b of guardedBtns) {
+      const id = b.getAttribute("data-control") ?? "";
+      b.setAttribute("aria-disabled", String(why !== null));
+      b.classList.toggle("inactive", why !== null);
+      b.title = why ? `${TOOLTIPS[id]} (${why})` : (TOOLTIPS[id] ?? "");
+    }
     commit.disabled = !commitEnabled(s);
     commit.textContent = commitLabel(s);
     discard.disabled = !discardEnabled(s);
@@ -449,13 +465,32 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
   );
 
   // ---- cluster
+  // Pick point is a toggle with three states (waiting, set, paused); pressing it always leaves it waiting
+  const pickButton = control(
+    "button",
+    {
+      id: "cluster-pick-seed",
+      class: "toggle",
+      onclick: () => {
+        const had = store.get().tools.cluster.seed !== null;
+        store.update((s) => ({ ...s, ...pressPick(s) }));
+        if (had) a.discardDraft(); // the old seed's draft or preview is gone with it
+      },
+    },
+    "Pick point",
+  );
+  syncs.push((s) => {
+    const st = clusterPickState(s);
+    pickButton.setAttribute("data-state", st);
+    pickButton.setAttribute("aria-pressed", String(st === "waiting"));
+  });
   const clusterPanelEl = section(
     "cluster",
     "Cluster",
     (s) => s.tool === "cluster",
-    h("div", { class: "stack" }, button("cluster-pick-seed", "Pick seed", () => store.set({ interaction: store.get().interaction === "pick-seed" ? "orbit" : "pick-seed" })), button("cluster-cancel", "Cancel", a.cancelJob)),
-    text((s) => (s.tools.cluster.seed ? `Seed: point ${s.tools.cluster.seed.id} at ${s.tools.cluster.seed.point.map(fmt).join(", ")}` : "No seed yet: press Pick seed, then click a point")),
-    field("cluster-radius", "Radius", (s) => s.tools.cluster.radius, (v) => {
+    h("div", { class: "stack" }, pickButton, button("cluster-cancel", "Cancel", a.cancelJob)),
+    text((s) => pickText(s)),
+    field("cluster-radius", "Link distance", (s) => s.tools.cluster.radius, (v) => {
       const r = setRadius(store.get().tools.cluster, v);
       if (!r.ok) return r.error ?? "Invalid radius";
       store.update((s) => ({ ...s, tools: { ...s.tools, cluster: r.model } }));

@@ -15,6 +15,7 @@ import { type ProtectionModel, floorFromPick, protectionFromState, setGlobal } f
 import { createProtectionController } from "./inspector/protection-controller";
 import { createEditor } from "./orchestration/edit";
 import { canApply, createRunner } from "./orchestration/runner";
+import { armTool, disarmed } from "./orchestration/toolstate";
 import { createUploadCanceller } from "./orchestration/upload-cancel";
 import { type UploadOptions, uploadFile } from "./files/upload";
 import { startBanner } from "./status/startbanner";
@@ -222,7 +223,7 @@ const panelActions = {
   filterResetAll: () => filters.resetToCloud(),
   protectionEdit: (fn: Parameters<typeof protection.edit>[0]) => protection.edit(fn),
   setTool: (t: "none" | "box" | "polygon" | "cluster") => {
-    store.update((st) => ({ ...st, tool: t, interaction: "orbit", liveFirst: (st.session?.selection.count ?? 0) === 0 }));
+    store.update((st) => armTool(st, t));
     if (t === "polygon") {
       enterTool();
       store.set({ camera: applyPreset(store.get().camera, "top") });
@@ -235,8 +236,10 @@ const panelActions = {
   selectDisplayed: () => runner.oneShot((rev) => selectDisplayedBody(rev)),
   invert: () =>
     runner.oneShot((rev) => ({ cloud_revision: rev, op: "invert", scope: store.get().scope, tool: null, evaluate_candidate: true })),
+  // Clear selection also disarms the tool: no armed button, no seed, no polygon, orbit works again
   clearSelection: () => {
     runner.reset();
+    store.update(disarmed);
     void editor.clearSelection();
   },
   removeInvalid: () => void editor.removeInvalid(),
