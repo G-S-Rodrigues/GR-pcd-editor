@@ -37,7 +37,7 @@ test("UI-22 refresh aborts the previous request and passes mode, budget and colo
   store.set({
     renderMode: "original",
     budget: 1000,
-    colour: { mode: "intensity", pointSize: 2 },
+    colour: { mode: "turbo", pointSize: 2 },
     session: { schema: [{ name: "intensity", type: "F", size: 4, count: 1 }] } as never,
   });
   const signals: AbortSignal[] = [];
@@ -49,7 +49,7 @@ test("UI-22 refresh aborts the previous request and passes mode, budget and colo
   const p1 = r.refresh();
   const p2 = r.refresh();
   await Promise.all([p1, p2]);
-  expect(fetchRender).toHaveBeenCalledWith("original", 1000, "intensity", expect.anything());
+  expect(fetchRender).toHaveBeenCalledWith("original", 1000, undefined, expect.anything());
   expect(signals[0].aborted).toBe(true);
 });
 

@@ -58,7 +58,7 @@ test("UI-92 restore round trip: camera, colouring, comparison and tool geometry 
   a.update((s) => ({
     ...s,
     camera: { ...s.camera, target: [1e6 + 0.123456789, -5, 2.5], distance: 42, ortho: true },
-    colour: { mode: "intensity", pointSize: 6 },
+    colour: { mode: "viridis", pointSize: 6 },
     tools: {
       ...s.tools,
       box: { center: [1e6 + 0.5, 2, 3], dimensions: [4, 5, 6], quat: [0, 0, 0.6, 0.8], mode: "outside" },
@@ -71,7 +71,7 @@ test("UI-92 restore round trip: camera, colouring, comparison and tool geometry 
   const patch = restoreClientState(saved);
   expect(patch).not.toBeNull();
   expect(patch!.camera).toEqual(a.get().camera);
-  expect(patch!.colour).toEqual({ mode: "intensity", pointSize: 6 });
+  expect(patch!.colour).toEqual({ mode: "viridis", pointSize: 6 });
   expect(patch!.compare).toBe("overlay");
   expect(patch!.overlayOpacity).toBe(0.6);
   expect(patch!.tools!.box).toEqual(a.get().tools.box);
@@ -169,4 +169,15 @@ test("UI-287 flush sends a change that is still inside the debounce window and w
   await p.flush(); // nothing changed: nothing sent
   expect(put).toHaveBeenCalledTimes(1);
   p.dispose();
+});
+
+test("UI-365 saved colour modes migrate: height, rgb and intensity open as turbo; the new ids stay; junk drops the colour patch", () => {
+  const colourOf = (c: unknown) => restoreClientState({ v: 1, colour: c, pointSize: 4 })?.colour;
+  for (const old of ["height", "rgb", "intensity"]) expect(colourOf(old), old).toEqual({ mode: "turbo", pointSize: 4 });
+  for (const m of ["turbo", "viridis", "flat"]) expect(colourOf(m), m).toEqual({ mode: m, pointSize: 4 });
+  for (const junk of ["normals-x", "", 3, null, {}]) expect(colourOf(junk), String(junk)).toBeUndefined();
+  const s = createAppStore();
+  const saved = JSON.parse(JSON.stringify(serialiseClientState(s.get())));
+  expect(saved.colour).toBe("turbo");
+  expect(JSON.stringify(saved)).not.toMatch(/filters|protection/);
 });

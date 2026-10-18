@@ -96,7 +96,7 @@ export function initialState(): AppState {
     op: "replace",
     scope: "displayed",
     camera: defaultCamera(),
-    colour: { mode: "height", pointSize: 3 },
+    colour: { mode: "turbo", pointSize: 3 },
     renderMode: "edited",
     compare: "edited",
     overlayOpacity: 0.35,

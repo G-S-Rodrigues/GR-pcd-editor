@@ -48,7 +48,10 @@ export interface ClientPatch {
 const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const unitQuat = (v: unknown): v is number[] => nums(v, 4) && Math.hypot(...v) > 1e-9;
 const BOX_KEYS = ["x", "y", "z"].flatMap((a) => ["min", "max"].map((s) => `${a}-${s}`));
-const COLOURS = ["height", "rgb", "intensity", "flat"];
+const COLOURS = ["turbo", "viridis", "flat"];
+/** Saved colour modes of older builds: Height, RGB and Intensity all open as Turbo (RGB and Intensity were removed in part 12). */
+const OLD_COLOURS = ["height", "rgb", "intensity"];
+export const migrateColour = (m: string): string | null => (OLD_COLOURS.includes(m) ? "turbo" : COLOURS.includes(m) ? m : null);
 
 /** Returns null for an unknown version or non-object; ignores each malformed section on its own. */
 export function restoreClientState(raw: unknown): ClientPatch | null {
@@ -58,8 +61,9 @@ export function restoreClientState(raw: unknown): ClientPatch | null {
   if (isObj(c) && nums(c.target, 3) && unitQuat(c.orientation) && typeof c.distance === "number" && c.distance > 0 && Number.isFinite(c.distance) && typeof c.ortho === "boolean") {
     out.camera = { target: [...c.target] as Camera["target"], orientation: [...c.orientation] as Quat, distance: c.distance, ortho: c.ortho };
   }
-  if (typeof raw.colour === "string" && COLOURS.includes(raw.colour) && finite(raw.pointSize) && raw.pointSize > 0 && raw.pointSize <= 50) {
-    out.colour = { mode: raw.colour as AppState["colour"]["mode"], pointSize: raw.pointSize };
+  const mode = typeof raw.colour === "string" ? migrateColour(raw.colour) : null;
+  if (mode !== null && finite(raw.pointSize) && raw.pointSize > 0 && raw.pointSize <= 50) {
+    out.colour = { mode: mode as AppState["colour"]["mode"], pointSize: raw.pointSize };
   }
   const cmp = raw.comparison;
   if (isObj(cmp)) {

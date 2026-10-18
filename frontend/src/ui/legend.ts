@@ -1,4 +1,5 @@
 import { PALETTE, type Rgb } from "../colour/palette";
+import { type RampLegend, cssGradient, rampLegend } from "../colour/ramps";
 import type { AppState } from "../state/app";
 import type { Store } from "../state/store";
 import type { PreviewState } from "../state/types";
@@ -42,7 +43,15 @@ export function buildLegend(root: HTMLElement, store: Store<AppState>, modebar: 
   let shown = false;
   let shownPreview: PreviewState["op"] | null = null;
   const rows = h("div", { class: "legend-rows" });
-  const body = h("div", { id: "legend-body", "data-legend-body": "1" }, rows, modebar);
+  // the colour key of the active mode (gradient + end labels); hidden in Grey
+  const rampTitle = h("span", { class: "ramp-title" });
+  const rampBar = h("div", { class: "ramp-bar", "data-ramp-bar": "1" });
+  const rampMin = h("span", { class: "ramp-min" });
+  const rampMax = h("span", { class: "ramp-max" });
+  const ramp = h("div", { id: "legend-ramp", role: "img", hidden: true }, rampTitle, rampBar, h("div", { class: "ramp-ends" }, rampMin, rampMax));
+  const body = h("div", { id: "legend-body", "data-legend-body": "1" }, ramp, rows, modebar);
+  let current: RampLegend | null = null;
+  let currentKey = "";
   const chev = iconSvg("chev", 14);
   const header = control("button", { id: "legend-menu", type: "button", class: "legend-head", "aria-label": LABEL, "aria-controls": "legend-body", "aria-expanded": "true" }, chev, h("span", { text: "Legend" }));
   header.addEventListener("click", () => store.update((s) => ({ ...s, legendOpen: !s.legendOpen })));
@@ -55,15 +64,38 @@ export function buildLegend(root: HTMLElement, store: Store<AppState>, modebar: 
     rows.replaceChildren();
     for (const e of legendEntries(shown, shownPreview)) {
       const chip = h("span", { class: "chip", "data-legend": e.id });
-      chip.style.background = cssColour(e.colour);
+      chip.style.background = e.id === "base" && current ? cssGradient(current.stops) : cssColour(e.colour);
       rows.append(h("span", { class: "legend-item" }, chip, e.label));
     }
   };
+  const syncRamp = (s: AppState) => {
+    const r = rampLegend(s.colour.mode, s.session?.active_bounds ?? null, s.session?.unit ?? "m");
+    const key = r ? `${r.id}|${r.minLabel}|${r.maxLabel}` : "";
+    if (key === currentKey) return;
+    const rampChanged = (r?.id ?? null) !== (current?.id ?? null);
+    currentKey = key;
+    current = r;
+    if (r) {
+      rampTitle.textContent = r.title;
+      rampBar.style.background = cssGradient(r.stops);
+      rampMin.textContent = r.minLabel;
+      rampMax.textContent = r.maxLabel;
+      ramp.setAttribute("data-ramp", r.id);
+      ramp.setAttribute("aria-label", `${r.title}, ${r.minLabel} to ${r.maxLabel}`);
+      ramp.removeAttribute("hidden");
+    } else {
+      ramp.removeAttribute("data-ramp");
+      ramp.setAttribute("hidden", "");
+    }
+    if (rampChanged) draw();
+  };
   const sync = (s: AppState) => {
+    syncRamp(s);
     header.setAttribute("aria-expanded", String(s.legendOpen));
     header.classList.toggle("closed", !s.legendOpen);
     body.hidden = !s.legendOpen;
   };
+  syncRamp(store.get());
   draw();
   store.subscribe(sync);
   sync(store.get());

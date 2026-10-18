@@ -5,7 +5,9 @@ import { FakeEl, installFakeDom } from "../testing/fakedom";
 import { LEGEND } from "../filterboxes/placement";
 import { LEGEND_BOX } from "../view/layout";
 import { describeControls } from "./describe";
-import { buildLegend, legendEntries } from "./legend";
+import { PALETTE } from "../colour/palette";
+import { RAMP_STOPS, cssGradient } from "../colour/ramps";
+import { buildLegend, cssColour, legendEntries } from "./legend";
 import { TOOLTIPS } from "./tooltips";
 
 let dom: ReturnType<typeof installFakeDom>;
@@ -89,4 +91,32 @@ test("UI-344 the reserved LEGEND rectangle is the expanded size the builder sets
 test("UI-345 the mode line (id modebar) lives in the menu body, after the rows", () => {
   const body = root.all().find((e) => e.getAttribute("data-legend-body") === "1") as FakeEl;
   expect(body.children[body.children.length - 1]).toBe(modebar);
+});
+
+const ramp = () => root.all().find((e) => e.getAttribute("id") === "legend-ramp") as FakeEl;
+const baseChip = () => root.all().find((e) => e.getAttribute("data-legend") === "base") as FakeEl;
+
+test("UI-368 the colour key follows the active mode: a gradient with its end labels, replaced by nothing in Grey", () => {
+  store.update((s) => ({ ...s, colour: { ...s.colour, mode: "turbo" } }));
+  expect(ramp().hasAttribute("hidden")).toBe(false);
+  expect(ramp().getAttribute("data-ramp")).toBe("turbo");
+  expect(ramp().text()).toContain("Height (Turbo)");
+  expect(ramp().text()).toContain("low");
+  expect(ramp().text()).toContain("high");
+  const bar = ramp().all().find((e) => e.getAttribute("data-ramp-bar") === "1") as FakeEl;
+  expect(bar.style.background).toBe(cssGradient(RAMP_STOPS.turbo));
+  expect(ramp().getAttribute("aria-label")).toMatch(/Height \(Turbo\)/);
+  store.update((s) => ({ ...s, colour: { ...s.colour, mode: "viridis" } }));
+  expect(ramp().getAttribute("data-ramp")).toBe("viridis");
+  expect((ramp().all().find((e) => e.getAttribute("data-ramp-bar") === "1") as FakeEl).style.background).toBe(cssGradient(RAMP_STOPS.viridis));
+  store.update((s) => ({ ...s, colour: { ...s.colour, mode: "flat" } }));
+  expect(ramp().hasAttribute("hidden")).toBe(true);
+});
+
+test("UI-369 the Unselected chip shows the active ramp (a grey chip would lie in a coloured mode) and the base grey in Grey", () => {
+  store.update((s) => ({ ...s, colour: { ...s.colour, mode: "viridis" } }));
+  expect(baseChip().style.background).toBe(cssGradient(RAMP_STOPS.viridis));
+  store.update((s) => ({ ...s, colour: { ...s.colour, mode: "flat" } }));
+  expect(baseChip().style.background).toBe(cssColour(PALETTE.base));
+  expect(rows()).toEqual(legendEntries().map((e) => e.id));
 });

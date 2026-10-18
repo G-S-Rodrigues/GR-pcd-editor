@@ -63,10 +63,11 @@ test("open a cloud, navigate, pick a pivot, colour, read counts", async ({ page 
 
   await test.step("E2E-01 colouring options follow the schema", async () => {
     const colour = page.locator('[data-control="colour-mode"]');
-    await expect(colour.locator('option[value="rgb"]')).toHaveAttribute("disabled", "");
-    const req = page.waitForRequest((r) => r.url().includes("attr=intensity"));
-    await colour.selectOption("intensity");
-    await req;
+    expect(await colour.locator("option").evaluateAll((o) => o.map((x) => (x as HTMLOptionElement).value))).toEqual(["turbo", "viridis", "flat"]);
+    await expect(colour).toHaveValue("turbo");
+    await colour.selectOption("viridis");
+    await expect(colour).toHaveValue("viridis");
+    await expect(page.locator("#legend-ramp")).toHaveAttribute("data-ramp", "viridis");
   });
 
   await page.screenshot({ path: "/out/editor.png" });
@@ -239,10 +240,8 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
   });
 
   await test.step("AC-17 view state: colouring is stored with the session", async () => {
-    const req = page.waitForRequest((r) => r.url().includes("attr=intensity"));
-    await ctl("colour-mode").selectOption("intensity");
-    await req;
-    const put = page.waitForRequest((r) => r.method() === "PUT" && r.url().endsWith("/api/session/client-state"));
+    const put = page.waitForRequest((r) => r.method() === "PUT" && r.url().endsWith("/api/session/client-state") && JSON.parse(r.postData() ?? "{}")?.colour === "viridis");
+    await ctl("colour-mode").selectOption("viridis");
     await put; // debounced one second after the last change
   });
 
@@ -293,7 +292,7 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
     await exact("Displayed", String(FLOOR));
     await expect(page.locator("#unsaved-badge")).toHaveText("No unsaved edits");
     await expect(ctl("undo")).toBeEnabled();
-    await expect(ctl("colour-mode")).toHaveValue("intensity"); // restored from the archive's client state
+    await expect(ctl("colour-mode")).toHaveValue("viridis"); // restored from the archive's client state
   });
 
   await test.step("E2E-09 no warning when nothing is unsaved", async () => {
@@ -2740,3 +2739,72 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     await expect(ctl("legend-menu")).toHaveAttribute("aria-expanded", "true");
   });
 }
+
+/** The brightest pixel of a (2r+1) square of the page around a screen point, read from a screenshot decoded in a blank tab (the app's CSP is not involved). */
+async function brightestPixel(page: import("@playwright/test").Page, at: { x: number; y: number }, r = 4): Promise<number[]> {
+  const buf = await page.screenshot({ clip: { x: Math.round(at.x) - r, y: Math.round(at.y) - r, width: 2 * r + 1, height: 2 * r + 1 } });
+  const tab = await page.context().newPage();
+  try {
+    return await tab.evaluate(async (b64) => {
+      const img = new Image();
+      img.src = `data:image/png;base64,${b64}`;
+      await img.decode();
+      const c = document.createElement("canvas");
+      c.width = img.width;
+      c.height = img.height;
+      const g = c.getContext("2d")!;
+      g.drawImage(img, 0, 0);
+      const d = g.getImageData(0, 0, c.width, c.height).data;
+      let best = [0, 0, 0];
+      let score = -1;
+      for (let i = 0; i < d.length; i += 4) {
+        const sum = d[i] + d[i + 1] + d[i + 2];
+        if (sum > score) {
+          score = sum;
+          best = [d[i], d[i + 1], d[i + 2]];
+        }
+      }
+      return best;
+    }, buf.toString("base64"));
+  } finally {
+    await tab.close();
+  }
+}
+
+test("E2E-77 12-7 colour modes Turbo (default), Viridis and Grey: the select lists exactly them, the legend shows the active ramp with the cloud's height range, the drawn colour of a fixed wall point differs per mode", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const { exact, ctl } = helpers(page);
+  await openRoom(page, exact);
+  const modes = ctl("colour-mode");
+  expect(await modes.locator("option").evaluateAll((o) => o.map((x) => (x as HTMLOptionElement).value))).toEqual(["turbo", "viridis", "flat"]);
+  expect(await modes.locator("option").evaluateAll((o) => o.map((x) => x.textContent))).toEqual(["Height (Turbo)", "Height (Viridis)", "Grey"]);
+  await expect(modes).toHaveValue("turbo");
+  await expect(page.locator("#legend-ramp")).toHaveCount(1);
+  const wall = await settledScreen(page, [-1, 5, 3]);
+  const sum = (a: number[], b: number[]) => a.reduce((t, v, i) => t + Math.abs(v - b[i]), 0);
+  const read = () => brightestPixel(page, wall);
+  await expect(page.locator("#legend-ramp")).toHaveAttribute("data-ramp", "turbo");
+  await expect(page.locator("#legend-ramp")).toContainText("Height (Turbo)");
+  await expect(page.locator("#legend-ramp .ramp-min")).toHaveText("0 m");
+  await expect(page.locator("#legend-ramp .ramp-max")).toHaveText("4 m");
+  await expect(page.locator("#legend-ramp .ramp-bar")).toBeVisible();
+  const turbo = await read();
+  await page.screenshot({ path: "/out/colour-turbo.png" });
+  await page.locator("#legend").screenshot({ path: "/out/legend-turbo.png" });
+  await modes.selectOption("viridis");
+  await expect(page.locator("#legend-ramp")).toHaveAttribute("data-ramp", "viridis");
+  await expect(page.locator("#legend-ramp")).toContainText("Height (Viridis)");
+  await expect.poll(async () => sum(turbo, await read()), { timeout: 5000 }).toBeGreaterThan(40);
+  const viridis = await read();
+  await page.screenshot({ path: "/out/colour-viridis.png" });
+  await page.locator("#legend").screenshot({ path: "/out/legend-viridis.png" });
+  await modes.selectOption("flat");
+  await expect(page.locator("#legend-ramp")).toBeHidden();
+  await expect.poll(async () => sum(viridis, await read()), { timeout: 5000 }).toBeGreaterThan(40);
+  const grey = await read();
+  expect(Math.max(...grey) - Math.min(...grey), `grey pixel ${grey}`).toBeLessThanOrEqual(6);
+  await page.screenshot({ path: "/out/colour-flat.png" });
+  await page.locator("#legend").screenshot({ path: "/out/legend-flat.png" });
+  await expect(page.locator('#legend [data-legend="base"]')).toHaveCSS("background-color", "rgb(176, 176, 176)");
+  await modes.selectOption("turbo");
+});
