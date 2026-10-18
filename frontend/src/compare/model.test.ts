@@ -9,7 +9,6 @@ import {
   READ_ONLY_REASON,
   clampOpacity,
   countsPanel,
-  createHold,
   editAllowed,
   fetchPlan,
   overlayStyle,
@@ -69,39 +68,12 @@ test("UI-83 counts panel: original, remaining, deleted and a 2 dp percentage", (
   expect(countsPanel({ ...c, original: 0, active: 0, deleted: 0 }).deletedPercent).toBe("0.00%");
 });
 
-test("UI-84 press-and-hold original restores the previous mode; repeats and blur handled", () => {
-  const store = createAppStore();
-  setCompare(store, "overlay");
-  const refresh = vi.fn();
-  const hold = createHold(store, refresh);
-  hold.press();
-  expect(store.get().compare).toBe("original");
-  hold.press(); // key repeat
-  hold.press();
-  expect(refresh).toHaveBeenCalledTimes(1);
-  hold.release();
-  expect(store.get().compare).toBe("overlay");
-  hold.release();
-  expect(store.get().compare).toBe("overlay");
-  hold.press();
-  hold.blur();
-  expect(store.get().compare).toBe("overlay");
-  setCompare(store, "original");
-  hold.press(); // already original: nothing to restore, nothing changes
-  hold.release();
-  expect(store.get().compare).toBe("original");
-});
-
 test("UI-85 editing is refused unless the edited view is shown", () => {
   expect(editAllowed("edited")).toEqual({ ok: true });
   for (const m of ["original", "overlay", "split"] as const) {
     expect(editAllowed(m)).toEqual({ ok: false, reason: READ_ONLY_REASON });
   }
   expect(READ_ONLY_REASON).toBe("Return to the edited view to edit");
-  const store = createAppStore();
-  const hold = createHold(store, () => undefined);
-  hold.press();
-  expect(editAllowed(store.get().compare).ok).toBe(false);
 });
 
 test("UI-86 deleted count is original minus active, never an overlay point count", () => {

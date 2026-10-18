@@ -21,9 +21,9 @@ view, global height protection (the purple slab) and the live counts in the stat
    3D handles, and read the **exact** counts in the status bar (Selected,
    Protected, Candidates). **Apply** is enabled only for an up-to-date preview.
 4. **Undo/Redo** (`Ctrl+Z`, `Ctrl+Y`) walk the history. Compare with **Original**,
-   **Overlay** (deleted points in red, adjustable opacity), **Split** (original
-   left, edited right, one camera) or hold `O` for the original. Comparison
-   views are read-only.
+   **Overlay** (deleted points in red, opacity slider beside the icon while Overlay
+   is on) or **Split** (original left, edited right, one camera): the four data
+   modes are an icon group next to the toolbar. Comparison views are read-only.
 5. **Export** (scope: active by default, displayed, or selected) or **Save session**.
 
 | Input | Action |
@@ -34,7 +34,6 @@ view, global height protection (the purple slab) and the live counts in the stat
 | ViewCube (top right of the view) | Click a face to look along that axis; click an edge or corner for a diagonal view; it follows every camera change |
 | `1` `2` `3` `4` `5` `6` | Top, bottom, front, back, left, right (the ViewCube faces) |
 | `P`, `F`, `Alt+F` | Perspective/orthographic, fit the cloud, fit the camera to the current candidate |
-| Hold `O` | Show the original (read-only) |
 | Hold `R`, or the **Rect** button | Rectangle select: drag a rectangle in a face view to set the box (depth: the slice slab, or the whole cloud) |
 | Drag a filter box grip, or the arrow on its plane | Set that side of the display filter (six boxes on the canvas; Shift is finer, a typed value and a per-side reset sit in the box, the chip collapses it) |
 | Arrow keys on a focused grip | Nudge the filter value (Shift finer, PageUp/PageDown ten steps, Home/End the cloud bounds) |

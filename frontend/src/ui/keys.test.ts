@@ -41,7 +41,7 @@ test("UI-140 the key table has no duplicate keys and every documented key classi
     expect(seen.get(k) ?? id).toBe(id);
     seen.set(k, id);
   }
-  for (const want of ["undo", "redo", "help", "perspective", "fit", "fit-selection", "hold-original", "rect", "slice-prev", "slice-next", "polygon-close", "cancel", "apply"]) {
+  for (const want of ["undo", "redo", "help", "perspective", "fit", "fit-selection", "rect", "slice-prev", "slice-next", "polygon-close", "cancel", "apply"]) {
     expect(ids).toContain(want);
   }
 });

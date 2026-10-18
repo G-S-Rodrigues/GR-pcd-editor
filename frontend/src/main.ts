@@ -2,7 +2,7 @@ import * as api from "./api/session";
 import { getState } from "./api/session";
 import { postJson, setSessionChangedHandler, setSessionId } from "./files/http";
 import { startExport, startSave, markSaved } from "./files/downloads";
-import { createHold, setCompare } from "./compare/model";
+import { setCompare } from "./compare/model";
 import { runExport } from "./orchestration/export";
 import { runSave } from "./orchestration/session-save";
 import { beforeUnloadHandler } from "./orchestration/unsaved";
@@ -193,14 +193,9 @@ const deps = {
   onOpened,
 };
 
-const hold = createHold(store, () => void refresher.refresh());
 const exportDialog = buildExportDialog(store, (o) => runExport(store, o, { startExport: (f, s) => startExport(f, s) }));
 const persister = createPersister(store, api.putClientState, { dragging: () => tools.dragging() });
 window.addEventListener("beforeunload", beforeUnloadHandler(() => store.get()));
-window.addEventListener("blur", () => hold.blur());
-window.addEventListener("keyup", (e) => {
-  if (e.key.toLowerCase() === "o") hold.release();
-});
 
 buildToolbar($("toolbar"), store, {
   saveSession: () =>
@@ -220,8 +215,6 @@ buildViewbar($("viewbar"), store, {
     setCompare(store, m);
     void refresher.refresh();
   },
-  holdPress: () => hold.press(),
-  holdRelease: () => hold.release(),
   notify: (text) => addNotice(store, "warn", "pivot_invalid", text),
 });
 buildStatusbar($("statusbar"), $("modebar"), store);
@@ -300,9 +293,7 @@ window.addEventListener("keydown", (e) => {
   const id = classifyKey({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey, shiftKey: e.shiftKey, target: t?.tagName ?? "" });
   help.apply(id);
   if (id === "rect") rectHeld = true;
-  else if (id === "hold-original") {
-    if (store.get().session) hold.press();
-  } else if (id === "undo") {
+  else if (id === "undo") {
     e.preventDefault();
     void editor.undo();
   } else if (id === "redo") {

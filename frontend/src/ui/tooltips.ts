@@ -32,7 +32,6 @@ export const TOOLTIPS: Record<string, string> = {
   "compare-edited": "Show the edited cloud, the only view where you can edit",
   "compare-overlay": "Show the edited cloud with the deleted points overlaid in red (read-only)",
   "compare-split": "Show original (left) and edited (right) side by side from one camera (read-only)",
-  "compare-hold-original": "Press and hold to see the original cloud; release to return (key O)",
   "overlay-opacity": "Opacity of the deleted-points overlay, from 0.05 to 1",
   "export-scope": "Which points to export: all active points, only the displayed ones, or only the selected ones",
   "export-format": "Binary is smaller and faster; ASCII is human readable",

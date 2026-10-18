@@ -13,7 +13,7 @@ export const presetForKey = (k: string): PresetName | null => VIEW_KEYS.find((b)
 
 export type KeyId =
   | "view-1" | "view-2" | "view-3" | "view-4" | "view-5" | "view-6"
-  | "perspective" | "fit" | "fit-selection" | "hold-original" | "rect"
+  | "perspective" | "fit" | "fit-selection" | "rect"
   | "slice-prev" | "slice-next" | "polygon-close" | "cancel" | "apply"
   | "undo" | "redo" | "help";
 
@@ -42,7 +42,6 @@ export const KEY_DOCS: KeyDoc[] = [
   { id: "perspective", keys: "P", label: "Perspective / orthographic", probes: [{ key: "p" }, { key: "P" }] },
   { id: "fit", keys: "F", label: "Fit the whole cloud", probes: [{ key: "f" }, { key: "F" }] },
   { id: "fit-selection", keys: "Alt+F", label: "Fit the camera to the current candidate", probes: [{ key: "f", altKey: true }, { key: "F", altKey: true }] },
-  { id: "hold-original", keys: "O (hold)", label: "Show the original cloud while held", probes: [{ key: "o" }, { key: "O" }] },
   { id: "rect", keys: "R (hold)", label: "Rectangle select in a face view while held", probes: [{ key: "r" }, { key: "R" }] },
   { id: "slice-prev", keys: "[", label: "Move the slice slab down", probes: [{ key: "[" }] },
   { id: "slice-next", keys: "]", label: "Move the slice slab up", probes: [{ key: "]" }] },
@@ -70,7 +69,6 @@ export function classifyKey(e: KeyEvent): KeyId | null {
   switch (k) {
     case "p": return "perspective";
     case "f": return "fit";
-    case "o": return "hold-original";
     case "r": return "rect";
     case "[": return "slice-prev";
     case "]": return "slice-next";

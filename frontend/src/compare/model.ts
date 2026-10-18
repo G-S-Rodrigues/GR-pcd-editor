@@ -50,35 +50,6 @@ export function setCompare(store: Store<AppState>, mode: CompareMode): void {
   }));
 }
 
-/** Press-and-hold "original": restores the previous mode on release or blur; key repeat is ignored. */
-export function createHold(store: Store<AppState>, refresh: () => void) {
-  let held = false;
-  let prev: CompareMode | null = null;
-  return {
-    press(): void {
-      if (held) return;
-      held = true;
-      const cur = store.get().compare;
-      if (cur === "original") return;
-      prev = cur;
-      setCompare(store, "original");
-      refresh();
-    },
-    release(): void {
-      if (!held) return;
-      held = false;
-      if (prev === null) return;
-      const back = prev;
-      prev = null;
-      setCompare(store, back);
-      refresh();
-    },
-    blur(): void {
-      this.release();
-    },
-  };
-}
-
 /** Cache key for a fetched render: session identity and selection identity (not count) because flags depend on them. */
 export function renderCacheKey(s: AppState, mode: RenderMode, attr?: string): string {
   const r = s.session?.revision;

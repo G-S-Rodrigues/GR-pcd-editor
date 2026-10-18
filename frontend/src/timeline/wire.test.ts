@@ -29,7 +29,7 @@ test("UI-279 help lists the three timeline mouse rows and the key table is uncha
   expect(keys).toContain("timeline marker");
   expect(keys).toContain("double-click a step name");
   expect(KEY_DOCS.map((d) => d.id)).toEqual([
-    "view-1", "view-2", "view-3", "view-4", "view-5", "view-6", "perspective", "fit", "fit-selection", "hold-original", "rect",
+    "view-1", "view-2", "view-3", "view-4", "view-5", "view-6", "perspective", "fit", "fit-selection", "rect",
     "slice-prev", "slice-next", "polygon-close", "cancel", "apply", "undo", "redo", "help",
   ]);
 });

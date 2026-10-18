@@ -226,7 +226,7 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
     await exact("Active", String(activeBefore - GHOST));
   });
 
-  await test.step("E2E-07 comparison: overlay and split keep the exact counts; hold O shows the original", async () => {
+  await test.step("E2E-07 comparison: overlay and split keep the exact counts", async () => {
     await ctl("compare-overlay").click();
     await expect(page.locator("#modebar")).toContainText("View: Overlay (read-only)");
     await expect(page.locator("#counts-panel")).toContainText(`Deleted${GHOST} (`);
@@ -238,10 +238,6 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
     await expect(page.locator("#fileinfo")).toContainText("Right drawn");
     await exact("Active", String(activeBefore - GHOST));
     await ctl("compare-edited").click();
-    await expect(page.locator("#modebar")).not.toContainText("View:");
-    await page.keyboard.down("o");
-    await expect(page.locator("#modebar")).toContainText("View: Original (read-only)");
-    await page.keyboard.up("o");
     await expect(page.locator("#modebar")).not.toContainText("View:");
     await exact("Active", String(activeBefore - GHOST));
     await ctl("tool-box").click(); // leave the tool
@@ -810,7 +806,7 @@ test("E2E-20 7b2 the ? key and the ? button open a help overlay listing every ke
   await expect(help).not.toBeVisible();
   await page.keyboard.press("?");
   await expect(help).toBeVisible();
-  for (const k of ["1", "P", "F", "Alt+F", "O (hold)", "R (hold)", "[", "]", "Enter", "Esc", "Delete", "Ctrl+Z", "Ctrl+Y", "?"]) {
+  for (const k of ["1", "P", "F", "Alt+F", "R (hold)", "[", "]", "Enter", "Esc", "Delete", "Ctrl+Z", "Ctrl+Y", "?"]) {
     await expect(help.locator("td.k", { hasText: new RegExp(`^${k.replace(/[()+[\]?]/g, "\\$&")}$`) })).toHaveCount(1);
   }
   await expect(help).toContainText("Click a ViewCube face");
@@ -2429,3 +2425,54 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     await page.screenshot({ path: `/out/toolbar-${w}.png` });
   });
 }
+
+test("E2E-71 12-2 the four data modes are an icon group with exact counts; the opacity slider shows only in Overlay; Hold original and the O key are gone", async ({ page }) => {
+  const { exact, ctl } = helpers(page);
+  await openRoom(page, exact);
+  const group = page.locator('[role="group"][aria-label="Data mode"]');
+  await expect(group).toHaveCount(1);
+  const ids = ["compare-original", "compare-edited", "compare-overlay", "compare-split"];
+  const names = ["Original", "Edited", "Overlay", "Split"];
+  const pressed = async (on: string) => {
+    for (const id of ids) await expect(ctl(id)).toHaveAttribute("aria-pressed", id === on ? "true" : "false");
+  };
+  for (const [i, id] of ids.entries()) {
+    await expect(ctl(id)).toHaveCount(1);
+    await expect(ctl(id)).toHaveAttribute("aria-label", names[i]);
+    await expect(ctl(id)).toHaveText("");
+    await expect(group.locator(`[data-control="${id}"]`)).toHaveCount(1);
+  }
+  await pressed("compare-edited");
+  await expect(ctl("overlay-opacity")).toHaveCount(0);
+  const ys = await Promise.all(ids.map(async (id) => (await ctl(id).boundingBox())!.y));
+  expect(Math.max(...ys) - Math.min(...ys)).toBeLessThanOrEqual(2);
+  // same counts as E2E-07
+  await exact("Active", String(ROOM_TOTAL));
+  await ctl("compare-overlay").click();
+  await pressed("compare-overlay");
+  await expect(page.locator("#modebar")).toContainText("View: Overlay (read-only)");
+  await expect(page.locator("#counts-panel")).toContainText(`Deleted0 (`);
+  await expect(ctl("overlay-opacity")).toHaveCount(1);
+  await expect(ctl("overlay-opacity")).toBeVisible();
+  await ctl("compare-split").click();
+  await pressed("compare-split");
+  await expect(page.locator("#modebar")).toContainText("View: Split (read-only)");
+  await expect(ctl("overlay-opacity")).toHaveCount(0);
+  await ctl("compare-original").click();
+  await pressed("compare-original");
+  await expect(page.locator("#modebar")).toContainText("View: Original (read-only)");
+  await ctl("compare-edited").click();
+  await pressed("compare-edited");
+  await expect(page.locator("#modebar")).not.toContainText("View:");
+  await exact("Active", String(ROOM_TOTAL));
+  // Hold original is gone, and O changes nothing
+  await expect(ctl("compare-hold-original")).toHaveCount(0);
+  await page.locator("#viewport").hover();
+  await page.keyboard.down("o");
+  await expect(page.locator("#modebar")).not.toContainText("View:");
+  await page.keyboard.up("o");
+  await pressed("compare-edited");
+  await page.keyboard.press("?");
+  await expect(page.locator("#help-overlay td.k", { hasText: /^O/ })).toHaveCount(0);
+  await expect(page.locator("#help-overlay")).not.toContainText("original cloud while held");
+});
