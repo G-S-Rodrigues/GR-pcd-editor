@@ -1,4 +1,4 @@
-export type FieldGroup = "tool" | "box" | "polygon" | "cluster" | "filter" | "protection" | "history" | "slice";
+export type FieldGroup = "tool" | "box" | "polygon" | "cluster" | "filter" | "protection" | "history";
 export interface FieldSpec {
   id: string;
   label: string;
@@ -15,7 +15,7 @@ export const FIELD_SPECS: FieldSpec[] = [
   f("tool-box", "Box", "tool", "Select points inside (or outside) an oriented box set by numbers or by dragging its handles"),
   f("tool-polygon", "Polygon", "tool", "Select points inside a polygon drawn in the top view, optionally limited by Z"),
   f("tool-cluster", "Cluster", "tool", "Select the connected cluster around a picked seed point within a radius"),
-  f("op-select", "Operation", "tool", "Replace changes the selection live. Add, Subtract and Intersect preview the result (added points in magenta, removed in blue) and change the selection only when you press Commit draft"),
+  f("op-select", "Operation", "tool", "The first selection you draw is live. Once something is selected, Add, Subtract and Intersect preview the result (added points in magenta, removed in blue) and change the selection only when you press Commit draft"),
   f("scope-select", "Scope", "tool", "Displayed: only points that pass the display filter. Active: every point still in the cloud"),
   f("sel-commit", "Commit draft", "tool", "Make the previewed result the selection (enabled once the preview is computed)"),
   f("sel-discard", "Discard draft", "tool", "Drop the pending preview; the selection stays as it is (Esc does the same)"),
@@ -37,7 +37,7 @@ export const FIELD_SPECS: FieldSpec[] = [
   f("box-reset", "Reset box", "box", "Replace the box by a unit box at the orbit pivot"),
   f("box-fit-cloud", "Fit cloud", "box", "Make the box exactly cover the active cloud"),
   f("box-fit-selection", "Fit selection", "box", "Make the box exactly cover the current candidate"),
-  f("box-rect", "Rect", "box", "Rectangle select: drag a rectangle in a face view (ViewCube) to make the box; the depth is the slice slab or the whole cloud. Shift+drag narrows the current box instead. Hold R for the same. Rect stays on until you click Rect again (then Shift+drag pans); a drag that starts on a box handle still draws the rectangle while Rect is on"),
+  f("box-rect", "Rect", "box", "Rectangle select: drag a rectangle in a face view (ViewCube) to make the box; the depth is the whole cloud. Shift+drag narrows the current box instead. Hold R for the same. Rect stays on until you click Rect again (then Shift+drag pans); a drag that starts on a box handle still draws the rectangle while Rect is on"),
   f("box-fit-view", "Fit to view", "box", "Make the box cover everything visible in this face view, across the whole depth of the cloud"),
   f("box-fit-displayed", "Fit displayed", "box", "Make the box cover the displayed points: the active cloud narrowed by the display filter"),
   f("gizmo-snap", "Snap", "box", "Snap handle drags to the step sizes below; hold Shift for fine (x0.1) drags"),
@@ -70,15 +70,6 @@ export const FIELD_SPECS: FieldSpec[] = [
     }),
   ),
   f("filter-reset-all", "Reset filters", "filter", "Put all six display filter sides back to the whole cloud (nothing hidden)"),
-  f("slice-enabled", "Slice view", "slice", "Draw only a slab of the cloud (view only: selection, filters and counts are not affected)"),
-  f("slice-axis", "Slice axis", "slice", "Axis the slab is cut across"),
-  f("slice-centre", "Slice centre", "slice", "Centre of the slab along its axis, in the file frame"),
-  f("slice-thickness", "Slice thickness", "slice", "Thickness of the slab; must be greater than 0"),
-  f("slice-from-box", "Slice from box", "slice", "Make the slab cover the box along the view axis (or the slice axis outside a face view)"),
-  f("slice-at-point", "Slice at point", "slice", "Click a point in the view: the slab is centred on it along the slice axis"),
-  f("slice-prev", "Slice back", "slice", "Move the slab one thickness toward lower values (key [)"),
-  f("slice-next", "Slice forward", "slice", "Move the slab one thickness toward higher values (key ])"),
-  f("slice-off", "Slice off", "slice", "Draw the whole cloud again"),
   f("prot-enabled", "Global protection", "protection", "Protect every point whose Z is inside the interval from deletion; off by default"),
   f("prot-min", "Protect min Z", "protection", "Lower Z of the protected slab (inclusive)"),
   f("prot-max", "Protect max Z", "protection", "Upper Z of the protected slab (inclusive)"),

@@ -54,7 +54,6 @@ import { installDebugHook } from "./viewport/debug";
 import { createViewport } from "./viewport/scene";
 import { fitBounds } from "./view/fit";
 import { resetPivot } from "./view/pivot";
-import { AXIS_INDEX, defaultSlice, sliceFromPick } from "./view/slice";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -139,10 +138,6 @@ installDebugHook(canvas, store, size, () => viewport?.drawnCount() ?? 0, () => v
 if (viewport) {
   attachControls(canvas, store, size, tools, () => runner.onToolChanged(), (kind, point) => {
     const st = store.get();
-    if (kind === "slice") {
-      store.set({ slice: sliceFromPick(st.slice.axis, point[AXIS_INDEX[st.slice.axis]], st.slice.thickness) });
-      return;
-    }
     // on a tilted slab the picked point's slab coordinate is what the interval is measured in (level: its z)
     const r = floorFromPick(st.compare, slabCoordinate(point, st.tools.protection.tilt), st.floorT);
     if (!r.ok) return note(r.reason);
@@ -162,9 +157,9 @@ function onOpened(state: SessionState) {
     ...st,
     camera: fitted,
     tool: "none",
-    op: "replace",
+    op: "add",
+    liveFirst: state.selection.count === 0,
     scope: "displayed",
-    slice: defaultSlice(),
     candidate: null,
     tools: {
       ...st.tools,
@@ -227,7 +222,7 @@ const panelActions = {
   filterResetAll: () => filters.resetToCloud(),
   protectionEdit: (fn: Parameters<typeof protection.edit>[0]) => protection.edit(fn),
   setTool: (t: "none" | "box" | "polygon" | "cluster") => {
-    store.update((st) => ({ ...st, tool: t, interaction: "orbit" }));
+    store.update((st) => ({ ...st, tool: t, interaction: "orbit", liveFirst: (st.session?.selection.count ?? 0) === 0 }));
     if (t === "polygon") {
       enterTool();
       store.set({ camera: applyPreset(store.get().camera, "top") });
@@ -262,7 +257,7 @@ const panelActions = {
     emptyPolygon: () => store.update((st) => ({ ...st, tools: { ...st.tools, polygon: emptyPolygon() } })),
     polygonSelected: () => {
       const st = store.get();
-      return st.tool === "polygon" && st.tools.polygon.phase === "closed" && st.op === "replace" && (st.session?.selection.count ?? 0) > 0;
+      return st.tool === "polygon" && st.tools.polygon.phase === "closed" && st.liveFirst && (st.session?.selection.count ?? 0) > 0;
     },
     resetRunner: () => runner.reset(),
     clearSelection: () => void editor.clearSelection(),

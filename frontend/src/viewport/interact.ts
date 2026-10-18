@@ -143,7 +143,7 @@ export function createToolInteraction(
       }
       if (s.tool === "box" && (s.rect || deps.rectHeld?.())) {
         const axis = rectAxis(s.camera);
-        const depth = axis === null ? null : rectDepth(axis, s.session.active_bounds, s.slice);
+        const depth = axis === null ? null : rectDepth(axis, s.session.active_bounds);
         if (depth) {
           // Shift narrows the box the drag started from; a plain drag replaces it
           drag = { kind: "rect", p0: p, depth, narrow: e.shiftKey ? s.tools.box : null };

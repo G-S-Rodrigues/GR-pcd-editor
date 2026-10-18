@@ -28,7 +28,7 @@ describe("rectangle select in an orthographic preset view (7b-1)", () => {
       const cam = camFor(name);
       const axis = rectAxis(cam);
       expect(axis, name).toBe(Math.abs(PRESETS[name].look[0]) ? 0 : Math.abs(PRESETS[name].look[1]) ? 1 : 2);
-      const depth = rectDepth(axis!, bounds, null)!;
+      const depth = rectDepth(axis!, bounds)!;
       expect(depth).toEqual({ min: bounds.min[axis!], max: bounds.max[axis!] });
       const box = rectToBox(defaultBox([0, 0, 0]), cam, vp, { x: 100, y: 100 }, { x: 300, y: 250 }, depth)!;
       expect(box, name).not.toBeNull();
@@ -63,19 +63,17 @@ describe("rectangle select in an orthographic preset view (7b-1)", () => {
     expect(rectToBox(defaultBox([0, 0, 0]), { ...top, ortho: false }, vp, { x: 10, y: 10 }, { x: 200, y: 200 }, depth)).toBeNull();
   });
 
-  it("UI-123 depth comes from the active slice slab when it is on the view axis, else from the bounds", () => {
-    const slab = { enabled: true, axis: "y" as const, centre: 12, thickness: 4 };
-    expect(rectDepth(1, bounds, slab)).toEqual({ min: 10, max: 14 });
-    expect(rectDepth(2, bounds, slab)).toEqual({ min: 0, max: 4 }); // slab on another axis
-    expect(rectDepth(1, bounds, { ...slab, enabled: false })).toEqual({ min: 0, max: 19 });
-    expect(rectDepth(1, null, null)).toBeNull();
+  it("UI-123 depth is the whole active-bounds extent along the view axis; null without bounds (the slice slab is gone)", () => {
+    expect(rectDepth(1, bounds)).toEqual({ min: 0, max: 19 });
+    expect(rectDepth(2, bounds)).toEqual({ min: bounds.min[2], max: bounds.max[2] });
+    expect(rectDepth(1, null)).toBeNull();
   });
 });
 
 describe("fit helpers (7b-1)", () => {
   it("UI-124 fit to view covers the visible rectangle with the bounds depth; null when not aligned", () => {
     const cam = camFor("front"); // looks along +Y, x right, z up
-    const depth = rectDepth(1, bounds, null)!;
+    const depth = rectDepth(1, bounds)!;
     const box = fitToView(defaultBox([0, 0, 0]), cam, vp, depth)!;
     const a = world("front", 0, 0);
     const b = world("front", vp.w, vp.h);

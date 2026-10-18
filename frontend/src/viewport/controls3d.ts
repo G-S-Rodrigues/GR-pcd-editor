@@ -6,7 +6,6 @@ import type { Store } from "../state/store";
 import { orbit, pan, togglePerspective, zoom } from "../view/camera";
 import type { ToolInteraction } from "./interact";
 import { fitBounds } from "../view/fit";
-import { isClipped, stepSlice } from "../view/slice";
 import { pickPivot } from "../view/pivot";
 import { classifyKey, presetForKey } from "../ui/keys";
 import { applyPreset } from "../view/presets";
@@ -21,7 +20,7 @@ export function attachControls(
   size: () => { w: number; h: number },
   tools?: ToolInteraction,
   onSeedPicked?: () => void,
-  onPointPicked?: (kind: "floor" | "slice", point: [number, number, number]) => void,
+  onPointPicked?: (kind: "floor", point: [number, number, number]) => void,
 ): () => void {
   let drag: { x: number; y: number; startX: number; startY: number; pan: boolean } | null = null;
 
@@ -66,7 +65,7 @@ export function attachControls(
   async function onClick(e: PointerEvent) {
     const s = store.get();
     if (tools?.click(e)) return;
-    if ((s.interaction !== "pick-pivot" && s.interaction !== "pick-seed" && s.interaction !== "pick-floor" && s.interaction !== "pick-slice") || !s.render) return;
+    if ((s.interaction !== "pick-pivot" && s.interaction !== "pick-seed" && s.interaction !== "pick-floor") || !s.render) return;
     const allowed = editAllowed(s.compare);
     if (!allowed.ok) {
       addNotice(store, "warn", "pick_refused", allowed.reason);
@@ -75,7 +74,7 @@ export function attachControls(
     const rect = canvas.getBoundingClientRect();
     const px = e.clientX - rect.left;
     const py = e.clientY - rect.top;
-    const hit = pickPoint(s.render, s.camera, size(), px, py, 8, (w) => !isClipped(s.slice, w));
+    const hit = pickPoint(s.render, s.camera, size(), px, py, 8);
     if (!hit) {
       addNotice(store, "info", "no_point", "No point near the click; try again closer to a point");
       return;
@@ -96,9 +95,9 @@ export function attachControls(
         addNotice(store, "info", "no_point", "No point near the click; try again closer to a point");
         return;
       }
-      if (s.interaction === "pick-floor" || s.interaction === "pick-slice") {
+      if (s.interaction === "pick-floor") {
         store.set({ interaction: "orbit" });
-        onPointPicked?.(s.interaction === "pick-floor" ? "floor" : "slice", seed.point);
+        onPointPicked?.("floor", seed.point);
         return;
       }
       if (s.interaction === "pick-seed") {
@@ -126,8 +125,6 @@ export function attachControls(
     const preset = presetForKey(e.key);
     if (preset && id.startsWith("view-")) {
       store.set({ camera: applyPreset(s.camera, preset) });
-    } else if (id === "slice-prev" || id === "slice-next") {
-      store.set({ slice: stepSlice(s.slice, id === "slice-next" ? 1 : -1) });
     } else if (id === "perspective") {
       store.set({ camera: togglePerspective(s.camera) });
     } else if (id === "fit" && s.session?.active_bounds) {

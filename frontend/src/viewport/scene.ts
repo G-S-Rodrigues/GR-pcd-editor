@@ -14,7 +14,6 @@ import { colourRegion } from "../inspector/band";
 import { createFilterPlanesOverlay } from "./filterplanes3d";
 import { createToolsOverlay } from "./tools3d";
 import { FOV_DEG, eyePosition, halfHeight } from "../view/camera";
-import { slicePlanes } from "../view/slice";
 import { stepLayerStyle } from "../timeline/model";
 
 export interface Viewport {
@@ -208,26 +207,11 @@ export function createViewport(
     (rightPts.material as THREE.PointsMaterial).size = s.colour.pointSize;
   }
 
-  // slice view: render-only clipping of every point layer (selection, filters and counts are untouched)
-  const clipPlanes = [new THREE.Plane(), new THREE.Plane()];
-  let clipOn = false;
-  function syncClip(s: AppState) {
-    const sp = slicePlanes(s.slice, (s.render?.origin ?? [0, 0, 0]) as [number, number, number]);
-    sp.forEach((p, i) => clipPlanes[i].set(new THREE.Vector3(...p.normal), p.constant));
-    const on = sp.length > 0;
-    for (const m of [points.material, deletedPts.material, rightPts.material, keptPts.material, stepPts.material] as THREE.PointsMaterial[]) {
-      m.clippingPlanes = on ? clipPlanes : null;
-      if (on !== clipOn) m.needsUpdate = true;
-    }
-    clipOn = on;
-  }
-
   function draw() {
     raf = 0;
     const s = store.get();
     syncGeometry(s);
     syncKept(s);
-    syncClip(s);
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
     if (w === 0 || h === 0) return;

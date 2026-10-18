@@ -14,7 +14,7 @@ export const presetForKey = (k: string): PresetName | null => VIEW_KEYS.find((b)
 export type KeyId =
   | "view-1" | "view-2" | "view-3" | "view-4" | "view-5" | "view-6"
   | "perspective" | "fit" | "fit-selection" | "rect"
-  | "slice-prev" | "slice-next" | "polygon-close" | "cancel" | "apply"
+  | "polygon-close" | "cancel" | "apply"
   | "undo" | "redo" | "help";
 
 export interface KeyEvent {
@@ -43,8 +43,6 @@ export const KEY_DOCS: KeyDoc[] = [
   { id: "fit", keys: "F", label: "Fit the whole cloud", probes: [{ key: "f" }, { key: "F" }] },
   { id: "fit-selection", keys: "Alt+F", label: "Fit the camera to the current candidate", probes: [{ key: "f", altKey: true }, { key: "F", altKey: true }] },
   { id: "rect", keys: "R (hold)", label: "Rectangle select in a face view while held", probes: [{ key: "r" }, { key: "R" }] },
-  { id: "slice-prev", keys: "[", label: "Move the slice slab down", probes: [{ key: "[" }] },
-  { id: "slice-next", keys: "]", label: "Move the slice slab up", probes: [{ key: "]" }] },
   { id: "polygon-close", keys: "Enter", label: "Close the polygon being drawn", probes: [{ key: "Enter" }] },
   { id: "cancel", keys: "Esc", label: "Leave pick mode, cancel polygon drawing, discard a pending draft, close help", probes: [{ key: "Escape" }] },
   { id: "apply", keys: "Delete", label: "Apply: delete the previewed points (same as the Apply button)", probes: [{ key: "Delete" }] },
@@ -70,8 +68,6 @@ export function classifyKey(e: KeyEvent): KeyId | null {
     case "p": return "perspective";
     case "f": return "fit";
     case "r": return "rect";
-    case "[": return "slice-prev";
-    case "]": return "slice-next";
     case "enter": return "polygon-close";
     case "escape": return "cancel";
     case "delete": return "apply";

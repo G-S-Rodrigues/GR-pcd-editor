@@ -23,7 +23,7 @@ export function serialiseClientState(s: AppState): Json {
     comparison: { mode: s.compare, opacity: s.overlayOpacity },
     unit: s.session?.unit ?? "m",
     tools: { box: s.tools.box, polygon: s.tools.polygon, cluster: s.tools.cluster },
-    ui: { budget: s.budget, gizmo: s.gizmo, slice: s.slice, boxesCollapsed: s.filterUi.collapsed, floorPanelOpen: s.floorPanelOpen, sectionsOpen: s.sectionsOpen, ...(s.legendOpen ? {} : { legendOpen: false }) },
+    ui: { budget: s.budget, gizmo: s.gizmo, boxesCollapsed: s.filterUi.collapsed, floorPanelOpen: s.floorPanelOpen, sectionsOpen: s.sectionsOpen, ...(s.legendOpen ? {} : { legendOpen: false }) },
   };
 }
 
@@ -37,7 +37,6 @@ export interface ClientPatch {
   compare?: CompareMode;
   overlayOpacity?: number;
   budget?: number;
-  slice?: AppState["slice"];
   boxesCollapsed?: Record<string, boolean>;
   floorPanelOpen?: boolean;
   sectionsOpen?: SectionsOpen;
@@ -84,10 +83,6 @@ export function restoreClientState(raw: unknown): ClientPatch | null {
       const kept: SectionsOpen = {};
       for (const [k, v] of Object.entries(ui.sectionsOpen)) if ((SECTION_IDS as readonly string[]).includes(k) && v === false) kept[k as SectionId] = false;
       out.sectionsOpen = kept;
-    }
-    const sl = ui.slice;
-    if (isObj(sl) && typeof sl.enabled === "boolean" && ["x", "y", "z"].includes(sl.axis as string) && typeof sl.centre === "number" && Number.isFinite(sl.centre) && typeof sl.thickness === "number" && sl.thickness > 0 && Number.isFinite(sl.thickness)) {
-      out.slice = { enabled: sl.enabled, axis: sl.axis as "x" | "y" | "z", centre: sl.centre, thickness: sl.thickness };
     }
   }
   const t = raw.tools;
@@ -182,7 +177,6 @@ export function applyClientPatch(s: AppState, p: ClientPatch): AppState {
     ...(p.compare ? { compare: p.compare, renderMode: fetchPlan(p.compare).primary, render2: null } : {}),
     overlayOpacity: p.overlayOpacity ?? s.overlayOpacity,
     budget: p.budget ?? s.budget,
-    slice: p.slice ?? s.slice,
     filterUi: p.boxesCollapsed ? { ...s.filterUi, collapsed: p.boxesCollapsed } : s.filterUi,
     floorPanelOpen: p.floorPanelOpen ?? s.floorPanelOpen,
     sectionsOpen: p.sectionsOpen ?? s.sectionsOpen,

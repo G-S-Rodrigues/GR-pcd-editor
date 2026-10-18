@@ -19,9 +19,9 @@ export const isDraftOp = (op: SelectionOp): boolean => op === "add" || op === "s
 
 /**
  * Whether a tool edit shows a live preview instead of committing: only an Add/Subtract/Intersect over an existing
- * selection. With an empty selection the first selection goes live (nothing to preview against).
+ * selection, and never while the edits are the first selection (`liveFirst`: nothing to preview against).
  */
-export const shouldPreview = (s: AppState): boolean => isDraftOp(s.op) && (s.session?.selection.count ?? 0) > 0;
+export const shouldPreview = (s: AppState): boolean => !s.liveFirst && isDraftOp(s.op) && (s.session?.selection.count ?? 0) > 0;
 
 export const invertNote = (scope: Scope): string => `Inverts the selection relative to ${scope} points`;
 
@@ -40,8 +40,7 @@ export function currentTool(s: AppState): ToolBody | null {
 
 export function buildSelection(s: AppState): BuildResult {
   if (!s.session) return { ok: false, reason: "No file is open" };
-  const base = { cloud_revision: s.session.revision.cloud, op: s.op, scope: s.scope, evaluate_candidate: true };
-  if (s.op === "invert") return { ok: true, body: { ...base, tool: null } };
+  const base = { cloud_revision: s.session.revision.cloud, op: (s.liveFirst ? "replace" : s.op) as SelectionOp, scope: s.scope, evaluate_candidate: true };
   if (s.tool === "none") return { ok: false, reason: "Choose a selection tool first" };
   const tool = currentTool(s);
   if (!tool) {

@@ -13,12 +13,13 @@ interface Deferred {
   reject: (e: unknown) => void;
 }
 
-function setup(opts: { op?: "replace" | "add" | "subtract" | "intersect"; count?: number } = {}) {
+function setup(opts: { op?: "add" | "subtract" | "intersect"; count?: number; liveFirst?: boolean } = {}) {
   const store = createAppStore();
   store.set({
     session: sessionFixture(opts.count ? { selection: { count: opts.count, ops: [] } } : {}),
     tool: "box",
-    op: opts.op ?? "replace",
+    op: opts.op ?? "add",
+    liveFirst: opts.liveFirst ?? opts.op === undefined, // no op named: the first (live) selection
   });
   const submitted: unknown[] = [];
   const previews: unknown[] = [];
@@ -455,8 +456,8 @@ describe("cluster reacts to parameter changes and partial results (F-04, F-07)",
     expect(t.store.get().draft).toBe(false);
   });
 
-  it("UI-409 Replace is unchanged: a tool edit sends a replace selection after the debounce and never a preview", async () => {
-    const t = setup({ op: "replace", count: 10 });
+  it("UI-409 a first (live) selection: a tool edit sends a replace selection after the debounce and never a preview", async () => {
+    const t = setup({ op: "add", count: 10, liveFirst: true });
     t.editBox(1);
     await vi.advanceTimersByTimeAsync(250);
     await flush();
@@ -480,7 +481,7 @@ describe("cluster reacts to parameter changes and partial results (F-04, F-07)",
   it("UI-415 shouldPreview: Add/Subtract/Intersect preview only over a non-empty selection; the first selection goes live (owner ruling D)", async () => {
     expect(shouldPreview({ ...createAppStore().get(), op: "add", session: sessionFixture() })).toBe(false);
     expect(shouldPreview({ ...createAppStore().get(), op: "add", session: sessionFixture({ selection: { count: 3, ops: [] } }) })).toBe(true);
-    expect(shouldPreview({ ...createAppStore().get(), op: "replace", session: sessionFixture({ selection: { count: 3, ops: [] } }) })).toBe(false);
+    expect(shouldPreview({ ...createAppStore().get(), op: "add", liveFirst: true, session: sessionFixture({ selection: { count: 3, ops: [] } }) })).toBe(false);
     const t = setup({ op: "add" }); // empty selection
     t.editBox(1);
     await vi.advanceTimersByTimeAsync(250);

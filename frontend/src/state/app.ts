@@ -9,7 +9,6 @@ import { type PolygonState, emptyPolygon } from "../tools/polygon/model";
 import type { RenderData } from "../render/parse";
 import { type TimelineState, emptyTimeline } from "../timeline/model";
 import { type Camera, defaultCamera } from "../view/camera";
-import { type Slice, defaultSlice } from "../view/slice";
 import { type Store, createStore } from "./store";
 import type {
   Candidate,
@@ -17,7 +16,7 @@ import type {
   PreviewState,
   RenderMode,
   Scope,
-  SelectionOp,
+  UiOp,
   SessionState,
   ToolKind,
 } from "./types";
@@ -39,16 +38,19 @@ export interface FilterUi {
 export interface AppState {
   session: SessionState | null;
   tool: ToolKind;
-  interaction: "orbit" | "pick-pivot" | "pick-seed" | "pick-floor" | "pick-slice";
+  interaction: "orbit" | "pick-pivot" | "pick-seed" | "pick-floor";
   /** Half thickness of the floor slab made by "Pick floor point" (unit label only). */
   floorT: number;
   /** Rectangle select: dragging in an aligned ortho view makes the Box tool's box. */
   rect: boolean;
-  /** Render-only slab (clipping); never changes selection, filters or counts. */
-  slice: Slice;
   /** Render-only emphasis of protected-selected (kept) points. */
   showKept: boolean;
-  op: SelectionOp;
+  op: UiOp;
+  /**
+   * The next tool edits are the first selection: they go live as a wire replace (no preview, no accumulation).
+   * True while the committed selection is empty and the user has not pressed an operation; never saved.
+   */
+  liveFirst: boolean;
   scope: Scope;
   camera: Camera;
   colour: { mode: ColourMode; pointSize: number };
@@ -91,9 +93,9 @@ export function initialState(): AppState {
     interaction: "orbit",
     floorT: DEFAULT_FLOOR_T,
     rect: false,
-    slice: defaultSlice(),
     showKept: false,
-    op: "replace",
+    op: "add",
+    liveFirst: false,
     scope: "displayed",
     camera: defaultCamera(),
     colour: { mode: "turbo", pointSize: 3 },

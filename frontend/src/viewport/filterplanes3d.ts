@@ -10,8 +10,7 @@ const FILL_OPACITY = 0.18;
 const HEAD_PX = 9;
 
 /**
- * Overlay of the display-filter planes and their arrows (edited view only). Not clipped by the slice view: slice
- * clipping planes are set on the point materials only. Fill under the tool overlay, arrows above it.
+ * Overlay of the display-filter planes and their arrows (edited view only). Fill under the tool overlay, arrows above it.
  */
 export function createFilterPlanesOverlay(scene: THREE.Scene) {
   const group = new THREE.Group();

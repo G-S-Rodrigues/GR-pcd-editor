@@ -149,7 +149,13 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
       await api.refreshState();
       if (mine !== gen) return;
       const raw = (result as { candidate?: unknown }).candidate ?? ("candidate_id" in result ? result : null);
-      store.set({ candidate: (raw as Candidate | null) ?? null, job: { ...IDLE }, draft: false, preview: null });
+      store.set({
+        candidate: (raw as Candidate | null) ?? null,
+        job: { ...IDLE },
+        draft: false,
+        preview: null,
+        ...(kind === "commit" ? { liveFirst: false } : {}),
+      });
     } catch (e) {
       if (mine !== gen) return;
       jobId = null;
@@ -324,7 +330,7 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
         paramsDebounce.call(previewDraft);
         return;
       }
-      const live = s.op === "replace" && s.tool !== "none" && buildSelection(s).ok;
+      const live = s.liveFirst && s.tool !== "none" && buildSelection(s).ok;
       const reselect = live && (kind !== "protection" || s.tool === "cluster");
       if (reselect) {
         store.set({ draft: false });

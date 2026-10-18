@@ -618,46 +618,6 @@ test("E2E-16 7b1 rectangle select with the real mouse in Top then Left view, fit
   await page.screenshot({ path: "/out/rect-select.png" });
 });
 
-test("E2E-17 7b1 slice view clips the drawn cloud in the real canvas and changes no count", async ({ page }) => {
-  const { exact, num, ctl, setNum } = helpers(page);
-  await openRoom(page, exact);
-  await ctl("cube-front").click();
-  await page.waitForTimeout(500);
-  const counts = async () => [await num("Original"), await num("Active"), await num("Displayed"), await num("Selected")];
-  const before = await counts();
-  const region = async (p: { x: number; y: number }) =>
-    page.screenshot({ clip: { x: Math.round(p.x) - 14, y: Math.round(p.y) - 14, width: 28, height: 28 } });
-  const wallAt = (await hook(page, (e) => e.projectWorld([-1, 4, 2.5])))!;
-  const ghostAt = (await hook(page, (e) => e.projectWorld([3, 13, 2]))!)!;
-  const emptyAt = { x: wallAt.x + 40, y: wallAt.y - 120 };
-  const emptyShot = await region(emptyAt);
-  const wallFull = await region(wallAt);
-  const ghostFull = await region(ghostAt);
-  expect(Buffer.compare(wallFull, emptyShot)).not.toBe(0); // wall drawn
-  expect(Buffer.compare(ghostFull, emptyShot)).not.toBe(0); // ghost drawn
-
-  await page.locator('[data-control="slice-axis"]').selectOption("y");
-  await setNum("slice-centre", 13.2);
-  await setNum("slice-thickness", 3.4);
-  await page.waitForTimeout(600);
-  expect(Buffer.compare(await region(wallAt), emptyShot)).toBe(0); // wall (y 0..9) is clipped away
-  expect(Buffer.compare(await region(ghostAt), emptyShot)).not.toBe(0); // ghost slab (y 12..15) stays
-  expect(await counts()).toEqual(before); // render only
-
-  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  await page.keyboard.press("]"); // one thickness forward: centre 16.6, slab 14.9..18.3
-  await expect.poll(async () => (await hook(page, (e) => (e.state() as unknown as { slice: { centre: number } }).slice.centre))).toBeCloseTo(16.6, 6);
-  await page.waitForTimeout(600);
-  expect(Buffer.compare(await region(ghostAt), emptyShot)).toBe(0); // ghosts left the slab
-  await page.keyboard.press("[");
-  await page.waitForTimeout(600);
-  expect(Buffer.compare(await region(ghostAt), emptyShot)).not.toBe(0);
-  await ctl("slice-off").click();
-  await page.waitForTimeout(600);
-  expect(Buffer.compare(await region(wallAt), emptyShot)).not.toBe(0);
-  expect(await counts()).toEqual(before);
-});
-
 test("E2E-18 7b1 legend, headline numbers and the kept-by-protection warning equal fixture truth", async ({ page }) => {
   const { exact, ctl, setNum } = helpers(page);
   await openRoom(page, exact);
@@ -825,7 +785,7 @@ test("E2E-20 7b2 the ? key and the ? button open a help overlay listing every ke
   await expect(help).not.toBeVisible();
   await page.keyboard.press("?");
   await expect(help).toBeVisible();
-  for (const k of ["1", "P", "F", "Alt+F", "R (hold)", "[", "]", "Enter", "Esc", "Delete", "Ctrl+Z", "Ctrl+Y", "?"]) {
+  for (const k of ["1", "P", "F", "Alt+F", "R (hold)", "Enter", "Esc", "Delete", "Ctrl+Z", "Ctrl+Y", "?"]) {
     await expect(help.locator("td.k", { hasText: new RegExp(`^${k.replace(/[()+[\]?]/g, "\\$&")}$`) })).toHaveCount(1);
   }
   await expect(help).toContainText("Click a ViewCube face");
@@ -935,22 +895,22 @@ test("E2E-22 7b2 a slow upload can be cancelled: the progress goes away, the ope
   await expect(ctl("upload-cancel")).toBeHidden();
 });
 
-test("E2E-24 7b2 first page shows the start banner; a reloaded session starts Replace, Displayed, no tool, default cluster limit", async ({ page }) => {
+test("E2E-24 7b2 first page shows the start banner; a reloaded session starts Add, Displayed, no tool, default cluster limit", async ({ page }) => {
   const { exact, ctl } = helpers(page);
   // a previous test's session is still on the server: close it by opening a page without one is not possible, so check the banner by state
   await openRoom(page, exact);
   await expect(page.locator("#start-banner")).toBeHidden();
   await ctl("tool-cluster").click();
-  await ctl("op-select").selectOption("add");
+  await ctl("op-select").selectOption("subtract");
   await ctl("scope-select").selectOption("active");
   await ctl("cluster-max-points").fill("1234");
   await ctl("cluster-max-points").press("Enter");
-  await expect(page.locator("#modebar")).toContainText("Op: Add");
+  await expect(page.locator("#modebar")).toContainText("Op: Subtract");
   await page.waitForTimeout(1600); // the client state is saved one second after the last change
   await page.reload();
   await exact("Original", String(ROOM_TOTAL));
   await expect(page.locator("#modebar")).toContainText("Tool: None");
-  await expect(page.locator("#modebar")).toContainText("Op: Replace");
+  await expect(page.locator("#modebar")).toContainText("Op: Add");
   await expect(page.locator("#modebar")).toContainText("Scope: Displayed");
   await ctl("tool-cluster").click();
   await expect(ctl("cluster-max-points")).toHaveValue(/^2[, ]?000[, ]?000$/);
@@ -1423,22 +1383,6 @@ test("E2E-35b 10 focusing an inactive box shows its plane; leaving it with an in
   await expect.poll(async () => (await planesNow(page)).map((q) => q.key)).toEqual([]);
 });
 
-test("E2E-42 10 the slice view does not hide the filter planes and changes no count", async ({ page }) => {
-  const { exact, ctl, setNum, num } = helpers(page);
-  await openRoom(page, exact);
-  await page.keyboard.press("3");
-  await setNum("filter-z-max", 2);
-  const rows = roomValid();
-  await exact("Displayed", String(rows.filter((r) => r[2] <= 2).length));
-  const before = await num("Displayed");
-  await setNum("slice-centre", 10);
-  await setNum("slice-thickness", 1);
-  await page.waitForTimeout(600);
-  expect((await planesNow(page)).map((q) => q.key)).toContain("z-max");
-  expect(await num("Displayed")).toBe(before);
-  await ctl("slice-off").click();
-});
-
 // ---- part 10: protection band (E2E-39, E2E-43)
 type ProtHook = { state: () => { floorT: number; floorPanelOpen: boolean; tools: { protection: { global: { enabled: boolean; min: number; max: number } } } } };
 const protNow = (page: import("@playwright/test").Page) =>
@@ -1686,7 +1630,6 @@ test("E2E-46 10-8 each inspector section folds by click and keyboard, the fold s
     counts: () => page.locator("#counts-panel"),
     view: () => page.locator("#fileinfo details[data-section=view] dl"),
     display: () => ctl("filter-reset-all"),
-    slice: () => ctl("slice-enabled"),
     history: () => page.locator("details[data-section=history] > p"), // "No edits yet" (an empty list has no height)
   };
   for (const id of Object.keys(probes)) {
@@ -1696,7 +1639,7 @@ test("E2E-46 10-8 each inspector section folds by click and keyboard, the fold s
   await expect(det("view")).toBeVisible();
   const before = await page.locator("#counts-panel").innerText();
   // click collapses; the keyboard (Enter on the focused summary) toggles too
-  for (const id of ["file", "counts", "view", "display", "slice"]) await sum(id).click();
+  for (const id of ["file", "counts", "view", "display"]) await sum(id).click();
   await sum("history").focus();
   await page.keyboard.press("Enter");
   for (const id of Object.keys(probes)) await expect(probes[id]()).toBeHidden();
@@ -1704,11 +1647,11 @@ test("E2E-46 10-8 each inspector section folds by click and keyboard, the fold s
   await expect(ctl("box-size-x")).toBeVisible();
   await sum("box").click();
   await expect(ctl("box-size-x")).toBeHidden();
-  await expect.poll(async () => Object.keys(await SECTIONS_OPEN(page)).sort()).toEqual(["box", "counts", "display", "file", "history", "slice", "view"]);
+  await expect.poll(async () => Object.keys(await SECTIONS_OPEN(page)).sort()).toEqual(["box", "counts", "display", "file", "history", "view"]);
   await page.waitForTimeout(1600); // the client state is saved one second after the last change
   await page.reload();
   await exact("Original", String(ROOM_TOTAL));
-  await expect.poll(async () => Object.keys(await SECTIONS_OPEN(page)).sort()).toEqual(["box", "counts", "display", "file", "history", "slice", "view"]);
+  await expect.poll(async () => Object.keys(await SECTIONS_OPEN(page)).sort()).toEqual(["box", "counts", "display", "file", "history", "view"]);
   for (const id of Object.keys(probes)) await expect(probes[id]()).toBeHidden();
   await ctl("tool-box").click();
   await expect(ctl("box-size-x")).toBeHidden();
@@ -1719,7 +1662,7 @@ test("E2E-46 10-8 each inspector section folds by click and keyboard, the fold s
     const folded = JSON.parse(r.postData() ?? "{}")?.ui?.sectionsOpen;
     return folded === undefined || Object.keys(folded).length === 0;
   });
-  for (const id of ["file", "counts", "view", "display", "slice", "history", "box"]) await sum(id).click();
+  for (const id of ["file", "counts", "view", "display", "history", "box"]) await sum(id).click();
   for (const id of Object.keys(probes)) await expect(probes[id]()).toBeVisible();
   await expect(ctl("box-size-x")).toBeVisible();
   expect(await page.locator("#counts-panel").innerText()).toBe(before);
@@ -3168,8 +3111,9 @@ test("E2E-85 12b Esc and Discard draft drop the preview and change nothing else;
   await t.ctl("sel-discard").click();
   await expect(t.note).toBeHidden();
   await t.exact("Selected", String(ROOM.wall));
-  // Replace is live: one selection request, no draft note
-  await t.ctl("op-select").selectOption("replace");
+  // the first selection is live: after Clear selection one selection request, no draft note
+  await t.ctl("sel-clear").click();
+  await t.exact("Selected", "0");
   const sel = t.posts.select;
   const prev = t.posts.preview;
   await t.setNum("box-size-z", 3);

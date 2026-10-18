@@ -4,7 +4,6 @@ import type { Viewport } from "../../pick/ray";
 import { screenRay } from "../../pick/screenray";
 import type { Bounds, Vec3 } from "../../state/types";
 import { type Camera, lookDirection, rightVector } from "../../view/camera";
-import { AXIS_INDEX, type Slice } from "../../view/slice";
 import { MIN_EXTENT, type BoxModel, worldExtents } from "./model";
 
 export const MIN_RECT_PX = 4;
@@ -28,11 +27,8 @@ export function rectAxis(cam: Camera): 0 | 1 | 2 | null {
   return look !== null && right !== null && look !== right ? look : null;
 }
 
-/** Extent of the box along the view axis: the slice slab if it is on that axis, else the active bounds. */
-export function rectDepth(axis: 0 | 1 | 2, bounds: Bounds | null, slice: Slice | null): Depth | null {
-  if (slice?.enabled && AXIS_INDEX[slice.axis] === axis) {
-    return { min: slice.centre - slice.thickness / 2, max: slice.centre + slice.thickness / 2 };
-  }
+/** Extent of the box along the view axis: the whole active-bounds extent. */
+export function rectDepth(axis: 0 | 1 | 2, bounds: Bounds | null): Depth | null {
   return bounds ? { min: bounds.min[axis], max: bounds.max[axis] } : null;
 }
 

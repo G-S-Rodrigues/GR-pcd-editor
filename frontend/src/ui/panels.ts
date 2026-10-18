@@ -11,7 +11,7 @@ import * as PG from "../tools/polygon/model";
 import { CLUSTER_LIMIT_TEXT, clusterLimitText, clusterPanel, regionOptions, setRadius } from "../tools/cluster/model";
 import { headline } from "../status/headline";
 import { commitEnabled, commitLabel, discardEnabled, previewText } from "../tools/preview";
-import { invertNote, isDraftOp, scopeNotice } from "../orchestration/selection";
+import { scopeNotice } from "../orchestration/selection";
 import { historyRows } from "../inspector/history";
 import { control } from "./controls";
 import { commitNumber } from "./numfield";
@@ -43,7 +43,6 @@ export interface PanelActions {
   viewSize: () => { w: number; h: number };
 }
 
-import { SLICE_COPY, type SliceAxis, sliceFromBox, stepSlice } from "../view/slice";
 const RECT_REASON = "switch to an ortho view (click a ViewCube face)";
 type Sync = (s: AppState) => void;
 const fmt = (v: number) => String(Math.round(v * 1e6) / 1e6);
@@ -57,15 +56,14 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     {
       id: "op-select",
       onchange: () => {
-        store.set({ op: op.value as AppState["op"] });
+        // choosing an operation ends the first (live) selection: the next edit previews against the selection
+        store.set({ op: op.value as AppState["op"], liveFirst: false });
         const s = store.get();
-        // with a draft showing, a new operation re-previews that shape; going back to Replace drops the draft
-        if (!s.draft && !s.preview) return;
-        if (isDraftOp(s.op) && s.tool !== "none") a.toolChanged();
-        else a.discardDraft();
+        // with a draft showing, a new operation re-previews that shape
+        if ((s.draft || s.preview) && s.tool !== "none") a.toolChanged();
       },
     },
-    ...[["replace", "Replace"], ["add", "Add"], ["subtract", "Subtract"], ["intersect", "Intersect"]].map(([v, t]) => h("option", { value: v, text: t })),
+    ...[["add", "Add"], ["subtract", "Subtract"], ["intersect", "Intersect"]].map(([v, t]) => h("option", { value: v, text: t })),
   );
   const scope = control(
     "select",
@@ -133,7 +131,7 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     draftNote.hidden = dn === null;
     draftNote.textContent = dn ?? "";
     const n = scopeNotice(s);
-    note.textContent = n ?? (s.op === "invert" ? invertNote(s.scope) : "");
+    note.textContent = n ?? "";
     const hl = headline(s);
     keptWarn.hidden = hl.warning === null;
     keptWarn.textContent = hl.warning ?? "";
@@ -308,7 +306,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
       button("box-fit-view", "Fit to view", () => {
         const s = store.get();
         const axis = rectAxis(s.camera);
-        const depth = axis === null ? null : rectDepth(axis, s.session?.active_bounds ?? null, s.slice);
+        const depth = axis === null ? null : rectDepth(axis, s.session?.active_bounds ?? null);
         const box = depth ? fitToView(s.tools.box, s.camera, a.viewSize(), depth) : null;
         if (box) boxEdit(() => ({ ok: true, box }));
         else showErr(RECT_REASON);
@@ -537,43 +535,6 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     text((s) => effectiveText(s.candidate)),
   );
 
-  // ---- slice view (render only)
-  const setSlice = (fn: (sl: AppState["slice"]) => AppState["slice"]) => store.update((s) => ({ ...s, slice: fn(s.slice) }));
-  const slicePanel = section(
-    "slice",
-    "Slice view",
-    (s) => s.session !== null,
-    h("p", { class: "note", text: SLICE_COPY }),
-    check("slice-enabled", "Slice view", (s) => s.slice.enabled, (v) => setSlice((sl) => ({ ...sl, enabled: v }))),
-    select("slice-axis", "Axis", [["x", "X"], ["y", "Y"], ["z", "Z"]], (s) => s.slice.axis, (v) => setSlice((sl) => ({ ...sl, axis: v as SliceAxis }))),
-    row(
-      field("slice-centre", "Centre", (s) => s.slice.centre, (v) => {
-        if (!Number.isFinite(v)) return "Slice centre must be a number";
-        setSlice((sl) => ({ ...sl, centre: v, enabled: true }));
-        return null;
-      }),
-      field("slice-thickness", "Thick", (s) => s.slice.thickness, (v) => {
-        if (!(v > 0) || !Number.isFinite(v)) return "Slice thickness must be a number above 0";
-        setSlice((sl) => ({ ...sl, thickness: v, enabled: true }));
-        return null;
-      }),
-    ),
-    h(
-      "div",
-      { class: "stack" },
-      button("slice-from-box", "From box", () => {
-        const s = store.get();
-        const ax = rectAxis(s.camera);
-        const axis: SliceAxis = ax === null ? s.slice.axis : (["x", "y", "z"] as const)[ax];
-        setSlice((sl) => sliceFromBox(s.tools.box, axis, sl));
-      }),
-      button("slice-at-point", "At point", () => store.set({ interaction: store.get().interaction === "pick-slice" ? "orbit" : "pick-slice" })),
-      button("slice-prev", "Back [", () => setSlice((sl) => stepSlice(sl, -1))),
-      button("slice-next", "Forward ]", () => setSlice((sl) => stepSlice(sl, 1))),
-      button("slice-off", "Off", () => setSlice((sl) => ({ ...sl, enabled: false }))),
-    ),
-  );
-
   // ---- history
   const histList = h("ol", { id: "history-list" });
   syncs.push((s) => {
@@ -585,7 +546,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
   });
   const histPanel = section("history", "History", (s) => s.session !== null, histList, text((s) => (s.session && s.session.history.entries.length === 0 ? "No edits yet" : "")));
 
-  root.append(errors, boxPanel, polyPanel, clusterPanelEl, filterPanel, slicePanel, protPanel, histPanel);
+  root.append(errors, boxPanel, polyPanel, clusterPanelEl, filterPanel, protPanel, histPanel);
   const syncAll = (s: AppState) => {
     for (const f of syncs) f(s);
   };

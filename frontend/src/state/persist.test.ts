@@ -111,7 +111,7 @@ test("UI-92 applying a restored patch updates camera, colour, comparison and too
   expect(out.tools.filters).toBe(filters);
 });
 
-test("UI-145 a restored page keeps the view but starts Replace, Displayed, no tool and default cluster limits", () => {
+test("UI-145 a restored page keeps the view but starts Add, Displayed, no tool and default cluster limits", () => {
   const a = createAppStore();
   a.update((s) => ({
     ...s,
@@ -129,7 +129,7 @@ test("UI-145 a restored page keeps the view but starts Replace, Displayed, no to
   expect((patch as Record<string, unknown>).scope).toBeUndefined();
   const fresh = createAppStore().get();
   const out = applyClientPatch(fresh, patch);
-  expect(out.op).toBe("replace");
+  expect(out.op).toBe("add"); // a saved or absent op restores as Add (Replace is gone from the UI)
   expect(out.scope).toBe("displayed");
   expect(out.tool).toBe("none");
   expect(out.colour).toEqual({ mode: "flat", pointSize: 5 });

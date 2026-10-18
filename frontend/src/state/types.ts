@@ -72,6 +72,9 @@ export interface SessionState {
   client_state: Record<string, unknown>;
 }
 
+/** The operations the UI offers; Replace is gone from the UI (the first selection is live, see AppState.liveFirst). */
+export type UiOp = "add" | "subtract" | "intersect";
+/** The wire literal set (the server still accepts replace and invert). */
 export type SelectionOp = "replace" | "add" | "subtract" | "intersect" | "invert";
 export type Scope = "displayed" | "active";
 export type RenderMode = "edited" | "original" | "deleted";

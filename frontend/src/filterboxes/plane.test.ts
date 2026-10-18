@@ -62,10 +62,8 @@ describe("filter plane model", () => {
     expect(hi.base).toEqual(hi.centre);
   });
 
-  it("UI-202 slice view and camera do not change which planes exist", () => {
+  it("UI-202 the camera does not change which planes exist (the slice half went with the Slice view)", () => {
     const s = base();
-    const sliced = { ...s, slice: { ...s.slice, enabled: true, centre: 5, thickness: 0.1 } };
-    expect(keys(sliced)).toEqual(keys(s));
     const turned = { ...s, camera: orbit(applyPreset(s.camera, "front"), 0.5, 0.2) };
     expect(keys(turned)).toEqual(keys(s));
   });

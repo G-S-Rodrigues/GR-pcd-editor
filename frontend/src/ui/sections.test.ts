@@ -15,11 +15,11 @@ test("UI-230 every inspector section starts open and the ids avoid the UI-92 wor
 
 test("UI-231 setSectionOpen changes one section and leaves the rest and the input alone", () => {
   const a = createAppStore().get().sectionsOpen;
-  const b = setSectionOpen(a, "slice", false);
-  expect(isSectionOpen(b, "slice")).toBe(false);
-  expect(isSectionOpen(b, "history")).toBe(true);
-  expect(isSectionOpen(a, "slice")).toBe(true);
-  expect(setSectionOpen(b, "slice", true)).toEqual({});
+  const b = setSectionOpen(a, "history", false);
+  expect(isSectionOpen(b, "history")).toBe(false);
+  expect(isSectionOpen(b, "box")).toBe(true);
+  expect(isSectionOpen(a, "history")).toBe(true);
+  expect(setSectionOpen(b, "history", true)).toEqual({});
 });
 
 test("UI-232 section state is saved and restored, old sessions and bad content give all open", () => {
@@ -31,11 +31,11 @@ test("UI-232 section state is saved and restored, old sessions and bad content g
   const out = applyClientPatch(createAppStore().get(), patch!);
   expect(isSectionOpen(out.sectionsOpen, "box")).toBe(false);
   expect(isSectionOpen(out.sectionsOpen, "history")).toBe(false);
-  expect(isSectionOpen(out.sectionsOpen, "slice")).toBe(true);
+  expect(isSectionOpen(out.sectionsOpen, "display")).toBe(true);
   const old = applyClientPatch(createAppStore().get(), restoreClientState({ v: 1, ui: {} })!);
   expect(old.sectionsOpen).toEqual({});
-  const bad = restoreClientState({ v: 1, ui: { sectionsOpen: { nope: false, box: "x", slice: false } } });
-  expect(bad?.sectionsOpen).toEqual({ slice: false });
+  const bad = restoreClientState({ v: 1, ui: { sectionsOpen: { nope: false, box: "x", history: false, slice: false } } });
+  expect(bad?.sectionsOpen).toEqual({ history: false }); // the removed slice section id is ignored too
   expect(restoreClientState({ v: 1, ui: { sectionsOpen: [1] } })?.sectionsOpen).toBeUndefined();
 });
 
