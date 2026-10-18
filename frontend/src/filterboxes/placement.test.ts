@@ -196,13 +196,14 @@ describe("filter box layout", () => {
   });
 });
 
-test("UI-337 RESERVED holds exactly the legend, the cube with its arrows and the triad, derived from the shared constants", () => {
+test("UI-337 RESERVED holds exactly the legend, the cube with its arrows, the triad and the timeline band, derived from the shared constants", () => {
   const stage = { w: 1000, h: 600 };
   const r = RESERVED(stage);
-  expect(r).toHaveLength(3);
+  expect(r).toHaveLength(4);
   expect(r[0]).toEqual({ l: 0, t: 0, r: LEGEND.w, b: LEGEND.h });
   expect(r[1]).toEqual({ l: stage.w - CUBE.w, t: 0, r: stage.w, b: CUBE.h });
   expect(r[2]).toEqual(triadRect(stage));
+  expect(r[3]).toEqual({ l: 0, t: stage.h - BAND, r: stage.w, b: stage.h });
   expect(r[2]).toEqual({ l: TRIAD.left, t: stage.h - BAND - TRIAD.above - TRIAD.size, r: TRIAD.left + TRIAD.size, b: stage.h - BAND - TRIAD.above });
 });
 
@@ -216,6 +217,20 @@ test("UI-338 boxes in the left lane (docked ones included) end above the triad f
     for (const name of ["front", "top", "left", "back", "bottom", "right"] as const) {
       for (const b of placeBoxes(preset(name), stage, null, SIZES, new Set()).boxes) {
         if (b.x < tri.r) expect(b.y + b.h, `${name} ${b.id} ${stage.w}x${stage.h}`).toBeLessThanOrEqual(tri.t);
+      }
+    }
+  }
+});
+
+test("UI-352 no filter box enters the timeline band at the bottom of the stage, for every swept stage and view", () => {
+  for (const stage of [
+    { w: 780, h: 560 },
+    { w: 1000, h: 520 },
+    { w: 1340, h: 900 },
+  ]) {
+    for (const name of ["front", "top", "left", "back", "bottom", "right"] as const) {
+      for (const b of placeBoxes(preset(name), stage, null, SIZES, new Set()).boxes) {
+        expect(b.y + b.h, `${name} ${b.id} ${stage.w}x${stage.h}`).toBeLessThanOrEqual(stage.h - BAND);
       }
     }
   }

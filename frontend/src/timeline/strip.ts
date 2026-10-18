@@ -2,6 +2,7 @@ import type { AppState } from "../state/app";
 import type { Store } from "../state/store";
 import { control } from "../ui/controls";
 import { h } from "../ui/dom";
+import { installTimelineStyle } from "./overlay";
 import {
   CARD_W,
   PAD,
@@ -46,6 +47,8 @@ export function buildTimeline(root: HTMLElement, store: Store<AppState>, actions
   const scroller = h("div", { id: "timeline-scroll" });
   const track = h("div", { id: "timeline-track" });
   const empty = h("span", { class: "tl-empty" });
+  const line = h("div", { class: "tl-line", "aria-hidden": "true" });
+  installTimelineStyle();
   const marker = control("div", {
     id: "timeline-marker",
     role: "slider",
@@ -53,7 +56,7 @@ export function buildTimeline(root: HTMLElement, store: Store<AppState>, actions
     "aria-label": "History marker: steps left of it are applied, steps right of it are rolled back",
     "aria-orientation": "horizontal",
   }, h("span", { class: "marker-grip" }));
-  track.append(empty, marker);
+  track.append(line, empty, marker);
   scroller.append(track);
   root.append(scroller);
   root.setAttribute("role", "region");
@@ -172,7 +175,7 @@ export function buildTimeline(root: HTMLElement, store: Store<AppState>, actions
       (el.querySelector(".step-icon") as HTMLElement).textContent = GLYPH[c.icon] ?? GLYPH.other;
       (el.querySelector(".step-count") as HTMLElement).textContent = c.count.toLocaleString("en-US");
       patchLabel(el, c);
-      if (track.children[i + 1] !== el) track.insertBefore(el, track.children[i + 1] ?? marker);
+      if (track.children[i + 2] !== el) track.insertBefore(el, track.children[i + 2] ?? marker);
     });
     marker.style.left = `${slotX(s.timeline.dragging ?? v.marker.slot) - 7}px`;
     marker.classList.toggle("dragging", s.timeline.dragging !== null);
@@ -253,7 +256,7 @@ export function buildTimeline(root: HTMLElement, store: Store<AppState>, actions
   });
   // a click on the strip's own background clears the highlight
   scroller.addEventListener("click", (e) => {
-    if (e.target === scroller || e.target === track) setT(clearHighlight);
+    if (e.target === scroller || e.target === track || e.target === line) setT(clearHighlight);
   });
 
   store.subscribe(render);

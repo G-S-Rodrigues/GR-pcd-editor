@@ -49,11 +49,12 @@ export const triadRect = (stage: { w: number; h: number }): Rect => ({
   b: stage.h - BAND - TRIAD.above,
 });
 
-/** Stage rectangles the boxes never enter: legend, ViewCube with its arrows and the camera cluster, and the triad. */
+/** Stage rectangles the boxes never enter: legend, ViewCube with its arrows and the camera cluster, the triad and the timeline band. */
 export const RESERVED = (stage: { w: number; h: number }): Rect[] => [
   { l: 0, t: 0, r: LEGEND.w, b: LEGEND.h },
   { l: stage.w - CUBE.w, t: 0, r: stage.w, b: CUBE.h },
   triadRect(stage),
+  { l: 0, t: stage.h - BAND, r: stage.w, b: stage.h },
 ];
 
 export interface Item {
@@ -154,7 +155,7 @@ export function placeBoxes(
     let list = wants.filter((w) => (lane === "left" ? w.edge === "left" || w.edge === "dock" : w.edge === lane));
     const vertical = lane === "left" || lane === "right";
     const lo = vertical ? Math.max(LEGEND.h, CUBE.h) + MARGIN : lane === "top" ? LEGEND.w + MARGIN : LANE;
-    const hi = vertical ? (lane === "left" ? triadRect(stage).t - MARGIN : stage.h - MARGIN) : stage.w - (lane === "top" ? Math.max(LANE, CUBE.w + MARGIN) : LANE);
+    const hi = vertical ? (lane === "left" ? triadRect(stage).t - MARGIN : stage.h - BAND - MARGIN) : stage.w - (lane === "top" ? Math.max(LANE, CUBE.w + MARGIN) : LANE);
     for (let row = 0; list.length; row++) {
       list = [...list].sort((a, b) => a.t - b.t || BOX_IDS.findIndex((x) => boxKey(x) === a.id) - BOX_IDS.findIndex((x) => boxKey(x) === b.id));
       const items = list.map((w) => {
@@ -166,7 +167,7 @@ export function placeBoxes(
       kept.forEach((w, k) => {
         const inset = row * ((vertical ? maxW : maxH) + GAP);
         const x = vertical ? (lane === "left" ? MARGIN + inset : stage.w - MARGIN - w.w - inset) : pos[k];
-        const y = vertical ? pos[k] : lane === "top" ? MARGIN + inset : stage.h - MARGIN - w.h - inset;
+        const y = vertical ? pos[k] : lane === "top" ? MARGIN + inset : stage.h - BAND - MARGIN - w.h - inset;
         boxes.push({ id: w.id, axis: w.axis, side: w.side, edge: w.edge, row, x, y, w: w.w, h: w.h });
       });
       const next = list.filter((_, i) => overflow.includes(i));

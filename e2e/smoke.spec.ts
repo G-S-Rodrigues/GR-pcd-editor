@@ -1904,13 +1904,14 @@ test("E2E-51 11 click highlights a step's points in a distinct colour, hover pre
   await t.card(0).locator(".step-icon").click();
   await page.mouse.move(5, 5);
   await expect.poll(async () => (await stepLayer(page)).visible).toBe(true);
-  const sb = (await page.locator("#timeline-scroll").boundingBox())!;
-  await page.mouse.click(sb.x + sb.width - 6, sb.y + 6);
+  // the strip is a transparent overlay now: its own background is the timeline line (12-6)
+  const sb = (await page.locator("#timeline .tl-line").boundingBox())!;
+  await page.mouse.click(sb.x + sb.width - 6, sb.y + sb.height / 2);
   await expect.poll(async () => (await stepLayer(page)).visible).toBe(false);
 });
 
 for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
-  test(`E2E-52 11 the strip sits under the stage at ${w}x${hgt}, overlaps nothing and scrolls on its own with 25 steps`, async ({ page }) => {
+  test(`E2E-52 11 the strip overlays the bottom edge of the stage at ${w}x${hgt}, overlaps nothing and scrolls on its own with 25 steps`, async ({ page }) => {
     test.setTimeout(240000);
     await page.setViewportSize({ width: w, height: hgt });
     const t = tl(page);
@@ -1948,10 +1949,11 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
       };
     });
     const tlb = r.timeline!;
-    expect(tlb.h).toBeGreaterThanOrEqual(60);
-    expect(tlb.h).toBeLessThanOrEqual(68);
-    expect(r.stage!.b).toBeLessThanOrEqual(tlb.y + 1); // strip is below the stage
-    expect(tlb.b).toBeLessThanOrEqual(r.status!.y + 1); // and above the status bar
+    expect(tlb.h).toBeGreaterThanOrEqual(44); // the overlay band (BAND = 46 px), no longer a 60..68 px row under the stage
+    expect(tlb.h).toBeLessThanOrEqual(48);
+    expect(tlb.y).toBeGreaterThanOrEqual(r.stage!.y - 1); // strip is inside the stage's bounds
+    expect(tlb.b).toBeLessThanOrEqual(r.stage!.b + 1);
+    expect(r.stage!.b).toBeLessThanOrEqual(r.status!.y + 1); // above the status bar
     const hit = (a: { x: number; y: number; r: number; b: number }) => a.x < tlb.r && a.r > tlb.x && a.y < tlb.b && a.b > tlb.y;
     for (const [name, b] of [["legend", r.legend], ["viewcube", r.cube]] as const) expect(b && hit(b), `${name} overlaps the strip`).toBeFalsy();
     for (const b of r.boxes) expect(hit(b), "a filter box overlaps the strip").toBeFalsy();
@@ -1962,6 +1964,58 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     expect(last.x + last.width).toBeLessThanOrEqual(tlb.r + 1);
   });
 }
+
+/** The strip's own boxes against every other canvas control, for the six views (12-6, E2E-76). */
+for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-76 12-6 the transparent timeline overlay never sits on a canvas control in views 1-6 and lets clicks through at ${w}x${hgt}`, async ({ page }) => {
+    test.setTimeout(240000);
+    await page.setViewportSize({ width: w, height: hgt });
+    const t = tl(page);
+    await t.threeSteps();
+    const bg = await page.locator("#timeline").evaluate((e) => {
+      const c = getComputedStyle(e);
+      return { bg: c.backgroundColor, border: c.borderTopWidth, pe: c.pointerEvents, pos: c.position };
+    });
+    expect(bg.pos).toBe("absolute");
+    expect(bg.pe).toBe("none");
+    expect(bg.border).toBe("0px");
+    expect(bg.bg).toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
+    for (const key of ["1", "2", "3", "4", "5", "6"]) {
+      await page.keyboard.press(key);
+      await t.idle();
+      const r = await page.evaluate(() => {
+        const rect = (e: Element) => {
+          const b = e.getBoundingClientRect();
+          return { x: b.left, y: b.top, r: b.right, b: b.bottom, w: b.width, h: b.height };
+        };
+        const all = (sel: string) => [...document.querySelectorAll(sel)].map(rect).filter((b) => b.w > 0 && b.h > 0);
+        const strip = [...all("#timeline .step"), ...all("#timeline-marker"), ...all("#timeline .tl-line")];
+        const others: [string, ReturnType<typeof rect>][] = [];
+        for (const [name, sel] of [["legend", "#legend"], ["cube", "#viewcube .cube-stage"], ["arrow", "#viewcube .cube-arrow"], ["corner", "#viewcube .cube-corner:not([hidden])"], ["cluster", "#camera-cluster"], ["triad", "#triad"], ["box", "#fbox-layer .fbox"]] as const) {
+          for (const b of all(sel)) others.push([name, b]);
+        }
+        const stage = rect(document.querySelector("#stage")!);
+        const line = rect(document.querySelector("#timeline .tl-line")!);
+        const free = { x: stage.x + stage.w * 0.5, y: stage.b - 3 };
+        const top = document.elementFromPoint(free.x, free.y);
+        const onLine = document.elementFromPoint(line.x + line.w - 6, line.y + line.h / 2);
+        return { strip, others, stage, over: top?.id ?? top?.className ?? "", onLine: String(onLine?.className) };
+      });
+      expect(r.strip.length, `strip boxes in view ${key}`).toBeGreaterThanOrEqual(5);
+      const hit = (a: { x: number; y: number; r: number; b: number }, b: { x: number; y: number; r: number; b: number }) => a.x < b.r && a.r > b.x && a.y < b.b && a.b > b.y;
+      for (const [name, b] of r.others) for (const s of r.strip) expect(hit(s, b), `view ${key}: the strip overlaps ${name} at ${Math.round(b.x)},${Math.round(b.y)}`).toBe(false);
+      for (const s of r.strip) {
+        expect(s.y, `view ${key} strip top`).toBeGreaterThanOrEqual(r.stage.y - 1);
+        expect(s.b, `view ${key} strip bottom`).toBeLessThanOrEqual(r.stage.b + 1);
+      }
+      expect(r.over, `view ${key}: a click on a free spot of the band goes to the canvas`).toBe("viewport");
+      expect(r.onLine).toContain("tl-line");
+    }
+    await t.idle();
+    await page.screenshot({ path: `/out/timeline-overlay-${w}.png` });
+  });
+}
+
 
 test("E2E-53 11 dragging the marker with the real mouse rolls back and forward; counts equal fixture truth; Undo and Redo move it one slot", async ({ page }) => {
   const t = tl(page);

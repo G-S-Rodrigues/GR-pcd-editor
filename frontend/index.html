@@ -38,25 +38,15 @@
       aside dd { margin: 0 0 2px 6.5em; color: var(--text); overflow-wrap: anywhere; }
       #centre { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
       #stage { position: relative; min-width: 0; min-height: 0; flex: 1 1 0; }
-      #timeline { flex: 0 0 64px; height: 64px; background: var(--panel); border-top: 1px solid var(--line); min-width: 0; overflow: hidden; }
-      #timeline[hidden] { display: none; }
-      #timeline-scroll { height: 100%; overflow-x: auto; overflow-y: hidden; }
-      #timeline-track { position: relative; height: 100%; min-width: 100%; }
-      .tl-empty { position: absolute; left: 24px; top: 10px; color: var(--muted); }
-      .step { position: absolute; top: 4px; height: 40px; padding: 3px 5px; border: 1px solid var(--line); border-radius: 5px; background: #2a313b; overflow: hidden; cursor: default; }
       .step:focus-visible { outline: 2px solid var(--accent); }
       .step.highlighted { border-color: #7bd88f; box-shadow: 0 0 0 1px #7bd88f; }
-      .step.greyed { opacity: .45; border-style: dashed; }
       .step-icon { cursor: pointer; font-size: 15px; line-height: 16px; display: inline-block; width: 20px; }
-      .step-count { color: var(--muted); font-size: 11px; }
       .step-label { display: block; font-size: 11px; line-height: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       input.step-rename { width: 100%; height: 16px; padding: 0 3px; font-size: 11px; }
       .step-tools { position: absolute; right: 6px; top: 2px; display: none; gap: 1px; }
       .step:hover .step-tools, .step:focus-within .step-tools { display: flex; }
       .step:hover .step-count, .step:focus-within .step-count { visibility: hidden; }
       .step-btn { width: 16px; height: 16px; padding: 0; line-height: 1; font-size: 11px; }
-      #timeline-marker { position: absolute; top: 0; width: 14px; height: 48px; cursor: ew-resize; z-index: 2; touch-action: none; }
-      #timeline-marker .marker-grip { position: absolute; left: 5px; top: 0; width: 4px; height: 100%; background: var(--accent); border-radius: 2px; }
       #timeline-marker:focus-visible { outline: 2px solid #fff; }
       #viewport { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
       #legend { position: absolute; display: flex; flex-direction: column; gap: 2px; font-size: 12px; background: rgba(21,24,29,0.85); padding: 2px 8px 4px; border-radius: 6px; pointer-events: none; z-index: 1; overflow: hidden; }
@@ -123,7 +113,7 @@
       #history-list li.undone { opacity: .5; }
       .badge { padding: 2px 8px; border-radius: 10px; background: #2a313b; color: var(--muted); }
       .badge.on { background: var(--accent); color: #15181d; font-weight: 600; }
-      #help-overlay { position: absolute; right: 8px; bottom: 8px; max-width: min(520px, 90%); max-height: 90%; overflow: auto; background: var(--panel); border: 1px solid var(--line); padding: 8px 12px; border-radius: 6px; display: none; z-index: 4; }
+      #help-overlay { position: absolute; right: 8px; bottom: 54px; max-width: min(520px, 90%); max-height: 90%; overflow: auto; background: var(--panel); border: 1px solid var(--line); padding: 8px 12px; border-radius: 6px; display: none; z-index: 4; }
       #help-overlay.on { display: block; }
       #help-overlay td { padding: 1px 10px 1px 0; vertical-align: top; }
       #help-overlay td.k { white-space: nowrap; color: var(--accent); }
@@ -146,9 +136,9 @@
         <div id="progress"></div>
         <div id="webgl-notice" hidden></div>
         <div id="notices" aria-live="polite" aria-relevant="additions text"></div>
+        <section id="timeline" hidden></section>
         <div id="help-overlay" role="dialog" aria-label="Controls help"></div>
       </div>
-      <section id="timeline" hidden></section>
       </div>
       <aside id="inspector"><div id="fileinfo"></div><div id="editpanels"></div></aside>
     </div>
