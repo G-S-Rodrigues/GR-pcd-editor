@@ -1,6 +1,13 @@
 import { PALETTE, type Rgb } from "../colour/palette";
+import type { AppState } from "../state/app";
+import type { Store } from "../state/store";
 import type { PreviewState } from "../state/types";
+import { LEGEND_BOX } from "../view/layout";
+import { control } from "./controls";
 import { h } from "./dom";
+import { iconSvg } from "./icons";
+
+const LABEL = "Legend menu";
 
 export interface LegendEntry {
   id: "base" | "selected" | "protected" | "slab" | "deleted" | "step" | "preview-add" | "preview-remove";
@@ -26,19 +33,40 @@ export function legendEntries(stepActive = false, previewOp: PreviewState["op"] 
 
 export const cssColour = (c: Rgb): string => `rgb(${c.map((v) => Math.round(v * 255)).join(", ")})`;
 
-/** Builds the rows; `update(true)` adds the Step highlight row (only while a history step is highlighted). */
-export function buildLegend(root: HTMLElement): { update(stepActive: boolean, previewOp?: PreviewState["op"] | null): void } {
+/**
+ * The collapsible legend menu: a header button (aria-expanded, chevron) and a body holding the legend rows and the
+ * mode line (`modebar`, id kept). `update(true)` adds the Step highlight row; a preview op adds its live-preview row.
+ * Open by default; the folded state lives in `AppState.legendOpen` and is saved with the session.
+ */
+export function buildLegend(root: HTMLElement, store: Store<AppState>, modebar: HTMLElement): { update(stepActive: boolean, previewOp?: PreviewState["op"] | null): void } {
   let shown = false;
   let shownPreview: PreviewState["op"] | null = null;
+  const rows = h("div", { class: "legend-rows" });
+  const body = h("div", { id: "legend-body", "data-legend-body": "1" }, rows, modebar);
+  const chev = iconSvg("chev", 14);
+  const header = control("button", { id: "legend-menu", type: "button", class: "legend-head", "aria-label": LABEL, "aria-controls": "legend-body", "aria-expanded": "true" }, chev, h("span", { text: "Legend" }));
+  header.addEventListener("click", () => store.update((s) => ({ ...s, legendOpen: !s.legendOpen })));
+  root.style.left = `${LEGEND_BOX.left}px`;
+  root.style.top = `${LEGEND_BOX.top}px`;
+  root.style.width = `${LEGEND_BOX.w}px`;
+  root.style.maxHeight = `${LEGEND_BOX.maxH}px`;
+  root.append(header, body);
   const draw = () => {
-    root.replaceChildren();
+    rows.replaceChildren();
     for (const e of legendEntries(shown, shownPreview)) {
       const chip = h("span", { class: "chip", "data-legend": e.id });
       chip.style.background = cssColour(e.colour);
-      root.append(h("span", { class: "legend-item" }, chip, e.label));
+      rows.append(h("span", { class: "legend-item" }, chip, e.label));
     }
   };
+  const sync = (s: AppState) => {
+    header.setAttribute("aria-expanded", String(s.legendOpen));
+    header.classList.toggle("closed", !s.legendOpen);
+    body.hidden = !s.legendOpen;
+  };
   draw();
+  store.subscribe(sync);
+  sync(store.get());
   return {
     update(stepActive, previewOp = null) {
       if (stepActive === shown && previewOp === shownPreview) return;

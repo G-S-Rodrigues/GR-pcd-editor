@@ -2629,3 +2629,60 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     }
   });
 }
+
+for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-75 12-5 the legend is a menu, open by default, folding by click and keyboard survives a reload, and it holds the mode line without overlapping boxes or the cube at ${w}x${hgt}`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: hgt });
+    const { exact, ctl } = helpers(page);
+    await openRoom(page, exact);
+    for (const sel of ["#legend", "#legend-menu", "#modebar"]) await expect(page.locator(sel)).toHaveCount(1);
+    await expect(page.locator('#legend [data-legend="selected"]')).toBeVisible();
+    await expect(page.locator("#legend #modebar")).toBeVisible();
+    await expect(page.locator("#modebar")).toContainText("Tool: None");
+    await expect(ctl("legend-menu")).toHaveAttribute("aria-expanded", "true");
+    await expect(ctl("legend-menu")).toHaveAttribute("aria-label", "Legend menu");
+    const box = async (sel: string) => (await page.locator(sel).first().boundingBox())!;
+    const hit = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
+      a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+    for (const view of ["front", "top", "left"]) {
+      await ctl(`arrow-${view}`).click();
+      const l = await box("#legend");
+      for (const sel of ["#viewcube", "#camera-cluster", "#triad"]) expect(hit(l, await box(sel)), `${view}: legend vs ${sel}`).toBe(false);
+      for (const f of await page.locator(".fbox").all()) expect(hit(l, (await f.boundingBox())!), `${view}: legend vs .fbox`).toBe(false);
+    }
+    await page.screenshot({ path: `/out/legend-open-${w}.png`, clip: { ...(await box("#legend")), x: 0, y: (await box("#stage")).y, width: 260 } });
+    // the mode line keeps reporting Pick pivot
+    await ctl("pivot-pick").click();
+    await expect(page.locator("#modebar")).toContainText("Tool: Pick pivot");
+    await page.keyboard.press("Escape");
+    // fold by click, unfold by Enter, fold by Space
+    await ctl("legend-menu").click();
+    await expect(ctl("legend-menu")).toHaveAttribute("aria-expanded", "false");
+    await expect(page.locator('#legend [data-legend="selected"]')).toBeHidden();
+    await expect(page.locator("#modebar")).toBeHidden();
+    await page.screenshot({ path: `/out/legend-closed-${w}.png`, clip: { ...(await box("#legend")), x: 0, y: (await box("#stage")).y, width: 260 } });
+    await ctl("legend-menu").focus();
+    await page.keyboard.press("Enter");
+    await expect(ctl("legend-menu")).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator('#legend [data-legend="selected"]')).toBeVisible();
+    await page.keyboard.press("Space");
+    await expect(ctl("legend-menu")).toHaveAttribute("aria-expanded", "false");
+    // folded, the boxes do not move (the reserved rectangle is the expanded size)
+    const folded = await page.locator(".fbox").evaluateAll((els) => els.map((e) => (e as HTMLElement).style.transform || `${(e as HTMLElement).style.left},${(e as HTMLElement).style.top}`));
+    await ctl("legend-menu").click();
+    const open = await page.locator(".fbox").evaluateAll((els) => els.map((e) => (e as HTMLElement).style.transform || `${(e as HTMLElement).style.left},${(e as HTMLElement).style.top}`));
+    expect(open).toEqual(folded);
+    // the folded state survives a reload
+    const savedFolded = page.waitForRequest((r) => r.method() === "PUT" && r.url().endsWith("/api/session/client-state") && JSON.parse(r.postData() ?? "{}")?.ui?.legendOpen === false);
+    await ctl("legend-menu").click();
+    await savedFolded;
+    await page.reload();
+    await exact("Original", String(ROOM_TOTAL));
+    await expect(ctl("legend-menu")).toHaveAttribute("aria-expanded", "false");
+    // leave the session unfolded for the next test
+    const savedOpen = page.waitForRequest((r) => r.method() === "PUT" && r.url().endsWith("/api/session/client-state") && JSON.parse(r.postData() ?? "{}")?.ui?.legendOpen === undefined);
+    await ctl("legend-menu").click();
+    await savedOpen;
+    await expect(ctl("legend-menu")).toHaveAttribute("aria-expanded", "true");
+  });
+}

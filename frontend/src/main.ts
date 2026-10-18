@@ -268,7 +268,7 @@ const panelActions = {
 };
 buildInspector($("fileinfo"), store);
 buildToolPalette($("tools"), store, panelActions);
-const legend = buildLegend($("legend"));
+const legend = buildLegend($("legend"), store, $("modebar"));
 store.subscribe((s) => legend.update(s.timeline.highlight !== null));
 buildTimeline($("timeline"), store, {
   rollback: (c) => void editor.rollback(c),

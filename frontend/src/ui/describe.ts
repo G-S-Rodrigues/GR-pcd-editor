@@ -17,6 +17,7 @@ export function describeControls(): ControlDescriptor[] {
     { id: "redo", label: "Redo", group: "edit" },
     { id: "preview", label: "Preview", group: "edit" },
     { id: "apply", label: "Apply", group: "edit" },
+    { id: "legend-menu", label: "Legend menu", group: "display" },
     { id: "timeline", label: "History timeline", group: "edit" },
     { id: "timeline-marker", label: "History marker", group: "edit" },
     ...(["top", "bottom", "front", "back", "left", "right"] as const).map((p) => ({ id: `cube-${p}`, label: `Cube ${p}`, group: "view" as const })),

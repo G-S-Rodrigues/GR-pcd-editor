@@ -11,6 +11,8 @@ export const CLUSTER = { btn: 32, between: 2, gap: 6, count: 4, w: 4 * 32 + 3 * 
 export const CUBE = { w: CUBE_WRAP + 2 * CUBE_RIGHT, h: CUBE_TOP + CUBE_WRAP + CLUSTER.gap + CLUSTER.h + 8 } as const;
 /** Arrow ring and corner zones around the cube centre (px). Arrows sit on `ring`, corner zones just outside the silhouette. */
 export const CUBE_NAV = { ring: 84, arrow: 22, zone: 18, zoneOffset: 7 } as const;
+/** The legend/mode-line menu at the stage's top-left: its expanded box (px) and the clearance kept around it. */
+export const LEGEND_BOX = { left: 8, top: 8, w: 224, maxH: 238, pad: 4 } as const;
 /** The bottom band of the stage that the history timeline overlays (part 12-6); nothing else is placed inside it. */
 export const BAND = 46;
 /** The XYZ triad at the bottom-left, just above the timeline band. */

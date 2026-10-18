@@ -59,7 +59,15 @@
       #timeline-marker .marker-grip { position: absolute; left: 5px; top: 0; width: 4px; height: 100%; background: var(--accent); border-radius: 2px; }
       #timeline-marker:focus-visible { outline: 2px solid #fff; }
       #viewport { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-      #legend { position: absolute; left: 8px; top: 8px; width: 164px; display: flex; flex-direction: column; gap: 2px; font-size: 12px; background: rgba(21,24,29,0.75); padding: 4px 8px; border-radius: 6px; pointer-events: none; z-index: 1; }
+      #legend { position: absolute; display: flex; flex-direction: column; gap: 2px; font-size: 12px; background: rgba(21,24,29,0.85); padding: 2px 8px 4px; border-radius: 6px; pointer-events: none; z-index: 1; overflow: hidden; }
+      #legend .legend-head { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 6px 0 2px; background: transparent; border-color: transparent; color: var(--text); font-weight: 600; pointer-events: auto; }
+      #legend .legend-head:hover { background: #36404c; }
+      #legend .legend-head svg { transition: transform .15s; }
+      #legend .legend-head.closed svg { transform: rotate(-90deg); }
+      @media (prefers-reduced-motion: reduce) { #legend .legend-head svg { transition: none; } }
+      #legend-body { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; min-height: 0; }
+      #legend-body[hidden] { display: none; }
+      .legend-rows { display: flex; flex-direction: column; gap: 2px; }
       #legend .chip { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
       .headline { font-weight: 600; font-size: 12px; padding: 0 6px; }
       .headline.warn, .note.warn { color: #00d1ff; }
@@ -95,7 +103,7 @@
       #progress.on { display: block; }
       #statusbar { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 4px 8px; background: var(--panel); border-top: 1px solid var(--line); }
       #statusbar .item b { color: var(--muted); font-weight: 500; }
-      #modebar { padding: 2px 8px; background: #101317; color: var(--muted); }
+      #modebar { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; line-height: 1.35; }
       dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; min-width: 420px; max-width: 640px; }
       dialog::backdrop { background: rgba(0,0,0,.55); }
       details.panel > summary { cursor: pointer; list-style-position: inside; }
@@ -124,7 +132,6 @@
   <body data-app="gr-pcd-editor">
     <div id="toolbar" class="row"></div>
     <div id="viewbar" class="row"></div>
-    <div id="modebar"></div>
     <div id="body">
       <aside id="tools"><div id="start-banner" class="banner" hidden></div></aside>
       <div id="centre">
@@ -134,7 +141,7 @@
         <div id="viewcube"></div>
         <div id="triad"></div>
         <div id="camera-cluster" role="group" aria-label="Camera"></div>
-        <div id="legend"></div>
+        <div id="legend"><div id="modebar"></div></div>
         <div id="empty">Open a .pcd file to begin.<br />Drop one anywhere, or use “Open from this computer”.</div>
         <div id="progress"></div>
         <div id="webgl-notice" hidden></div>

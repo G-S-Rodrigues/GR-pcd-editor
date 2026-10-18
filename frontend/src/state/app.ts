@@ -78,6 +78,8 @@ export interface AppState {
   floorPanelOpen: boolean;
   /** Inspector sections the user folded (missing = open); see ui/sections.ts. */
   sectionsOpen: SectionsOpen;
+  /** The legend and mode-line menu on the canvas is unfolded (only a folded menu is saved). */
+  legendOpen: boolean;
   /** History strip view state (highlight, hover, rename, marker drag); never saved. */
   timeline: TimelineState;
 }
@@ -120,6 +122,7 @@ export function initialState(): AppState {
     filterUi: { collapsed: {}, interacting: null },
     floorPanelOpen: true,
     sectionsOpen: {},
+    legendOpen: true,
     timeline: emptyTimeline(),
   };
 }
