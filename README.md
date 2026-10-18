@@ -75,6 +75,10 @@ Concepts worth knowing:
   drawn and is never a cloud total.
 - The app warns before leaving the page while there are unsaved edits. The
   `.pcdsession` download stores the edits and the view; reopen it with **Open**.
+- By design the view state (camera, which inspector sections are folded, tool settings) lives in the server's session
+  and is restored when the page loads while that session is still open, so a fresh browser tab shows the folds of the
+  session it attaches to. Opening another file starts a new session. Save flushes any pending view change first, so the
+  archive carries the current folds and camera.
 
 ## Prerequisites
 

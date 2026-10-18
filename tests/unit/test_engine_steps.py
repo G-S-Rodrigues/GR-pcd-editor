@@ -210,3 +210,23 @@ def test_hst_19b_unknown_step_error_type(mgr):
     s = three(mgr)
     with pytest.raises(EditError):
         s.delete_step(s.clock.cloud, 77)
+
+
+def test_hst_22_rollback_copies_the_mask_once_not_per_step(mgr, monkeypatch):
+    from gr_pcd.session import engine
+
+    s = three(mgr)
+    before = s.active
+    calls = []
+    real = engine.with_ids
+    monkeypatch.setattr(
+        engine, "with_ids", lambda *a: calls.append(1) or real(*a)
+    )
+    snapshot = before.copy()
+    s.rollback(s.clock.cloud, 0)  # three steps flip in one move
+    assert gone(s) == set()
+    assert not s.active.flags.writeable and s.active is not before
+    assert (before == snapshot).all()  # the old mask is untouched
+    s.rollback(s.clock.cloud, 3)
+    assert gone(s) == CORNER | SCENE_GHOST | MIDDLE
+    assert calls == []

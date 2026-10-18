@@ -20,7 +20,13 @@ from pathlib import Path
 import numpy as np
 
 from gr_pcd.editing.errors import EditError
-from gr_pcd.editing.history import TOOLS, HistoryEntry, clean_name
+from gr_pcd.editing.history import (
+    MAX_SID,
+    MAX_STEPS,
+    TOOLS,
+    HistoryEntry,
+    clean_name,
+)
 from gr_pcd.editing.protection import (
     ProtectionState,
     validate_protection,
@@ -45,7 +51,6 @@ MAX_ENTRIES = 100_000
 MAX_MANIFEST = 16 * 1024 * 1024
 MAX_CLIENT_STATE = 1024 * 1024
 _OLD_TOOL = re.compile(r"\((box|polygon|prism|cluster|filter|selection)\)\s*$")
-MAX_SID = 2**31
 _NAME = re.compile(
     r"(manifest\.json|source\.pcd|selection\.bin|history/(0|[1-9][0-9]*)\.bin)"
 )
@@ -274,7 +279,7 @@ def _step_fields(hist: dict, entries: list, metas: list) -> _Steps:
                 tool = "polygon" if tool == "prism" else tool
             out.append((i, tool, None))
         nxt = hist.get("next_sid", 0)
-        nxt = nxt if type(nxt) is int and nxt >= 0 else 0
+        nxt = nxt if type(nxt) is int and 0 <= nxt < MAX_SID else 0
         return _Steps(out, max(nxt, len(out)))
     if not all(has):
         raise _bad("history entries mix old and new step fields")
@@ -296,7 +301,7 @@ def _step_fields(hist: dict, entries: list, metas: list) -> _Steps:
                 raise _bad("invalid step name")
         out.append((sid, tool, name))
     nxt = hist.get("next_sid", 0)
-    if type(nxt) is not int:
+    if type(nxt) is not int or not 0 <= nxt < MAX_SID:
         raise _bad("invalid next_sid")
     return _Steps(out, max(nxt, max(seen, default=-1) + 1))
 
@@ -339,6 +344,8 @@ def _load_open(zf, dest_source, budget, max_source_bytes) -> LoadedArchive:
         if not isinstance(hist["entries"], list):
             raise _bad("history entries must be a list")
         hist_entries = hist["entries"]
+        if len(hist_entries) > MAX_STEPS:
+            raise _bad(f"history is limited to {MAX_STEPS} steps")
         cursor = int(hist["cursor"])
         sel = manifest["selection"]
         client_state = manifest.get("client_state", {})

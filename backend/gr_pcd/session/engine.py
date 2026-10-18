@@ -535,8 +535,14 @@ class EditingSession:
             self._changed()
 
     def _flip(self, entries, back: bool) -> None:
-        for e in entries:
-            self.active = with_ids(self.active, e.ids, back)
+        # one copy of the mask for the whole move (the sets are disjoint, so
+        # the order does not matter), not one per step under the session lock
+        if entries:
+            out = self.active.copy()
+            for e in entries:
+                out[e.ids] = back
+            out.flags.writeable = False
+            self.active = out
         self._changed()
 
     def rollback(self, cloud_revision: int, cursor: int) -> None:

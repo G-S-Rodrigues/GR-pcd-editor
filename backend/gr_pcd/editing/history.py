@@ -9,6 +9,8 @@ from gr_pcd.editing.errors import EditError
 
 BYTES_PER_ID = 4
 MAX_STEPS = 500
+# step ids stay below this (the archive loader and the JS client rely on it)
+MAX_SID = 2**31
 MAX_NAME = 80
 TOOLS = ("box", "polygon", "cluster", "filter", "selection", "invalid")
 
@@ -76,6 +78,8 @@ class History:
             raise EditError(
                 "too_many_steps", f"history is limited to {MAX_STEPS} steps"
             )
+        if self.next_sid >= MAX_SID:
+            raise EditError("too_many_steps", "step ids are used up")
         if (
             self.budget_bytes is not None
             and self._bytes(kept) + len(ids) * BYTES_PER_ID > self.budget_bytes

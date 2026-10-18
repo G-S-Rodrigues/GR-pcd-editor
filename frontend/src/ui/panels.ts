@@ -466,10 +466,23 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
 
   // ---- protection
   const prot = (fn: (m: P.ProtectionModel) => P.ProtectionEdit) => showErr(a.protectionEdit(fn).error);
+  // a refused tilt says why right under the fields (the shared #edit-error sits at the top of the panels, out of sight from here)
+  const tiltNote = h("p", { id: "prot-tilt-note", class: "note warn", hidden: true });
+  const tiltKey = (s: AppState) => `${s.tools.protection.tilt.rx},${s.tools.protection.tilt.ry}`;
+  let noteAt = "";
+  const tiltMsg = (m: string | null) => {
+    tiltNote.hidden = !m;
+    tiltNote.textContent = m ?? "";
+    noteAt = tiltKey(store.get());
+  };
+  syncs.push((s) => {
+    if (!tiltNote.hidden && tiltKey(s) !== noteAt) tiltMsg(null); // the tilt moved by a ring drag or Level: the refusal is outdated
+  });
   const tilt = (patch: { rx?: number; ry?: number }) => {
     const b = store.get().session?.active_bounds;
     const centre: [number, number] = b ? [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2] : [0, 0];
     const r = a.protectionEdit((m) => P.setTilt(m, patch, centre));
+    tiltMsg(r.ok ? null : (r.error ?? "Invalid"));
     return r.ok ? null : (r.error ?? "Invalid");
   };
   const protPanel = collapsible(
@@ -495,7 +508,8 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
       field("prot-tilt-x", "Tilt X (deg)", (s) => s.tools.protection.tilt.rx, (v) => tilt({ rx: v })),
       field("prot-tilt-y", "Tilt Y (deg)", (s) => s.tools.protection.tilt.ry, (v) => tilt({ ry: v })),
     ),
-    button("prot-level", "Level", () => prot((m) => ({ ok: true, model: P.levelled(m) }))),
+    tiltNote,
+    button("prot-level", "Level", () => { tiltMsg(null); prot((m) => ({ ok: true, model: P.levelled(m) })); }),
     select("prot-mode", "This operation", [["inherit", "Use global"], ["add_local", "Add local slab"], ["override", "Override global"]], (s) => s.tools.protection.mode, (v) => prot((m) => ({ ok: true, model: P.setOperationMode(m, v as P.OpMode) }))),
     row(
       field("prot-local-min", "Local min", (s) => s.tools.protection.local?.min ?? 0, (v) => { const r = a.protectionEdit((m) => P.setLocal(m, { min: v, max: m.local?.max ?? v })); return r.ok ? null : (r.error ?? "Invalid"); }, (s) => s.tools.protection.mode === "inherit"),

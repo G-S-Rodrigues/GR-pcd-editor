@@ -277,3 +277,57 @@ def test_hst_21_archive_round_trip_after_every_sequence(tmp_path):
         finally:
             fresh.jobs.shutdown()
             m.jobs.shutdown()
+
+
+@pytest.mark.parametrize("bad", [2**31, 2**31 + 5, 2**53 + 1, -1, 1.5, None])
+def test_ses_67_hostile_next_sid_is_bad_archive(mgr, tmp_path, bad):
+    err = hostile(mgr, tmp_path, lambda m: m["history"].update(next_sid=bad))
+    assert err.code == "bad_archive"
+
+
+def test_ses_67b_largest_valid_next_sid_loads_and_a_push_is_refused(
+    mgr, tmp_path
+):
+    from gr_pcd.editing.errors import EditError
+    from gr_pcd.editing.history import MAX_SID, History
+
+    steps_session(mgr)
+    ok = tmp_path / "top.pcdsession"
+    rewrite_manifest(
+        save(mgr), ok, lambda m: m["history"].update(next_sid=MAX_SID - 1)
+    )
+    assert load(tmp_path, ok).next_sid == MAX_SID - 1
+    h = History()
+    h.next_sid = MAX_SID
+    with pytest.raises(EditError):
+        h.push("delete", "d", np.array([1], dtype=np.uint32))
+    assert h.entries == []
+
+
+def test_ses_68_more_than_max_steps_entries_is_bad_archive(mgr, tmp_path):
+    from gr_pcd.editing.history import MAX_STEPS
+
+    def grow(m):
+        first = m["history"]["entries"][0]
+        m["history"]["entries"] = [
+            dict(first, sid=i, file=f"history/{i}.bin")
+            for i in range(MAX_STEPS + 1)
+        ]
+
+    err = hostile(mgr, tmp_path, grow)
+    assert err.code == "bad_archive"
+    assert f"limited to {MAX_STEPS}" in err.message
+
+
+def test_ses_69_old_format_huge_next_sid_is_clamped(mgr, tmp_path):
+    steps_session(mgr)
+    old = tmp_path / "old.pcdsession"
+
+    def strip(m):
+        for e in m["history"]["entries"]:
+            for k in ("sid", "tool", "name"):
+                e.pop(k, None)
+        m["history"]["next_sid"] = 2**40
+
+    rewrite_manifest(save(mgr), old, strip)
+    assert load(tmp_path, old).next_sid == 3

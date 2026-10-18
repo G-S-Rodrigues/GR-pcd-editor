@@ -271,5 +271,12 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
   Undo and Redo), `E2E-54` (button and slider keys), `E2E-55` (delete a middle step, confirmation, `Delete` on a focused
   step never fires Apply), `E2E-56` (apply while rolled back asks first), `E2E-57` (rename by double-click, pencil, F2),
   `E2E-58` (save and reopen keep the strip; an export after a rollback holds exactly the active steps' result).
+- Fix chunk after Part 11: `WRK-07..13` (export and archive download from a `<kind>.u<uid>` fallback dir; symlinked,
+  dangling and foreign-owned bases are never used or chmodded, sweeps skip symlinks), `SES-67..69` (hostile
+  `next_sid`, more than 500 entries, old-format clamp), `HST-22` (one mask copy per rollback), `UI-233..234` (fold
+  sync), `UI-282..285` (step view under a running job, budget in the cache key, reconcile), `E2E-65` (Delete on step
+  buttons and the marker never applies), `E2E-66` (rapid marker keys and Undo/Redo send no stale request), `E2E-67`
+  (a typed tilt beyond 60 degrees shows the limit under the field). CTR-11 also exports and downloads from the
+  root-owned volume.
 - Read-only hook `stepLayer()`. The smoke helpers wait until the app is idle before a marker drag, because a gesture
   during a running job is ignored by design, and cope with a tool or fold state the previous test left restored.

@@ -2356,3 +2356,25 @@ test("E2E-66 11 rapid marker keys and Undo/Redo clicks send no stale request: no
   expect(stale).toEqual([]);
   expect(errors.filter((e) => !/Failed to load resource.*404/.test(e))).toEqual([]);
 });
+
+test("E2E-67 10 a typed tilt beyond the limit is refused with a notice naming the limit under the field, and the note clears on a valid value", async ({ page }) => {
+  const { exact, ctl, setNum } = helpers(page);
+  await openRoom(page, exact);
+  if (!(await ctl("prot-tilt-x").isVisible())) await protSummary(page).click(); // a restored fold state may have it closed
+  const note = page.locator("#prot-tilt-note");
+  await expect(note).toBeHidden();
+  for (const bad of [61, -61, 90]) {
+    await setNum("prot-tilt-x", bad);
+    await expect(note).toBeVisible();
+    await expect(note).toContainText("limited to +-60 degrees");
+    await expect(ctl("prot-tilt-x")).toHaveValue("0"); // the field reverts
+  }
+  await setNum("prot-tilt-x", 10);
+  await expect(note).toBeHidden();
+  await expect(ctl("prot-tilt-x")).toHaveValue("10");
+  await setNum("prot-tilt-y", 75);
+  await expect(note).toBeVisible();
+  await ctl("prot-level").click(); // Level also clears the refusal
+  await expect(note).toBeHidden();
+  await expect(ctl("prot-tilt-x")).toHaveValue("0");
+});
