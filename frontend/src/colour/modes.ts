@@ -100,6 +100,8 @@ export function colourize(r: ColourInput, ctx: ColourContext): Float32Array {
     const f = r.flags[i];
     let c: Rgb;
     if (f & 2) c = region ? PALETTE.protectedStrong : PALETTE.protected;
+    else if (f & 8) c = PALETTE.previewAdd;
+    else if (f & 16) c = PALETTE.previewRemove;
     else if (f & 1) c = PALETTE.selected;
     else if (f & 4 && ctx.markDeleted) c = PALETTE.deleted;
     else if (region && inRegion(i)) c = PALETTE.protectedStrong;

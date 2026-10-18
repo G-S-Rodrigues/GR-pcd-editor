@@ -14,6 +14,7 @@ import { type Store, createStore } from "./store";
 import type {
   Candidate,
   Notice,
+  PreviewState,
   RenderMode,
   Scope,
   SelectionOp,
@@ -67,6 +68,8 @@ export interface AppState {
   gizmo: { snap: boolean; step: number; angleStep: number; local: boolean };
   /** A tool edit exists that has not been committed (Add/Subtract/Intersect drafts). */
   draft: boolean;
+  /** The server-side pending result of the drafted shape, drawn but not committed; null when none. */
+  preview: PreviewState | null;
   job: { busy: boolean; progress: number | null; message: string | null };
   upload: { phase: "sending" | "importing"; loaded: number; total: number | null } | null;
   notices: Notice[];
@@ -110,6 +113,7 @@ export function initialState(): AppState {
     },
     gizmo: { snap: false, step: 0.1, angleStep: 5, local: true },
     draft: false,
+    preview: null,
     job: { busy: false, progress: null, message: null },
     upload: null,
     notices: [],

@@ -17,6 +17,8 @@ export interface RenderData {
   cloudRevision: number;
   paramsRevision: number;
   sessionId?: string;
+  /** The pending preview this render drew (X-Preview-Id); absent when none was applied. */
+  previewId?: string;
 }
 
 export interface HeaderLike {
@@ -49,6 +51,8 @@ export function parseRender(buf: ArrayBuffer, headers: HeaderLike): RenderData {
     cloudRevision: num("X-Cloud-Revision"),
     paramsRevision: num("X-Params-Revision"),
   };
+  const pid = headers.get("X-Preview-Id");
+  if (pid) out.previewId = pid;
   const sid = headers.get("X-Session-Id");
   if (sid) out.sessionId = sid;
   if (attrKind) {
@@ -63,10 +67,11 @@ export function parseRender(buf: ArrayBuffer, headers: HeaderLike): RenderData {
 
 export const MAX_BUDGET = 2_000_000;
 
-export function renderQuery(mode: RenderMode | "step", budget: number, attr?: string, step?: number): string {
+export function renderQuery(mode: RenderMode | "step", budget: number, attr?: string, step?: number, preview?: string): string {
   const b = Math.min(MAX_BUDGET, Math.max(1, Math.floor(budget)));
   const st = mode === "step" && step !== undefined ? `&step=${Math.floor(step)}` : "";
-  return `mode=${mode}${st}&budget=${b}${attr ? `&attr=${encodeURIComponent(attr)}` : ""}`;
+  const pv = preview ? `&preview=${encodeURIComponent(preview)}` : "";
+  return `mode=${mode}${st}&budget=${b}${attr ? `&attr=${encodeURIComponent(attr)}` : ""}${pv}`;
 }
 
 export async function fetchRender(
@@ -75,10 +80,11 @@ export async function fetchRender(
   attr?: string,
   signal?: AbortSignal,
   step?: number,
+  preview?: string,
 ): Promise<RenderData> {
   let res: Response;
   try {
-    res = await fetch(`/api/session/render?${renderQuery(mode, budget, attr, step)}`, { signal, headers: sessionHeaders() });
+    res = await fetch(`/api/session/render?${renderQuery(mode, budget, attr, step, preview)}`, { signal, headers: sessionHeaders() });
   } catch (cause) {
     if (signal?.aborted) throw new ApiError(0, "cancelled", "render request superseded");
     throw new ApiError(0, "network", `could not reach the app: ${String(cause)}`);

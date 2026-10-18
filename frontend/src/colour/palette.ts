@@ -15,6 +15,9 @@ export const PALETTE = {
   step: hex(0x7bd88f),
   stepHover: hex(0xcdeccf),
   pivot: hex(0xffffff),
+  /** Pending Add/Subtract/Intersect preview: points that will be added / will be removed. */
+  previewAdd: hex(0xff4fd8),
+  previewRemove: hex(0x5b7cff),
 } as const;
 
 export const DELETED_OPACITY_DEFAULT = 0.35;

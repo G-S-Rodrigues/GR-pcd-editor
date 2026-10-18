@@ -5,6 +5,7 @@ import { candidateFixture, sessionFixture } from "../testing/fixtures";
 import { setCenter } from "../tools/box/model";
 import { setSeed } from "../tools/cluster/model";
 import { applyBlockedText, canApply, createRunner } from "./runner";
+import { shouldPreview } from "./selection";
 
 interface Deferred {
   id: string;
@@ -12,10 +13,16 @@ interface Deferred {
   reject: (e: unknown) => void;
 }
 
-function setup(opts: { op?: "replace" | "add" } = {}) {
+function setup(opts: { op?: "replace" | "add" | "subtract" | "intersect"; count?: number } = {}) {
   const store = createAppStore();
-  store.set({ session: sessionFixture(), tool: "box", op: opts.op ?? "replace" });
+  store.set({
+    session: sessionFixture(opts.count ? { selection: { count: opts.count, ops: [] } } : {}),
+    tool: "box",
+    op: opts.op ?? "replace",
+  });
   const submitted: unknown[] = [];
+  const previews: unknown[] = [];
+  const commits: unknown[] = [];
   const cancelled: string[] = [];
   const polls: Deferred[] = [];
   let n = 0;
@@ -25,6 +32,15 @@ function setup(opts: { op?: "replace" | "add" } = {}) {
       return { id: `j${++n}` };
     }),
     submitCandidate: vi.fn(async (_rev: number) => ({ id: `j${++n}` })),
+    submitPreview: vi.fn(async (b: unknown) => {
+      previews.push(b);
+      return { id: `j${++n}` };
+    }),
+    submitCommit: vi.fn(async (b: unknown) => {
+      commits.push(b);
+      return { id: `j${++n}` };
+    }),
+    discardPreview: vi.fn(async (_rev: number) => undefined),
     cancelJob: vi.fn(async (id: string) => {
       cancelled.push(id);
     }),
@@ -42,7 +58,7 @@ function setup(opts: { op?: "replace" | "add" } = {}) {
     store.update((s) => ({ ...s, tools: { ...s.tools, box: setCenter(s.tools.box, [x, 0, 0]).box } }));
     runner.onToolChanged();
   };
-  return { store, api, runner, submitted, cancelled, polls, editBox };
+  return { store, api, runner, submitted, previews, commits, cancelled, polls, editBox };
 }
 const flush = () => vi.advanceTimersByTimeAsync(0);
 
@@ -120,11 +136,12 @@ describe("runner", () => {
     expect(canApply(t.store.get())).toBe(false);
     t.store.set({ candidate: candidateFixture({ params_revision: 5 }) });
     expect(canApply(t.store.get())).toBe(true);
-    // not while a job is running or a draft is pending or protection needs an acknowledgement
+    // not while a job is running or protection needs an acknowledgement (a draft does not block it)
     t.store.set({ job: { busy: true, progress: null, message: null } });
     expect(canApply(t.store.get())).toBe(false);
+    // a pending draft no longer blocks Apply (owner ruling A): Apply deletes the committed selection only
     t.store.set({ job: { busy: false, progress: null, message: null }, draft: true });
-    expect(canApply(t.store.get())).toBe(false);
+    expect(canApply(t.store.get())).toBe(true);
   });
 
   it("UI-72 a candidate-only refresh runs after params change when a selection exists", async () => {
@@ -154,17 +171,20 @@ describe("runner", () => {
     expect(t.store.get().job).toEqual({ busy: true, progress: 0.5, message: "evaluating" });
   });
 
-  it("UI-68 in Add mode a tool edit is a draft: no request until commit", async () => {
-    const t = setup({ op: "add" });
+  it("UI-68 in Add mode a tool edit is a draft: no selection request until commit (it previews instead, UI-405)", async () => {
+    const t = setup({ op: "add", count: 10 });
     t.editBox(1);
     await vi.advanceTimersByTimeAsync(1000);
     expect(t.api.submitSelection).not.toHaveBeenCalled();
     expect(t.store.get().draft).toBe(true);
-    expect(canApply(t.store.get())).toBe(false);
+    t.polls[0].resolve({ preview_id: "p1", selected_after: 12, base_selected: 10, added: 2, removed: 0, operand: 2 });
+    await flush();
     t.runner.commitDraft();
     await flush();
-    expect(t.api.submitSelection).toHaveBeenCalledTimes(1);
-    expect((t.submitted[0] as { op: string }).op).toBe("add");
+    expect(t.api.submitSelection).not.toHaveBeenCalled();
+    expect(t.commits).toHaveLength(1);
+    t.polls[1].resolve({ selected: 12, candidate: candidateFixture() });
+    await flush();
     expect(t.store.get().draft).toBe(false);
   });
 
@@ -187,7 +207,8 @@ describe("runner", () => {
     const base = createAppStore().get();
     const partial = candidateFixture({ candidates: 5, cluster: { seed_id: 1, radius: 0.5, size: 5, complete: false, limit: 5, bounds: { min: [0, 0, 0], max: [1, 1, 1] } } });
     expect(applyBlockedText({ ...base, session: sessionFixture(), candidate: partial })).toMatch(/Max points/);
-    expect(applyBlockedText({ ...base, session: sessionFixture(), draft: true })).toMatch(/commit or discard/);
+    // a draft no longer disables Apply, so the tooltip has no draft case (ruling A)
+    expect(applyBlockedText({ ...base, session: sessionFixture(), draft: true })).toBe("preview a selection first");
     expect(applyBlockedText({ ...base, session: sessionFixture() })).toBe("preview a selection first");
   });
 
@@ -306,5 +327,212 @@ describe("cluster reacts to parameter changes and partial results (F-04, F-07)",
     await flush();
     t.runner.onPageHide();
     expect(t.api.beaconCancel).toHaveBeenCalledTimes(1);
+  });
+
+  const landing = (id = "p1", after = 12) => ({ preview_id: id, selected_after: after, base_selected: 10, added: after - 10, removed: 0, operand: 2 });
+
+  it("UI-405 a tool edit in Add sends one preview after the debounce, never a selection, keeps the candidate and sets preview not candidate", async () => {
+    const t = setup({ op: "add", count: 10 });
+    t.store.set({ candidate: candidateFixture({ params_revision: 4 }) });
+    for (let i = 1; i <= 5; i++) {
+      t.editBox(i);
+      await vi.advanceTimersByTimeAsync(40);
+    }
+    expect(t.api.submitPreview).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    expect(t.api.submitPreview).toHaveBeenCalledTimes(1);
+    const b = t.previews[0] as { op: string; tool: { center: number[] }; evaluate_candidate?: unknown };
+    expect(b.op).toBe("add");
+    expect(b.tool.center).toEqual([5, 0, 0]);
+    expect("evaluate_candidate" in b).toBe(false);
+    expect(t.api.submitSelection).not.toHaveBeenCalled();
+    expect(t.store.get().candidate?.candidate_id).toBe("c1");
+    expect(t.store.get().draft).toBe(true);
+    t.polls[0].resolve(landing());
+    await flush();
+    expect(t.store.get().preview).toMatchObject({ id: "p1", op: "add", selected_after: 12, added: 2 });
+    expect(t.store.get().candidate?.candidate_id).toBe("c1");
+    expect(t.store.get().job.busy).toBe(false);
+  });
+
+  it("UI-406 a second edit supersedes the first preview: cancel posted, the stale result dropped, cancelled is silent", async () => {
+    const t = setup({ op: "subtract", count: 10 });
+    t.editBox(1);
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    t.editBox(2);
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    expect(t.cancelled).toContain("j1");
+    t.polls[0].resolve(landing("old"));
+    await flush();
+    expect(t.store.get().preview).toBeNull();
+    t.polls[0].reject(new ApiError(409, "cancelled", "x"));
+    t.polls[1].resolve(landing("new"));
+    await flush();
+    expect(t.store.get().preview?.id).toBe("new");
+    expect(t.store.get().notices).toHaveLength(0);
+  });
+
+  it("UI-407 commitDraft sends commit with the current preview id once and no preview request; success clears draft and preview and sets the candidate", async () => {
+    const t = setup({ op: "add", count: 10 });
+    t.editBox(1);
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    t.polls[0].resolve(landing("p7"));
+    await flush();
+    t.api.submitPreview.mockClear();
+    t.runner.commitDraft();
+    await flush();
+    expect(t.api.submitPreview).not.toHaveBeenCalled();
+    expect(t.api.submitSelection).not.toHaveBeenCalled();
+    expect(t.commits).toEqual([{ cloud_revision: 3, preview_id: "p7" }]);
+    t.polls[1].resolve({ selected: 12, candidate: candidateFixture() });
+    await flush();
+    const s = t.store.get();
+    expect(s.draft).toBe(false);
+    expect(s.preview).toBeNull();
+    expect(s.candidate?.candidate_id).toBe("c1");
+  });
+
+  it("UI-407 a commit with no preview ready previews first and commits that preview, never blindly", async () => {
+    const t = setup({ op: "add", count: 10 });
+    t.editBox(1);
+    t.runner.commitDraft(); // debounce still pending, no preview yet
+    await flush();
+    expect(t.api.submitPreview).toHaveBeenCalledTimes(1);
+    expect(t.api.submitCommit).not.toHaveBeenCalled();
+    t.polls[0].resolve(landing("pz"));
+    await flush();
+    expect(t.commits).toEqual([{ cloud_revision: 3, preview_id: "pz" }]);
+  });
+
+  it("UI-407 a commit answered 409 stale_revision refreshes, previews once more and says so", async () => {
+    const t = setup({ op: "add", count: 10 });
+    t.editBox(1);
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    t.polls[0].resolve(landing("p1"));
+    await flush();
+    t.runner.commitDraft();
+    await flush();
+    t.polls[1].reject(new ApiError(409, "stale_revision", "the preview is obsolete"));
+    await flush();
+    expect(t.api.submitPreview).toHaveBeenCalledTimes(2);
+    expect(t.store.get().notices.map((n) => n.code)).toContain("preview_refreshed");
+  });
+
+  it("UI-408 discard drops preview and draft, posts discard, leaves selection and candidate; reset and clear do the same", async () => {
+    const t = setup({ op: "add", count: 10 });
+    t.store.set({ candidate: candidateFixture({ params_revision: 4 }) });
+    t.editBox(1);
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    t.polls[0].resolve(landing());
+    await flush();
+    t.runner.discardDraft();
+    await flush();
+    const s = t.store.get();
+    expect(s.preview).toBeNull();
+    expect(s.draft).toBe(false);
+    expect(s.candidate?.candidate_id).toBe("c1");
+    expect(s.session?.selection.count).toBe(10);
+    expect(t.api.discardPreview).toHaveBeenCalledWith(3);
+    // a preview still computing is cancelled and its late result dropped
+    t.editBox(2);
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    t.runner.discardDraft();
+    t.polls[1].resolve(landing("late"));
+    await flush();
+    expect(t.cancelled).toContain("j2");
+    expect(t.store.get().preview).toBeNull();
+    // reset
+    t.store.set({ preview: { id: "x", op: "add", selected_after: 1, base_selected: 0, added: 1, removed: 0 }, draft: true });
+    t.runner.reset();
+    expect(t.store.get().preview).toBeNull();
+    expect(t.store.get().draft).toBe(false);
+  });
+
+  it("UI-409 Replace is unchanged: a tool edit sends a replace selection after the debounce and never a preview", async () => {
+    const t = setup({ op: "replace", count: 10 });
+    t.editBox(1);
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    expect(t.api.submitPreview).not.toHaveBeenCalled();
+    expect((t.submitted[0] as { op: string }).op).toBe("replace");
+  });
+
+  it("UI-411 Apply stays enabled while a draft or preview is pending when a current committed candidate exists, but not while a job runs", () => {
+    const t = setup({ op: "add", count: 10 });
+    t.store.set({
+      candidate: candidateFixture({ params_revision: 4 }),
+      session: sessionFixture({ selection: { count: 10, ops: [] } }),
+      draft: true,
+      preview: { id: "p", op: "add", selected_after: 12, base_selected: 10, added: 2, removed: 0 },
+    });
+    expect(canApply(t.store.get())).toBe(true);
+    t.store.set({ job: { busy: true, progress: null, message: null } });
+    expect(canApply(t.store.get())).toBe(false);
+  });
+
+  it("UI-415 shouldPreview: Add/Subtract/Intersect preview only over a non-empty selection; the first selection goes live (owner ruling D)", async () => {
+    expect(shouldPreview({ ...createAppStore().get(), op: "add", session: sessionFixture() })).toBe(false);
+    expect(shouldPreview({ ...createAppStore().get(), op: "add", session: sessionFixture({ selection: { count: 3, ops: [] } }) })).toBe(true);
+    expect(shouldPreview({ ...createAppStore().get(), op: "replace", session: sessionFixture({ selection: { count: 3, ops: [] } }) })).toBe(false);
+    const t = setup({ op: "add" }); // empty selection
+    t.editBox(1);
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    expect(t.api.submitPreview).not.toHaveBeenCalled();
+    expect(t.submitted).toHaveLength(1);
+    expect((t.submitted[0] as { op: string }).op).toBe("add");
+    expect(t.store.get().draft).toBe(false);
+  });
+
+  it("UI-412 each cluster parameter edit in Add sends one debounced preview carrying it; five rapid radius edits send one and cancel the earlier jobs", async () => {
+    const t = setup({ op: "add", count: 10 });
+    t.store.update((s) => ({ ...s, tool: "cluster", tools: { ...s.tools, cluster: setSeed(s.tools.cluster, { id: 5, point: [0, 0, 0] }) } }));
+    const radius = (r: number) => {
+      t.store.update((s) => ({ ...s, tools: { ...s.tools, cluster: { ...s.tools.cluster, radius: r } } }));
+      t.runner.onToolChanged();
+    };
+    radius(0.3);
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    for (const r of [0.4, 0.5, 0.6, 0.7, 0.8]) {
+      radius(r);
+      await vi.advanceTimersByTimeAsync(40);
+    }
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    expect(t.api.submitPreview).toHaveBeenCalledTimes(2);
+    expect((t.previews[1] as { tool: { type: string; radius: number } }).tool).toMatchObject({ type: "cluster", radius: 0.8 });
+    expect(t.cancelled).toContain("j1");
+    expect(t.api.submitSelection).not.toHaveBeenCalled();
+    t.store.update((s) => ({ ...s, tools: { ...s.tools, cluster: { ...s.tools.cluster, excludeProtected: !s.tools.cluster.excludeProtected } } }));
+    t.runner.onToolChanged();
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    expect(t.api.submitPreview).toHaveBeenCalledTimes(3);
+  });
+
+  it("UI-414 a commit pressed while a newer edit's preview still computes is not sent; after it lands the commit carries that preview's id", async () => {
+    const t = setup({ op: "add", count: 10 });
+    t.editBox(1);
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    t.polls[0].resolve(landing("old"));
+    await flush();
+    t.editBox(2);
+    await vi.advanceTimersByTimeAsync(250);
+    await flush(); // second preview running
+    t.runner.commitDraft();
+    await flush();
+    expect(t.api.submitCommit).not.toHaveBeenCalled();
+    t.polls[1].resolve(landing("new"));
+    await flush();
+    expect(t.commits).toEqual([{ cloud_revision: 3, preview_id: "new" }]);
   });
 });

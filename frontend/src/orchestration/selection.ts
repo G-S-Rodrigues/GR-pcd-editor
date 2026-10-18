@@ -17,6 +17,12 @@ export type BuildResult = { ok: true; body: SelectionRequest } | { ok: false; re
 /** Add, Subtract and Intersect are drafts: nothing is sent until the explicit commit button. */
 export const isDraftOp = (op: SelectionOp): boolean => op === "add" || op === "subtract" || op === "intersect";
 
+/**
+ * Whether a tool edit shows a live preview instead of committing: only an Add/Subtract/Intersect over an existing
+ * selection. With an empty selection the first selection goes live (nothing to preview against).
+ */
+export const shouldPreview = (s: AppState): boolean => isDraftOp(s.op) && (s.session?.selection.count ?? 0) > 0;
+
 export const invertNote = (scope: Scope): string => `Inverts the selection relative to ${scope} points`;
 
 export function currentTool(s: AppState): ToolBody | null {

@@ -2,14 +2,20 @@ import { ApiError } from "../files/errors";
 import { protectionBlock } from "../inspector/protection";
 import { type AppState, addNotice } from "../state/app";
 import type { Store } from "../state/store";
-import type { Candidate } from "../state/types";
+import type { Candidate, PreviewState } from "../state/types";
 import { clusterErrorText } from "../tools/cluster/model";
-import { type SelectionRequest, buildSelection, isDraftOp } from "./selection";
+import { type SelectionRequest, buildSelection, shouldPreview } from "./selection";
 import { createDebouncer } from "./timing";
 
 export interface RunnerApi {
   submitSelection(body: unknown): Promise<{ id: string }>;
   submitCandidate(cloudRevision: number): Promise<{ id: string }>;
+  /** Computes `S OP shape` as a pending preview without changing the selection. */
+  submitPreview(body: unknown): Promise<{ id: string }>;
+  /** Installs the pending preview with that id as the selection. */
+  submitCommit(body: { cloud_revision: number; preview_id: string }): Promise<{ id: string }>;
+  /** Best effort: frees the server's pending preview. */
+  discardPreview?(cloudRevision: number): Promise<unknown>;
   cancelJob(id: string): Promise<unknown>;
   /** Best-effort cancel that survives the page closing (navigator.sendBeacon). */
   beaconCancel?(id: string): void;
@@ -24,11 +30,12 @@ export interface RunnerApi {
 export type ParamsKind = "filter" | "scope" | "protection";
 export const OUTDATED_TEXT = "The display filter changed since this selection was made. Select again to refresh the preview.";
 
+export const PREVIEW_REFRESHED_TEXT = "The selection changed; the preview was refreshed. Check it and commit again.";
 export const TOOL_DEBOUNCE_MS = 250;
 export const PARAMS_DEBOUNCE_MS = 300;
 const IDLE = { busy: false, progress: null, message: null } as const;
 
-/** Apply is enabled only for a candidate that matches the current revisions, with no job or draft pending. */
+/** Apply is enabled only for a candidate that matches the current revisions, with no job pending. A draft does not block it: Apply deletes the committed selection only. */
 export function canApply(s: AppState): boolean {
   const c = s.candidate;
   const sess = s.session;
@@ -39,7 +46,6 @@ export function canApply(s: AppState): boolean {
     c.params_revision === sess.revision.params &&
     c.candidates > 0 &&
     !s.job.busy &&
-    !s.draft &&
     protectionBlock(s.tools.protection) === null
   );
 }
@@ -49,7 +55,6 @@ export function applyBlockedText(s: AppState): string {
   if (!s.session) return "no file open";
   if (s.compare !== "edited") return "return to the edited view";
   if (s.job.busy) return "a job is running";
-  if (s.draft) return "commit or discard the drafted tool shape first";
   const p = protectionBlock(s.tools.protection);
   if (p) return p;
   if ((s.candidate?.cluster as { complete?: boolean } | null | undefined)?.complete === false) {
@@ -72,14 +77,35 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
     ctl = null;
     if (jobId) void api.cancelJob(jobId).catch(() => undefined);
     jobId = null;
+    previewRunning = false;
     return mine;
   };
 
-  async function run(submit: () => Promise<{ id: string }>, message: string, retried: boolean): Promise<void> {
+  /** Bumped by every shape edit; a preview is current only if it was submitted for the latest one. */
+  let shape = 0;
+  let previewShape = -1;
+  let previewRunning = false;
+  let runningShape = -1;
+  let commitWhenReady = false;
+
+  const previewCurrent = (): boolean => {
+    const s = store.get();
+    return s.preview !== null && s.preview.op === s.op && previewShape === shape && !s.job.busy && !toolDebounce.pending();
+  };
+
+  async function run(
+    submit: () => Promise<{ id: string }>,
+    message: string,
+    retried: boolean,
+    kind: "select" | "preview" | "commit" = "select",
+  ): Promise<void> {
     const mine = supersede();
     ctl = new AbortController();
     const signal = ctl.signal;
     store.set({ job: { busy: true, progress: null, message } });
+    previewRunning = kind === "preview";
+    const submittedShape = shape;
+    runningShape = submittedShape;
     try {
       const { id } = await submit();
       if (mine !== gen) {
@@ -95,15 +121,50 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
       });
       if (mine !== gen) return;
       jobId = null;
+      if (kind === "preview") {
+        const r = result as unknown as { preview_id: string } & Omit<PreviewState, "id" | "op">;
+        const op = store.get().op as PreviewState["op"];
+        store.set({
+          preview: {
+            id: r.preview_id,
+            op,
+            selected_after: r.selected_after,
+            base_selected: r.base_selected,
+            added: r.added,
+            removed: r.removed,
+            ...(r.cluster !== undefined ? { cluster: r.cluster } : {}),
+          },
+        });
+        previewShape = submittedShape;
+        await api.refreshState(); // draws the preview (the refresher passes its id)
+        if (mine !== gen) return;
+        previewRunning = false;
+        store.set({ job: { ...IDLE } });
+        if (commitWhenReady && previewCurrent()) {
+          commitWhenReady = false;
+          commitNow();
+        }
+        return;
+      }
       await api.refreshState();
       if (mine !== gen) return;
       const raw = (result as { candidate?: unknown }).candidate ?? ("candidate_id" in result ? result : null);
-      store.set({ candidate: (raw as Candidate | null) ?? null, job: { ...IDLE }, draft: false });
+      store.set({ candidate: (raw as Candidate | null) ?? null, job: { ...IDLE }, draft: false, preview: null });
     } catch (e) {
       if (mine !== gen) return;
       jobId = null;
+      previewRunning = false;
       const code = e instanceof ApiError ? e.code : "";
       store.set({ job: { ...IDLE } });
+      if (kind === "commit" && code === "stale_revision") {
+        // the previewed mask is obsolete: look again at the new truth before anything is committed
+        store.set({ preview: null });
+        await api.refreshState().catch(() => undefined);
+        if (mine !== gen) return;
+        addNotice(store, "warn", "preview_refreshed", PREVIEW_REFRESHED_TEXT);
+        if (!retried) previewDraft();
+        return;
+      }
       if (code === "stale") {
         if (!retried) {
           await api.refreshState().catch(() => undefined);
@@ -112,7 +173,9 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
         return;
       }
       if (code === "cancelled") return;
-      store.set({ candidate: null });
+      commitWhenReady = false;
+      if (kind === "preview") store.set({ preview: null });
+      else store.set({ candidate: null });
       if (code === "selection_outdated") {
         addNotice(store, "warn", code, OUTDATED_TEXT);
         return;
@@ -141,25 +204,89 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
   const candidateNow = (): void =>
     void run(() => api.submitCandidate(store.get().session?.revision.cloud ?? 0), "Evaluating candidate", false);
 
+  /** Computes the pending preview of the drafted shape (never touches the selection or the candidate). */
+  function previewDraft(): void {
+    const built = buildSelection(store.get());
+    if (!built.ok || built.body.tool === null) {
+      commitWhenReady = false;
+      store.set({ job: { ...IDLE } });
+      return;
+    }
+    void run(
+      () => {
+        const again = buildSelection(store.get());
+        const { evaluate_candidate: _drop, ...body } = again.ok ? again.body : built.body;
+        return api.submitPreview(body);
+      },
+      "Computing preview...",
+      false,
+      "preview",
+    );
+  }
+
+  function commitNow(): void {
+    const s = store.get();
+    const id = s.preview?.id;
+    if (!id) return;
+    void run(() => api.submitCommit({ cloud_revision: store.get().session?.revision.cloud ?? 0, preview_id: id }), "Committing preview", false, "commit");
+  }
+
+  /** Drops the pending preview and the draft flag: client state, plus a best-effort release on the server. */
+  function dropDraft(): void {
+    const had = store.get().preview !== null;
+    commitWhenReady = false;
+    shape++;
+    store.set({ preview: null, draft: false });
+    if (had) void api.discardPreview?.(store.get().session?.revision.cloud ?? 0)?.catch(() => undefined);
+  }
+
   return {
     /** Single entry for every tool change (numeric field or handle drag). */
     onToolChanged(): void {
       const s = store.get();
       supersede();
       toolDebounce.cancel();
-      store.set({ candidate: null, job: { ...IDLE } });
-      if (isDraftOp(s.op)) {
-        store.set({ draft: true });
+      shape++;
+      commitWhenReady = false;
+      if (shouldPreview(s)) {
+        // the committed candidate stays: Apply keeps deleting the committed selection while the draft is shown
+        store.set({ job: { ...IDLE }, draft: true });
+        toolDebounce.call(previewDraft);
         return;
       }
-      store.set({ draft: false });
+      const had = s.preview !== null;
+      store.set({ candidate: null, job: { ...IDLE }, draft: false, preview: null });
+      if (had) {
+        void api.discardPreview?.(s.session?.revision.cloud ?? 0)?.catch(() => undefined);
+        void api.refreshState().catch(() => undefined);
+      }
       toolDebounce.call(selectionNow);
     },
-    /** Explicit commit of an Add/Subtract/Intersect draft (or any one-shot such as Invert). */
+    /**
+     * Commit the drafted shape: installs the previewed mask by id. With no current preview it previews first
+     * and commits that preview when it lands (never a mask the user has not been shown).
+     */
     commitDraft(): void {
       toolDebounce.cancel();
-      store.set({ draft: false });
-      selectionNow();
+      const s = store.get();
+      if (!s.draft && !s.preview) {
+        selectionNow(); // one-shot callers with nothing drafted
+        return;
+      }
+      if (previewCurrent()) {
+        commitNow();
+        return;
+      }
+      commitWhenReady = true;
+      if (!(previewRunning && runningShape === shape)) previewDraft();
+    },
+    /** Esc, the Discard draft button, Clear: forget the drafted preview; selection, history and candidate stay. */
+    discardDraft(): void {
+      supersede();
+      toolDebounce.cancel();
+      store.set({ job: { ...IDLE } });
+      dropDraft();
+      void api.refreshState().catch(() => undefined);
     },
     /** One-shot selection (Select displayed, Invert): sent at once, independent of the tool. */
     oneShot(make: (cloudRevision: number) => SelectionRequest): void {
@@ -176,7 +303,7 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
         addNotice(store, "warn", "draft_pending", "Commit or discard the drafted tool shape first; Preview would not include it");
         return;
       }
-      if (!isDraftOp(s.op) && buildSelection(s).ok) selectionNow();
+      if (!shouldPreview(s) && buildSelection(s).ok) selectionNow();
       else if ((s.session?.selection.count ?? 0) > 0) candidateNow();
     },
     /**
@@ -187,8 +314,16 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
       supersede();
       toolDebounce.cancel();
       paramsDebounce.cancel();
-      store.set({ candidate: null, job: { ...IDLE } });
+      const hadPreview = store.get().preview !== null;
+      store.set({ candidate: null, job: { ...IDLE }, preview: null });
       const s = store.get();
+      if (hadPreview && shouldPreview(s) && buildSelection(s).ok) {
+        // the server dropped its pending preview with the params change; look at the same shape again
+        shape++;
+        store.set({ draft: true });
+        paramsDebounce.call(previewDraft);
+        return;
+      }
       const live = s.op === "replace" && s.tool !== "none" && buildSelection(s).ok;
       const reselect = live && (kind !== "protection" || s.tool === "cluster");
       if (reselect) {
@@ -205,7 +340,8 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
       supersede();
       toolDebounce.cancel();
       paramsDebounce.cancel();
-      store.set({ candidate: null, job: { ...IDLE }, draft: false });
+      store.set({ candidate: null, job: { ...IDLE } });
+      dropDraft();
     },
   };
 }

@@ -63,3 +63,30 @@ test("UI-22 a failed refresh reports a notice and keeps the previous render", as
   expect(store.get().render?.count).toBe(3);
   expect(store.get().notices.at(-1)?.code).toBe("render_failed");
 });
+
+test("UI-410 edited render requests carry preview=<id> only when a preview is set and the primary render is edited; a response without the header clears it and refetches once", async () => {
+  const store = createAppStore();
+  const prev = { id: "p9", op: "add" as const, selected_after: 2, base_selected: 1, added: 1, removed: 0 };
+  const calls: unknown[][] = [];
+  const fetchRender = vi.fn(async (...a: unknown[]) => {
+    calls.push(a);
+    return { ...data(1), previewId: a[5] === "p9" && fetchRender.mock.calls.length === 1 ? undefined : (a[5] as string | undefined) };
+  });
+  const r = createRefresher(store, fetchRender as never);
+  store.set({ renderMode: "edited", preview: null });
+  await r.refresh();
+  expect(calls[0]).toHaveLength(4); // no preview argument at all
+  calls.length = 0;
+  fetchRender.mockClear();
+  store.set({ preview: prev });
+  await r.refresh();
+  expect(calls).toHaveLength(2);
+  expect(calls[0][5]).toBe("p9");
+  expect(calls[1]).toHaveLength(4); // refetched once, without the stale id
+  expect(store.get().preview).toBeNull();
+  // another primary mode never sends it
+  store.set({ renderMode: "original", preview: prev });
+  calls.length = 0;
+  await r.refresh();
+  expect(calls.every((c) => c.length === 4)).toBe(true);
+});

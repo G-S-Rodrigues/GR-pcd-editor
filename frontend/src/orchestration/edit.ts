@@ -44,7 +44,7 @@ export function createEditor(store: Store<AppState>, api: EditApi, confirmFn: (m
   const rev = () => store.get().session?.revision.cloud ?? 0;
 
   async function afterChange(state: SessionState, extra: Partial<AppState> = {}): Promise<void> {
-    store.set({ session: state, candidate: null, draft: false, ...extra });
+    store.set({ session: state, candidate: null, draft: false, preview: null, ...extra });
     await api.refreshRender();
   }
 

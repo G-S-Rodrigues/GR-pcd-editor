@@ -59,6 +59,17 @@ export interface SelectionBody {
 }
 export const submitSelection = (b: SelectionBody) =>
   postJson<{ id: string }>("/api/session/selection", b);
+export interface PreviewBody {
+  cloud_revision: number;
+  op: SelectionOp;
+  scope: Scope;
+  tool: Json | null;
+}
+export const submitPreview = (b: PreviewBody) => postJson<{ id: string }>("/api/session/selection/preview", b);
+export const submitCommit = (b: { cloud_revision: number; preview_id: string }) =>
+  postJson<{ id: string }>("/api/session/selection/commit", b);
+export const discardPreview = (cloud_revision: number) =>
+  postJson("/api/session/selection/preview/discard", { cloud_revision });
 export const submitCandidate = (cloud_revision: number) =>
   postJson<{ id: string }>("/api/session/candidate", { cloud_revision });
 

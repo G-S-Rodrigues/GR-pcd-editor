@@ -90,6 +90,18 @@ export interface Candidate {
   cluster: unknown;
 }
 
+/** Result of a pending Add/Subtract/Intersect preview (view state, never saved). */
+export interface PreviewState {
+  id: string;
+  op: "add" | "subtract" | "intersect";
+  selected_after: number;
+  base_selected: number;
+  added: number;
+  removed: number;
+  /** Cluster summary of the previewed shape (same shape as `Candidate.cluster`). */
+  cluster?: unknown;
+}
+
 export interface Notice {
   id: number;
   level: "info" | "warn" | "error";
