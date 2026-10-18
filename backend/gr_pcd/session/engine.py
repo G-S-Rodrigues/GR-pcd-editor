@@ -49,6 +49,9 @@ from gr_pcd.session.jobs import Stale
 
 RENDER_MODES = ("edited", "original", "deleted", "step")
 FLAG_SELECTED, FLAG_PROTECTED, FLAG_DELETED = 1, 2, 4
+# preview of a pending Add / Subtract / Intersect (bits unused by any other mode)
+FLAG_PREVIEW_ADD, FLAG_PREVIEW_REMOVE = 8, 16
+PREVIEW_OPS = ("add", "subtract", "intersect")
 
 
 @dataclass(frozen=True)
@@ -73,6 +76,19 @@ class Candidate:
 
 
 @dataclass(frozen=True)
+class PendingSelection:
+    """A computed, not yet committed `S OP shape` (one slot per session)."""
+
+    id: str
+    ticket: tuple[int, int]
+    spec: SelectSpec
+    new_sel: np.ndarray  # read-only bool (n,)
+    filter: DisplayFilter
+    protection: ProtectionState
+    cluster: dict | None
+
+
+@dataclass(frozen=True)
 class RenderArrays:
     coords: np.ndarray  # float32 (n, 3), relative to origin
     ids: np.ndarray  # uint32
@@ -82,6 +98,7 @@ class RenderArrays:
     attr: np.ndarray | None = None  # 4-byte values of the requested field
     attr_kind: str | None = None  # f32 | u32 | i32
     attr_field: str | None = None
+    preview_id: str | None = None  # set only when a pending preview was drawn
 
 
 def _ro(a: np.ndarray) -> np.ndarray:
@@ -127,6 +144,7 @@ class EditingSession:
         self.unsaved = False
         self.edit_counter = 0
         self.candidate: Candidate | None = None
+        self.pending: PendingSelection | None = None
         self._last_cluster: dict | None = None
         # the stored selection was made in scope `displayed` and the display
         # filter changed since: it still holds points the filter now hides
@@ -164,6 +182,7 @@ class EditingSession:
         )
         self.client_state = loaded.client_state
         self.unit = loaded.unit
+        self.pending = None
         self.unsaved = False
 
     # ---- helpers -------------------------------------------------------
@@ -203,6 +222,7 @@ class EditingSession:
         self.edit_counter += 1
         self.unsaved = True
         self.candidate = None
+        self.pending = None
         self.scope_stale = False
         self._reset_operation_protection()
         self.clock.bump_cloud()
@@ -299,6 +319,7 @@ class EditingSession:
                 self.scope_stale = True
             self.display_filter = filt
             self.candidate = None
+            self.pending = None
             self.clock.bump_params()
 
     def set_protection(self, protection: ProtectionState) -> None:
@@ -306,6 +327,7 @@ class EditingSession:
         with self.lock:
             self.protection = protection
             self.candidate = None
+            self.pending = None
             self.clock.bump_params()
 
     def set_client_state(self, state: dict) -> None:
@@ -375,9 +397,10 @@ class EditingSession:
             return out
         raise EditError("invalid_tool", "unknown tool")
 
-    def run_select(
+    def _selection_result(
         self, spec: SelectSpec, ticket, token: CancelToken, progress=None
-    ) -> dict:
+    ):
+        """The shared head of select and preview: no state is changed."""
         with self.lock:
             if not self.clock.is_current(ticket):
                 raise Stale()
@@ -407,6 +430,12 @@ class EditingSession:
             combine_selection(current, operand, spec.op, snap["scope"])
         )
         token.check()
+        return snap, operand, current, new_sel
+
+    def _install_selection(
+        self, spec: SelectSpec, snap: dict, new_sel, ticket, token
+    ):
+        """The shared tail of select and commit: assign, log, bump once."""
         with self.lock:
             if token.cancelled:
                 raise Cancelled()
@@ -429,12 +458,105 @@ class EditingSession:
             self.scope_stale = False
             self._last_tool_text = _tool_text(spec.tool)
             self.candidate = None
+            self.pending = None
             self.clock.bump_params()
-            new_ticket = self.clock.ticket()
+            return self.clock.ticket()
+
+    def run_select(
+        self, spec: SelectSpec, ticket, token: CancelToken, progress=None
+    ) -> dict:
+        snap, operand, _cur, new_sel = self._selection_result(
+            spec, ticket, token, progress
+        )
+        new_ticket = self._install_selection(spec, snap, new_sel, ticket, token)
         out = {"selected": int(new_sel.sum()), "operand": int(operand.sum())}
         if spec.evaluate_candidate:
             out["candidate"] = self.run_candidate(new_ticket, token)
         return out
+
+    def run_preview(
+        self, spec: SelectSpec, ticket, token: CancelToken, progress=None
+    ) -> dict:
+        """Compute `S OP shape` and keep it as the one pending preview.
+
+        Never assigns the selection, the candidate or the revision clock.
+        """
+        if spec.op not in PREVIEW_OPS:
+            raise EditError(
+                "invalid_op", "a preview is only for add, subtract, intersect"
+            )
+        snap, operand, current, new_sel = self._selection_result(
+            spec, ticket, token, progress
+        )
+        pending = PendingSelection(
+            uuid.uuid4().hex,
+            ticket,
+            spec,
+            new_sel,
+            snap["filter"],
+            snap["protection"],
+            snap.get("cluster"),
+        )
+        with self.lock:
+            if token.cancelled:
+                raise Cancelled()
+            if not self.clock.is_current(ticket):
+                raise Stale()
+            self.pending = pending
+        out = {
+            "preview_id": pending.id,
+            "selected_after": int(new_sel.sum()),
+            "base_selected": int(current.sum()),
+            "added": int((new_sel & ~current).sum()),
+            "removed": int((current & ~new_sel).sum()),
+            "operand": int(operand.sum()),
+        }
+        if pending.cluster is not None:
+            out["cluster"] = pending.cluster
+        return out
+
+    def check_preview(self, preview_id: str) -> None:
+        """409 unless `preview_id` is the live, current pending preview."""
+        with self.lock:
+            p = self.pending
+            if (
+                p is None
+                or p.id != preview_id
+                or p.ticket != self.clock.ticket()
+            ):
+                raise StaleRevision(
+                    "the preview is obsolete; preview again", self.revision()
+                )
+
+    def commit_pending(
+        self,
+        preview_id: str,
+        ticket,
+        token: CancelToken,
+        evaluate_candidate: bool = True,
+    ) -> dict:
+        """Install exactly the previewed mask (no recompute, no drift)."""
+        with self.lock:
+            if not self.clock.is_current(ticket):
+                raise Stale()
+            self.check_preview(preview_id)
+            p = self.pending
+        snap = {
+            "filter": p.filter,
+            "protection": p.protection,
+            "cluster": p.cluster,
+        }
+        new_ticket = self._install_selection(
+            p.spec, snap, p.new_sel, ticket, token
+        )
+        out = {"selected": int(p.new_sel.sum())}
+        if evaluate_candidate:
+            out["candidate"] = self.run_candidate(new_ticket, token)
+        return out
+
+    def discard_preview(self) -> None:
+        with self.lock:
+            self.pending = None
 
     def run_candidate(self, ticket, token: CancelToken, progress=None) -> dict:
         with self.lock:
@@ -503,6 +625,7 @@ class EditingSession:
             self._selection_scope = None
             self.scope_stale = False
             self.candidate = None
+            self.pending = None
             self.clock.bump_params()
 
     # ---- edits ---------------------------------------------------------
@@ -622,15 +745,27 @@ class EditingSession:
         mode: str,
         attr: str | None = None,
         step: int | None = None,
+        preview: str | None = None,
     ) -> tuple[RenderArrays, dict]:
         if mode not in RENDER_MODES:
             raise EditError("invalid_mode", f"unknown render mode {mode}")
         if mode == "step" and step is None:
             raise EditError("invalid_step", "mode step needs a step id")
+        if preview is not None and mode != "edited":
+            raise EditError(
+                "invalid_mode", "a preview is drawn only in mode edited"
+            )
         with self.lock:
             active, selection = self.active, self.selection
             protection = self.protection
             rev = self.revision()
+            pend = self.pending
+            if (
+                pend is None
+                or pend.id != preview
+                or pend.ticket != self.clock.ticket()
+            ):
+                pend = None
             step_ids = self.history.entry(step).ids if mode == "step" else None
         display = self._display()
         valid = self.valid
@@ -661,19 +796,33 @@ class EditingSession:
             self.xyz, valid, effective_intervals(protection), protection.tilt
         )
         sel = selection & active & valid
+        shown = sel
+        if pend is not None:
+            new = pend.new_sel & active & valid
+            shown = sel | new
         if m > budget:
-            # flagged points (selected / candidate / protected) are always drawn, up to budget // 2 extra
-            flagged = np.setdiff1d(
-                eligible[sel[eligible]], sampled, assume_unique=True
-            )
+            # flagged points (selected / candidate / protected / the preview
+            # delta) are always drawn, up to budget // 2 extra; the preview
+            # delta goes first so it is never crowded out by the old selection
             cap = budget // 2
-            if len(flagged) > cap:
-                flagged = flagged[
-                    np.floor(
-                        np.linspace(0, len(flagged), cap, endpoint=False)
-                    ).astype(np.int64)
-                ]
-            sampled = np.union1d(sampled, flagged)
+            groups = [shown]
+            if pend is not None:
+                groups = [(new & ~sel) | (sel & ~new), shown]
+            extra = np.empty(0, dtype=eligible.dtype)
+            for g in groups:
+                flagged = np.setdiff1d(
+                    eligible[g[eligible]], sampled, assume_unique=True
+                )
+                flagged = np.setdiff1d(flagged, extra, assume_unique=True)
+                room = cap - len(extra)
+                if len(flagged) > room:
+                    flagged = flagged[
+                        np.floor(
+                            np.linspace(0, len(flagged), room, endpoint=False)
+                        ).astype(np.int64)
+                    ]
+                extra = np.union1d(extra, flagged)
+            sampled = np.union1d(sampled, extra)
         ids = sampled.astype(np.uint32)
         if self.bounds is None:
             origin = (0.0, 0.0, 0.0)
@@ -682,13 +831,29 @@ class EditingSession:
             origin = tuple(((lo + hi) / 2.0).tolist())
         coords = (self.xyz[ids] - np.array(origin)).astype(np.float32)
         flags = np.zeros(len(ids), dtype=np.uint8)
-        flags[sel[ids] & ~protected[ids]] |= FLAG_SELECTED
-        flags[sel[ids] & protected[ids]] |= FLAG_PROTECTED
+        if pend is None:
+            flags[sel[ids] & ~protected[ids]] |= FLAG_SELECTED
+            flags[sel[ids] & protected[ids]] |= FLAG_PROTECTED
+        else:
+            # selected = the previewed result; the delta against the committed
+            # selection is "will be added" / "will be removed" (still drawn)
+            flags[new[ids] & ~protected[ids]] |= FLAG_SELECTED
+            flags[shown[ids] & protected[ids]] |= FLAG_PROTECTED
+            flags[(new & ~sel)[ids]] |= FLAG_PREVIEW_ADD
+            flags[(sel & ~new)[ids]] |= FLAG_PREVIEW_REMOVE
         if mode != "step":
             flags[~active[ids]] |= FLAG_DELETED
         values, kind = self._attr_values(attr, ids) if attr else (None, None)
         return RenderArrays(
-            coords, ids, flags, origin, m, values, kind, attr
+            coords,
+            ids,
+            flags,
+            origin,
+            m,
+            values,
+            kind,
+            attr,
+            None if pend is None else pend.id,
         ), rev
 
     def _attr_values(self, name: str, ids: np.ndarray):
