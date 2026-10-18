@@ -30,6 +30,7 @@ import {
   stepLayerStyle,
   stepTooltip,
   stepsOf,
+  stripControlKey,
   stripKeyAction,
   timelineView,
 } from "./model";
@@ -204,6 +205,18 @@ describe("keyboard", () => {
     expect(stripKeyAction("Enter", "marker")).toBeNull();
     expect(stripKeyAction("Delete", "input")).toBeNull();
     expect(stripKeyAction("a", "step")).toBeNull();
+  });
+});
+
+describe("keys on the strip's own controls", () => {
+  test("UI-281 Delete/Backspace on a step button removes its step, on the marker is swallowed, other keys are left alone", () => {
+    expect(stripControlKey("Delete", "button")).toBe("delete");
+    expect(stripControlKey("Backspace", "button")).toBe("delete");
+    expect(stripControlKey("Delete", "marker")).toBe("swallow");
+    expect(stripControlKey("Backspace", "marker")).toBe("swallow");
+    expect(stripControlKey("Enter", "button")).toBeNull();
+    expect(stripControlKey(" ", "button")).toBeNull();
+    expect(stripControlKey("ArrowLeft", "marker")).toBeNull();
   });
 });
 

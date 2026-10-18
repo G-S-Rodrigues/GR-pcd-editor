@@ -96,3 +96,51 @@ def test_wrk_06_any_permission_error_is_specific() -> None:
     assert "/work/uploads/x.part" in err["message"]
     assert f"uid {os.getuid()}" in err["message"]
     assert "--rebuild" in err["message"]
+
+
+def _job_result(c, response) -> dict:
+    import time
+
+    assert response.status_code == 202, response.text
+    jid = response.json()["id"]
+    for _ in range(2000):
+        job = c.get(f"/api/jobs/{jid}").json()
+        if job["status"] not in ("queued", "running"):
+            break
+        time.sleep(0.01)
+    assert job["status"] == "complete", job
+    return job["result"]
+
+
+def test_wrk_07_export_downloads_from_a_fallback_dir(stale) -> None:
+    c = make_client(create_app(stale))
+    assert upload(c, _body()).status_code == 200
+    res = _job_result(
+        c, c.post("/api/session/export", json={"format": "binary"})
+    )
+    fb = stale.work_root / f"exports.u{os.getuid()}"
+    written = fb / f"{res['export_id']}.pcd"
+    assert written.is_file() and not any(
+        (stale.work_root / "exports").iterdir()
+    )
+    r = c.get(f"/api/exports/{res['export_id']}")
+    assert r.status_code == 200, r.text
+    assert r.content == written.read_bytes()
+
+
+def test_wrk_08_session_archive_downloads_from_a_fallback_dir(stale) -> None:
+    c = make_client(create_app(stale))
+    assert upload(c, _body()).status_code == 200
+    res = _job_result(c, c.post("/api/session/save", json={}))
+    fb = stale.work_root / f"session-archives.u{os.getuid()}"
+    written = fb / f"{res['archive_id']}.pcdsession"
+    assert written.is_file()
+    r = c.get(f"/api/session-archives/{res['archive_id']}")
+    assert r.status_code == 200, r.text
+    assert r.content == written.read_bytes()
+    assert (
+        c.post(
+            "/api/session/mark-saved", json={"archive_id": res["archive_id"]}
+        ).status_code
+        == 200
+    )

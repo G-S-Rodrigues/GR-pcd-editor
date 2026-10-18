@@ -43,7 +43,7 @@ view, global height protection (the purple slab) and the live counts in the stat
 | Click a step icon in the timeline (under the view) | Highlight the points that step deleted in a distinct green (hover shows a lighter preview; click again, click the strip background or press `Esc` to clear; the legend lists **Step highlight** only while it is on) |
 | Drag the timeline marker, or the **Roll back to here** button on a step (hover or focus it), or `Left` `Right` `Home` `End` on the marker | Roll the history back or forward to that point; later steps grey out and can be redone, one request is sent when you let go. **Undo** and **Redo** move the marker one slot |
 | Double-click a step name, the pencil button, or `F2` on a focused step | Rename the step (an empty name restores the default label) |
-| `x` button on a step, or `Delete` / `Backspace` on a focused step | Remove just that step after a confirmation (its points come back; later steps stay; it cannot be undone). `Enter` or `Space` highlights, arrow keys move between steps |
+| `x` button on a step, or `Delete` / `Backspace` on a focused step or on one of its buttons (the marker ignores them; they never apply) | Remove just that step after a confirmation (its points come back; later steps stay; it cannot be undone). `Enter` or `Space` highlights, arrow keys move between steps |
 | `[` `]` | Move the slice slab (a render-only clip that changes no count) |
 | `Delete` | Apply the previewed deletion (same as **Apply**, with the same confirmation for bulk deletes) |
 | `Ctrl+Z`, `Ctrl+Y` | Undo, redo |

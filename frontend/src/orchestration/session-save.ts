@@ -6,11 +6,14 @@ import type { SessionState } from "../state/types";
 export interface SaveDeps {
   startSave(): Promise<Download & { archiveId: string }>;
   markSaved(archiveId: string): Promise<SessionState>;
+  /** Sends the pending client state first, so the archive carries the current folds and camera. */
+  flushClientState?(): Promise<void>;
 }
 
 /** Download the session archive, then mark it saved. "Started" because the browser owns the file. */
 export async function runSave(store: Store<AppState>, deps: SaveDeps): Promise<{ ok: boolean; message: string }> {
   let dl: Awaited<ReturnType<SaveDeps["startSave"]>>;
+  await deps.flushClientState?.().catch(() => undefined);
   try {
     dl = await deps.startSave();
   } catch (e) {

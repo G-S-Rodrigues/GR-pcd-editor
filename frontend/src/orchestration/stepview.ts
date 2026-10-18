@@ -7,6 +7,9 @@ import { emptyTimeline, reconcile, stepLayerStyle } from "../timeline/model";
 type FetchStep = (sid: number, budget: number, signal: AbortSignal) => Promise<RenderData>;
 const CACHE_MAX = 3;
 
+/** What a step render depends on: session, step, display params and the point budget (a different budget is a different render). */
+export const stepKey = (s: AppState, sid: number): string => `${s.session?.session_id}|${sid}|${s.session?.revision.params}|${s.budget}`;
+
 export const realFetchStep: FetchStep = (sid, budget, signal) => fetchRender("step", budget, undefined, signal, sid);
 
 /**
@@ -78,13 +81,19 @@ export function createStepView(store: Store<AppState>, fetchStep: FetchStep = re
       if (s.stepRender !== null) store.set({ stepRender: null });
       return;
     }
-    const key = `${s.session.session_id}|${style.sid}|${s.session.revision.params}`;
+    const key = stepKey(s, style.sid);
     if (key === want) return;
-    want = key;
     stop();
+    // a hover that would only add a request under a running job waits: `want` stays unset so the sync that
+    // sees the job end (or the render finish) schedules it, instead of treating the key as already handled
+    if (style.hover && !cache.has(key) && (s.job.busy || s.rendering)) {
+      want = "";
+      return;
+    }
+    want = key;
     if (!style.hover || cache.has(key)) {
       void load(style.sid, key);
-    } else if (!s.job.busy && !s.rendering) {
+    } else {
       timer = setTimeout(() => {
         timer = null;
         void load(style.sid, key);

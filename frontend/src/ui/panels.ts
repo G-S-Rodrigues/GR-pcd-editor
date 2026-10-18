@@ -17,7 +17,7 @@ import { control } from "./controls";
 import { commitNumber } from "./numfield";
 import { TOOLTIPS } from "./tooltips";
 import { h } from "./dom";
-import { foldable } from "./fold";
+import { foldSyncer, foldable } from "./fold";
 import type { SectionId } from "./sections";
 
 /** What the panels need from the rest of the app. */
@@ -191,9 +191,10 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     el.addEventListener("toggle", () => {
       if (el.open !== store.get().floorPanelOpen) store.update((s) => ({ ...s, floorPanelOpen: el.open }));
     });
+    const foldSync = foldSyncer(el, (s) => s.floorPanelOpen);
     syncs.push((s) => {
       el.hidden = !visible(s);
-      if (el.open !== s.floorPanelOpen) el.open = s.floorPanelOpen;
+      foldSync(s);
     });
     return el;
   };

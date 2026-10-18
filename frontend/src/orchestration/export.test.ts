@@ -102,3 +102,29 @@ test("UI-89 a failed save job never marks saved", async () => {
   expect(markSaved).not.toHaveBeenCalled();
   expect(store.get().session?.unsaved).toBe(true);
 });
+
+test("UI-286 save flushes the pending client state before the archive is made, and a failed flush does not block Save", async () => {
+  const store = createAppStore();
+  store.set({ session: sessionFixture({ unsaved: true }) });
+  const order: string[] = [];
+  const ok = await runSave(store, {
+    flushClientState: async () => {
+      order.push("flush");
+    },
+    startSave: async () => {
+      order.push("download");
+      return { url: "/u", filename: "a.pcdsession", archiveId: "a" };
+    },
+    markSaved: async () => sessionFixture({ unsaved: false }),
+  });
+  expect(order).toEqual(["flush", "download"]);
+  expect(ok.ok).toBe(true);
+  const r = await runSave(store, {
+    flushClientState: async () => {
+      throw new Error("put failed");
+    },
+    startSave: async () => ({ url: "/u", filename: "a.pcdsession", archiveId: "b" }),
+    markSaved: async () => sessionFixture({ unsaved: false }),
+  });
+  expect(r.ok).toBe(true);
+});

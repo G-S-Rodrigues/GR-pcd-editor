@@ -5,7 +5,7 @@ import { createAppStore } from "../state/app";
 import type { HistoryEntry } from "../state/types";
 import { emptyTimeline } from "../timeline/model";
 import { candidateFixture, sessionFixture } from "../testing/fixtures";
-import { createEditor } from "./edit";
+import { BUSY_TEXT, STALE_HISTORY_TEXT, createEditor } from "./edit";
 import { createStepView } from "./stepview";
 
 const hist = (n: number, cursor = n) => ({
@@ -193,5 +193,107 @@ describe("step view fetch", () => {
     expect(t.store.get().timeline.highlight).toBeNull();
     t.view.dispose();
     vi.useRealTimers();
+  });
+});
+
+describe("serialised history gestures", () => {
+  /** An api whose rollback/undo answer with a revision that grows by one per call, like the server. */
+  function seq(cursor = 3) {
+    const t = setup(cursor);
+    let rev = 3;
+    const seen: { kind: string; rev: number; arg?: number }[] = [];
+    const answer = (c: number) => sessionFixture({ revision: { cloud: ++rev, params: 4 }, history: hist(3, c) });
+    t.api.rollback.mockImplementation(async (r: number, c: number) => {
+      seen.push({ kind: "rollback", rev: r, arg: c });
+      await Promise.resolve();
+      return answer(c);
+    });
+    (t.api.undo as unknown as { mockImplementation: (f: (r: number) => Promise<unknown>) => void }).mockImplementation(async (r: number) => {
+      seen.push({ kind: "undo", rev: r });
+      await Promise.resolve();
+      return answer(Math.max(0, t.store.get().session!.history.cursor - 1));
+    });
+    return { ...t, seen };
+  }
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+
+  it("UI-288 rapid marker moves coalesce: one in flight, the newest target next, every revision fresh", async () => {
+    const t = seq(3);
+    const all = [t.ed.rollback(2)];
+    await tick(); // the first is on the wire
+    all.push(t.ed.rollback(1), t.ed.rollback(0)); // queued; the second replaces the first
+    expect(t.ed.pendingCursor()).toBe(0);
+    await Promise.all(all);
+    expect(t.seen).toEqual([
+      { kind: "rollback", rev: 3, arg: 2 },
+      { kind: "rollback", rev: 4, arg: 0 },
+    ]);
+    expect(t.store.get().session?.history.cursor).toBe(0);
+    expect(t.ed.pendingCursor()).toBeNull();
+    expect(t.store.get().notices).toEqual([]);
+  });
+
+  it("UI-288 a request to the cursor already asked for is not sent, and one back to the start cancels the queued move", async () => {
+    const t = seq(3);
+    const all = [t.ed.rollback(2)];
+    await tick();
+    all.push(t.ed.rollback(2));
+    await Promise.all(all);
+    expect(t.api.rollback).toHaveBeenCalledTimes(1);
+  });
+
+  it("UI-289 rapid undo clicks are sent one at a time, each with the revision the previous one made", async () => {
+    const t = seq(3);
+    await Promise.all([t.ed.undo(), t.ed.undo(), t.ed.undo()]);
+    expect(t.seen.map((x) => x.rev)).toEqual([3, 4, 5]);
+    expect(t.store.get().session?.history.cursor).toBe(0);
+    expect(t.store.get().notices).toEqual([]);
+  });
+
+  it("UI-290b a 409 on a history gesture reloads and says so without telling the user to preview again", async () => {
+    const t = setup();
+    t.api.rollback.mockRejectedValueOnce(new ApiError(409, "stale_revision", "old"));
+    await t.ed.rollback(1);
+    const n = t.store.get().notices.find((x) => x.code === "stale_revision");
+    expect(n?.text).toBe(STALE_HISTORY_TEXT);
+    expect(n?.text).not.toMatch(/preview again/);
+    const a = setup(3);
+    a.api.apply.mockRejectedValueOnce(new ApiError(409, "stale_revision", "old"));
+    await a.ed.apply();
+    expect(a.store.get().notices.find((x) => x.code === "stale_revision")?.text).toBe("The cloud changed; preview again");
+  });
+
+  it("UI-291b a marker move, a step delete and an undo while a job runs say so instead of doing nothing", async () => {
+    const t = setup();
+    t.store.set({ job: { busy: true, progress: null, message: null } });
+    await t.ed.rollback(1);
+    expect(t.store.get().notices.map((n) => n.code)).toContain("busy");
+    t.store.set({ notices: [] });
+    await t.ed.deleteStep(11);
+    expect(t.store.get().notices.find((n) => n.code === "busy")?.text).toBe(BUSY_TEXT);
+    t.store.set({ notices: [] });
+    await t.ed.undo();
+    expect(t.store.get().notices.map((n) => n.code)).toContain("busy");
+    expect(t.api.rollback).not.toHaveBeenCalled();
+    expect(t.api.deleteStep).not.toHaveBeenCalled();
+    expect(t.api.undo).not.toHaveBeenCalled();
+    expect(t.confirm).not.toHaveBeenCalled();
+  });
+
+  it("UI-292 a late rename answer takes only the names: the newer cursor, revision and counts stay", async () => {
+    const t = setup(3);
+    let release: (s: ReturnType<typeof sessionFixture>) => void = () => undefined;
+    t.api.renameStep.mockImplementation(() => new Promise((r) => (release = r)));
+    const pending = t.ed.renameStep(11, "Mirror");
+    // a rollback answered first: cursor 1, revision 4
+    t.store.set({ session: sessionFixture({ revision: { cloud: 4, params: 4 }, history: hist(3, 1) }) });
+    const old = sessionFixture({ revision: { cloud: 3, params: 4 }, history: hist(3, 3) });
+    old.history.entries[1] = { ...old.history.entries[1], name: "Mirror" };
+    release(old);
+    await pending;
+    const now = t.store.get().session!;
+    expect(now.revision.cloud).toBe(4);
+    expect(now.history.cursor).toBe(1);
+    expect(now.history.entries.map((e) => e.name)).toEqual([null, "Mirror", null]);
   });
 });

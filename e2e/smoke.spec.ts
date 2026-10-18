@@ -1696,11 +1696,18 @@ test("E2E-46 10-8 each inspector section folds by click and keyboard, the fold s
   for (const id of Object.keys(probes)) await expect(probes[id]()).toBeHidden();
   await ctl("tool-box").click();
   await expect(ctl("box-size-x")).toBeHidden();
-  // reopen all: nothing was lost and the counts read the same
+  // reopen all: nothing was lost and the counts read the same. The all-open state is also saved to the server (the next
+  // test's page restores it), so this test leaves no folded section behind.
+  const savedOpen = page.waitForRequest((r) => {
+    if (r.method() !== "PUT" || !r.url().endsWith("/api/session/client-state")) return false;
+    const folded = JSON.parse(r.postData() ?? "{}")?.ui?.sectionsOpen;
+    return folded === undefined || Object.keys(folded).length === 0;
+  });
   for (const id of ["file", "counts", "view", "display", "slice", "history", "box"]) await sum(id).click();
   for (const id of Object.keys(probes)) await expect(probes[id]()).toBeVisible();
   await expect(ctl("box-size-x")).toBeVisible();
   expect(await page.locator("#counts-panel").innerText()).toBe(before);
+  await savedOpen;
   // an inspector never scrolls sideways
   expect(await page.evaluate(() => { const a = document.getElementById("inspector")!; return a.scrollWidth <= a.clientWidth; })).toBe(true);
 });
@@ -1782,7 +1789,9 @@ function tl(page: Pg) {
     await base.exact("Candidates", String(ROOM.ghost));
     await base.ctl("apply").click();
     await base.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
-    await base.ctl("cube-top").click();
+    // Top by its key: the camera restored with the page (a Save flushes the current view into the archive the next test
+    // reopens) may look from another side, and a face of the ViewCube that does not face the camera is hidden
+    await page.keyboard.press("1");
     await base.ctl("pivot-x").fill("-1");
     await base.ctl("pivot-y").fill("4");
     await base.ctl("pivot-z").fill("4");
@@ -2019,7 +2028,10 @@ test("E2E-55 11 deleting the middle step returns only its points; dismissing the
   await expect(t.card(1)).toContainText(String(ROOM.noise));
   await expect(t.marker).toHaveAttribute("aria-valuenow", "2");
   await expect(page.locator("#unsaved-badge")).toHaveText("Unsaved edits");
-  // keyboard: Delete on a focused step removes it (with the confirmation) and never fires the global Apply
+  // keyboard: Delete on a focused step removes it (with the confirmation) and never fires the global Apply.
+  // The box tool restarts its preview after the delete above; a step gesture under that job is refused with a notice by
+  // design (seen as the busy notice in 2 of 120 runs), so wait for idle like the marker gestures do.
+  await t.idle();
   const before = await page.evaluate(() => (window as unknown as { __editor: { state: () => { session: { counts: { active: number } } } } }).__editor.state().session.counts.active);
   t.dialogs.length = 0;
   t.mode.answer = "dismiss";
@@ -2286,4 +2298,61 @@ test("E2E-64 Cluster Subtract and Intersect commit against the existing selectio
   await t.exact("Active", String(ROOM_TOTAL - FLOOR_CLUSTER));
   expect(t.confirms[0]).toContain(`${FLOOR_CLUSTER} of ${ROOM_TOTAL} points`);
   await t.expectActive(testInfo, inFloorCluster);
+});
+
+test("E2E-65 11 Delete on a focused step button or on the marker never fires Apply; on a step button it removes that step", async ({ page }) => {
+  const t = tl(page);
+  await t.threeSteps();
+  await t.card(0).hover();
+  await t.card(0).locator('[data-act="rollback"]').click();
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
+  await t.boxAt(-1, 4.5, 2.5, 1, 10, 5);
+  await t.exact("Candidates", String(ROOM.wall));
+  await t.idle();
+  t.dialogs.length = 0;
+  t.mode.answer = "dismiss";
+  // an applicable candidate exists and the marker is rolled back: a leaking Delete would open the discard confirmation
+  await t.marker.focus();
+  await page.keyboard.press("Delete");
+  await page.keyboard.press("Backspace");
+  await t.card(1).hover();
+  const del = t.card(1).locator('[data-act="delete"]');
+  await del.focus();
+  await page.keyboard.press("Delete");
+  await expect.poll(() => t.dialogs.length).toBe(1);
+  expect(t.dialogs[0]).toContain('Remove step "Cluster 2"'); // the step's own confirmation, not "Applying a new deletion discards"
+  await expect(t.cards).toHaveCount(3);
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
+  await t.exact("Candidates", String(ROOM.wall));
+  expect(t.dialogs.some((d) => d.startsWith("Applying a new deletion"))).toBe(false);
+});
+
+test("E2E-66 11 rapid marker keys and Undo/Redo clicks send no stale request: no 409, no console error, no 'preview again', final state exact", async ({ page }) => {
+  const errors: string[] = [];
+  const stale: string[] = [];
+  page.on("console", (m) => {
+    if (m.type() === "error") errors.push(m.text());
+  });
+  page.on("response", (r) => {
+    if (r.status() === 409) stale.push(r.url());
+  });
+  const t = tl(page);
+  await t.threeSteps();
+  await t.idle();
+  await t.marker.focus();
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowLeft"); // no waiting between presses: 3 steps back
+  await expect(t.marker).toHaveAttribute("aria-valuenow", "0");
+  await t.exact("Active", String(ROOM_TOTAL));
+  for (let i = 0; i < 2; i++) await page.keyboard.press("ArrowRight");
+  await expect(t.marker).toHaveAttribute("aria-valuenow", "2");
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost - ROOM.wall));
+  await t.idle();
+  for (let i = 0; i < 2; i++) await t.ctl("undo").click({ delay: 0 });
+  await expect(t.marker).toHaveAttribute("aria-valuenow", "0");
+  for (let i = 0; i < 3; i++) await t.ctl("redo").click({ delay: 0 });
+  await expect(t.marker).toHaveAttribute("aria-valuenow", "3");
+  await t.exact("Active", String(ACTIVE_ALL));
+  await expect(page.locator("#notices")).not.toContainText("preview again");
+  expect(stale).toEqual([]);
+  expect(errors.filter((e) => !/Failed to load resource.*404/.test(e))).toEqual([]);
 });

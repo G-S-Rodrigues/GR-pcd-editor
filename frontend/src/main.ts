@@ -192,7 +192,7 @@ const deps = {
 
 const hold = createHold(store, () => void refresher.refresh());
 const exportDialog = buildExportDialog(store, (o) => runExport(store, o, { startExport: (f, s) => startExport(f, s) }));
-createPersister(store, api.putClientState, { dragging: () => tools.dragging() });
+const persister = createPersister(store, api.putClientState, { dragging: () => tools.dragging() });
 window.addEventListener("beforeunload", beforeUnloadHandler(() => store.get()));
 window.addEventListener("blur", () => hold.blur());
 window.addEventListener("keyup", (e) => {
@@ -201,7 +201,7 @@ window.addEventListener("keyup", (e) => {
 
 buildToolbar($("toolbar"), store, {
   saveSession: () =>
-    void runSave(store, { startSave: () => startSave(), markSaved: async (id) => api.normaliseState(await markSaved(id)) }),
+    void runSave(store, { flushClientState: () => persister.flush(), startSave: () => startSave(), markSaved: async (id) => api.normaliseState(await markSaved(id)) }),
   openExport: () => exportDialog.open(),
   pickFile: (file) => void openSource({ kind: "picker", file }, deps),
   preview: () => runner.previewNow(),
@@ -276,6 +276,7 @@ buildTimeline($("timeline"), store, {
   rollback: (c) => void editor.rollback(c),
   deleteStep: (sid) => void editor.deleteStep(sid),
   renameStep: (sid, name) => void editor.renameStep(sid, name),
+  pendingCursor: () => editor.pendingCursor(),
 });
 buildViewCube($("viewcube"), store);
 buildFilterBoxes($("fbox-layer"), canvas, store, {

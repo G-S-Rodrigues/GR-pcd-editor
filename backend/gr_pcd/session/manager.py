@@ -30,6 +30,7 @@ class Download:
     filename: str
     edit_counter: int = 0
     session_id: str = ""
+    kind: str = ""  # the work sub folder asked of ensure_dir, not a dir name
 
 
 class SessionManager:
@@ -161,7 +162,9 @@ class SessionManager:
         def body(session, ctx, _ticket):
             dest = self._dir("exports") / f"{export_id}.pcd"
             summary = export_session(session, dest, fmt, scope, ctx.token)
-            self.downloads[export_id] = Download(dest, summary["filename"])
+            self.downloads[export_id] = Download(
+                dest, summary["filename"], kind="exports"
+            )
             return {"export_id": export_id, **summary}
 
         return self._submit("export", body)
@@ -174,7 +177,11 @@ class SessionManager:
             summary = save_archive(session, dest, ctx.token)
             counter = summary.pop("edit_counter")
             self.downloads[archive_id] = Download(
-                dest, summary["filename"], counter, session.id
+                dest,
+                summary["filename"],
+                counter,
+                session.id,
+                "session-archives",
             )
             return {"archive_id": archive_id, **summary}
 
@@ -182,7 +189,9 @@ class SessionManager:
 
     def download(self, download_id: str, kind_dir: str) -> Download:
         d = self.downloads.get(download_id)
-        if d is None or d.path.parent.name != kind_dir or not d.path.exists():
+        # the folder may be `<kind>.u<uid>` (workdir fallback), so the kind is
+        # recorded when the file is made instead of read from the folder name
+        if d is None or d.kind != kind_dir or not d.path.exists():
             raise NotFoundError("no such download")
         return d
 

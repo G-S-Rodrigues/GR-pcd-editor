@@ -127,18 +127,22 @@ export function createPersister(
   const deb = createDebouncer(opts.ms ?? 1000);
   let last: string | null = null;
   let sessionId: string | undefined;
+  let inflight: Promise<unknown> = Promise.resolve();
+  const send = (): void => {
+    const s = store.get();
+    if (!s.session) return;
+    const body = serialiseClientState(s);
+    const text = JSON.stringify(body);
+    if (text === last) return;
+    last = text;
+    inflight = put(body).catch(() => {
+      last = null;
+    });
+  };
   const arm = (): void =>
     deb.call(() => {
       if (opts.dragging()) return arm();
-      const s = store.get();
-      if (!s.session) return;
-      const body = serialiseClientState(s);
-      const text = JSON.stringify(body);
-      if (text === last) return;
-      last = text;
-      void put(body).catch(() => {
-        last = null;
-      });
+      send();
     });
   const unsub = store.subscribe((s) => {
     if (s.session?.session_id !== sessionId) {
@@ -150,6 +154,12 @@ export function createPersister(
     if (JSON.stringify(serialiseClientState(s)) !== last) arm();
   });
   return {
+    /** Sends a pending change now (a Save right after a fold or camera move must archive it) and waits for the PUT. */
+    async flush(): Promise<void> {
+      deb.cancel();
+      send();
+      await inflight;
+    },
     dispose() {
       unsub();
       deb.cancel();

@@ -169,6 +169,34 @@ export function stripKeyAction(key: string, where: "step" | "marker" | "input"):
   return null;
 }
 
+/**
+ * The rename answer carries a whole session snapshot taken when the server handled it. Take only the step names from
+ * it: the revision, cursor and counts of the current state may already be newer (a rollback or an apply that answered
+ * first). A different session id, or a step the current state no longer has, changes nothing.
+ */
+export function mergeStepNames(current: SessionState, answer: SessionState): SessionState {
+  if (answer.session_id !== current.session_id) return current;
+  const names = new Map(answer.history.entries.map((e) => [e.sid ?? e.index, e.name ?? null]));
+  let changed = false;
+  const entries = current.history.entries.map((e) => {
+    const key = e.sid ?? e.index;
+    if (!names.has(key) || (names.get(key) ?? null) === (e.name ?? null)) return e;
+    changed = true;
+    return { ...e, name: names.get(key) ?? null };
+  });
+  return changed ? { ...current, history: { ...current.history, entries } } : current;
+}
+
+/**
+ * Delete/Backspace on a control inside the strip other than a card or the rename input (a step's own buttons, the
+ * marker): the strip must still consume the key, or it falls through to the global Delete = Apply. A step button removes
+ * its step (same as the card), the marker ignores the key.
+ */
+export function stripControlKey(key: string, where: "button" | "marker"): "delete" | "swallow" | null {
+  if (key !== "Delete" && key !== "Backspace") return null;
+  return where === "button" ? "delete" : "swallow";
+}
+
 // ---- confirmations
 
 export const discardCount = (session: SessionState | null): number =>

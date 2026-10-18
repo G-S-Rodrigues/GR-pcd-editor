@@ -143,3 +143,30 @@ test("UI-276 the timeline highlight and hover are view-only: not in the saved cl
   const s = JSON.stringify(serialiseClientState(a.get()));
   expect(s).not.toMatch(/timeline|highlight|stepRender/);
 });
+
+test("UI-287 flush sends a change that is still inside the debounce window and waits for the PUT; the timer then sends nothing more", async () => {
+  const store = createAppStore();
+  let done = false;
+  const put = vi.fn(async (_s: Record<string, unknown>) => {
+    await new Promise((r) => setTimeout(r, 50));
+    done = true;
+  });
+  store.set({ session: sessionFixture() });
+  const p = createPersister(store, put, { ms: 1000, dragging: () => false });
+  store.set({ notices: [] }); // the first update only records the session's state
+  store.set({ colour: { mode: "flat", pointSize: 7 } });
+  vi.advanceTimersByTime(200); // a Save 200 ms after the change
+  expect(put).not.toHaveBeenCalled();
+  const flushed = p.flush();
+  expect(put).toHaveBeenCalledTimes(1);
+  expect(put.mock.calls[0][0]).toMatchObject({ pointSize: 7 });
+  expect(done).toBe(false);
+  await vi.advanceTimersByTimeAsync(60);
+  await flushed;
+  expect(done).toBe(true);
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(put).toHaveBeenCalledTimes(1);
+  await p.flush(); // nothing changed: nothing sent
+  expect(put).toHaveBeenCalledTimes(1);
+  p.dispose();
+});

@@ -22,6 +22,7 @@ import {
   slotFromX,
   sliderTarget,
   startRename,
+  stripControlKey,
   stripKeyAction,
   timelineView,
 } from "./model";
@@ -30,6 +31,8 @@ export interface TimelineActions {
   rollback(cursor: number): void;
   deleteStep(sid: number): void;
   renameStep(sid: number, name: string): void;
+  /** The marker target asked for and not yet answered; keys move relative to it so rapid presses add up. */
+  pendingCursor(): number | null;
 }
 
 const GLYPH: Record<string, string> = { box: "▢", polygon: "⬠", cluster: "⁘", filter: "≡", invalid: "⊘", other: "✂" };
@@ -210,8 +213,20 @@ export function buildTimeline(root: HTMLElement, store: Store<AppState>, actions
   // ---- keyboard
   root.addEventListener("keydown", (e) => {
     const tgt = e.target as HTMLElement;
-    if (tgt.tagName === "BUTTON") return;
-    const where = tgt.tagName === "INPUT" ? "input" : tgt === marker ? "marker" : "step";
+    const isMarker = tgt === marker;
+    if (tgt.tagName === "BUTTON" || isMarker) {
+      // Enter/Space activate a button natively; Delete/Backspace must not reach the global Delete = Apply handler
+      const key = stripControlKey(e.key, isMarker ? "marker" : "button");
+      if (key) {
+        e.stopPropagation();
+        e.preventDefault();
+        const owner = tgt.closest(".step");
+        if (key === "delete" && owner) actions.deleteStep(Number(owner.getAttribute("data-step")));
+        return;
+      }
+      if (!isMarker) return;
+    }
+    const where = tgt.tagName === "INPUT" ? "input" : isMarker ? "marker" : "step";
     const act = stripKeyAction(e.key, where);
     if (!act) return;
     const card = tgt.closest(".step") as HTMLElement | null;
@@ -219,7 +234,7 @@ export function buildTimeline(root: HTMLElement, store: Store<AppState>, actions
     e.stopPropagation();
     e.preventDefault();
     if (act.type === "slider") {
-      const to = sliderTarget(e.key, cursor(), nSteps());
+      const to = sliderTarget(e.key, actions.pendingCursor() ?? cursor(), nSteps());
       if (to !== null) actions.rollback(to);
     } else if (act.type === "focus" && card) {
       const order = [...cards.values()];
