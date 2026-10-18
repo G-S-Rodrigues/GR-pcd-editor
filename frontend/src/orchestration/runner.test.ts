@@ -492,6 +492,35 @@ describe("cluster reacts to parameter changes and partial results (F-04, F-07)",
     expect(t.store.get().draft).toBe(false);
   });
 
+  it("UI-624 Live preview off: a shape edit over a selection sends no preview, keeps the draft, and drops an older preview", async () => {
+    const t = setup({ op: "add", count: 10 });
+    t.store.set({ previewLive: false });
+    t.store.set({ preview: { id: "old", op: "add", selected_after: 12, base_selected: 10, added: 2, removed: 0 } });
+    t.editBox(1);
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    expect(t.api.submitPreview).not.toHaveBeenCalled();
+    expect(t.api.submitSelection).not.toHaveBeenCalled();
+    expect(t.store.get().draft).toBe(true);
+    expect(t.store.get().preview).toBeNull();
+    expect(t.api.discardPreview).toHaveBeenCalledTimes(1);
+  });
+
+  it("UI-625 Live preview off: Commit draft previews first and commits that preview when it lands", async () => {
+    const t = setup({ op: "add", count: 10 });
+    t.store.set({ previewLive: false });
+    t.editBox(1);
+    await vi.advanceTimersByTimeAsync(250);
+    t.runner.commitDraft();
+    await flush();
+    expect(t.api.submitPreview).toHaveBeenCalledTimes(1);
+    expect(t.api.submitCommit).not.toHaveBeenCalled();
+    t.polls[0].resolve({ preview_id: "p9", selected_after: 12, base_selected: 10, added: 2, removed: 0 });
+    await flush();
+    await flush();
+    expect(t.commits).toEqual([{ cloud_revision: 3, preview_id: "p9" }]);
+  });
+
   it("UI-412 each cluster parameter edit in Add sends one debounced preview carrying it; five rapid radius edits send one and cancel the earlier jobs", async () => {
     const t = setup({ op: "add", count: 10 });
     t.store.update((s) => ({ ...s, tool: "cluster", tools: { ...s.tools, cluster: setSeed(s.tools.cluster, { id: 5, point: [0, 0, 0] }) } }));

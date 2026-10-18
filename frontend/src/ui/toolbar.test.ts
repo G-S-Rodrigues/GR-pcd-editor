@@ -8,7 +8,7 @@ import { TOOLTIPS } from "./tooltips";
 
 const actions = { pickFile: () => undefined, preview: () => undefined, apply: () => undefined, undo: () => undefined, redo: () => undefined, saveSession: () => undefined, openExport: () => undefined };
 
-test("UI-302 UI-303 the file and history buttons are icons with their ids and names; Preview and Apply stay text; disabled adds the reason", () => {
+test("UI-302 UI-303 the file and history buttons are icons with their ids and names; Preview stays text and Apply is the red Delete (trash icon plus the word); disabled adds the reason", () => {
   const dom = installFakeDom();
   try {
     const store = createAppStore();
@@ -21,7 +21,8 @@ test("UI-302 UI-303 the file and history buttons are icons with their ids and na
       expect(b.text(), id).toBe("");
       expect(b.getAttribute("aria-label"), id).toBe(describeControls().find((c) => c.id === id)?.label);
     }
-    for (const id of ["preview", "apply"]) expect(root.control(id)?.children.map((c) => c.tag), id).toEqual(["#text"]);
+    expect(root.control("preview")?.children.map((c) => c.tag)).toEqual(["#text"]);
+    expect(root.control("apply")?.children.map((c) => c.tag)).toEqual(["svg", "#text"]); // trash icon plus the word Delete
     // UI-303: disabled without a file, the reason is appended to the tooltip of an icon button
     expect(root.control("save-session")?.title).toBe(`${TOOLTIPS["save-session"]} (no file open)`);
     store.set({ session: sessionFixture() });

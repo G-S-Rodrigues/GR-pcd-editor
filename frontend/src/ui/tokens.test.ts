@@ -18,3 +18,15 @@ test("UI-306 text tokens read at 4.5:1 and icon, focus and pressed colours at 3:
   // an icon on the pressed fill
   expect(contrastRatio(token("text"), "#2b4a7a")).toBeGreaterThanOrEqual(4.5);
 });
+
+const hex = (name: string): string => token(name);
+
+test("UI-620 the Delete button reads: its text at 4.5:1 on the danger fill and the fill at 3:1 against the panel", () => {
+  expect(contrastRatio(hex("danger-fg"), hex("danger"))).toBeGreaterThanOrEqual(4.5);
+  expect(contrastRatio(hex("danger"), hex("panel"))).toBeGreaterThanOrEqual(3);
+  // and it is clearly red: the red channel dominates
+  const d = hex("danger");
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(d.slice(i, i + 2), 16));
+  expect(r).toBeGreaterThan(g + 80);
+  expect(r).toBeGreaterThan(b + 80);
+});

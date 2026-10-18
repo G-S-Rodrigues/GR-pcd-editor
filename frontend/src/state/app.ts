@@ -46,6 +46,8 @@ export interface AppState {
   /** Render-only emphasis of protected-selected (kept) points. */
   showKept: boolean;
   op: UiOp;
+  /** Shape edits preview the result at once (default); off: edits only move the outline and Commit computes it. Saved only when off. */
+  previewLive: boolean;
   /**
    * The next tool edits are the first selection: they go live as a wire replace (no preview, no accumulation).
    * True while the committed selection is empty and the user has not pressed an operation; never saved.
@@ -95,6 +97,7 @@ export function initialState(): AppState {
     rect: false,
     showKept: false,
     op: "add",
+    previewLive: true,
     liveFirst: false,
     scope: "displayed",
     camera: defaultCamera(),

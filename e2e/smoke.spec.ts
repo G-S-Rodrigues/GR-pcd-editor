@@ -856,7 +856,7 @@ test("E2E-23 7b2 an Add shape is shown as a draft with its own outline colour an
   for (const [id, v] of [["box-center-x", -1], ["box-center-y", 4.5], ["box-center-z", 2.5], ["box-size-x", 1], ["box-size-y", 10], ["box-size-z", 5]] as const) await setNum(id, v);
   await exact("Selected", String(ROOM.wall));
   await expect(page.locator("#draft-note")).toBeHidden();
-  await ctl("op-select").selectOption("add");
+  await ctl("op-add").click();
   await expect(page.locator("#draft-note")).toBeHidden();
   await ctl("box-size-x").fill("4");
   await ctl("box-size-x").press("Enter");
@@ -901,7 +901,7 @@ test("E2E-24 7b2 first page shows the start banner; a reloaded session starts Ad
   await openRoom(page, exact);
   await expect(page.locator("#start-banner")).toBeHidden();
   await ctl("tool-cluster").click();
-  await ctl("op-select").selectOption("subtract");
+  await ctl("op-subtract").click();
   await ctl("scope-select").selectOption("active");
   await ctl("cluster-max-points").fill("1234");
   await ctl("cluster-max-points").press("Enter");
@@ -2224,7 +2224,7 @@ test("E2E-61 Cluster with Operation Add: after Commit draft the selection is |A 
   await t.setNum("cluster-radius", 1.1);
   await t.pickSeed(CL.wall);
   await t.exact("Selected", String(ROOM.wall));
-  await t.ctl("op-select").selectOption("add");
+  await t.ctl("op-add").click();
   await t.pickSeed(CL.floor);
   await expect(page.locator("#draft-note")).toContainText("Preview, not applied"); // a draft: nothing grows until Commit draft
   await expect(t.ctl("apply")).toBeEnabled(); // owner ruling A (this asserted disabled before, only passing while the preview job was still busy)
@@ -2276,7 +2276,7 @@ test("E2E-63 Preview with a pending Add cluster draft keeps the draft; Apply sta
   await t.setNum("cluster-radius", 1.1);
   await t.pickSeed(CL.wall);
   await t.exact("Selected", String(ROOM.wall));
-  await t.ctl("op-select").selectOption("add");
+  await t.ctl("op-add").click();
   await t.pickSeed(CL.floor);
   await expect(page.locator("#draft-note")).toBeVisible();
   await t.ctl("preview").click();
@@ -2299,11 +2299,11 @@ test("E2E-64 Cluster Subtract and Intersect commit against the existing selectio
   await t.setNum("cluster-radius", 1.1);
   await t.ctl("sel-select-displayed").click();
   await t.exact("Selected", String(ROOM_TOTAL - ROOM.invalid));
-  await t.ctl("op-select").selectOption("subtract");
+  await t.ctl("op-subtract").click();
   await t.pickSeed(CL.wall);
   await t.ctl("sel-commit").click();
   await t.exact("Selected", String(ROOM_TOTAL - ROOM.invalid - ROOM.wall));
-  await t.ctl("op-select").selectOption("intersect");
+  await t.ctl("op-intersect").click();
   await t.pickSeed(CL.floor);
   await t.ctl("sel-commit").click();
   await t.exact("Selected", String(FLOOR_CLUSTER));
@@ -2940,7 +2940,7 @@ const GHOST_BOX = { c: [3, 13, 2], d: [3, 3, 3] };
 test("E2E-80 12b Box Add: the real mouse drags the box over the ghosts, the preview shows them in the add colour, Selected stays until Commit draft", async ({ page }) => {
   const t = previewHelpers(page);
   await t.wallSelected();
-  await t.ctl("op-select").selectOption("add");
+  await t.ctl("op-add").click();
   await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
   const rows = finiteRows();
   const wallRows = rows.filter((r) => inBox(r, [...[-1, 4.5, 2.5]], [1, 10, 5]));
@@ -2988,7 +2988,7 @@ for (const op of ["subtract", "intersect"] as const) {
     await t.ctl("sel-select-displayed").click();
     const all = ROOM_TOTAL - ROOM.invalid;
     await t.exact("Selected", String(all));
-    await t.ctl("op-select").selectOption(op);
+    await t.ctl(`op-${op}`).click();
     const c = [3, 13, 2];
     const d = [3, 3, 3];
     await t.setBox(c, d);
@@ -3012,7 +3012,7 @@ test("E2E-82 12b Polygon Add: real clicks draw the polygon, the preview is the u
   const t = previewHelpers(page);
   await t.wallSelected();
   await t.ctl("tool-polygon").click();
-  await t.ctl("op-select").selectOption("add");
+  await t.ctl("op-add").click();
   await t.ctl("cube-top").click();
   await page.waitForTimeout(600);
   await t.ctl("poly-draw").click();
@@ -3041,7 +3041,7 @@ const clusterAdd = async (page: import("@playwright/test").Page, radius: number)
   await t.setNum("cluster-radius", 1.1);
   await t.pickSeed(CL.wall);
   await t.exact("Selected", String(ROOM.wall));
-  await t.ctl("op-select").selectOption("add");
+  await t.ctl("op-add").click();
   await t.setNum("cluster-radius", radius);
   return t;
 };
@@ -3075,7 +3075,7 @@ test("E2E-83 12b Cluster Add: the preview is |A union B| before Commit draft, a 
 test("E2E-84 12b Apply before commit deletes only the committed selection, not the previewed points; Undo restores", async ({ page }) => {
   const t = previewHelpers(page);
   await t.wallSelected();
-  await t.ctl("op-select").selectOption("add");
+  await t.ctl("op-add").click();
   await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
   await t.previewIs(ROOM.wall + ROOM.ghost);
   await expect(t.ctl("apply")).toBeEnabled(); // owner ruling A
@@ -3093,7 +3093,7 @@ test("E2E-85 12b Esc and Discard draft drop the preview and change nothing else;
   const t = previewHelpers(page);
   await t.wallSelected();
   await expect(t.ctl("sel-discard")).toBeDisabled();
-  await t.ctl("op-select").selectOption("add");
+  await t.ctl("op-add").click();
   await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
   await t.previewIs(ROOM.wall + ROOM.ghost);
   await expect(t.ctl("sel-discard")).toBeEnabled();
@@ -3126,7 +3126,7 @@ test("E2E-85 12b Esc and Discard draft drop the preview and change nothing else;
 test("E2E-86 12b Save with a pending draft stores the committed selection only; the reopened session has no draft", async ({ page }, testInfo) => {
   const t = previewHelpers(page);
   await t.wallSelected();
-  await t.ctl("op-select").selectOption("add");
+  await t.ctl("op-add").click();
   await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
   await t.previewIs(ROOM.wall + ROOM.ghost);
   const [dl] = await Promise.all([page.waitForEvent("download"), t.ctl("save-session").click()]);
@@ -3176,7 +3176,7 @@ test("E2E-87 12b Cluster tuning: Radius and Exclude protected re-preview live (o
   await t.ctl("sel-commit").click();
   await t.exact("Selected", String(last));
   // Cancel during a slow preview: selection unchanged, app idle
-  await t.ctl("op-select").selectOption("subtract");
+  await t.ctl("op-subtract").click();
   await page.route("**/api/session/selection/preview", async (route) => {
     await new Promise((r) => setTimeout(r, 1500));
     await route.continue().catch(() => undefined);

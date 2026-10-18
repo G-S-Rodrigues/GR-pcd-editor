@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>GR PCD Editor</title>
     <style>
-      :root { color-scheme: dark; --bg:#15181d; --panel:#1d2229; --line:#2f3640; --text:#e4e8ee; --muted:#9aa5b1; --accent:#ff9f1c; --focus:#ffd166; }
+      :root { color-scheme: dark; --bg:#15181d; --panel:#1d2229; --line:#2f3640; --text:#e4e8ee; --muted:#9aa5b1; --accent:#ff9f1c; --focus:#ffd166; --danger:#ff5555; --danger-fg:#15181d; }
       * { box-sizing: border-box; }
       html, body { margin: 0; height: 100%; }
       body { display: flex; flex-direction: column; background: var(--bg); color: var(--text); font: 13px/1.4 system-ui, sans-serif; }
@@ -19,6 +19,13 @@
       .ib:hover:not(:disabled) { background: #36404c; }
       .mode-group { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; }
       .mode-group .opacity { display: inline-flex; align-items: center; padding: 0 6px; }
+      .ib[aria-checked=true] { background: #2b4a7a; border-color: var(--accent); outline: none; }
+      .oprow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+      .opgroup { display: inline-flex; gap: 2px; }
+      button.toggle[aria-pressed=true] { outline: 2px solid var(--accent); }
+      button.danger { background: var(--danger); color: var(--danger-fg); border-color: var(--danger); font-weight: 600; }
+      button.danger:disabled { opacity: .45; }
+      button.danger svg { vertical-align: -3px; }
       .ib.active, .ib[aria-pressed=true] { background: #2b4a7a; border-color: var(--accent); outline: none; }
       button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
       input[type=text] { width: 7.5em; }

@@ -23,7 +23,7 @@ export function serialiseClientState(s: AppState): Json {
     comparison: { mode: s.compare, opacity: s.overlayOpacity },
     unit: s.session?.unit ?? "m",
     tools: { box: s.tools.box, polygon: s.tools.polygon, cluster: s.tools.cluster },
-    ui: { budget: s.budget, gizmo: s.gizmo, boxesCollapsed: s.filterUi.collapsed, floorPanelOpen: s.floorPanelOpen, sectionsOpen: s.sectionsOpen, ...(s.legendOpen ? {} : { legendOpen: false }) },
+    ui: { budget: s.budget, gizmo: s.gizmo, boxesCollapsed: s.filterUi.collapsed, floorPanelOpen: s.floorPanelOpen, sectionsOpen: s.sectionsOpen, ...(s.legendOpen ? {} : { legendOpen: false }), ...(s.previewLive ? {} : { previewLive: false }) },
   };
 }
 
@@ -41,6 +41,7 @@ export interface ClientPatch {
   floorPanelOpen?: boolean;
   sectionsOpen?: SectionsOpen;
   legendOpen?: boolean;
+  previewLive?: boolean;
   tools?: Partial<Pick<AppState["tools"], "box" | "polygon" | "cluster">>;
 }
 
@@ -78,6 +79,7 @@ export function restoreClientState(raw: unknown): ClientPatch | null {
       out.boxesCollapsed = kept;
     }
     if (ui.legendOpen === false) out.legendOpen = false;
+    if (ui.previewLive === false) out.previewLive = false;
     if (typeof ui.floorPanelOpen === "boolean") out.floorPanelOpen = ui.floorPanelOpen;
     if (isObj(ui.sectionsOpen)) {
       const kept: SectionsOpen = {};
@@ -181,6 +183,7 @@ export function applyClientPatch(s: AppState, p: ClientPatch): AppState {
     floorPanelOpen: p.floorPanelOpen ?? s.floorPanelOpen,
     sectionsOpen: p.sectionsOpen ?? s.sectionsOpen,
     legendOpen: p.legendOpen ?? s.legendOpen,
+    previewLive: p.previewLive ?? s.previewLive,
     tools: { ...s.tools, ...p.tools },
   };
 }

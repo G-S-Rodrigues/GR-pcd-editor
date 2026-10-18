@@ -14,7 +14,11 @@ export function previewText(s: AppState): string | null {
   const p = s.preview;
   if (!s.draft && !p) return null;
   if (s.job.busy) return "Computing preview...";
-  if (!p) return "Preview not ready; edit the shape or press Commit draft to preview it.";
+  if (!p) {
+    return s.previewLive
+      ? "Preview not ready; edit the shape or press Commit draft to preview it."
+      : "Live preview is off: the outline shows the shape. Press Commit draft to compute and apply it in one step.";
+  }
   const keep = `The selection is still ${n(p.base_selected)} points. Apply uses only those ${n(p.base_selected)} committed points. Press Commit draft to make the preview the selection; Esc discards.`;
   if (p.op === "add") {
     return `Preview, not applied: adding this shape would select ${n(p.selected_after)} points (${n(p.added)} new). ${keep}`;
@@ -28,9 +32,13 @@ export function previewClusterOf(s: AppState): unknown {
   return s.candidate?.cluster ?? null;
 }
 
-/** `sel-commit` is usable only with a ready preview of the chosen operation (not while its job runs). */
+/**
+ * `sel-commit` is usable only with a ready preview of the chosen operation (not while its job runs); with Live
+ * preview off a draft is enough, Commit computes the preview first and commits that.
+ */
 export function commitEnabled(s: AppState): boolean {
-  return s.draft && s.preview !== null && s.preview.op === s.op && !s.job.busy;
+  if (s.job.busy || !s.draft) return false;
+  return s.previewLive ? s.preview !== null && s.preview.op === s.op : true;
 }
 
 /** Label of `sel-commit`: names the previewed change once there is one ("Commit: add 123 points"). */

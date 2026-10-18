@@ -14,6 +14,8 @@ import { commitEnabled, commitLabel, discardEnabled, previewText } from "../tool
 import { scopeNotice } from "../orchestration/selection";
 import { historyRows } from "../inspector/history";
 import { control } from "./controls";
+import { iconControl } from "./iconbutton";
+import { iconSvg } from "./icons";
 import { commitNumber } from "./numfield";
 import { TOOLTIPS } from "./tooltips";
 import { h } from "./dom";
@@ -51,20 +53,51 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
   const toolBtn = (id: string, tool: AppState["tool"], label: string) =>
     control("button", { id, onclick: () => a.setTool(store.get().tool === tool ? "none" : tool) }, label);
   const btns = { box: toolBtn("tool-box", "box", "Box"), polygon: toolBtn("tool-polygon", "polygon", "Polygon"), cluster: toolBtn("tool-cluster", "cluster", "Cluster") };
-  const op = control(
-    "select",
+  // Operation: three icon radios (none pressed while the first selection is live). Replace is not offered.
+  const OPS = [
+    ["add", "op-add", "add"],
+    ["subtract", "op-subtract", "sub"],
+    ["intersect", "op-intersect", "int"],
+  ] as const;
+  const chooseOp = (value: AppState["op"]) => {
+    // choosing an operation ends the first (live) selection: the next edit previews against the selection
+    store.set({ op: value, liveFirst: false });
+    const s = store.get();
+    // with a draft showing, a new operation re-previews that shape
+    if ((s.draft || s.preview) && s.tool !== "none") a.toolChanged();
+  };
+  const opBtns = OPS.map(([value, id, icon], i) => {
+    const b = iconControl(id, icon, {
+      role: "radio",
+      onclick: () => chooseOp(value),
+      onkeydown: (e: KeyboardEvent) => {
+        const d = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+        if (!d) return;
+        e.preventDefault();
+        const j = (i + d + OPS.length) % OPS.length;
+        chooseOp(OPS[j][0]);
+        opBtns[j].focus();
+      },
+    });
+    return b;
+  });
+  const op = control("div", { id: "op-select", role: "radiogroup", "aria-label": "Operation", class: "opgroup" }, ...opBtns);
+  const previewLive = control(
+    "button",
     {
-      id: "op-select",
-      onchange: () => {
-        // choosing an operation ends the first (live) selection: the next edit previews against the selection
-        store.set({ op: op.value as AppState["op"], liveFirst: false });
+      id: "preview-live",
+      role: "switch",
+      class: "toggle",
+      onclick: () => {
+        store.set({ previewLive: !store.get().previewLive });
         const s = store.get();
-        // with a draft showing, a new operation re-previews that shape
-        if ((s.draft || s.preview) && s.tool !== "none") a.toolChanged();
+        if (s.draft && s.tool !== "none") a.toolChanged(); // turning it on previews the shape now; off drops the old preview
       },
     },
-    ...[["add", "Add"], ["subtract", "Subtract"], ["intersect", "Intersect"]].map(([v, t]) => h("option", { value: v, text: t })),
+    iconSvg("eye", 16),
+    " Live preview",
   );
+  const liveNote = h("p", { id: "live-note", class: "note", hidden: true });
   const scope = control(
     "select",
     {
@@ -96,7 +129,8 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     h("h2", { text: "Tools" }),
     h("div", { class: "stack" }, btns.box, btns.polygon, btns.cluster),
     h("h2", { text: "Selection" }),
-    h("label", {}, "Operation ", op),
+    h("div", { class: "oprow" }, h("span", { text: "Operation" }), op, previewLive),
+    liveNote,
     h("label", {}, "Scope ", scope),
     h("div", { class: "stack" }, commit, discard),
     h(
@@ -122,7 +156,17 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
       b.disabled = !open || ro;
       b.title = `${TOOLTIPS[`tool-${k}`]}${ro ? " (disabled: return to the edited view to edit)" : ""}`;
     }
-    op.value = s.op;
+    OPS.forEach(([value], i) => {
+      const on = !s.liveFirst && s.op === value;
+      opBtns[i].setAttribute("aria-checked", String(on));
+      opBtns[i].tabIndex = on || (s.liveFirst && i === 0) ? 0 : -1;
+      opBtns[i].disabled = !open || ro;
+    });
+    previewLive.setAttribute("aria-checked", String(s.previewLive));
+    previewLive.setAttribute("aria-pressed", String(s.previewLive));
+    previewLive.replaceChildren(iconSvg(s.previewLive ? "eye" : "eyeoff", 16), " Live preview");
+    liveNote.hidden = !(s.liveFirst && s.tool !== "none");
+    liveNote.textContent = liveNote.hidden ? "" : "First selection: edits are live. Choose Add, Subtract or Intersect to preview changes instead.";
     scope.value = s.scope;
     commit.disabled = !commitEnabled(s);
     commit.textContent = commitLabel(s);

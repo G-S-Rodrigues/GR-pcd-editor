@@ -6,6 +6,7 @@ import type { Store } from "../state/store";
 import { control } from "./controls";
 import { h } from "./dom";
 import { iconControl } from "./iconbutton";
+import { iconSvg } from "./icons";
 
 export interface ToolbarActions {
   pickFile: (file: File) => void;
@@ -36,7 +37,7 @@ export function buildToolbar(root: HTMLElement, store: Store<AppState>, a: Toolb
   const undo = iconControl("undo", "undo", { disabled: true, onclick: a.undo });
   const redo = iconControl("redo", "redo", { disabled: true, onclick: a.redo });
   const preview = control("button", { id: "preview", disabled: true, onclick: a.preview }, "Preview");
-  const apply = control("button", { id: "apply", disabled: true, onclick: a.apply }, "Apply");
+  const apply = control("button", { id: "apply", class: "danger", disabled: true, onclick: a.apply }, iconSvg("trash", 16), " Delete");
   const hlDelete = h("span", { id: "headline-delete", class: "headline" });
   const hlKept = h("span", { id: "headline-kept", class: "headline" });
   root.append(

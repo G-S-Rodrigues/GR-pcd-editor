@@ -112,3 +112,14 @@ describe("preview controls (12b-4)", () => {
     expect(discardEnabled({ ...base, draft: false, preview: P })).toBe(true);
   });
 });
+
+describe("Live preview off (13-4)", () => {
+  test("UI-623 with Live preview off a draft alone enables Commit and the note says it computes on commit", () => {
+    const off = { ...base, previewLive: false, draft: true, preview: null };
+    expect(commitEnabled(off)).toBe(true);
+    expect(commitEnabled({ ...off, job: { busy: true, progress: null, message: "x" } })).toBe(false);
+    expect(commitEnabled({ ...off, draft: false })).toBe(false);
+    expect(previewText(off)).toMatch(/Live preview is off/);
+    expect(commitEnabled({ ...base, previewLive: true, preview: null })).toBe(false);
+  });
+});

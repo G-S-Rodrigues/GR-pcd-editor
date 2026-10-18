@@ -7,6 +7,12 @@ export class FakeEl {
   textContent = "";
   disabled = false;
   value = "";
+  hidden = false;
+  tabIndex = 0;
+  focused = 0;
+  focus(): void {
+    this.focused++;
+  }
   dataset: Record<string, string> = {};
   style: Record<string, string> = {};
   private classes = new Set<string>();

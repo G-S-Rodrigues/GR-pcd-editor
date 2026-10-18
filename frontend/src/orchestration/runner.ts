@@ -256,6 +256,15 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
       commitWhenReady = false;
       if (shouldPreview(s)) {
         // the committed candidate stays: Apply keeps deleting the committed selection while the draft is shown
+        if (!s.previewLive) {
+          // Preview off: the outline moves, nothing is computed; an older preview no longer matches the shape
+          store.set({ job: { ...IDLE }, draft: true, preview: null });
+          if (s.preview !== null) {
+            void api.discardPreview?.(s.session?.revision.cloud ?? 0)?.catch(() => undefined);
+            void api.refreshState().catch(() => undefined);
+          }
+          return;
+        }
         store.set({ job: { ...IDLE }, draft: true });
         toolDebounce.call(previewDraft);
         return;
@@ -327,7 +336,7 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
         // the server dropped its pending preview with the params change; look at the same shape again
         shape++;
         store.set({ draft: true });
-        paramsDebounce.call(previewDraft);
+        if (s.previewLive) paramsDebounce.call(previewDraft);
         return;
       }
       const live = s.liveFirst && s.tool !== "none" && buildSelection(s).ok;
