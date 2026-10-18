@@ -13,7 +13,7 @@ import {
   zoom,
 } from "./camera";
 import { fitBounds } from "./fit";
-import { parsePivot, pickPivot, resetPivot, selectionPivot } from "./pivot";
+import { pickPivot, resetPivot, selectionPivot } from "./pivot";
 import { PRESETS, applyPreset } from "./presets";
 
 const close = (a: Vec3, b: Vec3, d = 9) => {
@@ -73,16 +73,12 @@ test("UI-10 pan moves the target in the screen plane; zoom scales distance and s
   expect(zoom(cam, 1e-30).distance).toBeGreaterThan(0);
 });
 
-test("UI-11 pivot reset, selection centre, XYZ entry", () => {
+test("UI-11 pivot reset, selection centre", () => {
   const cam = defaultCamera();
   expect(resetPivot(cam, { min: [0, 2, 4], max: [2, 4, 8] }).target).toEqual([1, 3, 6]);
   expect(resetPivot(cam, null)).toBe(cam);
   expect(selectionPivot(null)).toBeNull();
   expect(selectionPivot({ min: [-2, 0, 0], max: [0, 2, 2] })).toEqual([-1, 1, 1]);
-  expect(parsePivot(["-1.5", "2", "-3e2"])).toEqual({ ok: true, point: [-1.5, 2, -300] });
-  for (const bad of [["a", "1", "2"], ["1", "", "2"], ["Infinity", "0", "0"], ["NaN", "0", "0"]]) {
-    expect(parsePivot(bad)).toMatchObject({ ok: false });
-  }
 });
 
 test("UI-11 pick sets the target to the exact point from nearest", () => {

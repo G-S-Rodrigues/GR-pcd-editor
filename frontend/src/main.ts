@@ -45,6 +45,7 @@ import { classifyKey } from "./ui/keys";
 import { buildViewCube } from "./ui/viewcube";
 import { buildFilterBoxes } from "./ui/filterboxes";
 import { buildToolbar } from "./ui/toolbar";
+import { buildCameraCluster } from "./ui/camera-cluster";
 import { buildViewbar } from "./ui/viewbar";
 import { attachControls } from "./viewport/controls3d";
 import { installDebugHook } from "./viewport/debug";
@@ -207,6 +208,7 @@ buildToolbar($("toolbar"), store, {
   undo: () => void editor.undo(),
   redo: () => void editor.redo(),
 });
+buildCameraCluster($("camera-cluster"), store, { size });
 buildViewbar($("viewbar"), store, {
   size,
   refresh: () => void refresher.refresh(),
@@ -215,7 +217,6 @@ buildViewbar($("viewbar"), store, {
     setCompare(store, m);
     void refresher.refresh();
   },
-  notify: (text) => addNotice(store, "warn", "pivot_invalid", text),
 });
 buildStatusbar($("statusbar"), $("modebar"), store);
 const panelActions = {

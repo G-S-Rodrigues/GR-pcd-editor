@@ -11,6 +11,9 @@ export class FakeEl {
   style: Record<string, string> = {};
   private classes = new Set<string>();
   constructor(readonly tag: string) {}
+  get firstElementChild(): FakeEl | undefined {
+    return this.children[0];
+  }
   get title(): string {
     return this.attrs.get("title") ?? "";
   }

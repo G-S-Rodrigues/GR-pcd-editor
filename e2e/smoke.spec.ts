@@ -47,21 +47,16 @@ test("open a cloud, navigate, pick a pivot, colour, read counts", async ({ page 
     await page.locator('[data-control="cube-top"]').click();
   });
 
-  await test.step("E2E-02 pivot: reset, XYZ entry, pick", async () => {
+  await test.step("E2E-02 pivot: reset, pick", async () => {
     await page.locator('[data-control="pivot-reset"]').click();
     await expect(page.locator("#inspector")).toContainText("4.5, 4.5, 1.5");
-    await page.locator('[data-control="pivot-x"]').fill("4");
-    await page.locator('[data-control="pivot-y"]').fill("4");
-    await page.locator('[data-control="pivot-z"]').fill("0");
-    await page.locator('[data-control="pivot-set"]').click();
-    await expect(page.locator("#inspector")).toContainText("Pivot4, 4, 0");
-    await page.locator('[data-control="pivot-x"]').fill("abc");
-    await page.locator('[data-control="pivot-set"]').click();
-    await expect(page.locator("#notices")).toContainText("finite numbers");
-    // top view: the point under the pivot with the greatest Z is the one picked
+    // the typed fields and Set pivot are gone; the pivot is set by picking. Top view: the point under the click with the greatest Z is picked
+    await expect(page.locator('[data-control="pivot-x"]')).toHaveCount(0);
+    await expect(page.locator('[data-control="pivot-set"]')).toHaveCount(0);
     await page.locator('[data-control="pivot-pick"]').click();
     await expect(page.locator("#modebar")).toContainText("Tool: Pick pivot");
-    await page.locator("#viewport").click();
+    await expect(page.locator('[data-control="pivot-pick"]')).toHaveAttribute("aria-pressed", "true");
+    await pickAtWorld(page, [4, 4, 0]);
     await expect(page.locator("#inspector")).toContainText("Pivot4, 4, 3");
     await expect(page.locator("#modebar")).toContainText("Tool: None");
   });
@@ -455,10 +450,7 @@ test("E2E-13 7a cluster: partial result, no limit, and re-run when protection ch
   await page.locator("#file-input").setInputFiles({ name: "synthetic.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
   await exact("Displayed", String(FLOOR + GHOST));
   await ctl("cube-top").click();
-  await ctl("pivot-x").fill("4");
-  await ctl("pivot-y").fill("4");
-  await ctl("pivot-z").fill("0");
-  await ctl("pivot-set").click();
+  await pickPivotAt(page, [4, 4, 0]);
   await ctl("tool-cluster").click();
   await ctl("cluster-pick-seed").click();
   await page.locator("#viewport").click(); // top view: the point under the pivot with the greatest Z, a ghost point
@@ -518,6 +510,33 @@ type EditorHook = {
 };
 const hook = <T>(page: import("@playwright/test").Page, fn: (e: EditorHook) => T) =>
   page.evaluate(`(${fn.toString()})(window.__editor)`) as Promise<T>;
+/** Waits for a projected world point to stop moving (the view animates to a preset), then returns it. */
+async function settledScreen(page: import("@playwright/test").Page, world: number[]): Promise<{ x: number; y: number }> {
+  const read = () => page.evaluate((w) => (window as unknown as { __editor: EditorHook }).__editor.projectWorld(w), world);
+  let prev: { x: number; y: number } | null = null;
+  await expect
+    .poll(async () => {
+      const now = await read();
+      const still = !!prev && !!now && Math.hypot(now.x - prev.x, now.y - prev.y) < 0.5;
+      prev = now;
+      return still;
+    }, { timeout: 5000, intervals: [100] })
+    .toBe(true);
+  return prev!;
+}
+/** With Pick pivot already armed: a real click on the screen position of a world point. */
+async function pickAtWorld(page: import("@playwright/test").Page, world: number[]): Promise<void> {
+  const at = await settledScreen(page, world);
+  await page.mouse.click(at.x, at.y);
+}
+/** Arms Pick pivot, clicks the screen position of a world point (the point drawn there becomes the pivot) and waits for orbit again (the active tool is left as it is). */
+async function pickPivotAt(page: import("@playwright/test").Page, world: number[]): Promise<void> {
+  await page.locator('[data-control="pivot-pick"]').click();
+  await expect(page.locator("#modebar")).toContainText("Tool: Pick pivot");
+  await pickAtWorld(page, world);
+  await expect(page.locator('[data-control="pivot-pick"]')).toHaveAttribute("aria-pressed", "false"); // the pick returned to orbit
+}
+
 const openRoom = async (page: import("@playwright/test").Page, exact: (n: string, v: number | string) => Promise<void>) => {
   await page.goto("/");
   await page.locator("#file-input").setInputFiles({ name: "room.pcd", mimeType: "application/octet-stream", buffer: roomPcd() });
@@ -817,7 +836,7 @@ test("E2E-20 7b2 the ? key and the ? button open a help overlay listing every ke
   await ctl("help").click();
   await expect(help).not.toBeVisible();
   // typing a ? in a field must not open it
-  await ctl("pivot-x").click();
+  await ctl("filter-z-max").click(); // a number field: typing a ? in it must not open the help
   await page.keyboard.type("?");
   await expect(help).not.toBeVisible();
 });
@@ -848,7 +867,7 @@ async function checkLayout(page: import("@playwright/test").Page, w: number, h: 
   expect(await scan(), `${w}x${h} initial`).toEqual([]);
   for (const tool of ["tool-box", "tool-polygon", "tool-cluster"]) {
     await page.locator(`[data-control="${tool}"]`).click();
-    await page.locator('[data-control="pivot-x"]').focus();
+    await page.locator('[data-control="filter-z-max"]').focus();
     await page.waitForTimeout(150);
     expect(await scan(), `${w}x${h} with ${tool}`).toEqual([]);
   }
@@ -962,10 +981,7 @@ test("E2E-25 7c1 cluster r=2 on a 300k-point room finishes, Apply deletes the co
   await exact("Original", "300,000");
   await page.waitForTimeout(800);
   await ctl("cube-top").click();
-  await ctl("pivot-x").fill("22");
-  await ctl("pivot-y").fill("22");
-  await ctl("pivot-z").fill("0");
-  await ctl("pivot-set").click();
+  await pickPivotAt(page, [22, 22, 0]);
   await ctl("tool-cluster").click();
   await ctl("cluster-pick-seed").click();
   await page.locator("#viewport").click(); // top view: the greatest Z under the pivot is a ghost point
@@ -1321,7 +1337,7 @@ test("E2E-41 10 the boxes never overlap each other, the ViewCube, the legend or 
         };
         return {
           boxes: [...document.querySelectorAll(".fbox")].map((e) => ({ id: (e as HTMLElement).dataset.box!, ...r(e) })),
-          fixed: ["#viewcube", "#legend"].map((s) => ({ id: s, ...r(document.querySelector(s)!) })),
+          fixed: ["#viewcube", "#camera-cluster", "#legend"].map((s) => ({ id: s, ...r(document.querySelector(s)!) })),
           stage: r(document.querySelector("#stage")!),
         };
       });
@@ -1792,10 +1808,7 @@ function tl(page: Pg) {
     // Top by its key: the camera restored with the page (a Save flushes the current view into the archive the next test
     // reopens) may look from another side, and a face of the ViewCube that does not face the camera is hidden
     await page.keyboard.press("1");
-    await base.ctl("pivot-x").fill("-1");
-    await base.ctl("pivot-y").fill("4");
-    await base.ctl("pivot-z").fill("4");
-    await base.ctl("pivot-set").click();
+    await pickPivotAt(page, [-1, 4, 4]);
     await base.ctl("tool-cluster").click();
     await unfold();
     await base.ctl("cluster-pick-seed").click();
@@ -2476,3 +2489,62 @@ test("E2E-71 12-2 the four data modes are an icon group with exact counts; the o
   await expect(page.locator("#help-overlay td.k", { hasText: /^O/ })).toHaveCount(0);
   await expect(page.locator("#help-overlay")).not.toContainText("original cloud while held");
 });
+
+for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-72 12-3 the camera cluster sits under the ViewCube, overlaps nothing, resets and picks the pivot; no typed pivot at ${w}x${hgt}`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: hgt });
+    const { exact, ctl } = helpers(page);
+    await openRoom(page, exact);
+    const cluster = page.locator("#camera-cluster");
+    await expect(cluster).toHaveCount(1);
+    await expect(page.locator("#viewcube")).toHaveCount(1);
+    const ids = ["view-perspective", "fit-cloud", "pivot-reset", "pivot-pick"];
+    await expect(cluster.locator("[data-control]")).toHaveCount(4);
+    expect(await cluster.locator("[data-control]").evaluateAll((els) => els.map((e) => e.getAttribute("data-control")))).toEqual(ids);
+    for (const id of ids) {
+      await expect(ctl(id)).toHaveText("");
+      expect((await ctl(id).boundingBox())!.width).toBeGreaterThanOrEqual(30);
+    }
+    for (const gone of ["pivot-x", "pivot-y", "pivot-z", "pivot-set"]) await expect(ctl(gone)).toHaveCount(0);
+    await expect(page.locator("#viewbar").locator('[data-control="pivot-reset"]')).toHaveCount(0);
+    const box = async (sel: string) => (await page.locator(sel).first().boundingBox())!;
+    const c = await box("#camera-cluster");
+    const stage = await box("#stage");
+    expect(c.x).toBeGreaterThanOrEqual(stage.x);
+    expect(c.x + c.width).toBeLessThanOrEqual(stage.x + stage.width);
+    expect(c.y).toBeGreaterThanOrEqual(stage.y);
+    expect(c.y + c.height).toBeLessThanOrEqual(stage.y + stage.height);
+    const hit = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
+      a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+    expect(hit(c, await box("#viewcube")), "cluster vs #viewcube").toBe(false);
+    expect((await box("#viewcube")).y + (await box("#viewcube")).height).toBeLessThanOrEqual(c.y);
+    const fboxes = await page.locator(".fbox").all();
+    expect(fboxes.length).toBeGreaterThan(0);
+    for (const f of fboxes) expect(hit(c, (await f.boundingBox())!), "cluster vs .fbox").toBe(false);
+    const notices = page.locator("#notices");
+    if (await notices.locator(".notice").count()) expect(hit(c, await box("#notices"))).toBe(false);
+    // projection: pressed while perspective, the icon follows
+    await expect(ctl("view-perspective")).toHaveAttribute("aria-pressed", "true");
+    await expect(ctl("view-perspective").locator("svg")).toHaveAttribute("data-icon", "persp");
+    await ctl("view-perspective").click();
+    await expect(ctl("view-perspective")).toHaveAttribute("aria-pressed", "false");
+    await expect(ctl("view-perspective").locator("svg")).toHaveAttribute("data-icon", "ortho");
+    await expect(page.locator("#inspector")).toContainText("Orthographic");
+    await ctl("view-perspective").click();
+    // pick: arm, the button is pressed, Esc disarms; the click sets the pivot; reset returns it to the cloud centre
+    await ctl("cube-top").click();
+    await ctl("pivot-pick").click();
+    await expect(ctl("pivot-pick")).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#modebar")).toContainText("Tool: None");
+    await expect(ctl("pivot-pick")).toHaveAttribute("aria-pressed", "false");
+    await ctl("pivot-reset").click();
+    await expect(page.locator("#inspector")).toContainText("Pivot9, 9.5, 2");
+    await pickPivotAt(page, [15, 2, 0]);
+    await expect(page.locator("#inspector")).toContainText("Pivot15, 2, 0");
+    await expect(ctl("pivot-pick")).toHaveAttribute("aria-pressed", "false");
+    await ctl("pivot-reset").click();
+    await expect(page.locator("#inspector")).toContainText("Pivot9, 9.5, 2");
+    await page.screenshot({ path: `/out/camera-cluster-${w}.png` });
+  });
+}

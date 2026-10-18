@@ -76,6 +76,8 @@
       .fbox.collapsed .ftog { flex: 1 1 auto; width: 100%; height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
       .fbox.collapsed.active .ftog { background: var(--accent); color: #15181d; font-weight: 600; }
       #viewcube { position: absolute; right: 14px; top: 14px; width: 110px; height: 110px; z-index: 3; }
+      #camera-cluster { position: absolute; display: flex; z-index: 3; }
+      #camera-cluster .ib { width: 32px; height: 32px; background: rgba(29,34,41,0.8); }
       #viewcube .cube-stage { position: absolute; left: 0; top: 0; width: 110px; height: 110px; }
       #viewcube .cube-face { position: absolute; left: 28px; top: 28px; width: 54px; height: 54px; padding: 0; margin: 0; border: 1px solid rgba(0,0,0,0.45); border-radius: 0; font: 700 11px/1 system-ui, sans-serif; letter-spacing: 0.04em; cursor: pointer; transform-origin: 50% 50%; backface-visibility: hidden; }
       #viewcube .cube-face:disabled { opacity: 0.5; cursor: default; }
@@ -131,6 +133,7 @@
         <canvas id="viewport" role="img" aria-label="Point cloud viewport: 3D view of the open cloud. Orbit by dragging, zoom with the wheel; the tools and counts are in the side panels."></canvas>
         <div id="fbox-layer" role="group" aria-label="Display filter boxes" hidden></div>
         <div id="viewcube"></div>
+        <div id="camera-cluster" role="group" aria-label="Camera"></div>
         <div id="legend"></div>
         <div id="empty">Open a .pcd file to begin.<br />Drop one anywhere, or use “Open from this computer”.</div>
         <div id="progress"></div>

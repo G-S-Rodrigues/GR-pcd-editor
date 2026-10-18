@@ -16,7 +16,7 @@ view, global height protection (the purple slab) and the live counts in the stat
 1. **Open** a `.pcd` or `.pcdsession` (file picker, or drag and drop).
 2. Navigate: the ViewCube or keys `1`..`6` (top, bottom, front, back, left,
    right), `P` toggles perspective/orthographic, `F` fits the cloud. The orbit
-   pivot can be reset, typed as X/Y/Z or picked on a point.
+   pivot can be reset, or picked by clicking a point (Pick pivot; Esc cancels).
 3. Pick a tool (**Box**, **Polygon**, **Cluster**), shape it with numbers or its
    3D handles, and read the **exact** counts in the status bar (Selected,
    Protected, Candidates). **Apply** is enabled only for an up-to-date preview.

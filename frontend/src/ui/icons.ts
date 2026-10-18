@@ -51,6 +51,7 @@ export function iconSvg(name: IconName, size = 20): SVGSVGElement {
     "stroke-linejoin": "round",
     "aria-hidden": "true",
     focusable: "false",
+    "data-icon": name,
   })) {
     svg.setAttribute(k, v);
   }
