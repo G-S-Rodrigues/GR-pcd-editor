@@ -80,7 +80,14 @@ export function narrowBox(
   const old = worldExtents(prev);
   const center: Vec3 = [0, 0, 0];
   const dimensions: Vec3 = [0, 0, 0];
+  const aligned = prev.quat.every((q, k) => q === IDENTITY[k]);
   for (const i of [0, 1, 2] as const) {
+    if (i === axis && aligned) {
+      // Untouched depth: keep the old values bit-exact (a lo/hi round trip can differ by one ulp).
+      center[i] = prev.center[i];
+      dimensions[i] = prev.dimensions[i];
+      continue;
+    }
     const lo = i === axis ? old.min[i] : Math.max(Math.min(a[i], b[i]), old.min[i]);
     const hi = i === axis ? old.max[i] : Math.min(Math.max(a[i], b[i]), old.max[i]);
     if (hi < lo) return null;

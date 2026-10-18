@@ -138,4 +138,23 @@ describe("Shift rectangle narrows the box (7c-3)", () => {
     expect(box.center).toEqual(first.center);
     expect(box.dimensions).toEqual(first.dimensions);
   });
+
+  it("UI-346 the depth axis of an axis-aligned box is kept bit-exact, whatever its values", () => {
+    for (const name of PRESET_ORDER) {
+      const cam = camFor(name);
+      const axis = rectAxis(cam);
+      if (axis === null) continue;
+      for (const [c, d] of [[4.0000001269632275, 0.1], [0.1, 0.3], [-3.3, 7.7], [1 / 3, 2 / 7]]) {
+        const center: Vec3 = [0, 0, 0];
+        const dimensions: Vec3 = [20, 20, 20];
+        center[axis] = c;
+        dimensions[axis] = d;
+        const prev = { ...defaultBox([0, 0, 0]), center, dimensions };
+        const box = narrowBox(prev, cam, vp, { x: 300, y: 250 }, { x: 650, y: 550 })!;
+        expect(box, name).not.toBeNull();
+        expect(box.center[axis], `${name} centre ${c}`).toBe(c);
+        expect(box.dimensions[axis], `${name} size ${d}`).toBe(d);
+      }
+    }
+  });
 });
