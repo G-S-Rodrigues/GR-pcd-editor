@@ -2926,3 +2926,320 @@ test("E2E-79 12-9 Normal shading: the legend shows the X/Y/Z swatches, a floor p
   await expect(ctl("colour-mode")).toHaveValue("normals");
 });
 
+
+// ---- part 12b: live preview of Add / Subtract / Intersect (E2E-80..87)
+const finiteRows = () => parsePcd(roomPcd()).rows.filter((r) => r.every(Number.isFinite));
+const inBox = (r: number[], c: number[], d: number[]) => [0, 1, 2].every((i) => Math.abs(r[i] - c[i]) <= d[i] / 2 + 1e-9);
+const rowId = (r: number[]) => r.map(Math.fround).join(",");
+/** Independent oracle: points reachable from the seed row through steps of at most `radius` (BFS over the valid rows). */
+function clusterTruth(rows: number[][], seed: number[], radius: number, skip: (r: number[]) => boolean = () => false): Set<string> {
+  const pool = rows.filter((r) => !skip(r));
+  const start = pool.find((r) => r[0] === seed[0] && r[1] === seed[1] && r[2] === seed[2]);
+  const out = new Set<string>();
+  if (!start) return out;
+  const todo = [start];
+  out.add(rowId(start));
+  while (todo.length) {
+    const a = todo.pop()!;
+    for (const b of pool) {
+      if (out.has(rowId(b))) continue;
+      if (Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) <= radius) {
+        out.add(rowId(b));
+        todo.push(b);
+      }
+    }
+  }
+  return out;
+}
+
+function previewHelpers(page: import("@playwright/test").Page) {
+  const t = clusterHelpers(page);
+  const posts = { preview: 0, commit: 0, select: 0, discard: 0 };
+  page.on("request", (r) => {
+    if (r.method() !== "POST") return;
+    const u = new URL(r.url()).pathname;
+    if (u.endsWith("/selection/preview")) posts.preview++;
+    else if (u.endsWith("/selection/commit")) posts.commit++;
+    else if (u.endsWith("/selection/preview/discard")) posts.discard++;
+    else if (u.endsWith("/session/selection")) posts.select++;
+  });
+  const note = page.locator("#draft-note");
+  const legend = (id: string) => page.locator(`[data-legend="${id}"]`);
+  const layer = () => hook(page, (e) => e.previewLayer());
+  const box = () => hook(page, (e) => ({ c: [...e.state().tools.box.center], d: [...e.state().tools.box.dimensions] }));
+  const setBox = async (c: number[], d: number[]) => {
+    for (const [id, v] of [["box-center-x", c[0]], ["box-center-y", c[1]], ["box-center-z", c[2]], ["box-size-x", d[0]], ["box-size-y", d[1]], ["box-size-z", d[2]]] as const) await t.setNum(id, v);
+  };
+  const WALL_BOX = [[-1, 4.5, 2.5], [1, 10, 5]] as const;
+  /** Open the room with the wall committed as the selection by a Replace box (live). */
+  const wallSelected = async () => {
+    await openRoom(page, t.exact);
+    await t.ctl("cube-top").click();
+    await t.ctl("tool-box").click();
+    await setBox([...WALL_BOX[0]], [...WALL_BOX[1]]);
+    await t.exact("Selected", String(ROOM.wall));
+    await t.exact("Candidates", String(ROOM.wall));
+  };
+  /** The note announces a finished preview with `after` selected points. */
+  const previewIs = async (after: number) => {
+    await expect(note).toContainText("Preview, not applied", { timeout: 15000 });
+    await expect(note).toContainText(`select ${after.toLocaleString("en-US")} points`, { timeout: 15000 });
+  };
+  const previewLeaves = async (after: number) => {
+    await expect(note).toContainText("Preview, not applied", { timeout: 15000 });
+    await expect(note).toContainText(`leave ${after.toLocaleString("en-US")} selected`, { timeout: 15000 });
+  };
+  return { ...t, posts, note, legend, layer, box, setBox, wallSelected, previewIs, previewLeaves };
+}
+
+const GHOST_BOX = { c: [3, 13, 2], d: [3, 3, 3] };
+
+test("E2E-80 12b Box Add: the real mouse drags the box over the ghosts, the preview shows them in the add colour, Selected stays until Commit draft", async ({ page }) => {
+  const t = previewHelpers(page);
+  await t.wallSelected();
+  await t.ctl("op-select").selectOption("add");
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  const rows = finiteRows();
+  const wallRows = rows.filter((r) => inBox(r, [...[-1, 4.5, 2.5]], [1, 10, 5]));
+  expect(wallRows.length).toBe(ROOM.wall);
+  const added0 = rows.filter((r) => inBox(r, GHOST_BOX.c, GHOST_BOX.d)).length;
+  expect(added0).toBe(ROOM.ghost);
+  await t.previewIs(ROOM.wall + added0);
+  await t.exact("Selected", String(ROOM.wall));
+  await t.exact("Candidates", String(ROOM.wall));
+  await expect(t.legend("preview-add")).toBeVisible();
+  await expect(t.legend("preview-remove")).toHaveCount(0);
+  await expect.poll(async () => (await t.layer()).add).toBe(added0);
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: "/out/preview-add.png" });
+  // a real drag on the +X handle widens the box; the preview follows the final box (fixture truth from the box the app holds)
+  await page.waitForTimeout(400);
+  const handle = (await hook(page, (e) => e.handlePositions())).find((p) => p.id === "resize-0+")!;
+  const before = t.posts.preview;
+  await page.mouse.move(handle.x, handle.y);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + 40, handle.y, { steps: 6 });
+  await page.mouse.move(handle.x + 80, handle.y, { steps: 6 });
+  await page.mouse.up();
+  const b = await t.box();
+  expect(b.d[0]).toBeGreaterThan(GHOST_BOX.d[0]);
+  const union = new Set([...wallRows, ...rows.filter((r) => inBox(r, b.c, b.d))].map(rowId)).size;
+  const added = union - ROOM.wall;
+  await t.previewIs(union);
+  await expect.poll(async () => (await t.layer()).add).toBe(added);
+  expect(t.posts.preview - before).toBeLessThanOrEqual(2); // one request per pause, not one per mouse move
+  await t.exact("Selected", String(ROOM.wall));
+  await t.exact("Candidates", String(ROOM.wall));
+  await t.ctl("sel-commit").click();
+  await t.exact("Selected", String(union));
+  await expect(t.note).toBeHidden();
+  await expect(t.legend("preview-add")).toHaveCount(0);
+  expect(t.posts.commit).toBe(1);
+  await expect.poll(async () => (await t.layer()).add).toBe(0);
+});
+
+for (const op of ["subtract", "intersect"] as const) {
+  test(`E2E-81 12b Box ${op}: the preview count is fixture truth, removed points show in the remove colour, Selected stays until Commit draft`, async ({ page }) => {
+    const t = previewHelpers(page);
+    await t.wallSelected();
+    await t.ctl("sel-select-displayed").click();
+    const all = ROOM_TOTAL - ROOM.invalid;
+    await t.exact("Selected", String(all));
+    await t.ctl("op-select").selectOption(op);
+    const c = [3, 13, 2];
+    const d = [3, 3, 3];
+    await t.setBox(c, d);
+    const rows = finiteRows();
+    const inside = rows.filter((r) => inBox(r, c, d)).length;
+    const left = op === "subtract" ? all - inside : inside;
+    const removed = all - left;
+    await t.previewLeaves(left);
+    await expect(t.legend("preview-remove")).toBeVisible();
+    await expect(t.legend("preview-add")).toHaveCount(0);
+    await expect.poll(async () => (await t.layer()).remove).toBe(removed);
+    await t.exact("Selected", String(all));
+    await t.ctl("sel-commit").click();
+    await t.exact("Selected", String(left));
+    await expect(t.note).toBeHidden();
+    await expect(t.legend("preview-remove")).toHaveCount(0);
+  });
+}
+
+test("E2E-82 12b Polygon Add: real clicks draw the polygon, the preview is the union with the selection, Selected stays until Commit draft", async ({ page }) => {
+  const t = previewHelpers(page);
+  await t.wallSelected();
+  await t.ctl("tool-polygon").click();
+  await t.ctl("op-select").selectOption("add");
+  await t.ctl("cube-top").click();
+  await page.waitForTimeout(600);
+  await t.ctl("poly-draw").click();
+  const verts = [[1.5, 11.5], [4.5, 11.5], [4.5, 14.8], [1.5, 14.8]];
+  for (const [x, y] of verts) {
+    const px = await settledScreen(page, [x, y, 0]);
+    await page.mouse.click(px.x, px.y);
+  }
+  await page.keyboard.press("Enter");
+  const rows = finiteRows();
+  const wallRows = rows.filter((r) => inBox(r, [-1, 4.5, 2.5], [1, 10, 5]));
+  const poly = rows.filter((r) => r[0] > 1.5 && r[0] < 4.5 && r[1] > 11.5 && r[1] < 14.8);
+  const union = new Set([...wallRows, ...poly].map(rowId)).size;
+  await t.previewIs(union);
+  await t.exact("Selected", String(ROOM.wall));
+  await expect.poll(async () => (await t.layer()).add).toBe(union - ROOM.wall);
+  await t.ctl("sel-commit").click();
+  await t.exact("Selected", String(union));
+  await expect(t.note).toBeHidden();
+});
+
+const clusterAdd = async (page: import("@playwright/test").Page, radius: number) => {
+  const t = previewHelpers(page);
+  await openRoom(page, t.exact);
+  await t.ctl("tool-cluster").click();
+  await t.setNum("cluster-radius", 1.1);
+  await t.pickSeed(CL.wall);
+  await t.exact("Selected", String(ROOM.wall));
+  await t.ctl("op-select").selectOption("add");
+  await t.setNum("cluster-radius", radius);
+  return t;
+};
+
+test("E2E-83 12b Cluster Add: the preview is |A union B| before Commit draft, a radius edit re-previews, commit equals it and Apply deletes exactly that set", async ({ page }, testInfo) => {
+  const rows = finiteRows();
+  const wall = new Set(rows.filter(inWall).map(rowId));
+  const truth = (radius: number) => new Set([...wall, ...clusterTruth(rows, [10, 10, 0], radius)]).size;
+  const t = await clusterAdd(page, 0.6);
+  await t.pickSeed(CL.floor);
+  await t.previewIs(truth(0.6));
+  await t.exact("Selected", String(ROOM.wall));
+  const before = t.posts.preview;
+  await t.setNum("cluster-radius", 1.1);
+  expect(truth(1.1)).not.toBe(truth(0.6));
+  await t.previewIs(truth(1.1));
+  expect(t.posts.preview - before).toBeGreaterThanOrEqual(1);
+  expect(t.posts.preview - before).toBeLessThanOrEqual(2);
+  await t.exact("Selected", String(ROOM.wall));
+  await expect.poll(async () => (await t.layer()).add).toBe(truth(1.1) - ROOM.wall);
+  await t.ctl("sel-commit").click();
+  await t.exact("Selected", String(truth(1.1)));
+  await t.exact("Candidates", String(truth(1.1)));
+  await t.ctl("apply").click();
+  await t.exact("Active", String(ROOM_TOTAL - truth(1.1)));
+  expect(t.confirms[0]).toContain(`${truth(1.1)} of ${ROOM_TOTAL} points`);
+  const gone = new Set([...wall, ...clusterTruth(rows, [10, 10, 0], 1.1)]);
+  await t.expectActive(testInfo, (r) => gone.has(rowId(r)));
+});
+
+test("E2E-84 12b Apply before commit deletes only the committed selection, not the previewed points; Undo restores", async ({ page }) => {
+  const t = previewHelpers(page);
+  await t.wallSelected();
+  await t.ctl("op-select").selectOption("add");
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  await t.previewIs(ROOM.wall + ROOM.ghost);
+  await expect(t.ctl("apply")).toBeEnabled(); // owner ruling A
+  await expect(t.ctl("apply")).toHaveAttribute("title", /only the 40 committed/);
+  await t.ctl("apply").click();
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.wall));
+  await expect(t.note).toBeHidden(); // afterChange clears the draft (the preview was against the old cloud)
+  await expect(t.legend("preview-add")).toHaveCount(0);
+  await expect.poll(async () => (await t.layer()).add).toBe(0);
+  await t.ctl("undo").click();
+  await t.exact("Active", String(ROOM_TOTAL));
+});
+
+test("E2E-85 12b Esc and Discard draft drop the preview and change nothing else; Replace still goes live with no draft", async ({ page }) => {
+  const t = previewHelpers(page);
+  await t.wallSelected();
+  await expect(t.ctl("sel-discard")).toBeDisabled();
+  await t.ctl("op-select").selectOption("add");
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  await t.previewIs(ROOM.wall + ROOM.ghost);
+  await expect(t.ctl("sel-discard")).toBeEnabled();
+  await page.locator("#viewport").hover();
+  await page.keyboard.press("Escape");
+  await expect(t.note).toBeHidden();
+  await expect(t.legend("preview-add")).toHaveCount(0);
+  await expect(t.ctl("sel-discard")).toBeDisabled();
+  await t.exact("Selected", String(ROOM.wall));
+  await t.exact("Candidates", String(ROOM.wall));
+  await expect.poll(async () => (await t.layer()).add).toBe(0);
+  // again, dropped with the button
+  await t.setBox([3, 13, 2], [3, 3, 1.5]); // only the z = 2 layer of the blob
+  await t.previewIs(ROOM.wall + 9);
+  await t.ctl("sel-discard").click();
+  await expect(t.note).toBeHidden();
+  await t.exact("Selected", String(ROOM.wall));
+  // Replace is live: one selection request, no draft note
+  await t.ctl("op-select").selectOption("replace");
+  const sel = t.posts.select;
+  const prev = t.posts.preview;
+  await t.setNum("box-size-z", 3);
+  await t.exact("Selected", String(ROOM.ghost));
+  expect(t.posts.select - sel).toBeGreaterThanOrEqual(1);
+  expect(t.posts.preview).toBe(prev);
+  await expect(t.note).toBeHidden();
+});
+
+test("E2E-86 12b Save with a pending draft stores the committed selection only; the reopened session has no draft", async ({ page }, testInfo) => {
+  const t = previewHelpers(page);
+  await t.wallSelected();
+  await t.ctl("op-select").selectOption("add");
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  await t.previewIs(ROOM.wall + ROOM.ghost);
+  const [dl] = await Promise.all([page.waitForEvent("download"), t.ctl("save-session").click()]);
+  const path = testInfo.outputPath("draft.pcdsession");
+  await dl.saveAs(path);
+  await page.locator("#file-input").setInputFiles({ name: "other.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
+  await t.exact("Original", String(TOTAL));
+  await page.locator("#file-input").setInputFiles({ name: "draft.pcdsession", mimeType: "application/octet-stream", buffer: readFileSync(path) });
+  await t.exact("Original", String(ROOM_TOTAL));
+  await t.exact("Selected", String(ROOM.wall));
+  await expect(t.note).toBeHidden();
+  await expect.poll(async () => (await t.layer()).id).toBeNull();
+  await expect(t.legend("preview-add")).toHaveCount(0);
+});
+
+test("E2E-87 12b Cluster tuning: Radius and Exclude protected re-preview live (one request per pause), Commit draft commits the last preview, Cancel leaves the selection", async ({ page }) => {
+  const rows = finiteRows();
+  const wall = new Set(rows.filter(inWall).map(rowId));
+  const prot = (r: number[]) => r[2] >= -0.1 && r[2] <= 0.1;
+  const union = (radius: number, skip: (r: number[]) => boolean = () => false) => new Set([...wall, ...clusterTruth(rows, CL.blob as unknown as number[], radius, skip)]).size;
+  const t = await clusterAdd(page, 0.4);
+  await t.pickSeed(CL.blob);
+  await t.previewIs(union(0.4));
+  expect(union(0.4)).toBe(ROOM.wall + 1);
+  for (const r of [1.05, 1.2]) {
+    const before = t.posts.preview;
+    await t.setNum("cluster-radius", r);
+    await t.previewIs(union(r));
+    expect(t.posts.preview - before).toBeLessThanOrEqual(2);
+    await t.exact("Selected", String(ROOM.wall));
+  }
+  expect(union(1.05)).toBeGreaterThan(union(0.4));
+  // Exclude protected: protect the floor slab, then the cluster may not walk through it
+  await t.ctl("prot-enabled").check();
+  await t.setNum("prot-min", -0.1);
+  await t.setNum("prot-max", 0.1);
+  await t.exact("Protected", String(ROOM.floor + ROOM.floorGhost));
+  const excluded = await hook(page, (e) => (e.state() as unknown as { tools: { cluster: { excludeProtected: boolean } } }).tools.cluster.excludeProtected);
+  await t.previewIs(union(1.2, excluded ? prot : () => false));
+  const before = t.posts.preview;
+  await t.ctl("cluster-exclude-protected").click();
+  await t.previewIs(union(1.2, excluded ? () => false : prot));
+  expect(t.posts.preview - before).toBeGreaterThanOrEqual(1);
+  const last = union(1.2, excluded ? () => false : prot);
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: "/out/preview-cluster-tuning.png" });
+  await t.ctl("sel-commit").click();
+  await t.exact("Selected", String(last));
+  // Cancel during a slow preview: selection unchanged, app idle
+  await t.ctl("op-select").selectOption("subtract");
+  await page.route("**/api/session/selection/preview", async (route) => {
+    await new Promise((r) => setTimeout(r, 1500));
+    await route.continue().catch(() => undefined);
+  });
+  await t.setNum("cluster-radius", 0.4);
+  await page.waitForTimeout(500);
+  await t.ctl("cluster-cancel").click();
+  await t.exact("Selected", String(last));
+  await expect(page.locator("#progress")).toBeHidden();
+});
