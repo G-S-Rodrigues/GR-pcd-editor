@@ -1,3 +1,4 @@
+import { CORNER_IDS } from "../view/cubenav";
 import { FIELD_SPECS } from "./fields";
 
 export const TOOLTIPS: Record<string, string> = {
@@ -16,6 +17,18 @@ export const TOOLTIPS: Record<string, string> = {
   "cube-back": "ViewCube BACK face: look along -Y with Z up, orthographic (key 4)",
   "cube-left": "ViewCube LEFT face: look along +X with Z up, orthographic (key 5)",
   "cube-right": "ViewCube RIGHT face: look along -X with Z up, orthographic (key 6)",
+  "arrow-top": "Arrow: turn the view to the TOP face, even when it is hidden behind the cube (key 1)",
+  "arrow-bottom": "Arrow: turn the view to the BOTTOM face, even when it is hidden behind the cube (key 2)",
+  "arrow-front": "Arrow: turn the view to the FRONT face, even when it is hidden behind the cube (key 3)",
+  "arrow-back": "Arrow: turn the view to the BACK face, even when it is hidden behind the cube (key 4)",
+  "arrow-left": "Arrow: turn the view to the LEFT face, even when it is hidden behind the cube (key 5)",
+  "arrow-right": "Arrow: turn the view to the RIGHT face, even when it is hidden behind the cube (key 6)",
+  ...Object.fromEntries(
+    CORNER_IDS.map((id) => {
+      const [a, b, c] = id.slice(7).split("-");
+      return [id, `Corner zone: look at the cube diagonally from the ${a}, ${b} and ${c} corner (orthographic, Z up)`];
+    }),
+  ),
   "view-perspective": "Toggle perspective and orthographic projection; the pivot and apparent size stay (key P)",
   "fit-cloud": "Frame the whole active cloud (key F)",
   "pivot-reset": "Move the orbit pivot back to the centre of the active cloud",

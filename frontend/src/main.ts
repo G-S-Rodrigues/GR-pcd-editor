@@ -43,6 +43,7 @@ import { buildTimeline } from "./timeline/strip";
 import { buildHelp } from "./ui/help";
 import { classifyKey } from "./ui/keys";
 import { buildViewCube } from "./ui/viewcube";
+import { buildTriad } from "./ui/triad";
 import { buildFilterBoxes } from "./ui/filterboxes";
 import { buildToolbar } from "./ui/toolbar";
 import { buildCameraCluster } from "./ui/camera-cluster";
@@ -276,6 +277,7 @@ buildTimeline($("timeline"), store, {
   pendingCursor: () => editor.pendingCursor(),
 });
 buildViewCube($("viewcube"), store);
+buildTriad($("triad"), store);
 buildFilterBoxes($("fbox-layer"), canvas, store, {
   editSide: (axis, side, value, o) => filters.editSide(axis, side, value, o),
   resetSide: (axis, side) => filters.resetSide(axis, side),

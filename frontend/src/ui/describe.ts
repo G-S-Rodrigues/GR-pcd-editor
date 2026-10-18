@@ -1,3 +1,4 @@
+import { CORNER_IDS } from "../view/cubenav";
 import { FIELD_SPECS, type FieldGroup } from "./fields";
 
 export interface ControlDescriptor {
@@ -19,6 +20,8 @@ export function describeControls(): ControlDescriptor[] {
     { id: "timeline", label: "History timeline", group: "edit" },
     { id: "timeline-marker", label: "History marker", group: "edit" },
     ...(["top", "bottom", "front", "back", "left", "right"] as const).map((p) => ({ id: `cube-${p}`, label: `Cube ${p}`, group: "view" as const })),
+    ...(["top", "bottom", "front", "back", "left", "right"] as const).map((p) => ({ id: `arrow-${p}`, label: `Look at ${p}`, group: "view" as const })),
+    ...CORNER_IDS.map((id) => ({ id, label: `Corner ${id.slice(7).split("-").join(" ")}`, group: "view" as const })),
     { id: "view-perspective", label: "Perspective", group: "view" },
     { id: "fit-cloud", label: "Fit cloud", group: "view" },
     { id: "pivot-reset", label: "Reset pivot", group: "pivot" },

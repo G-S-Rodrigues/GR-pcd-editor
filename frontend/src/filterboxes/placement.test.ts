@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import { defaultCamera, orbit } from "../view/camera";
 import { PRESETS, applyPreset } from "../view/presets";
 import { fromBasisLookUp } from "../view/basis";
-import { type PlacedBox, type PlaceState, RESERVED, placeBoxes, spread1d } from "./placement";
+import { BAND, CUBE, TRIAD } from "../view/layout";
+import { LEGEND, type PlacedBox, type PlaceState, RESERVED, placeBoxes, spread1d, triadRect } from "./placement";
 
 const SIZES = (_id: string) => ({ w: 156, h: 28 });
 const STAGE = { w: 780, h: 560 };
@@ -193,4 +194,29 @@ describe("filter box layout", () => {
     expect(many.pos).toEqual([1, 37]);
     expect(many.overflow).toEqual([2]);
   });
+});
+
+test("UI-337 RESERVED holds exactly the legend, the cube with its arrows and the triad, derived from the shared constants", () => {
+  const stage = { w: 1000, h: 600 };
+  const r = RESERVED(stage);
+  expect(r).toHaveLength(3);
+  expect(r[0]).toEqual({ l: 0, t: 0, r: LEGEND.w, b: LEGEND.h });
+  expect(r[1]).toEqual({ l: stage.w - CUBE.w, t: 0, r: stage.w, b: CUBE.h });
+  expect(r[2]).toEqual(triadRect(stage));
+  expect(r[2]).toEqual({ l: TRIAD.left, t: stage.h - BAND - TRIAD.above - TRIAD.size, r: TRIAD.left + TRIAD.size, b: stage.h - BAND - TRIAD.above });
+});
+
+test("UI-338 boxes in the left lane (docked ones included) end above the triad for every swept stage and view", () => {
+  for (const stage of [
+    { w: 780, h: 560 },
+    { w: 1000, h: 520 },
+    { w: 1340, h: 900 },
+  ]) {
+    const tri = triadRect(stage);
+    for (const name of ["front", "top", "left", "back", "bottom", "right"] as const) {
+      for (const b of placeBoxes(preset(name), stage, null, SIZES, new Set()).boxes) {
+        if (b.x < tri.r) expect(b.y + b.h, `${name} ${b.id} ${stage.w}x${stage.h}`).toBeLessThanOrEqual(tri.t);
+      }
+    }
+  }
 });

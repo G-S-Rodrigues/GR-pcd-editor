@@ -1,6 +1,6 @@
 import type { Axis, Side } from "../inspector/filters";
 import { type Quat, rotate } from "../math/quat";
-import { CUBE } from "../view/layout";
+import { BAND, CUBE, TRIAD } from "../view/layout";
 import { BOX_IDS, boxKey } from "./model";
 
 export { CUBE };
@@ -36,14 +36,23 @@ export const MARGIN = 6;
 const GAP = 6;
 export const END_ON_ENTER = 0.2;
 export const END_ON_LEAVE = 0.3;
-const LEGEND = { w: 170, h: 130 }; // top-left
+export const LEGEND = { w: 170, h: 130 }; // top-left
 const LANE = 156 + 2 * MARGIN; // a vertical lane of boxes at either side
 const AXIS_I: Record<Axis, number> = { x: 0, y: 1, z: 2 };
 
-/** Stage rectangles the boxes never enter (legend, ViewCube with its triad and the camera cluster). */
+/** The XYZ triad at the bottom-left, just above the timeline band. */
+export const triadRect = (stage: { w: number; h: number }): Rect => ({
+  l: TRIAD.left,
+  t: stage.h - BAND - TRIAD.above - TRIAD.size,
+  r: TRIAD.left + TRIAD.size,
+  b: stage.h - BAND - TRIAD.above,
+});
+
+/** Stage rectangles the boxes never enter: legend, ViewCube with its arrows and the camera cluster, and the triad. */
 export const RESERVED = (stage: { w: number; h: number }): Rect[] => [
   { l: 0, t: 0, r: LEGEND.w, b: LEGEND.h },
   { l: stage.w - CUBE.w, t: 0, r: stage.w, b: CUBE.h },
+  triadRect(stage),
 ];
 
 export interface Item {
@@ -144,7 +153,7 @@ export function placeBoxes(
     let list = wants.filter((w) => (lane === "left" ? w.edge === "left" || w.edge === "dock" : w.edge === lane));
     const vertical = lane === "left" || lane === "right";
     const lo = vertical ? Math.max(LEGEND.h, CUBE.h) + MARGIN : lane === "top" ? LEGEND.w + MARGIN : LANE;
-    const hi = vertical ? stage.h - MARGIN : stage.w - LANE;
+    const hi = vertical ? (lane === "left" ? triadRect(stage).t - MARGIN : stage.h - MARGIN) : stage.w - (lane === "top" ? Math.max(LANE, CUBE.w + MARGIN) : LANE);
     for (let row = 0; list.length; row++) {
       list = [...list].sort((a, b) => a.t - b.t || BOX_IDS.findIndex((x) => boxKey(x) === a.id) - BOX_IDS.findIndex((x) => boxKey(x) === b.id));
       const items = list.map((w) => {

@@ -2,7 +2,7 @@ import type { AppState } from "../state/app";
 import type { Store } from "../state/store";
 import { togglePerspective } from "../view/camera";
 import { fitBounds } from "../view/fit";
-import { CLUSTER, CUBE_RIGHT, CUBE_STAGE, CUBE_TOP } from "../view/layout";
+import { CLUSTER, CUBE_RIGHT, CUBE_TOP, CUBE_WRAP } from "../view/layout";
 import { resetPivot } from "../view/pivot";
 import { iconControl } from "./iconbutton";
 import { iconSvg } from "./icons";
@@ -41,8 +41,8 @@ export function buildCameraCluster(root: HTMLElement, store: Store<AppState>, a:
   const pick = iconControl("pivot-pick", "ppiv", {
     onclick: () => store.set({ interaction: store.get().interaction === "pick-pivot" ? "orbit" : "pick-pivot" }),
   });
-  root.style.right = `${CUBE_RIGHT}px`;
-  root.style.top = `${CUBE_TOP + CUBE_STAGE + CLUSTER.gap}px`;
+  root.style.right = `${CUBE_RIGHT + (CUBE_WRAP - CLUSTER.w) / 2}px`;
+  root.style.top = `${CUBE_TOP + CUBE_WRAP + CLUSTER.gap}px`;
   root.style.width = `${CLUSTER.w}px`;
   root.style.height = `${CLUSTER.h}px`;
   root.style.gap = `${CLUSTER.between}px`;

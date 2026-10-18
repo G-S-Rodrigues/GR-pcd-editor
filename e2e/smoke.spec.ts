@@ -785,7 +785,7 @@ test("E2E-19 7b1 ViewCube: real clicks on all six faces, edge click, orbit track
 
   // orbit with the mouse: the cube follows
   const before = await cubeFaces(page);
-  await realDrag(page, { x: stage.x + 40, y: stage.y + stage.height - 150 }, { x: stage.x + 160, y: stage.y + stage.height - 110 });
+  await realDrag(page, { x: stage.x + stage.width / 2, y: stage.y + stage.height / 2 }, { x: stage.x + stage.width / 2 + 120, y: stage.y + stage.height / 2 + 40 });
   const after = await cubeFaces(page);
   expect(JSON.stringify(after)).not.toBe(JSON.stringify(before));
 
@@ -2546,5 +2546,86 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     await ctl("pivot-reset").click();
     await expect(page.locator("#inspector")).toContainText("Pivot9, 9.5, 2");
     await page.screenshot({ path: `/out/camera-cluster-${w}.png` });
+  });
+}
+
+for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-73 12-4 ViewCube arrows: faint at rest, clear on hover, each reaches its face (hidden ones too); corner zones snap diagonally at ${w}x${hgt}`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: hgt });
+    const { exact, ctl } = helpers(page);
+    await openRoom(page, exact);
+    const opacity = (id: string) => ctl(id).evaluate((e) => Number(getComputedStyle(e).opacity));
+    for (const n of NAMES) await expect(ctl(`arrow-${n}`)).toHaveCount(1);
+    await expect(page.locator(".cube-corner")).toHaveCount(8);
+    await page.locator("#viewport").hover();
+    await expect.poll(() => opacity("arrow-top")).toBeLessThan(0.2);
+    await ctl("cube-top").hover();
+    await expect.poll(() => opacity("arrow-top")).toBeGreaterThan(0.8);
+    await page.screenshot({ path: `/out/viewcube-arrows-default-${w}.png`, clip: (await page.locator("#viewcube").boundingBox())! });
+    // the arrows sit inside the stage and around, not on, the cube
+    const stage = (await page.locator("#stage").boundingBox())!;
+    const cube = (await ctl("cube-top").boundingBox())!;
+    for (const n of NAMES) {
+      const a = (await ctl(`arrow-${n}`).boundingBox())!;
+      expect(a.x, n).toBeGreaterThanOrEqual(stage.x);
+      expect(a.x + a.width, n).toBeLessThanOrEqual(stage.x + stage.width);
+      expect(a.y, n).toBeGreaterThanOrEqual(stage.y);
+      expect(a.width, n).toBeGreaterThanOrEqual(22);
+    }
+    // every arrow, including the faces hidden at the start, turns the view to its face
+    for (const n of [...NAMES, "bottom", "top"]) {
+      const hiddenBefore = (await ctl(`cube-${n}`).getAttribute("data-facing")) === "false";
+      await ctl(`arrow-${n}`).click();
+      const c = await cameraLookUp(page);
+      PRESET_LOOK_UP[n].look.forEach((v, i) => expect(c.look[i], `${n} look`).toBeCloseTo(v, 6));
+      expect(c.ortho).toBe(true);
+      await expect(ctl(`cube-${n}`)).toHaveAttribute("data-facing", "true");
+      if (hiddenBefore) await page.screenshot({ path: `/out/viewcube-arrows-${n}-${w}.png`, clip: (await page.locator("#viewcube").boundingBox())! });
+    }
+    // the cube is still clickable through the wrapper
+    await ctl("cube-top").click();
+    await expect(ctl("cube-top")).toHaveAttribute("data-facing", "true");
+    expect(cube.width).toBeGreaterThan(0);
+    // a corner zone looks along minus the sum of the normals of its three faces, Z up
+    await ctl("view-perspective").click();
+    const zone = page.locator(".cube-corner:not([hidden])").first();
+    const id = (await zone.getAttribute("data-control"))!;
+    await zone.click();
+    const faces = id.slice(7).split("-");
+    const sum = [0, 0, 0];
+    for (const f of faces) PRESET_LOOK_UP[f].look.forEach((v, i) => (sum[i] -= v));
+    const len = Math.hypot(...sum);
+    const c = await cameraLookUp(page);
+    sum.forEach((v, i) => expect(c.look[i], `${id} look`).toBeCloseTo(-v / len, 5));
+    expect(c.ortho).toBe(true);
+    await page.screenshot({ path: `/out/viewcube-corner-${w}.png`, clip: (await page.locator("#viewcube").boundingBox())! });
+    // reduced motion turns the fade off
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    expect(await ctl("arrow-top").evaluate((e) => getComputedStyle(e).transitionDuration)).toMatch(/^0s(, 0s)*$/);
+  });
+
+  test(`E2E-74 12-4 the XYZ triad sits bottom-left of the stage and overlaps no box, cube, cluster or legend in Front, Left, Top and Back at ${w}x${hgt}`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: hgt });
+    const { exact, ctl } = helpers(page);
+    await openRoom(page, exact);
+    await expect(page.locator("#triad")).toHaveCount(1);
+    await expect(page.locator("#axis-legend")).toHaveCount(0);
+    await expect(page.locator("#viewcube .cube-triad")).toHaveCount(0);
+    const box = async (sel: string) => (await page.locator(sel).first().boundingBox())!;
+    const hit = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
+      a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+    for (const view of ["front", "left", "top", "back"]) {
+      await ctl(`arrow-${view}`).click(); // reaches the face even when it is not visible
+      await expect(ctl(`cube-${view}`)).toHaveAttribute("data-facing", "true");
+      const stage = await box("#stage");
+      const t = await box("#triad");
+      expect(t.x, view).toBeLessThan(stage.x + stage.width / 4);
+      expect(t.y, view).toBeGreaterThan(stage.y + stage.height / 2);
+      expect(t.x).toBeGreaterThanOrEqual(stage.x);
+      expect(t.y + t.height).toBeLessThanOrEqual(stage.y + stage.height);
+      for (const sel of ["#viewcube", "#camera-cluster", "#legend"]) expect(hit(t, await box(sel)), `${view}: triad vs ${sel}`).toBe(false);
+      for (const f of await page.locator(".fbox").all()) expect(hit(t, (await f.boundingBox())!), `${view}: triad vs .fbox`).toBe(false);
+      if (view === "front") await page.screenshot({ path: `/out/triad-${w}.png` });
+    }
   });
 }
