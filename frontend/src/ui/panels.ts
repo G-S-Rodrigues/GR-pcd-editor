@@ -10,8 +10,8 @@ import { POLYGON_DEPTH_NOTE, Z_UNLIMITED } from "../tools/polygon/model";
 import * as PG from "../tools/polygon/model";
 import { CLUSTER_LIMIT_TEXT, clusterLimitText, clusterPanel, regionOptions, setRadius } from "../tools/cluster/model";
 import { headline } from "../status/headline";
-import { draftText } from "../tools/draft";
-import { invertNote, scopeNotice } from "../orchestration/selection";
+import { commitEnabled, commitLabel, discardEnabled, previewText } from "../tools/preview";
+import { invertNote, isDraftOp, scopeNotice } from "../orchestration/selection";
 import { historyRows } from "../inspector/history";
 import { control } from "./controls";
 import { commitNumber } from "./numfield";
@@ -28,6 +28,7 @@ export interface PanelActions {
   protectionEdit: (fn: (m: P.ProtectionModel) => P.ProtectionEdit) => P.ProtectionEdit;
   setTool: (t: AppState["tool"]) => void;
   commitDraft: () => void;
+  discardDraft: () => void;
   selectDisplayed: () => void;
   invert: () => void;
   clearSelection: () => void;
@@ -53,7 +54,17 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
   const btns = { box: toolBtn("tool-box", "box", "Box"), polygon: toolBtn("tool-polygon", "polygon", "Polygon"), cluster: toolBtn("tool-cluster", "cluster", "Cluster") };
   const op = control(
     "select",
-    { id: "op-select", onchange: () => store.set({ op: op.value as AppState["op"] }) },
+    {
+      id: "op-select",
+      onchange: () => {
+        store.set({ op: op.value as AppState["op"] });
+        const s = store.get();
+        // with a draft showing, a new operation re-previews that shape; going back to Replace drops the draft
+        if (!s.draft && !s.preview) return;
+        if (isDraftOp(s.op) && s.tool !== "none") a.toolChanged();
+        else a.discardDraft();
+      },
+    },
     ...[["replace", "Replace"], ["add", "Add"], ["subtract", "Subtract"], ["intersect", "Intersect"]].map(([v, t]) => h("option", { value: v, text: t })),
   );
   const scope = control(
@@ -69,6 +80,7 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     h("option", { value: "active", text: "Active" }),
   );
   const commit = control("button", { id: "sel-commit", onclick: a.commitDraft }, "Commit draft");
+  const discard = control("button", { id: "sel-discard", onclick: a.discardDraft }, "Discard draft");
   const note = h("p", { id: "scope-note", class: "note" });
   const invalid = control("button", { id: "remove-invalid", onclick: a.removeInvalid }, "Remove invalid");
   const draftNote = h("p", { id: "draft-note", class: "note warn", hidden: true });
@@ -88,7 +100,7 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     h("h2", { text: "Selection" }),
     h("label", {}, "Operation ", op),
     h("label", {}, "Scope ", scope),
-    commit,
+    h("div", { class: "stack" }, commit, discard),
     h(
       "div",
       { class: "stack" },
@@ -114,9 +126,10 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     }
     op.value = s.op;
     scope.value = s.scope;
-    commit.disabled = !s.draft;
-    commit.textContent = s.draft ? `Commit: ${s.op} tool shape` : "Commit draft";
-    const dn = draftText(s);
+    commit.disabled = !commitEnabled(s);
+    commit.textContent = commitLabel(s);
+    discard.disabled = !discardEnabled(s);
+    const dn = previewText(s);
     draftNote.hidden = dn === null;
     draftNote.textContent = dn ?? "";
     const n = scopeNotice(s);

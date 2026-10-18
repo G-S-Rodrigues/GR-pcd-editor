@@ -27,3 +27,20 @@ export function previewClusterOf(s: AppState): unknown {
   if (s.preview?.cluster !== undefined) return s.preview.cluster;
   return s.candidate?.cluster ?? null;
 }
+
+/** `sel-commit` is usable only with a ready preview of the chosen operation (not while its job runs). */
+export function commitEnabled(s: AppState): boolean {
+  return s.draft && s.preview !== null && s.preview.op === s.op && !s.job.busy;
+}
+
+/** Label of `sel-commit`: names the previewed change once there is one ("Commit: add 123 points"). */
+export function commitLabel(s: AppState): string {
+  const p = s.preview;
+  if (!s.draft || !p || p.op !== s.op) return s.draft ? `Commit: ${s.op} tool shape` : "Commit draft";
+  return `Commit: ${p.op === "add" ? "add" : "remove"} ${(p.op === "add" ? p.added : p.removed).toLocaleString("en-US")} points`;
+}
+
+/** `sel-discard` is usable while there is a draft or a preview to drop. */
+export function discardEnabled(s: AppState): boolean {
+  return s.draft || s.preview !== null;
+}

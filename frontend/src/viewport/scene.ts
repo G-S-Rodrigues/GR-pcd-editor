@@ -22,6 +22,8 @@ export interface Viewport {
   /** Points the main layer draws right now (the interaction LOD lowers it while the camera moves). */
   drawnCount(): number;
   /** The history-step highlight layer as drawn (for the browser smoke). */
+  /** Test-only: drawn points of the main layer flagged will-be-added (8) / will-be-removed (16), and the preview id they belong to. */
+  previewLayer(): { id: string | null; add: number; remove: number };
   stepLayer(): { sid: number | null; visible: boolean; count: number; colour: number[]; opacity: number; hover: boolean };
   requestRender(): void;
   dispose(): void;
@@ -333,6 +335,19 @@ export function createViewport(
         opacity: m.opacity,
         hover: st?.hover ?? false,
       };
+    },
+    previewLayer: () => {
+      const d = store.get().render;
+      const out = { id: store.get().preview?.id ?? null, add: 0, remove: 0 };
+      if (!d || !points.visible) return out;
+      const idx = points.geometry.index;
+      const n = idx ? idx.count : d.count;
+      for (let k = 0; k < n; k++) {
+        const f = d.flags[idx ? idx.getX(k) : k];
+        if (f & 8) out.add++;
+        else if (f & 16) out.remove++;
+      }
+      return out;
     },
     drawnCount: () => (points.visible ? (points.geometry.index?.count ?? points.geometry.getAttribute("position")?.count ?? 0) : 0),
     dispose() {

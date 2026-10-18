@@ -78,6 +78,9 @@ export function buildToolbar(root: HTMLElement, store: Store<AppState>, a: Toolb
       canApply(s) && s.compare === "edited",
       applyBlockedText(s),
     );
+    if (s.draft && canApply(s) && s.compare === "edited") {
+      apply.title = `${tips.get(apply) ?? ""} (a draft is pending: Apply deletes only the ${(s.session?.selection.count ?? 0).toLocaleString("en-US")} committed selected points, not the preview)`;
+    }
   };
   store.subscribe(sync);
   sync(store.get());

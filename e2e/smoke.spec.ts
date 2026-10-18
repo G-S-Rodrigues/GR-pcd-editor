@@ -506,6 +506,7 @@ type EditorHook = {
   projectWorld: (p: number[]) => { x: number; y: number } | null;
   handlePositions: () => { id: string; x: number; y: number }[];
   drawnCount: () => number;
+  previewLayer: () => { id: string | null; add: number; remove: number };
 };
 const hook = <T>(page: import("@playwright/test").Page, fn: (e: EditorHook) => T) =>
   page.evaluate(`(${fn.toString()})(window.__editor)`) as Promise<T>;
@@ -887,7 +888,7 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
   });
 }
 
-test("E2E-23 7b2 an Add shape is shown as a draft with its own outline colour and no invented count, until committed", async ({ page }) => {
+test("E2E-23 7b2 an Add shape is shown as a draft with its own outline colour and the server's previewed count, until committed", async ({ page }) => {
   const { exact, ctl, setNum } = helpers(page);
   await openRoom(page, exact);
   await ctl("tool-box").click();
@@ -900,8 +901,8 @@ test("E2E-23 7b2 an Add shape is shown as a draft with its own outline colour an
   await ctl("box-size-x").fill("4");
   await ctl("box-size-x").press("Enter");
   await expect(page.locator("#draft-note")).toBeVisible();
-  await expect(page.locator("#draft-note")).toContainText("Draft, not yet applied");
-  await expect(page.locator("#draft-note")).toContainText("count is unknown");
+  await expect(page.locator("#draft-note")).toContainText("Preview, not applied"); // 12b: the draft now shows its previewed result (was "Draft, not yet applied ... count is unknown")
+  await expect(page.locator("#draft-note")).toContainText("Apply uses only those");
   await expect(ctl("sel-commit")).toBeEnabled();
   await expect(ctl("apply")).toBeEnabled(); // owner ruling A: Apply stays enabled during a draft (it deletes the committed selection only)
   await page.waitForTimeout(300);
@@ -2282,8 +2283,8 @@ test("E2E-61 Cluster with Operation Add: after Commit draft the selection is |A 
   await t.exact("Selected", String(ROOM.wall));
   await t.ctl("op-select").selectOption("add");
   await t.pickSeed(CL.floor);
-  await expect(page.locator("#draft-note")).toBeVisible(); // a draft: nothing grows until Commit draft
-  await expect(t.ctl("apply")).toBeDisabled();
+  await expect(page.locator("#draft-note")).toContainText("Preview, not applied"); // a draft: nothing grows until Commit draft
+  await expect(t.ctl("apply")).toBeEnabled(); // owner ruling A (this asserted disabled before, only passing while the preview job was still busy)
   await t.exact("Selected", String(ROOM.wall));
   await t.ctl("sel-commit").click();
   await t.exact("Selected", String(ROOM.wall + FLOOR_CLUSTER));
@@ -2924,3 +2925,4 @@ test("E2E-79 12-9 Normal shading: the legend shows the X/Y/Z swatches, a floor p
   await exact("Original", NORMAL_ROOM_TOTAL.toLocaleString("en-US"));
   await expect(ctl("colour-mode")).toHaveValue("normals");
 });
+

@@ -46,7 +46,7 @@ export const KEY_DOCS: KeyDoc[] = [
   { id: "slice-prev", keys: "[", label: "Move the slice slab down", probes: [{ key: "[" }] },
   { id: "slice-next", keys: "]", label: "Move the slice slab up", probes: [{ key: "]" }] },
   { id: "polygon-close", keys: "Enter", label: "Close the polygon being drawn", probes: [{ key: "Enter" }] },
-  { id: "cancel", keys: "Esc", label: "Leave pick mode, cancel polygon drawing, close help", probes: [{ key: "Escape" }] },
+  { id: "cancel", keys: "Esc", label: "Leave pick mode, cancel polygon drawing, discard a pending draft, close help", probes: [{ key: "Escape" }] },
   { id: "apply", keys: "Delete", label: "Apply: delete the previewed points (same as the Apply button)", probes: [{ key: "Delete" }] },
   { id: "undo", keys: "Ctrl+Z", label: "Undo the last deletion", probes: [{ key: "z", ctrlKey: true }, { key: "Z", metaKey: true }] },
   { id: "redo", keys: "Ctrl+Y", label: "Redo (also Ctrl+Shift+Z)", probes: [{ key: "y", ctrlKey: true }, { key: "Z", ctrlKey: true, shiftKey: true }] },

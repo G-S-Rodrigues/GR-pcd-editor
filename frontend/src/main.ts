@@ -39,6 +39,7 @@ import { control } from "./ui/controls";
 import { buildInspector } from "./ui/inspector-shell";
 import { buildStatusbar } from "./ui/statusbar";
 import { buildLegend } from "./ui/legend";
+import { discardEnabled } from "./tools/preview";
 import { buildTimeline } from "./timeline/strip";
 import { buildHelp } from "./ui/help";
 import { classifyKey } from "./ui/keys";
@@ -134,7 +135,7 @@ const tools = createToolInteraction(canvas, store, size, {
 window.addEventListener("keydown", (e) => {
   if (e.key === "Escape") tools.cancel(); // an arrow drag in progress goes back to its start value
 });
-installDebugHook(canvas, store, size, () => viewport?.drawnCount() ?? 0, () => viewport?.stepLayer() ?? { visible: false });
+installDebugHook(canvas, store, size, () => viewport?.drawnCount() ?? 0, () => viewport?.stepLayer() ?? { visible: false }, () => viewport?.previewLayer() ?? { id: null, add: 0, remove: 0 });
 if (viewport) {
   attachControls(canvas, store, size, tools, () => runner.onToolChanged(), (kind, point) => {
     const st = store.get();
@@ -235,6 +236,7 @@ const panelActions = {
     else runner.reset();
   },
   commitDraft: () => runner.commitDraft(),
+  discardDraft: () => runner.discardDraft(),
   selectDisplayed: () => runner.oneShot((rev) => selectDisplayedBody(rev)),
   invert: () =>
     runner.oneShot((rev) => ({ cloud_revision: rev, op: "invert", scope: store.get().scope, tool: null, evaluate_candidate: true })),
@@ -269,7 +271,7 @@ const panelActions = {
 buildInspector($("fileinfo"), store);
 buildToolPalette($("tools"), store, panelActions);
 const legend = buildLegend($("legend"), store, $("modebar"));
-store.subscribe((s) => legend.update(s.timeline.highlight !== null));
+store.subscribe((s) => legend.update(s.timeline.highlight !== null, s.preview?.op ?? null));
 buildTimeline($("timeline"), store, {
   rollback: (c) => void editor.rollback(c),
   deleteStep: (sid) => void editor.deleteStep(sid),
@@ -310,6 +312,8 @@ window.addEventListener("keydown", (e) => {
     if (msg) note(msg);
   } else if (id === "cancel" && store.get().tools.polygon.phase === "drawing") {
     panelActions.cancelDrawing();
+  } else if (id === "cancel" && store.get().interaction === "orbit" && discardEnabled(store.get())) {
+    runner.discardDraft();
   }
 });
 

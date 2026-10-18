@@ -4,7 +4,7 @@ import { colourize } from "../colour/modes";
 import { lodIndex } from "../render/lod";
 import { initialState } from "../state/app";
 import { legendEntries } from "../ui/legend";
-import { FLAG_PREVIEW_ADD, FLAG_PREVIEW_REMOVE, previewClusterOf, previewText } from "./preview";
+import { FLAG_PREVIEW_ADD, FLAG_PREVIEW_REMOVE, commitEnabled, commitLabel, discardEnabled, previewClusterOf, previewText } from "./preview";
 import type { PreviewState } from "../state/types";
 
 const P: PreviewState = { id: "p1", op: "add", selected_after: 120, base_selected: 100, added: 20, removed: 0 };
@@ -91,5 +91,24 @@ describe("preview model (12b-3)", () => {
     expect((previewClusterOf({ ...base, preview: { ...P, cluster: pc }, candidate: cand }) as typeof pc).size).toBe(9);
     expect((previewClusterOf({ ...base, preview: null, candidate: cand }) as typeof pc).size).toBe(4);
     expect(previewClusterOf({ ...base, preview: P, candidate: null })).toBeNull();
+  });
+});
+
+describe("preview controls (12b-4)", () => {
+  test("UI-416 commit is enabled only with a ready preview of the chosen op, and is labelled with its count", () => {
+    expect(commitEnabled({ ...base, preview: null })).toBe(false);
+    expect(commitEnabled({ ...base, preview: P })).toBe(true);
+    expect(commitEnabled({ ...base, preview: P, job: { busy: true, progress: null, message: "x" } })).toBe(false);
+    expect(commitEnabled({ ...base, op: "subtract", preview: P })).toBe(false);
+    expect(commitEnabled({ ...base, draft: false, preview: P })).toBe(false);
+    expect(commitLabel({ ...base, preview: P })).toBe("Commit: add 20 points");
+    expect(commitLabel({ ...base, op: "subtract", preview: { ...P, op: "subtract", added: 0, removed: 1234 } })).toBe("Commit: remove 1,234 points");
+    expect(commitLabel({ ...base, preview: null })).toBe("Commit: add tool shape");
+    expect(commitLabel({ ...base, draft: false })).toBe("Commit draft");
+  });
+  test("UI-417 discard is enabled while there is a draft or a preview", () => {
+    expect(discardEnabled({ ...base, draft: false, preview: null })).toBe(false);
+    expect(discardEnabled({ ...base, draft: true, preview: null })).toBe(true);
+    expect(discardEnabled({ ...base, draft: false, preview: P })).toBe(true);
   });
 });

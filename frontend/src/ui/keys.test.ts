@@ -61,3 +61,7 @@ test("UI-141 ? toggles the help overlay, Escape closes it, other keys leave it a
   expect(helpOpenAfter(true, "fit")).toBe(true);
   expect(classifyKey(ev({ key: "?", shiftKey: true }))).toBe("help");
 });
+
+test("UI-418 the Esc row says it discards a pending draft", () => {
+  expect(KEY_DOCS.find((d) => d.id === "cancel")!.label).toContain("discard a pending draft");
+});
