@@ -386,7 +386,7 @@ test("E2E-10 7a filter redraws the canvas and a filter change never leaves a sta
   expect(errors).toEqual([]);
 });
 
-test("E2E-11 7a the Box tool opens small and a bulk delete asks for confirmation (F-03)", async ({ page }) => {
+test("E2E-11 7a the Box tool opens as a 3 m cube and a bulk delete asks for confirmation (F-03)", async ({ page }) => {
   const { stat, exact, num, ctl, boxEverything, dialogs } = helpers(page);
   await page.goto("/");
   await page.locator("#file-input").setInputFiles({ name: "synthetic.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
@@ -394,7 +394,15 @@ test("E2E-11 7a the Box tool opens small and a bulk delete asks for confirmation
   const activeBefore = await num("Active");
   await ctl("tool-box").click();
   await expect.poll(async () => (await stat("Candidates").innerText()).includes("—"), { timeout: 15000 }).toBe(false);
-  expect(await num("Candidates")).toBeLessThan((FLOOR + GHOST) / 10);
+  // the default box is 3 m on each side (owner ruling, part 13); its candidates are exactly the points inside it, fewer than the cloud
+  const size = [await ctl("box-size-x").inputValue(), await ctl("box-size-y").inputValue(), await ctl("box-size-z").inputValue()].map(Number);
+  expect(size).toEqual([3, 3, 3]);
+  const centre = [await ctl("box-center-x").inputValue(), await ctl("box-center-y").inputValue(), await ctl("box-center-z").inputValue()].map(Number);
+  const xyz = Float32Array.from(parsePcd(syntheticPcd()).rows.flatMap((r) => [r[0], r[1], r[2]]));
+  const inside = countInXyz(xyz, centre, size);
+  expect(inside).toBeGreaterThan(0);
+  expect(inside).toBeLessThan(FLOOR + GHOST);
+  await exact("Candidates", String(inside));
   await boxEverything();
   await exact("Candidates", String(FLOOR + GHOST));
   await expect(ctl("apply")).toBeEnabled();
@@ -854,6 +862,7 @@ test("E2E-23 7b2 an Add shape is shown as a draft with its own outline colour an
   // owner ruling D: an Add over an EMPTY selection goes live, so first commit a selection with Replace
   for (const [id, v] of [["box-center-x", -1], ["box-center-y", 4.5], ["box-center-z", 2.5], ["box-size-x", 1], ["box-size-y", 10], ["box-size-z", 5]] as const) await setNum(id, v);
   await exact("Selected", String(ROOM.wall));
+  await expect(ctl("apply")).toBeEnabled(); // wait for the live selection's candidate: an edit made between the selection's state and its candidate supersedes the candidate job
   await expect(page.locator("#draft-note")).toBeHidden();
   await ctl("op-add").click();
   await expect(page.locator("#draft-note")).toBeHidden();

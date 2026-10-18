@@ -3,6 +3,7 @@ import type { Vec3 } from "../../state/types";
 import {
   type BoxModel,
   boxCorners,
+  boxFromShape,
   defaultBox,
   boxForOpen,
   boxValidity,
@@ -103,7 +104,7 @@ describe("box model", () => {
     expect(resetRotation(rot).center).toEqual(rot.center);
     const reset = resetBox([1, 2, 3]);
     expect(reset.center).toEqual([1, 2, 3]);
-    expect(reset.dimensions).toEqual([1, 1, 1]);
+    expect(reset.dimensions).toEqual([3, 3, 3]);
     const fit = fitToBounds(rot, { min: [0, 0, 0], max: [4, 6, 8] });
     near(fit.center, [2, 3, 4]);
     near(fit.dimensions, [4, 6, 8]);
@@ -118,7 +119,7 @@ describe("box model", () => {
     expect(body).toEqual({
       type: "box",
       center: [1000000.123, -2000000.5, 3.25],
-      dimensions: [1, 1, 1],
+      dimensions: [3, 3, 3],
       rpy_deg: [0, 0, 0],
       mode: "outside",
     });
@@ -150,11 +151,11 @@ describe("box model", () => {
   });
 });
 
-it("UI-105 a newly opened file starts the box as a 1 m cube at the pivot, not at the whole cloud (F-03)", () => {
+it("UI-105 a newly opened file starts the box as a 3 m cube at the pivot, not at the whole cloud (F-03)", () => {
   const prev = { ...defaultBox([0, 0, 0]), dimensions: [50, 50, 9] as [number, number, number], mode: "outside" as const };
   const b = boxForOpen(prev, [4, 5, 6]);
   expect(b.center).toEqual([4, 5, 6]);
-  expect(b.dimensions).toEqual([1, 1, 1]);
+  expect(b.dimensions).toEqual([3, 3, 3]);
   expect(b.mode).toBe("inside");
 });
 
@@ -199,4 +200,28 @@ describe("fit to bounds is outward-safe (7c-3, F2-10)", () => {
       expect(contains(fitToBounds(defaultBox([0, 0, 0]), { min: lo as Vec3, max: hi as Vec3 }), lo, hi)).toBe(true);
     }
   });
+});
+
+it("UI-645 the default and reset box are 3 m on each side, inside, unrotated, and do not share the dimensions array", () => {
+  const a = defaultBox([1, 2, 3]);
+  expect(a.dimensions).toEqual([3, 3, 3]);
+  expect(a.mode).toBe("inside");
+  expect(quatToRpy(a.quat)).toEqual([0, 0, 0]);
+  a.dimensions[0] = 9;
+  expect(defaultBox([0, 0, 0]).dimensions).toEqual([3, 3, 3]);
+  expect(resetBox([0, 0, 0]).dimensions).toEqual([3, 3, 3]);
+});
+
+it("UI-646 boxFromShape inverts toBoxTool within 1e-12 for roll, pitch and yaw, and keeps the mode", () => {
+  for (const rpy of [[0, 0, 0], [10, 20, 30], [-35, 60, 170], [90, -45, -120]] as Vec3[]) {
+    const box: BoxModel = { center: [1.5, -2.25, 8], dimensions: [3, 0.5, 7], quat: rpyToQuat(rpy), mode: "outside" };
+    const back = boxFromShape(toBoxTool(box));
+    expect(back.center).toEqual(box.center);
+    expect(back.dimensions).toEqual(box.dimensions);
+    expect(back.mode).toBe("outside");
+    const dot = back.quat.reduce((a, v, i) => a + v * box.quat[i], 0);
+    expect(Math.abs(Math.abs(dot) - 1)).toBeLessThan(1e-12);
+    const again = toBoxTool(back);
+    near(again.rpy_deg, toBoxTool(box).rpy_deg);
+  }
 });

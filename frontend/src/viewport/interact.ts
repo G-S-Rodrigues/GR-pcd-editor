@@ -5,7 +5,8 @@ import { type ProtectionEdit, type ProtectionModel, dragPlane, rotateSlab } from
 import { RING_EDGE_ON, pivotXY, tiltRings } from "../inspector/rings";
 import { normalOf, slabZ } from "../inspector/tilt";
 import { dot } from "../math/vec";
-import { project } from "../pick/ray";
+import { pickPoint, project } from "../pick/ray";
+import { toWorld } from "../render/origin";
 import { intersectZPlane, screenRay } from "../pick/screenray";
 import type { AppState } from "../state/app";
 import type { Store } from "../state/store";
@@ -303,9 +304,31 @@ export function createToolInteraction(
       return true;
     },
 
-    /** A click (no drag) while drawing a polygon adds a vertex on the pivot's Z plane. */
+    /**
+     * A click (no drag). While drawing a polygon it adds a vertex on the pivot's Z plane. With the Box tool armed (and no
+     * pick mode, no modifier key) it moves the box centre to the clicked cloud point, else to where the ray meets the
+     * horizontal plane through the current centre.
+     */
     click(e: PointerEvent): boolean {
       const s = store.get();
+      if (s.tool === "box" && s.interaction === "orbit" && s.compare === "edited" && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {
+        const p = px(e);
+        const c0 = s.tools.box.center;
+        let centre: Vec3 | null = null;
+        const hit = s.render ? pickPoint(s.render, s.camera, size(), p.x, p.y, 8) : null;
+        if (s.render && hit) {
+          const r = s.render;
+          centre = toWorld([r.coords[3 * hit.index], r.coords[3 * hit.index + 1], r.coords[3 * hit.index + 2]], r.origin);
+        } else {
+          const xy = intersectZPlane(screenRay(s.camera, size(), p.x, p.y), c0[2]);
+          if (xy) centre = [xy[0], xy[1], c0[2]];
+        }
+        if (!centre) return true;
+        const c = centre;
+        store.update((st) => ({ ...st, tools: { ...st.tools, box: { ...st.tools.box, center: c } } }));
+        deps.onToolChanged();
+        return true;
+      }
       if (s.tool !== "polygon" || s.tools.polygon.phase !== "drawing" || s.compare !== "edited") return false;
       const p = px(e);
       const xy = intersectZPlane(screenRay(s.camera, size(), p.x, p.y), s.camera.target[2]);

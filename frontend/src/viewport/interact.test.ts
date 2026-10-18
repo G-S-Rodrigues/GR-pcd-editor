@@ -5,6 +5,7 @@ import { sessionFixture } from "../testing/fixtures";
 import type { Vec3 } from "../state/types";
 import { boxHandles } from "../tools/box/handles";
 import { defaultBox } from "../tools/box/model";
+import { screenRay, intersectZPlane } from "../pick/screenray";
 import { defaultCamera } from "../view/camera";
 import { applyPreset } from "../view/presets";
 import { filterPlanes } from "../filterboxes/plane";
@@ -326,5 +327,71 @@ describe("tilted protection band routing (10-6)", () => {
     expect(t.tools.dragging()).toBe(false);
     t.store.update((s) => ({ ...s, floorPanelOpen: false }));
     expect(tiltRings(t.store.get(), vp.h)).toEqual([]);
+  });
+
+  describe("box click-to-centre (13-6)", () => {
+    const click = (t: ReturnType<typeof setup>, x: number, y: number, mod: Partial<PointerEvent> = {}) =>
+      t.tools.click({ ...t.ev(x, y, false), ctrlKey: false, metaKey: false, ...mod } as PointerEvent);
+    const plane = (t: ReturnType<typeof setup>, x: number, y: number) => {
+      const s = t.store.get();
+      return intersectZPlane(screenRay(s.camera, vp, x, y), s.tools.box.center[2])!;
+    };
+
+    it("UI-647 a click on empty space moves the centre to the ray's hit on the horizontal plane through the old centre, keeps size and Z", () => {
+      const t = setup();
+      t.store.update((s) => ({ ...s, tools: { ...s.tools, box: { ...s.tools.box, center: [0, 0, 2] } } }));
+      const [ex, ey] = plane(t, 600, 200);
+      expect(click(t, 600, 200)).toBe(true);
+      const b = t.store.get().tools.box;
+      expect(b.center[0]).toBeCloseTo(ex, 12);
+      expect(b.center[1]).toBeCloseTo(ey, 12);
+      expect(b.center[2]).toBe(2);
+      expect(b.dimensions).toEqual([2, 2, 2]);
+      expect(Math.abs(ex) + Math.abs(ey)).toBeGreaterThan(0.5); // it really moved
+    });
+
+    it("UI-648 the centre edit goes through onToolChanged once (live selection or preview follows)", () => {
+      const t = setup();
+      click(t, 600, 200);
+      expect(t.changed).toHaveBeenCalledTimes(1);
+    });
+
+    it("UI-649 a click on a drawn cloud point centres on that point exactly, in world coordinates", () => {
+      const t = setup();
+      const origin: Vec3 = [1000, 2000, 3000];
+      const local: Vec3 = [1.5, -0.5, 0.25];
+      const world: Vec3 = [local[0] + origin[0], local[1] + origin[1], local[2] + origin[2]];
+      const cam = { ...t.store.get().camera, target: [origin[0], origin[1], origin[2]] as Vec3 };
+      t.store.set({ camera: cam, render: { coords: new Float32Array(local), count: 1, origin } as never });
+      const at = project(cam, local, origin, vp)!;
+      expect(click(t, at.x, at.y)).toBe(true);
+      expect(t.store.get().tools.box.center).toEqual(world);
+    });
+
+    it("UI-650 a modified click (Shift, Ctrl, Alt, Meta) does not centre", () => {
+      for (const mod of [{ shiftKey: true }, { ctrlKey: true }, { altKey: true }, { metaKey: true }]) {
+        const t = setup();
+        expect(click(t, 600, 200, mod)).toBe(false);
+        expect(t.store.get().tools.box.center).toEqual([0, 0, 0]);
+        expect(t.changed).not.toHaveBeenCalled();
+      }
+    });
+
+    it("UI-651 no centring when another tool is armed, a pick mode is active, or the view is not the edited one", () => {
+      for (const patch of [{ tool: "polygon" as const }, { tool: "none" as const }, { interaction: "pick-seed" as const }, { interaction: "pick-pivot" as const }, { compare: "original" as const }]) {
+        const t = setup();
+        t.store.set(patch);
+        expect(click(t, 600, 200)).toBe(false);
+        expect(t.store.get().tools.box.center).toEqual([0, 0, 0]);
+      }
+    });
+
+    it("UI-652 a real press and release on empty space without movement reports a click; a handle press is not a click", () => {
+      const t = setup();
+      expect(t.tools.pointerDown(t.ev(5, 5, false))).toBe(false); // empty space: reaches the controls, which call click on release
+      expect(t.tools.pointerDown(t.ev(t.at.x, t.at.y, false))).toBe(true); // handle: a drag, never a centring click
+      t.tools.pointerUp();
+      expect(t.store.get().tools.box.center).toEqual([0, 0, 0]);
+    });
   });
 });
