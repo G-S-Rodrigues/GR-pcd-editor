@@ -14,13 +14,15 @@ const store = createAppStore();
 const toolChanged = vi.fn();
 const selectDisplayed = vi.fn();
 const invert = vi.fn();
-const actions = new Proxy({ toolChanged, selectDisplayed, invert } as Record<string, unknown>, { get: (t, k: string) => t[k] ?? (() => undefined) }) as unknown as PanelActions;
+const setTool = vi.fn();
+const actions = new Proxy({ toolChanged, selectDisplayed, invert, setTool } as Record<string, unknown>, { get: (t, k: string) => t[k] ?? (() => undefined) }) as unknown as PanelActions;
 buildToolPalette(dom.root as unknown as HTMLElement, store, actions);
 const ctl = (id: string) => dom.root.control(id) as FakeEl;
 beforeEach(() => {
   toolChanged.mockClear();
   selectDisplayed.mockClear();
   invert.mockClear();
+  setTool.mockClear();
   store.set({ ...createAppStore().get(), session: sessionFixture(), tool: "box", liveFirst: true });
 });
 const build = () => ({ store, ctl, toolChanged });
@@ -127,4 +129,20 @@ test("UI-639 Select displayed and Invert are aria-disabled with the reason while
   expect(sd.getAttribute("aria-disabled")).toBe("false");
   expect(sd.title).toBe(TOOLTIPS["sel-select-displayed"]);
   expect(ctl("sel-clear").hasAttribute("aria-disabled")).toBe(false); // Clear selection stays usable
+});
+
+test("UI-682 Sparse points is a text tool button beside the other tools: it arms the tool, a second press disarms it", () => {
+  const { ctl, store } = build();
+  const b = ctl("tool-sparse");
+  expect(b.text()).toBe("Sparse points");
+  expect(b.children.some((c) => c.tag === "svg")).toBe(false); // no icon on the approved sheet: a text button
+  expect(describeControls().find((d) => d.id === "tool-sparse")?.label).toBe("Sparse points");
+  expect(TOOLTIPS["tool-sparse"]).toMatch(/isolated/);
+  store.set({ tool: "none" });
+  b.fire("click");
+  expect(setTool).toHaveBeenLastCalledWith("sparse");
+  store.set({ tool: "sparse" });
+  b.fire("click");
+  expect(setTool).toHaveBeenLastCalledWith("none");
+  expect(b.classList.contains("active")).toBe(true);
 });

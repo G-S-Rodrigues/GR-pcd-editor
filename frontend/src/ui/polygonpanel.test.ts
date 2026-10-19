@@ -12,7 +12,8 @@ const dom = installFakeDom();
 afterAll(() => dom.restore());
 const store = createAppStore();
 const scroll = vi.fn();
-const actions = new Proxy({} as Record<string, unknown>, { get: (t, k: string) => t[k] ?? (() => undefined) }) as unknown as PanelActions;
+const toolChanged = vi.fn();
+const actions = new Proxy({ toolChanged } as Record<string, unknown>, { get: (t, k: string) => t[k] ?? (() => undefined) }) as unknown as PanelActions;
 buildEditPanels(dom.root as unknown as HTMLElement, store, actions);
 const ctl = (id: string) => dom.root.control(id) as FakeEl;
 const section = () => dom.root.all().find((e) => e.getAttribute("data-section") === "polygon") as FakeEl;
@@ -25,6 +26,7 @@ const closedSquare = () => {
 };
 beforeEach(() => {
   scroll.mockClear();
+  toolChanged.mockClear();
   store.set({ ...createAppStore().get(), session: sessionFixture(), tool: "none" });
 });
 
@@ -85,4 +87,36 @@ test("UI-665 in edit mode each vertex row has a remove button that removes that 
   expect(ctl("edit-error")).toBeUndefined(); // the shared error box is a plain div, not a control
   store.update((s) => ({ ...s, tools: { ...s.tools, polygon: { ...s.tools.polygon, editing: false } } }));
   expect(dom.root.all().filter((e) => e.hasAttribute("data-vertex-remove"))).toHaveLength(0);
+});
+
+test("UI-683 the Sparse points section shows for its tool only, edits radius and neighbours with validation and re-selects", () => {
+  const section = dom.root.all().find((e) => e.getAttribute("data-section") === "sparse") as FakeEl;
+  expect(section.hidden).toBe(true);
+  store.set({ tool: "sparse" });
+  expect(section.hidden).toBe(false);
+  expect(section.text()).toMatch(/fewer than 8 points/);
+  const radius = ctl("sparse-radius");
+  radius.value = "0.4";
+  radius.fire("change");
+  expect(store.get().tools.sparse.radius).toBe(0.4);
+  radius.value = "";
+  radius.fire("change");
+  expect(store.get().tools.sparse.radius).toBeNull();
+  radius.value = "abc";
+  radius.fire("change");
+  expect(store.get().tools.sparse.radius).toBeNull();
+  expect(dom.root.all().find((e) => e.getAttribute("id") === "edit-error")?.text()).toMatch(/Radius/);
+  const min = ctl("sparse-min");
+  min.value = "3";
+  min.fire("change");
+  expect(store.get().tools.sparse.minNeighbours).toBe(3);
+  expect(section.text()).toMatch(/fewer than 3 points/);
+  min.value = "0";
+  min.fire("change");
+  expect(store.get().tools.sparse.minNeighbours).toBe(3);
+  const calls = toolChanged.mock.calls.length;
+  (ctl("sparse-exclude-protected") as unknown as { checked: boolean }).checked = false; // what a click does to a checkbox
+  ctl("sparse-exclude-protected").fire("change");
+  expect(toolChanged.mock.calls.length).toBe(calls + 1);
+  expect(store.get().tools.sparse.excludeProtected).toBe(false);
 });

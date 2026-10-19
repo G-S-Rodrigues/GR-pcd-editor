@@ -54,6 +54,9 @@
       .step-tools { position: absolute; right: 6px; top: 2px; display: none; gap: 1px; }
       .step:hover .step-tools, .step:focus-within .step-tools { display: flex; }
       .step:hover .step-count, .step:focus-within .step-count { visibility: hidden; }
+      .step-edit { display: none; width: 100%; height: 14px; padding: 0; font-size: 11px; line-height: 12px; }
+      .step.highlighted .step-edit:not([hidden]) { display: block; }
+      .step.highlighted .step-label { display: none; }
       .step-btn { width: 16px; height: 16px; padding: 0; line-height: 1; font-size: 11px; }
       #timeline-marker:focus-visible { outline: 2px solid #fff; }
       #viewport { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }

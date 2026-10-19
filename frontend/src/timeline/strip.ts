@@ -2,6 +2,7 @@ import type { AppState } from "../state/app";
 import type { Store } from "../state/store";
 import { control } from "../ui/controls";
 import { h } from "../ui/dom";
+import { EDIT_SHAPE_UNAVAILABLE, editShapeState } from "../tools/shape";
 import { installTimelineStyle } from "./overlay";
 import {
   CARD_W,
@@ -34,6 +35,8 @@ export interface TimelineActions {
   renameStep(sid: number, name: string): void;
   /** The marker target asked for and not yet answered; keys move relative to it so rapid presses add up. */
   pendingCursor(): number | null;
+  /** Edit shape: reopen the step's shape as a live selection (never changes the history). */
+  editShape(sid: number): void;
 }
 
 const GLYPH: Record<string, string> = { box: "▢", polygon: "⬠", cluster: "⁘", filter: "≡", invalid: "⊘", other: "✂" };
@@ -56,6 +59,8 @@ export function buildTimeline(root: HTMLElement, store: Store<AppState>, actions
     "aria-label": "History marker: steps left of it are applied, steps right of it are rolled back",
     "aria-orientation": "horizontal",
   }, h("span", { class: "marker-grip" }));
+  // one Edit shape button, moved into the highlighted card (the card keeps its size: it takes the label's row while highlighted)
+  const editBtn = control("button", { id: "step-edit-shape", type: "button", "data-act": "edit-shape", class: "step-edit" }, "Edit shape");
   track.append(line, empty, marker);
   scroller.append(track);
   root.append(scroller);
@@ -92,6 +97,7 @@ export function buildTimeline(root: HTMLElement, store: Store<AppState>, actions
       if (act === "rollback" && idx >= 0) actions.rollback(idx + 1);
       else if (act === "rename") setT((t) => startRename(t, sid));
       else if (act === "delete") actions.deleteStep(sid);
+      else if (act === "edit-shape") actions.editShape(sid);
     });
     return card;
   }
@@ -175,6 +181,17 @@ export function buildTimeline(root: HTMLElement, store: Store<AppState>, actions
       (el.querySelector(".step-icon") as HTMLElement).textContent = GLYPH[c.icon] ?? GLYPH.other;
       (el.querySelector(".step-count") as HTMLElement).textContent = c.count.toLocaleString("en-US");
       patchLabel(el, c);
+      if (c.highlighted && !c.renaming) {
+        const entry = s.session?.history.entries.find((x) => (x.sid ?? x.index) === c.sid);
+        const e = entry ? editShapeState(entry, entry.index + 1) : { enabled: false, label: "Edit the shape of this step", title: EDIT_SHAPE_UNAVAILABLE };
+        editBtn.disabled = !e.enabled;
+        editBtn.title = e.title;
+        editBtn.setAttribute("aria-label", e.label);
+        if (editBtn.parentElement !== el) el.append(editBtn);
+        editBtn.hidden = false;
+      } else if (editBtn.parentElement === el) {
+        editBtn.hidden = true;
+      }
       if (track.children[i + 2] !== el) track.insertBefore(el, track.children[i + 2] ?? marker);
     });
     marker.style.left = `${slotX(s.timeline.dragging ?? v.marker.slot) - 7}px`;
@@ -243,7 +260,12 @@ export function buildTimeline(root: HTMLElement, store: Store<AppState>, actions
       const order = [...cards.values()];
       const next = order[nextFocus(order.indexOf(card), e.key, order.length)];
       next?.focus();
-    } else if (act.type === "highlight" && card) setT((t) => clickStep(t, sid));
+    } else if (act.type === "highlight" && card) {
+      // Enter on a card that is already highlighted and has a stored shape edits the shape; otherwise it toggles the highlight
+      const entry = store.get().session?.history.entries.find((x) => (x.sid ?? x.index) === sid);
+      if (e.key === "Enter" && store.get().timeline.highlight === sid && entry?.shape) actions.editShape(sid);
+      else setT((t) => clickStep(t, sid));
+    }
     else if (act.type === "rename" && card) setT((t) => startRename(t, sid));
     else if (act.type === "delete" && card) actions.deleteStep(sid);
   });

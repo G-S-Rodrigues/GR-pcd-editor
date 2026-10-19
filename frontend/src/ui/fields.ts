@@ -1,4 +1,4 @@
-export type FieldGroup = "tool" | "box" | "polygon" | "cluster" | "filter" | "protection" | "history";
+export type FieldGroup = "tool" | "box" | "polygon" | "cluster" | "sparse" | "filter" | "protection" | "history";
 export interface FieldSpec {
   id: string;
   label: string;
@@ -15,6 +15,7 @@ export const FIELD_SPECS: FieldSpec[] = [
   f("tool-box", "Box", "tool", "Select points inside (or outside) an oriented box set by numbers or by dragging its handles"),
   f("tool-polygon", "Polygon", "tool", "Select points inside a polygon drawn in the top view, optionally limited by Z"),
   f("tool-cluster", "Cluster", "tool", "Select the connected cluster around a picked seed point within a radius"),
+  f("tool-sparse", "Sparse points", "tool", "Select isolated points with few neighbours (floating artifacts) while walls and floors stay; set the radius and neighbour count below"),
   f("op-select", "Operation", "tool", "How the tool shape combines with the selection. The first selection you draw is live (no operation pressed); once something is selected, Add, Subtract and Intersect preview the result (added points in magenta, removed in blue) and change the selection only when you press Commit draft"),
   f("op-add", "Add to selection", "tool", "Add the tool shape to the selection: the result is previewed and applied on Commit (the first selection you draw is live)"),
   f("op-subtract", "Subtract from selection", "tool", "Remove the tool shape's points from the selection; previewed, applied on Commit"),
@@ -62,6 +63,10 @@ export const FIELD_SPECS: FieldSpec[] = [
   f("cluster-exclude-protected", "Exclude protected", "cluster", "Do not let the cluster grow through height-protected points"),
   f("cluster-max-points", "Max points", "cluster", "Stop and report if the cluster grows past this many points"),
   f("cluster-cancel", "Cancel", "cluster", "Cancel the running cluster computation"),
+  f("sparse-radius", "Radius", "sparse", "Cube edge in the file unit used to count neighbours; empty derives it from the point spacing"),
+  f("sparse-min", "Min neighbours", "sparse", "A point with fewer than this many points around it (itself included) is selected"),
+  f("sparse-region", "Region", "sparse", "Limit the search to the current box or polygon"),
+  f("sparse-exclude-protected", "Exclude protected", "sparse", "Never select height-protected points"),
   ...AX.flatMap((a) =>
     (["min", "max"] as const).flatMap((s) => {
       const lo = s === "min";
@@ -87,4 +92,5 @@ export const FIELD_SPECS: FieldSpec[] = [
   f("prot-tilt-y", "Tilt about Y", "protection", "Tilt of the protected slab about the Y axis in degrees, -60 to 60; drag the blue Y ring on the canvas for the same"),
   f("prot-level", "Level slab", "protection", "Make the protected slab horizontal again (tilt 0 and 0); the Min and Max numbers keep their values"),
   f("prot-ack", "Acknowledge override", "protection", "Confirm that this operation ignores the global protection"),
+  f("step-edit-shape", "Edit shape", "history", "Reopen the highlighted step as a live selection of its own tool and numbers: clears the selection first, changes no history, and applying it afterwards adds a new step"),
 ];

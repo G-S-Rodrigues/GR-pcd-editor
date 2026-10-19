@@ -26,4 +26,11 @@ export interface ClusterTool {
   max_points: number | null;
   on_limit?: "fail" | "partial";
 }
-export type ToolBody = BoxTool | PrismTool | FilterTool | ClusterTool;
+export interface SparseTool {
+  type: "sparse";
+  radius: number | null;
+  min_neighbours: number;
+  region: BoxTool | PrismTool | null;
+  exclude_protected: boolean;
+}
+export type ToolBody = BoxTool | PrismTool | FilterTool | ClusterTool | SparseTool;

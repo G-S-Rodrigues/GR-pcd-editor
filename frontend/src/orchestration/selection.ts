@@ -2,6 +2,7 @@ import type { AppState } from "../state/app";
 import type { Scope, SelectionOp } from "../state/types";
 import { toBoxTool } from "../tools/box/model";
 import { toClusterTool } from "../tools/cluster/model";
+import { toSparseTool } from "../tools/sparse/model";
 import { toPrismTool } from "../tools/polygon/model";
 import type { ToolBody } from "./tooltypes";
 
@@ -44,6 +45,7 @@ export function currentTool(s: AppState): ToolBody | null {
     const c = toClusterTool(t.cluster, box, prism);
     return c && { ...c, on_limit: "partial" as const };
   }
+  if (s.tool === "sparse") return toSparseTool(t.sparse, box, prism);
   return null;
 }
 
@@ -58,7 +60,9 @@ export function buildSelection(s: AppState): BuildResult {
         ? "Draw and close a valid polygon first"
         : s.tool === "cluster"
           ? "Pick a seed point and a valid radius first"
-          : "The box is not valid";
+          : s.tool === "sparse"
+            ? "Sparse points needs a radius above 0 (or empty) and at least 1 neighbour"
+            : "The box is not valid";
     return { ok: false, reason: why };
   }
   return { ok: true, body: { ...base, tool } };

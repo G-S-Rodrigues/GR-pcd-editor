@@ -50,7 +50,43 @@ export interface HistoryEntry {
   tool?: string;
   /** The user's name for the step, null when unnamed. */
   name?: string | null;
+  /** The editable shape the step was made with; null for sessions saved before shapes were stored. */
+  shape?: StepShape | null;
+  /** Exact min/max of the step's points; null when it has no finite point. */
+  bounds?: Bounds | null;
 }
+
+/** A step's shape as the server stores it (the file frame, the same numbers the tool request carried). */
+export interface StepBox {
+  type: "box";
+  center: Vec3;
+  dimensions: Vec3;
+  rpy_deg: Vec3;
+  mode: "inside" | "outside";
+}
+export interface StepPrism {
+  type: "prism";
+  polygon: [number, number][];
+  z_min: number;
+  z_max: number;
+  mode: "inside" | "outside";
+}
+export interface StepCluster {
+  type: "cluster";
+  seed_id: number;
+  radius: number;
+  max_points: number | null;
+  exclude_protected: boolean;
+  region: StepBox | StepPrism | null;
+}
+export interface StepSparse {
+  type: "sparse";
+  radius: number | null;
+  min_neighbours: number;
+  exclude_protected: boolean;
+  region: StepBox | StepPrism | null;
+}
+export type StepShape = StepBox | StepPrism | StepCluster | StepSparse;
 export interface SessionState {
   session_id: string;
   filename: string;
@@ -78,7 +114,7 @@ export type UiOp = "add" | "subtract" | "intersect";
 export type SelectionOp = "replace" | "add" | "subtract" | "intersect" | "invert";
 export type Scope = "displayed" | "active";
 export type RenderMode = "edited" | "original" | "deleted";
-export type ToolKind = "none" | "box" | "polygon" | "cluster";
+export type ToolKind = "none" | "box" | "polygon" | "cluster" | "sparse";
 
 export interface Candidate {
   candidate_id: string;

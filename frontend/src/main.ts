@@ -35,7 +35,7 @@ import { createStepView } from "./orchestration/stepview";
 import { createSessionSync } from "./orchestration/session-sync";
 import { createAppStore, addNotice, dismissNotice } from "./state/app";
 import { createJobHint } from "./orchestration/jobhint";
-import type { SessionState } from "./state/types";
+import type { SessionState, ToolKind } from "./state/types";
 import { h } from "./ui/dom";
 import { control } from "./ui/controls";
 import { buildInspector } from "./ui/inspector-shell";
@@ -43,6 +43,8 @@ import { buildStatusbar } from "./ui/statusbar";
 import { buildLegend } from "./ui/legend";
 import { discardEnabled } from "./tools/preview";
 import { buildTimeline } from "./timeline/strip";
+import { createStepCentre } from "./timeline/centre";
+import { createEditShape } from "./orchestration/editshape";
 import { buildHelp } from "./ui/help";
 import { classifyKey } from "./ui/keys";
 import { buildViewCube } from "./ui/viewcube";
@@ -223,7 +225,7 @@ const panelActions = {
   scopeChanged: () => runner.paramsChanged("scope"),
   filterResetAll: () => filters.resetToCloud(),
   protectionEdit: (fn: Parameters<typeof protection.edit>[0]) => protection.edit(fn),
-  setTool: (t: "none" | "box" | "polygon" | "cluster") => {
+  setTool: (t: ToolKind) => {
     store.update((st) => armTool(st, t));
     if (t === "polygon") {
       enterTool();
@@ -271,7 +273,14 @@ buildInspector($("fileinfo"), store);
 buildToolPalette($("tools"), store, panelActions);
 const legend = buildLegend($("legend"), store, $("modebar"));
 store.subscribe((s) => legend.update(s.timeline.highlight !== null, s.preview?.op ?? null));
+const stepEdit = createEditShape(store, {
+  resetRunner: () => runner.reset(),
+  clearSelection: () => editor.clearSelection(),
+  toolChanged: () => runner.onToolChanged(),
+});
+createStepCentre(store, size);
 buildTimeline($("timeline"), store, {
+  editShape: (sid) => void stepEdit.edit(sid),
   rollback: (c) => void editor.rollback(c),
   deleteStep: (sid) => void editor.deleteStep(sid),
   renameStep: (sid, name) => void editor.renameStep(sid, name),

@@ -5,6 +5,7 @@ import { DEFAULT_FLOOR_T, type ProtectionModel, emptyProtection } from "../inspe
 import type { CompareMode } from "../compare/model";
 import { type BoxModel, defaultBox } from "../tools/box/model";
 import { type ClusterModel, defaultCluster } from "../tools/cluster/model";
+import { type SparseModel, defaultSparse } from "../tools/sparse/model";
 import { type PolygonState, emptyPolygon } from "../tools/polygon/model";
 import type { RenderData } from "../render/parse";
 import { type TimelineState, emptyTimeline } from "../timeline/model";
@@ -25,6 +26,7 @@ export interface ToolsState {
   box: BoxModel;
   polygon: PolygonState;
   cluster: ClusterModel;
+  sparse: SparseModel;
   filters: FilterModel;
   protection: ProtectionModel;
 }
@@ -115,6 +117,7 @@ export function initialState(): AppState {
       box: defaultBox([0, 0, 0]),
       polygon: emptyPolygon(),
       cluster: defaultCluster(),
+      sparse: defaultSparse(),
       filters: emptyFilter(),
       protection: emptyProtection(),
     },

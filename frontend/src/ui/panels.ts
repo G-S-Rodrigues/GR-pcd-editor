@@ -9,7 +9,8 @@ import { displayedBounds, fitToView, rectAxis, rectDepth } from "../tools/box/re
 import { POLYGON_DEPTH_NOTE, Z_UNLIMITED } from "../tools/polygon/model";
 import * as PG from "../tools/polygon/model";
 import { polygonHint } from "../tools/polygon/edit";
-import { CLUSTER_LIMIT_TEXT, clusterLimitText, clusterPanel, regionOptions, setRadius } from "../tools/cluster/model";
+import { CLUSTER_LIMIT_TEXT, type RegionKind, clusterLimitText, clusterPanel, regionOptions, setRadius } from "../tools/cluster/model";
+import { type SparseModel, setMinNeighbours, setSparseRadius, sparseSummary } from "../tools/sparse/model";
 import { clusterPickState, pickText, pressPick } from "../tools/cluster/pick";
 import { headline } from "../status/headline";
 import { commitEnabled, commitLabel, discardEnabled, previewText } from "../tools/preview";
@@ -54,7 +55,12 @@ const fmt = (v: number) => String(Math.round(v * 1e6) / 1e6);
 export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: PanelActions): void {
   const toolBtn = (id: string, tool: AppState["tool"], label: string) =>
     control("button", { id, onclick: () => a.setTool(store.get().tool === tool ? "none" : tool) }, label);
-  const btns = { box: toolBtn("tool-box", "box", "Box"), polygon: toolBtn("tool-polygon", "polygon", "Polygon"), cluster: toolBtn("tool-cluster", "cluster", "Cluster") };
+  const btns = {
+    box: toolBtn("tool-box", "box", "Box"),
+    polygon: toolBtn("tool-polygon", "polygon", "Polygon"),
+    cluster: toolBtn("tool-cluster", "cluster", "Cluster"),
+    sparse: toolBtn("tool-sparse", "sparse", "Sparse points"),
+  };
   // Operation: three icon radios (none pressed while the first selection is live). Replace is not offered.
   const OPS = [
     ["add", "op-add", "add"],
@@ -137,7 +143,7 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
   const keptToggle = control("button", { id: "sel-show-kept", onclick: () => store.update((s) => ({ ...s, showKept: !s.showKept })) }, "Show kept points");
   root.append(
     h("h2", { text: "Tools" }),
-    h("div", { class: "stack" }, btns.box, btns.polygon, btns.cluster),
+    h("div", { class: "stack" }, btns.box, btns.polygon, btns.cluster, btns.sparse),
     h("h2", { text: "Selection" }),
     h("div", { class: "oprow" }, h("span", { text: "Operation" }), op, previewLive),
     liveNote,
@@ -159,7 +165,7 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     invalid,
   );
   const sync: Sync = (s) => {
-    for (const k of ["box", "polygon", "cluster"] as const) btns[k].classList.toggle("active", s.tool === k);
+    for (const k of ["box", "polygon", "cluster", "sparse"] as const) btns[k].classList.toggle("active", s.tool === k);
     const open = s.session !== null;
     const ro = s.compare !== "edited";
     for (const [k, b] of Object.entries(btns)) {
@@ -582,6 +588,51 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     text((s) => clusterLimitText(s.candidate) ?? (s.notices.some((n) => n.code === "component_limit_reached") ? CLUSTER_LIMIT_TEXT : ""), "note warn"),
   );
 
+  // ---- sparse points: select isolated points (floating artifacts), keep walls and floors
+  const sparseEdit = (r: { ok: boolean; model: SparseModel; error?: string }): string | null => {
+    if (!r.ok) return r.error ?? "Invalid value";
+    store.update((s) => ({ ...s, tools: { ...s.tools, sparse: r.model } }));
+    a.toolChanged();
+    return null;
+  };
+  const sparsePanel = section(
+    "sparse",
+    "Sparse points",
+    (s) => s.tool === "sparse",
+    text((s) => sparseSummary(s.tools.sparse)),
+    (() => {
+      const input = control("input", { id: "sparse-radius", type: "text", inputmode: "decimal", placeholder: "From point spacing", onchange: () => {
+        const raw = input.value.trim();
+        const v = raw === "" ? null : Number(raw);
+        showErr(sparseEdit(setSparseRadius(store.get().tools.sparse, v === null || Number.isFinite(v) ? v : Number.NaN)));
+        sync(store.get());
+      } });
+      const sync: Sync = (s) => {
+        if (document.activeElement !== input) input.value = s.tools.sparse.radius === null ? "" : fmt(s.tools.sparse.radius);
+      };
+      syncs.push(sync);
+      return h("label", { class: "f" }, "Radius", input);
+    })(),
+    field("sparse-min", "Min neighbours", (s) => s.tools.sparse.minNeighbours, (v) => sparseEdit(setMinNeighbours(store.get().tools.sparse, v))),
+    (() => {
+      const sel = control("select", { id: "sparse-region", onchange: () => {
+        store.update((s) => ({ ...s, tools: { ...s.tools, sparse: { ...s.tools.sparse, region: sel.value as RegionKind } } }));
+        a.toolChanged();
+      } });
+      syncs.push((s) => {
+        const t = currentToolPair(s);
+        const opts = regionOptions(t.box, t.prism);
+        sel.replaceChildren(...opts.map((o) => h("option", { value: o, text: o === "none" ? "Whole cloud" : o === "box" ? "Current box" : "Current polygon" })));
+        sel.value = opts.includes(s.tools.sparse.region) ? s.tools.sparse.region : "none";
+      });
+      return h("label", { class: "f" }, "Region ", sel);
+    })(),
+    check("sparse-exclude-protected", "Exclude protected points", (s) => s.tools.sparse.excludeProtected, (v) => {
+      store.update((s) => ({ ...s, tools: { ...s.tools, sparse: { ...s.tools.sparse, excludeProtected: v } } }));
+      a.toolChanged();
+    }),
+  );
+
   // ---- filters (the six boxes live on the canvas, see filterboxes/; the panel keeps the note, summary and global reset)
   const filterPanel = section(
     "display",
@@ -666,7 +717,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
   });
   const histPanel = section("history", "History", (s) => s.session !== null, histList, text((s) => (s.session && s.session.history.entries.length === 0 ? "No edits yet" : "")));
 
-  root.append(errors, boxPanel, polyPanel, clusterPanelEl, filterPanel, protPanel, histPanel);
+  root.append(errors, boxPanel, polyPanel, clusterPanelEl, sparsePanel, filterPanel, protPanel, histPanel);
   const syncAll = (s: AppState) => {
     for (const f of syncs) f(s);
   };
