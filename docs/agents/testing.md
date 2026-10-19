@@ -305,3 +305,30 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
   it). Tests: `UI-653`, `UI-654` (`orchestration/runner.test.ts`), smoke `E2E-88` (plain, immediate Link distance edit,
   and a held render read as fault injection). Run `--repeat-each` with `--workers=1`: parallel workers share one server
   session and fail each other.
+
+## Part 13 additions (tool flow)
+
+- Backend: `STS-01..14` (`tests/unit/test_step_shapes.py`: `shape_of` per tool, `tool_summary` unchanged, the entry keeps its
+  shape through undo, reorder, rename and delete, archive round trip, an archive without the key loads with `shape: null`,
+  hostile shapes give `bad_archive`, VERSION stays 1, exact step bounds, a sparse step is stored as tool `selection`) and
+  `SPR-01..11` (`tests/unit/test_sparse.py, test_sparse_api.py, test_sparse_perf.py`: isolated points selected and dense walls not, a brute-force oracle, the
+  neighbour boundary, region, protection, scope, composition with Add/Subtract/Intersect and preview, cancel, invalid
+  parameters, 1M points in at most 2.0 s and 150 MiB: measured 0.50 s and +72 MiB).
+- Frontend `UI-600..611` (first selection live, `liveFirst`, Replace and Slice removed), `UI-616..625` (operation icon
+  radios, Live preview switch, red Delete), `UI-631..639` (Cluster Pick point states, Clear selection disarms,
+  `selectionDisabledReason`), `UI-645..652` (3 m box, click to centre, `boxFromShape`), `UI-653..654` (runner candidate
+  race), `UI-655..668` (Polygon edit mode: `insertVertex`, `removeVertex`, `setEditing`, the hint and key action, the pointer
+  routing in `viewport/polygon-edit.test.ts`, the pencil panel, Backspace, a polygon delete blanks the polygon),
+  `UI-669..683` (history click centres the camera, `shapeToPatch`, Edit shape, Sparse points model and panel). 13-7 uses
+  655..668 because 653 and 654 went to the runner race fix.
+- Smoke `E2E-110..123` (plus `E2E-118b`): the first selection is live (three real handle drags), the + icon, the radio group,
+  the Cluster toggle (waiting, set, paused), Clear selection disarms, the Polygon pencil with the real mouse (draw, drag,
+  insert on an edge, Backspace, double click, Esc), Box click to centre, Live preview off, a step click centres the
+  camera and Edit shape (box, polygon, cluster) leaves the history alone, save and reopen keep the shapes, Delete is red
+  and Select displayed refuses while armed, Sparse points on `sparseRoomPcd` (`e2e/synthetic.ts`: dense floor and wall with
+  ten floating points above z 3; truth is the points above z 3), layout at 1280x720 and 1920x1080 with a highlighted step,
+  and keyboard only.
+- Not covered by a browser test: an old `.pcdsession` without step shapes (the disabled Edit shape button and its reason are
+  unit-tested, `UI-675`, and the loader by `STS-09`); the look of the vertex crosses and of the red Delete (computed styles
+  are asserted, no golden image). The seed cross of an edited cluster step is drawn at the step's centre because the
+  server stores the seed id, not its position.

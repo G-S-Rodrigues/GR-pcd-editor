@@ -442,3 +442,20 @@ Initial targets, to be benchmarked on a documented desktop Linux reference PC wi
   remove are drawn in their own colours with exact counts. Cluster parameters (seed, radius, region, Exclude protected,
   Max points) re-preview live. Apply deletes only the committed selection; saving drops a pending preview. A pending
   preview is never part of the session archive: archive VERSION unchanged, AC-17 stands, AC-15 unchanged.
+
+## Part 13 addendum
+
+- Sections 9 and 11 (selection): Replace is no longer offered; the operations are Add, Subtract and Intersect. While
+  nothing is selected the first selection is live (each shape edit replaces the selection, nothing is previewed); the
+  wire still accepts replace. A Live preview switch turns the preview off, and Commit draft then previews and commits.
+  Delete (the old Apply) is red. The Slice view and its keys are removed; rectangle select spans the whole cloud along
+  the view axis. The Box tool starts as a 3 m cube and a click moves it.
+- Tool flow: Cluster arms at once and waits for a seed click (Pick point toggles waiting, set and paused); Clear
+  selection and pressing a tool again disarm it; Select displayed and Invert refuse while a tool is armed. The Polygon
+  tool has an edit mode (add and remove vertices); a polygon delete blanks the polygon.
+- History steps store their editable shape (box, polygon, cluster with its region, sparse parameters; a filter step
+  becomes the box of its bounds) in the session archive as an optional manifest key (archive VERSION unchanged; an older
+  archive loads with no shapes, an older build ignores the key). A step click centres the camera on the step's bounds
+  and Edit shape reopens the shape; it never changes the history.
+- Sparse points is a new selection tool (a point with fewer than a set number of points in its 3 x 3 x 3 cubes of edge
+  radius). AC-17 stands; AC-15 is unchanged.

@@ -22,6 +22,15 @@
 - **Draft:** A tool shape that has been edited but not yet committed to the
   selection (Add, Subtract and Intersect operations). The server previews its
   result live (the **preview**); the selection changes only on Commit draft.
+- **First selection:** The live selection made while nothing is selected: each edit of the shape replaces the
+  selection at once (no operation icon is pressed, nothing is previewed). Choosing Add, Subtract or Intersect, or
+  committing, ends it.
+- **Edit shape:** Reopens a history step's stored shape (box, polygon, cluster or sparse parameters) as a live first
+  selection of its tool. It clears the selection, never changes the history, and a later delete is a new step.
+- **Step shape:** The editable shape a step was made with, stored with the step in the session; steps from older
+  sessions have none.
+- **Sparse points:** A selection tool for isolated points: a point is selected when fewer than a set number of points
+  lie in the 3 x 3 x 3 cubes around it.
 - **Preview:** The server's computed result of a draft, held until it is
   committed, discarded or made stale: counts (selected after, added, removed)
   and the points it would add or remove, drawn in their own colours. It never
