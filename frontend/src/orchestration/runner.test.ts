@@ -4,7 +4,7 @@ import { createAppStore } from "../state/app";
 import { candidateFixture, sessionFixture } from "../testing/fixtures";
 import { setCenter } from "../tools/box/model";
 import { setSeed } from "../tools/cluster/model";
-import { applyBlockedText, canApply, createRunner } from "./runner";
+import { applyBlockedText, canApply, createRunner, deleteKeyOutcome } from "./runner";
 import { shouldPreview } from "./selection";
 
 interface Deferred {
@@ -612,5 +612,113 @@ describe("cluster reacts to parameter changes and partial results (F-04, F-07)",
     release();
     await flush();
     expect(t.store.get().candidate).toBeNull();
+  });
+
+  const committed = () => ({
+    candidate: candidateFixture({ params_revision: 4 }),
+    session: sessionFixture({ selection: { count: 10, ops: [] } }),
+  });
+
+  it("UI-700 canApply is true with a current candidate while a preview job runs, false while any other job runs", () => {
+    const t = setup({ op: "add", count: 10 });
+    t.store.set({ ...committed(), draft: true, job: { busy: true, preview: true, progress: null, message: null } });
+    expect(canApply(t.store.get())).toBe(true);
+    t.store.set({ job: { busy: true, progress: null, message: null } });
+    expect(canApply(t.store.get())).toBe(false);
+    expect(applyBlockedText(t.store.get())).toBe("a job is running");
+  });
+
+  it("UI-701 a preview job is flagged: Apply stays enabled while its poll is pending and the job is idle when it lands", async () => {
+    const t = setup({ op: "add", count: 10 });
+    t.store.set({ ...committed() });
+    t.editBox(1);
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    expect(t.polls).toHaveLength(1);
+    expect(t.store.get().job.busy).toBe(true);
+    expect(t.store.get().job.preview).toBe(true);
+    expect(canApply(t.store.get())).toBe(true);
+    t.polls[0].resolve(landing());
+    await flush();
+    expect(t.store.get().job).toEqual({ busy: false, progress: null, message: null });
+    expect(canApply(t.store.get())).toBe(true);
+  });
+
+  it("UI-701 supersedePreview cancels a running preview and a pending debounce and leaves the job idle", async () => {
+    const t = setup({ op: "add", count: 10 });
+    t.store.set({ ...committed() });
+    t.editBox(1);
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    t.runner.supersedePreview();
+    expect(t.cancelled).toEqual(["j1"]);
+    expect(t.store.get().job.busy).toBe(false);
+    t.editBox(2); // debounce pending, nothing running
+    t.runner.supersedePreview();
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    expect(t.api.submitPreview).toHaveBeenCalledTimes(1);
+  });
+
+  it("UI-703 a box edit while a commit is in flight does not cancel it; the preview of the new shape waits for it and the candidate is kept", async () => {
+    const t = setup({ op: "add", count: 10 });
+    t.editBox(1);
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    t.polls[0].resolve(landing("p7"));
+    await flush();
+    t.runner.commitDraft();
+    await flush();
+    expect(t.commits).toHaveLength(1);
+    t.editBox(2); // the user keeps editing while the commit runs
+    await vi.advanceTimersByTimeAsync(500);
+    await flush();
+    expect(t.cancelled).toEqual([]);
+    expect(t.api.submitPreview).toHaveBeenCalledTimes(1); // no new preview yet
+    expect(t.store.get().job.busy).toBe(true);
+    t.polls[1].resolve({ selected: 12, candidate: candidateFixture() });
+    await flush();
+    expect(t.store.get().candidate?.candidate_id).toBe("c1");
+    expect(t.api.submitPreview).toHaveBeenCalledTimes(2);
+    expect((t.previews[1] as { tool: { center: number[] } }).tool.center).toEqual([2, 0, 0]);
+    expect(t.store.get().draft).toBe(true);
+    t.polls[2].resolve(landing("p8"));
+    await flush();
+    expect(t.store.get().preview).toMatchObject({ id: "p8" });
+    expect(t.store.get().candidate?.candidate_id).toBe("c1");
+    expect(canApply(t.store.get())).toBe(true);
+    t.editBox(3); // the commit has settled: an edit now previews on its own after the debounce
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    expect(t.api.submitPreview).toHaveBeenCalledTimes(3);
+  });
+
+  it("UI-704 a commit that ends cancelled over a non-empty selection triggers one candidate evaluation, after which Apply is enabled", async () => {
+    const t = setup({ op: "add", count: 10 });
+    t.editBox(1);
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    t.polls[0].resolve(landing("p7"));
+    await flush();
+    t.runner.commitDraft();
+    await flush();
+    t.polls[1].reject(new ApiError(200, "cancelled", "cancelled"));
+    await flush();
+    expect(t.api.submitCandidate).toHaveBeenCalledTimes(1);
+    t.polls[2].resolve({ candidate: candidateFixture({ params_revision: 4 }) });
+    await flush();
+    expect(t.store.get().job.busy).toBe(false);
+    expect(canApply(t.store.get())).toBe(true);
+  });
+
+  it("UI-705 the Delete key is refused with a notice text when Apply is blocked and runs when it is not", () => {
+    const t = setup({ op: "add", count: 10 });
+    expect(deleteKeyOutcome(t.store.get())).toEqual({ run: false, notice: "preview a selection first" });
+    t.store.set({ ...committed() });
+    expect(deleteKeyOutcome(t.store.get())).toEqual({ run: true });
+    t.store.set({ job: { busy: true, progress: null, message: null } });
+    expect(deleteKeyOutcome(t.store.get())).toEqual({ run: false, notice: "a job is running" });
+    t.store.set({ job: { busy: true, preview: true, progress: null, message: null } });
+    expect(deleteKeyOutcome(t.store.get())).toEqual({ run: true });
   });
 });

@@ -3254,6 +3254,85 @@ test("E2E-88 an edit made while the first Cluster selection's state refresh is i
   await t.expectActive(testInfo, inWall);
 });
 
+// ---------------------------------------------------------------- part 16: Delete during a preview (E2E-130, E2E-131)
+/** Holds every request whose method and path suffix match until `release()` (fault injection, not a wait). */
+function holdRequests(page: Pg, method: string, suffix: string) {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((r) => (release = r));
+  let entered: () => void = () => undefined;
+  const reached = new Promise<void>((r) => (entered = r));
+  let holding = true;
+  void page.route(`**${suffix}`, async (route) => {
+    if (holding && route.request().method() === method) {
+      entered();
+      await gate;
+    }
+    await route.continue().catch(() => undefined);
+  });
+  return {
+    reached,
+    release: () => {
+      holding = false;
+      release();
+    },
+  };
+}
+
+test("E2E-130 Delete works while a preview job is computing: it deletes the committed wall only and the late preview is ignored", async ({ page }, testInfo) => {
+  const t = previewHelpers(page);
+  await t.wallSelected();
+  await t.ctl("op-add").click();
+  const held = holdRequests(page, "POST", "/selection/preview");
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  await held.reached; // the preview job is busy and its request is held
+  await expect(t.note).toContainText("Computing preview"); // a draft is showing
+  await expect(t.ctl("apply")).toBeEnabled();
+  await t.ctl("apply").click();
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.wall));
+  await expect(t.note).toBeHidden();
+  held.release();
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.wall));
+  await expect(t.note).toBeHidden();
+  await expect.poll(async () => (await t.layer()).add).toBe(0);
+  await t.expectActive(testInfo, inWall);
+});
+
+test("E2E-131 an edit made while Commit draft's result is on its way does not strand Delete: Candidates equals Selected and Delete removes the union", async ({ page }, testInfo) => {
+  const t = previewHelpers(page);
+  await t.wallSelected();
+  await t.ctl("op-add").click();
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  await t.previewIs(ROOM.wall + ROOM.ghost);
+  // hold the poll of the commit job: the server has installed the selection, the page has not heard yet
+  let committed = false;
+  page.on("request", (r) => {
+    if (r.method() === "POST" && r.url().endsWith("/selection/commit")) committed = true;
+  });
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((r) => (release = r));
+  let entered: () => void = () => undefined;
+  const reached = new Promise<void>((r) => (entered = r));
+  let holding = true;
+  await page.route("**/api/jobs/**", async (route) => {
+    if (holding && committed && route.request().method() === "GET") {
+      holding = false;
+      entered();
+      await gate;
+    }
+    await route.continue().catch(() => undefined);
+  });
+  await t.ctl("sel-commit").click();
+  await reached;
+  await t.setNum("box-size-x", GHOST_BOX.d[0]); // a shape edit while the commit is on the wire
+  release();
+  await t.exact("Selected", String(ROOM.wall + ROOM.ghost));
+  await t.exact("Candidates", String(ROOM.wall + ROOM.ghost));
+  await expect(t.ctl("apply")).toBeEnabled();
+  await t.ctl("apply").click();
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.wall - ROOM.ghost));
+  await t.expectActive(testInfo, (r) => inWall(r) || inBox(r, GHOST_BOX.c, GHOST_BOX.d));
+});
+
 // ---------------------------------------------------------------- part 13: tool flow (E2E-110..123)
 /** Idle on three samples 150 ms apart: no job and no render under way (a gesture during a job is ignored by design). */
 const appIdle = async (page: Pg) => {

@@ -20,6 +20,8 @@ export interface EditApi {
   refreshRender(): Promise<boolean>;
   /** False when another tab replaced or changed the session (already reloaded, with a notice). */
   checkSession?(): Promise<boolean>;
+  /** Cancels a running or pending preview before Apply deletes the committed selection. */
+  supersedePreview?(): void;
 }
 
 /** Deleting half of the active points or more is almost never intended: ask first. */
@@ -99,6 +101,7 @@ export function createEditor(store: Store<AppState>, api: EditApi, confirmFn: (m
     // applying while rolled back throws the greyed steps away on the server: say so first
     if (discard > 0 && !confirmFn(discardText(discard))) return;
     await guarded(async () => {
+      api.supersedePreview?.();
       const state = await api.apply(rev(), c.candidate_id, `Delete ${c.candidates} points (${tool})`);
       await afterChange(state, {
         tools: {

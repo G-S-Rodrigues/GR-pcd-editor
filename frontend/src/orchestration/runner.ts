@@ -35,7 +35,7 @@ export const TOOL_DEBOUNCE_MS = 250;
 export const PARAMS_DEBOUNCE_MS = 300;
 const IDLE = { busy: false, progress: null, message: null } as const;
 
-/** Apply is enabled only for a candidate that matches the current revisions, with no job pending. A draft does not block it: Apply deletes the committed selection only. */
+/** Apply is enabled only for a candidate that matches the current revisions, with no job pending (a preview job does not count: it never touches the committed selection). A draft does not block it: Apply deletes the committed selection only. */
 export function canApply(s: AppState): boolean {
   const c = s.candidate;
   const sess = s.session;
@@ -45,7 +45,7 @@ export function canApply(s: AppState): boolean {
     c.cloud_revision === sess.revision.cloud &&
     c.params_revision === sess.revision.params &&
     c.candidates > 0 &&
-    !s.job.busy &&
+    (!s.job.busy || s.job.preview === true) &&
     protectionBlock(s.tools.protection) === null
   );
 }
@@ -54,13 +54,19 @@ export function canApply(s: AppState): boolean {
 export function applyBlockedText(s: AppState): string {
   if (!s.session) return "no file open";
   if (s.compare !== "edited") return "return to the edited view";
-  if (s.job.busy) return "a job is running";
+  if (s.job.busy && !s.job.preview) return "a job is running";
   const p = protectionBlock(s.tools.protection);
   if (p) return p;
   if ((s.candidate?.cluster as { complete?: boolean } | null | undefined)?.complete === false) {
     return "the cluster stopped at its Max points limit and is not complete; raise Max points or clear the field";
   }
   return s.candidate ? "the preview is out of date or empty; preview again" : "preview a selection first";
+}
+
+/** What the Delete key does: run Apply, or say why it cannot (the notice text). */
+export function deleteKeyOutcome(s: AppState): { run: true } | { run: false; notice: string } {
+  if (canApply(s) && s.compare === "edited") return { run: true };
+  return { run: false, notice: applyBlockedText(s) };
 }
 
 /** Preview orchestration: debounce, supersede (cancel the older job), drop stale results, retry a stale job once. */
@@ -78,8 +84,13 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
     if (jobId) void api.cancelJob(jobId).catch(() => undefined);
     jobId = null;
     previewRunning = false;
+    deferredPreview = false;
     return mine;
   };
+  /** The generation of the commit job in flight; a commit is running while it equals `gen`. */
+  let commitGen = -1;
+  /** A shape edit came in while a commit ran: its preview is computed when the commit settles, never by cancelling it. */
+  let deferredPreview = false;
 
   /** Bumped by every shape edit; a preview is current only if it was submitted for the latest one. */
   let shape = 0;
@@ -101,11 +112,30 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
     retried: boolean,
     kind: "select" | "preview" | "commit" = "select",
   ): Promise<void> {
+    await runJob(submit, message, retried, kind);
+    // a commit nobody superseded has settled: now compute the preview of the shape edited meanwhile
+    if (kind === "commit" && commitGen === gen) {
+      commitGen = -1; // settled: later edits no longer wait for it
+      if (deferredPreview) {
+        deferredPreview = false;
+        store.set({ draft: true });
+        if (store.get().previewLive && shouldPreview(store.get())) previewDraft();
+      }
+    }
+  }
+
+  async function runJob(
+    submit: () => Promise<{ id: string }>,
+    message: string,
+    retried: boolean,
+    kind: "select" | "preview" | "commit",
+  ): Promise<void> {
     const mine = supersede();
     ctl = new AbortController();
     const signal = ctl.signal;
-    store.set({ job: { busy: true, progress: null, message } });
+    store.set({ job: { busy: true, ...(kind === "preview" ? { preview: true } : {}), progress: null, message } });
     previewRunning = kind === "preview";
+    commitGen = kind === "commit" ? mine : -1;
     const mineEpoch = kind === "preview" ? epoch : ++epoch;
     const submittedShape = shape;
     runningShape = submittedShape;
@@ -119,7 +149,7 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
       const result = await api.poll(id, {
         signal,
         onProgress: (progress, m) => {
-          if (mine === gen) store.set({ job: { busy: true, progress, message: m ?? message } });
+          if (mine === gen) store.set({ job: { busy: true, ...(kind === "preview" ? { preview: true } : {}), progress, message: m ?? message } });
         },
       });
       if (mine !== gen) return;
@@ -193,7 +223,14 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
         }
         return;
       }
-      if (code === "cancelled") return;
+      if (code === "cancelled") {
+        // cancelled by someone else (not by an edit of ours): a commit that was installed or not, look at the selection again
+        if (kind === "commit") {
+          await api.refreshState().catch(() => undefined);
+          if (mine === gen && (store.get().session?.selection.count ?? 0) > 0) candidateNow();
+        }
+        return;
+      }
       commitWhenReady = false;
       if (kind === "preview") store.set({ preview: null });
       else store.set({ candidate: null });
@@ -227,6 +264,10 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
 
   /** Computes the pending preview of the drafted shape (never touches the selection or the candidate). */
   function previewDraft(): void {
+    if (commitGen === gen) {
+      deferredPreview = true; // never cancel a commit in flight
+      return;
+    }
     const built = buildSelection(store.get());
     if (!built.ok || built.body.tool === null) {
       commitWhenReady = false;
@@ -265,6 +306,15 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
     /** Single entry for every tool change (numeric field or handle drag). */
     onToolChanged(): void {
       const s = store.get();
+      if (commitGen === gen && shouldPreview(s)) {
+        // a commit is in flight: cancelling it could strand the candidate. Keep it; the new shape previews when it settles.
+        toolDebounce.cancel();
+        shape++;
+        commitWhenReady = false;
+        deferredPreview = true;
+        store.set({ draft: true });
+        return;
+      }
       supersede();
       toolDebounce.cancel();
       shape++;
@@ -310,6 +360,15 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
       }
       commitWhenReady = true;
       if (!(previewRunning && runningShape === shape)) previewDraft();
+    },
+    /** Apply is about to delete the committed selection: a running preview and a pending preview timer are obsolete. */
+    supersedePreview(): void {
+      toolDebounce.cancel();
+      commitWhenReady = false;
+      if (previewRunning) {
+        supersede();
+        store.set({ job: { ...IDLE } });
+      }
     },
     /** Esc, the Discard draft button, Clear: forget the drafted preview; selection, history and candidate stay. */
     discardDraft(): void {

@@ -14,7 +14,7 @@ import { slabCoordinate } from "./inspector/tilt";
 import { type ProtectionModel, floorFromPick, protectionFromState, setGlobal } from "./inspector/protection";
 import { createProtectionController } from "./inspector/protection-controller";
 import { createEditor } from "./orchestration/edit";
-import { canApply, createRunner } from "./orchestration/runner";
+import { createRunner, deleteKeyOutcome } from "./orchestration/runner";
 import { armTool, disarmed } from "./orchestration/toolstate";
 import { createUploadCanceller } from "./orchestration/upload-cancel";
 import { type UploadOptions, uploadFile } from "./files/upload";
@@ -112,6 +112,7 @@ const editor = createEditor(
     refreshState,
     refreshRender: () => refresher.refresh(),
     checkSession: () => sessionSync.check(),
+    supersedePreview: () => runner.supersedePreview(),
   },
   (m) => window.confirm(m),
 );
@@ -321,8 +322,9 @@ window.addEventListener("keydown", (e) => {
     e.preventDefault();
     void editor.redo();
   } else if (id === "apply") {
-    const s = store.get();
-    if (canApply(s) && s.compare === "edited") void editor.apply();
+    const out = deleteKeyOutcome(store.get());
+    if (out.run) void editor.apply();
+    else addNotice(store, "info", "delete_blocked", out.notice);
   } else if (id === "polygon-close" && store.get().tool === "polygon" && store.get().tools.polygon.phase === "drawing") {
     const msg = panelActions.finishPolygon();
     if (msg) note(msg);

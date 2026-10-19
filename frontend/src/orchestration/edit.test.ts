@@ -25,6 +25,7 @@ function setup(session = sessionFixture()) {
     clearSelection: vi.fn(async (_r: number) => sessionFixture()),
     refreshState: vi.fn(async () => undefined),
     refreshRender: vi.fn(async () => true),
+    supersedePreview: vi.fn(() => undefined),
   };
   const confirm = vi.fn(() => true);
   const ed = createEditor(store, api, confirm);
@@ -60,6 +61,33 @@ describe("editor actions", () => {
     expect(t.api.refreshRender).toHaveBeenCalled();
     // a new apply after undo clears the redo branch (server state shows fewer entries)
     expect(historyRows(sessionFixture({ history: hist(3, 1) })).map((r) => r.undone)).toEqual([false, true, true]);
+  });
+
+  it("UI-702 apply while a preview job runs supersedes the preview once before the request and deletes the committed candidate only; a dismissed confirm does not", async () => {
+    const t = setup();
+    const order: string[] = [];
+    t.api.supersedePreview.mockImplementation(() => void order.push("supersede"));
+    t.api.apply.mockImplementation(async () => {
+      order.push("apply");
+      return sessionFixture({ revision: { cloud: 4, params: 5 }, history: hist(1) });
+    });
+    t.store.set({
+      candidate: candidateFixture({ candidates: 42 }),
+      draft: true,
+      preview: { id: "p", op: "add", selected_after: 12, base_selected: 10, added: 2, removed: 0 },
+      job: { busy: true, preview: true, progress: null, message: "Computing preview..." },
+    });
+    await t.ed.apply();
+    expect(order).toEqual(["supersede", "apply"]);
+    expect(t.api.apply).toHaveBeenCalledWith(3, "c1", "Delete 42 points (box)");
+    expect(t.store.get().draft).toBe(false);
+    expect(t.store.get().preview).toBeNull();
+    const d = setup();
+    d.confirm.mockReturnValue(false);
+    d.store.set({ candidate: candidateFixture({ candidates: 600 }), job: { busy: true, preview: true, progress: null, message: null } });
+    await d.ed.apply();
+    expect(d.api.supersedePreview).not.toHaveBeenCalled();
+    expect(d.api.apply).not.toHaveBeenCalled();
   });
 
   it("UI-76 apply without a current candidate sends nothing", async () => {

@@ -76,7 +76,8 @@ export interface AppState {
   draft: boolean;
   /** The server-side pending result of the drafted shape, drawn but not committed; null when none. */
   preview: PreviewState | null;
-  job: { busy: boolean; progress: number | null; message: string | null };
+  /** `preview`: the running job only computes the pending preview of a drafted shape (it never touches the committed selection, so Apply stays usable). */
+  job: { busy: boolean; preview?: boolean; progress: number | null; message: string | null };
   upload: { phase: "sending" | "importing"; loaded: number; total: number | null } | null;
   notices: Notice[];
   filterUi: FilterUi;

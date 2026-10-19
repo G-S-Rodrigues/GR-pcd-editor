@@ -306,6 +306,15 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
   and a held render read as fault injection). Run `--repeat-each` with `--workers=1`: parallel workers share one server
   session and fail each other.
 
+### Delete during preview
+
+- A preview job sets `job.preview`; `canApply` ignores it (owner ruling A: Delete deletes the committed selection only), and
+  `editor.apply()` calls `supersedePreview` first. A shape edit while a commit is in flight no longer cancels the commit;
+  its preview runs when the commit settles; a commit cancelled from outside re-evaluates the candidate. The Delete key
+  adds a notice with `applyBlockedText` when blocked (`deleteKeyOutcome`). Tests: `UI-700..705` (`runner.test.ts`,
+  `edit.test.ts`), smoke `E2E-130` (preview request held; RED seen at HEAD) and `E2E-131` (commit poll held; passed at HEAD
+  too, so it is a regression guard only).
+
 ## Part 13 additions (tool flow)
 
 - Backend: `STS-01..14` (`tests/unit/test_step_shapes.py`: `shape_of` per tool, `tool_summary` unchanged, the entry keeps its
