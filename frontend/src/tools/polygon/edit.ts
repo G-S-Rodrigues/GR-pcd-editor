@@ -3,9 +3,13 @@ import type { PolygonState } from "./model";
 
 export type PolygonKeyAction = "close" | "cancel-drawing" | "leave-edit" | "remove-vertex";
 
-/** What a documented key does to the polygon, or null when it is not the polygon's. Delete stays Apply. */
-export function polygonKeyAction(s: PolygonState, id: KeyId | null): PolygonKeyAction | null {
-  if (id === "polygon-close") return s.phase === "drawing" ? "close" : s.editing ? "leave-edit" : null;
+/**
+ * What a documented key does to the polygon, or null when it is not the polygon's. Delete stays Apply. `target` is the
+ * tag of the focused element: Enter on a focused button activates that button (the pencil itself toggles the mode), so
+ * it does not also leave edit mode.
+ */
+export function polygonKeyAction(s: PolygonState, id: KeyId | null, target = ""): PolygonKeyAction | null {
+  if (id === "polygon-close") return s.phase === "drawing" ? "close" : s.editing && target !== "BUTTON" ? "leave-edit" : null;
   if (id === "cancel") return s.phase === "drawing" ? "cancel-drawing" : s.editing ? "leave-edit" : null;
   if (id === "polygon-remove-vertex") return s.editing ? "remove-vertex" : null;
   return null;

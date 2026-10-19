@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
-import { BIG, FLOOR, GHOST, NORMAL_ROOM_TOTAL, ROOM, ROOM_TOTAL, TILTED, TOTAL, bigRoomPcd, bigRoomXyz, countInTiltedSlab, countInXyz, normalRoomPcd, parsePcd, roomPcd, rowKey, syntheticPcd, tiltedFloorAngles, tiltedFloorPcd, truthKeys } from "./synthetic";
+import { BIG, FLOOR, GHOST, NORMAL_ROOM_TOTAL, ROOM, ROOM_TOTAL, SPARSE, SPARSE_TOTAL, TILTED, TOTAL, bigRoomPcd, bigRoomXyz, countInTiltedSlab, countInXyz, normalRoomPcd, parsePcd, roomPcd, rowKey, sparseRoomPcd, syntheticPcd, tiltedFloorAngles, tiltedFloorPcd, truthKeys } from "./synthetic";
 
 test("open a cloud, navigate, pick a pivot, colour, read counts", async ({ page }) => {
   const errors: string[] = [];
@@ -3252,4 +3252,622 @@ test("E2E-88 an edit made while the first Cluster selection's state refresh is i
   await t.ctl("apply").click();
   await t.exact("Active", String(ROOM_TOTAL - ROOM.wall));
   await t.expectActive(testInfo, inWall);
+});
+
+// ---------------------------------------------------------------- part 13: tool flow (E2E-110..123)
+/** Idle on three samples 150 ms apart: no job and no render under way (a gesture during a job is ignored by design). */
+const appIdle = async (page: Pg) => {
+  let ok = 0;
+  for (let i = 0; i < 100 && ok < 3; i++) {
+    const busy = await page.evaluate(() => {
+      const s = (window as unknown as { __editor: { state: () => { job: { busy: boolean }; rendering: boolean } } }).__editor.state();
+      return s.job.busy || s.rendering;
+    });
+    ok = busy ? 0 : ok + 1;
+    await page.waitForTimeout(150);
+  }
+  expect(ok).toBe(3);
+};
+type PolyView = { phase: string; editing: boolean; vertices: number[][]; z: number };
+const polyOf = (page: Pg) =>
+  page.evaluate(() => {
+    const s = (window as unknown as { __editor: { state: () => { tools: { polygon: { phase: string; editing: boolean; vertices: number[][] } }; camera: { target: number[] } } } }).__editor.state();
+    return { phase: s.tools.polygon.phase, editing: s.tools.polygon.editing, vertices: s.tools.polygon.vertices.map((v) => [v[0], v[1]]), z: s.camera.target[2] };
+  }) as Promise<PolyView>;
+const cameraOf = (page: Pg) =>
+  page.evaluate(() => {
+    const c = (window as unknown as { __editor: { state: () => { camera: { target: number[]; orientation: number[]; distance: number } } } }).__editor.state().camera;
+    return { target: [...c.target], orientation: [...c.orientation], distance: c.distance };
+  });
+const entriesOf = (page: Pg) =>
+  page.evaluate(() => {
+    const s = (window as unknown as { __editor: { state: () => { session: { history: { entries: { sid: number; shape: { type: string; seed_id?: number } | null; bounds: { min: number[]; max: number[] } | null }[] } } } } }).__editor.state();
+    return s.session.history.entries.map((e) => ({ sid: e.sid, shape: e.shape, bounds: e.bounds }));
+  });
+/** Point in polygon (x, y; boundary cases do not occur with the room's integer grid and fractional vertices). */
+const inPoly = (r: number[], poly: number[][]) => {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i];
+    const [xj, yj] = poly[j];
+    if (yi > r[1] !== yj > r[1] && r[0] < ((xj - xi) * (r[1] - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+};
+const inPolyCount = (poly: number[][]) => finiteRows().filter((r) => inPoly(r, poly)).length;
+/** A box handle's page position once it has stopped moving (the view animates after a preset). */
+const stableHandle = async (page: Pg, id: string) => {
+  let prev: { x: number; y: number } | null = null;
+  await expect
+    .poll(async () => {
+      const h = (await hook(page, (e) => e.handlePositions())).find((p) => p.id === id) ?? null;
+      const same = !!prev && !!h && Math.hypot(h.x - prev.x, h.y - prev.y) < 0.5;
+      prev = h;
+      return same;
+    }, { timeout: 5000, intervals: [100] })
+    .toBe(true);
+  return prev!;
+};
+/** A canvas spot that is not covered by a DOM overlay and is far from every box handle: a plain drag there orbits. */
+const freeCanvasPoint = async (page: Pg) =>
+  page.evaluate(() => {
+    const cv = document.getElementById("viewport")!;
+    const r = cv.getBoundingClientRect();
+    const hs = (window as unknown as { __editor: { handlePositions: () => { x: number; y: number }[] } }).__editor.handlePositions();
+    for (const fy of [0.3, 0.5, 0.7, 0.2, 0.8]) {
+      for (const fx of [0.2, 0.35, 0.5, 0.65, 0.8]) {
+        const p = { x: r.left + r.width * fx, y: r.top + r.height * fy };
+        if (document.elementFromPoint(p.x, p.y) === cv && hs.every((h) => Math.hypot(h.x - p.x, h.y - p.y) > 90)) return p;
+      }
+    }
+    return { x: r.left + r.width * 0.5, y: r.top + r.height * 0.5 };
+  });
+const dragBetween = async (page: Pg, a: { x: number; y: number }, b: { x: number; y: number }) => {
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2, { steps: 4 });
+  await page.mouse.move(b.x, b.y, { steps: 4 });
+  await page.mouse.up();
+};
+
+test("E2E-110 13 the first selection is live: real handle drags that shrink, grow and shrink the box leave exactly the last box's points, and no preview is asked for", async ({ page }) => {
+  const t = previewHelpers(page);
+  await openRoom(page, t.exact);
+  await t.ctl("cube-top").click();
+  await t.ctl("tool-box").click();
+  await expect(page.locator("#live-note")).toContainText("First selection");
+  for (const id of ["op-add", "op-subtract", "op-intersect"]) await expect(t.ctl(id)).toHaveAttribute("aria-checked", "false"); // none pressed
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  const rows = finiteRows();
+  await t.exact("Selected", String(rows.filter((r) => inBox(r, GHOST_BOX.c, GHOST_BOX.d)).length));
+  await appIdle(page);
+  const seen: number[] = [];
+  for (const metres of [-1, 2, -2]) {
+    // the +X handle moves the right face; one metre on screen is measured from two projected points
+    const centre = await settledScreen(page, [3, 13, 2]);
+    const one = await settledScreen(page, [4, 13, 2]);
+    const ppm = Math.hypot(one.x - centre.x, one.y - centre.y);
+    const h = await stableHandle(page, "resize-0+");
+    const u = { x: (h.x - centre.x) / Math.hypot(h.x - centre.x, h.y - centre.y), y: (h.y - centre.y) / Math.hypot(h.x - centre.x, h.y - centre.y) };
+    await dragBetween(page, h, { x: h.x + u.x * ppm * metres, y: h.y + u.y * ppm * metres });
+    const b = await t.box();
+    const want = rows.filter((r) => inBox(r, b.c, b.d)).length;
+    seen.push(want);
+    await t.exact("Selected", String(want));
+    await t.exact("Candidates", String(want));
+    await appIdle(page);
+  }
+  expect(new Set(seen).size, `the three boxes select different counts (${seen})`).toBeGreaterThan(1); // a union would keep the largest
+  expect(Math.min(...seen)).toBeLessThan(Math.max(...seen));
+  expect(t.posts.preview).toBe(0);
+  await expect(t.note).toBeHidden();
+});
+
+test("E2E-111 13 pressing the + icon ends the first selection: the next edit previews (Selected stays) and Commit draft changes Selected", async ({ page }) => {
+  const t = previewHelpers(page);
+  await t.wallSelected();
+  await expect(page.locator("#live-note")).toBeVisible();
+  const live0 = t.posts.select;
+  await t.ctl("op-add").click();
+  await expect(t.ctl("op-add")).toHaveAttribute("aria-checked", "true");
+  await expect(page.locator("#live-note")).toBeHidden();
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  const rows = finiteRows();
+  const union = new Set([...rows.filter((r) => inBox(r, [-1, 4.5, 2.5], [1, 10, 5])), ...rows.filter((r) => inBox(r, GHOST_BOX.c, GHOST_BOX.d))].map(rowId)).size;
+  await t.previewIs(union);
+  await t.exact("Selected", String(ROOM.wall));
+  expect(t.posts.select).toBe(live0); // the edit asked for a preview, not a live selection
+  expect(t.posts.preview).toBeGreaterThanOrEqual(1);
+  await t.ctl("sel-commit").click();
+  await t.exact("Selected", String(union));
+  expect(t.posts.commit).toBe(1);
+});
+
+test("E2E-112 13 the operation icons are a radio group: real clicks and the arrow keys move the choice, Subtract and Intersect commit against the selection", async ({ page }) => {
+  const t = previewHelpers(page);
+  await t.wallSelected();
+  const checked = async () => Promise.all(["op-add", "op-subtract", "op-intersect"].map((id) => t.ctl(id).getAttribute("aria-checked")));
+  await t.ctl("op-subtract").click();
+  expect(await checked()).toEqual(["false", "true", "false"]);
+  await page.keyboard.press("ArrowRight");
+  expect(await checked()).toEqual(["false", "false", "true"]);
+  await expect(t.ctl("op-intersect")).toBeFocused();
+  await page.keyboard.press("ArrowRight"); // wraps to Add
+  expect(await checked()).toEqual(["true", "false", "false"]);
+  await t.ctl("op-subtract").click();
+  const rows = finiteRows();
+  const c = [-1, 2.5, 2.5];
+  const d = [1, 5, 5];
+  await t.setBox(c, d);
+  const wall = rows.filter((r) => inBox(r, [-1, 4.5, 2.5], [1, 10, 5]));
+  const left = wall.filter((r) => !inBox(r, c, d)).length;
+  await t.previewLeaves(left);
+  await t.ctl("sel-commit").click();
+  await t.exact("Selected", String(left));
+  await t.ctl("op-intersect").click();
+  await t.setBox([-1, 7.5, 2.5], [1, 5, 5]);
+  const keep = wall.filter((r) => !inBox(r, c, d) && inBox(r, [-1, 7.5, 2.5], [1, 5, 5])).length;
+  await t.previewLeaves(keep);
+  await t.ctl("sel-commit").click();
+  await t.exact("Selected", String(keep));
+});
+
+test("E2E-113 13 Cluster: pressing the tool waits for a seed, one click selects the cluster, Pick point clears the seed and waits, a second click picks another cluster", async ({ page }) => {
+  const t = previewHelpers(page);
+  await openRoom(page, t.exact);
+  const rows = finiteRows();
+  const pick = t.ctl("cluster-pick-seed");
+  await t.ctl("tool-cluster").click();
+  await expect(pick).toHaveAttribute("data-state", "waiting");
+  await t.setNum("cluster-radius", 1);
+  const at = async (w: readonly number[]) => {
+    const p = await settledScreen(page, [...w]);
+    await page.mouse.click(p.x, p.y);
+  };
+  await at(CL.wall);
+  await expect(pick).toHaveAttribute("data-state", "set");
+  await expect(page.locator("#editpanels")).toContainText("Seed: point");
+  await t.exact("Selected", String(clusterTruth(rows, [...CL.wall], 1).size));
+  await pick.click();
+  await expect(pick).toHaveAttribute("data-state", "waiting");
+  await expect(page.locator("#editpanels")).not.toContainText("Seed: point");
+  await expect(t.ctl("tool-cluster")).toHaveClass(/active/); // the tool stays armed
+  await at(CL.blob);
+  await expect(pick).toHaveAttribute("data-state", "set");
+  await t.exact("Selected", String(clusterTruth(rows, [...CL.blob], 1).size));
+  await t.exact("Candidates", String(clusterTruth(rows, [...CL.blob], 1).size));
+  // Esc leaves the waiting state paused; pressing Pick point waits again
+  await pick.click();
+  await expect(pick).toHaveAttribute("data-state", "waiting");
+  await page.keyboard.press("Escape");
+  await expect(pick).toHaveAttribute("data-state", "paused");
+  await pick.click();
+  await expect(pick).toHaveAttribute("data-state", "waiting");
+});
+
+test("E2E-114 13 Clear selection disarms the tool: no tool pressed, no seed, no polygon, and a drag orbits again", async ({ page }) => {
+  const t = previewHelpers(page);
+  await openRoom(page, t.exact);
+  await t.ctl("tool-cluster").click();
+  await t.setNum("cluster-radius", 1);
+  const p = await settledScreen(page, [...CL.wall]);
+  await page.mouse.click(p.x, p.y);
+  await expect(page.locator("#editpanels")).toContainText("Seed: point");
+  await t.exact("Selected", String(ROOM.wall));
+  await t.ctl("sel-clear").click();
+  await t.exact("Selected", "0");
+  await expect(page.locator("#modebar")).toContainText("Tool: None");
+  for (const id of ["tool-box", "tool-polygon", "tool-cluster", "tool-sparse"]) await expect(t.ctl(id)).not.toHaveClass(/active/);
+  await expect(page.locator("#editpanels")).not.toContainText("Seed: point");
+  await appIdle(page);
+  const before = await cameraOf(page);
+  const free = await freeCanvasPoint(page);
+  await dragBetween(page, free, { x: free.x + 100, y: free.y + 40 });
+  expect((await cameraOf(page)).orientation).not.toEqual(before.orientation);
+  // a half-drawn polygon goes too
+  await t.ctl("tool-polygon").click();
+  await t.ctl("poly-draw").click();
+  await t.ctl("cube-top").click();
+  const v = await settledScreen(page, [2, 12, 0]);
+  await page.mouse.click(v.x, v.y);
+  expect((await polyOf(page)).vertices.length).toBe(1);
+  await t.ctl("sel-clear").click();
+  const after = await polyOf(page);
+  expect(after).toMatchObject({ phase: "idle", vertices: [] });
+  await expect(page.locator("#modebar")).toContainText("Tool: None");
+});
+
+test("E2E-115 13 Polygon with the real mouse: draw, close, drag a vertex, then the pencil adds a vertex on an edge and removes one with Backspace and a double click; the selection follows each shape", async ({ page }) => {
+  const t = previewHelpers(page);
+  await openRoom(page, t.exact);
+  await t.ctl("cube-top").click();
+  await t.ctl("tool-polygon").click();
+  await t.ctl("cube-top").click();
+  await expect(t.ctl("poly-draw")).toHaveClass(/hint/); // the first step is highlighted until a polygon exists
+  await expect(page.locator("#editpanels")).toContainText("1 Press Draw polygon");
+  await t.ctl("poly-draw").click();
+  await expect(t.ctl("poly-draw")).not.toHaveClass(/hint/);
+  for (const [x, y] of [[1.5, 11.5], [4.5, 11.5], [4.5, 14.8], [1.5, 14.8]]) {
+    const px = await settledScreen(page, [x, y, 0]);
+    await page.mouse.click(px.x, px.y);
+  }
+  await page.keyboard.press("Enter");
+  let poly = await polyOf(page);
+  expect(poly.phase).toBe("closed");
+  await t.exact("Selected", String(inPolyCount(poly.vertices)));
+  const world = (v: number[]) => settledScreen(page, [v[0], v[1], poly.z]);
+  // drag the fourth vertex (1.5, 14.8) down to (1.5, 13.2) with the real mouse
+  await appIdle(page);
+  await dragBetween(page, await world(poly.vertices[3]), await world([1.5, 13.2]));
+  poly = await polyOf(page);
+  expect(poly.vertices[3][1]).toBeCloseTo(13.2, 0);
+  expect(poly.vertices).toHaveLength(4);
+  await t.exact("Selected", String(inPolyCount(poly.vertices)));
+  // pencil: edit mode on, a click on the bottom edge adds a vertex, the shape (and the selection) stay
+  await t.ctl("poly-edit").click();
+  await expect(t.ctl("poly-edit")).toHaveAttribute("aria-pressed", "true");
+  await appIdle(page);
+  const mid = await world([(poly.vertices[0][0] + poly.vertices[1][0]) / 2, (poly.vertices[0][1] + poly.vertices[1][1]) / 2]);
+  await page.mouse.click(mid.x, mid.y);
+  poly = await polyOf(page);
+  expect(poly.vertices).toHaveLength(5);
+  expect(poly.vertices[1][1]).toBeCloseTo(11.5, 1);
+  expect(poly.vertices[1][0]).toBeCloseTo(3, 1);
+  await t.exact("Selected", String(inPolyCount(poly.vertices)));
+  // drag the new vertex out; the selection grows by the points the move uncovers
+  await appIdle(page);
+  const grown = inPolyCount(poly.vertices);
+  await dragBetween(page, await world(poly.vertices[1]), await world([3, 10.2]));
+  poly = await polyOf(page);
+  expect(poly.vertices[1][1]).toBeCloseTo(10.2, 0);
+  await t.exact("Selected", String(inPolyCount(poly.vertices)));
+  expect(inPolyCount(poly.vertices)).toBeGreaterThan(grown);
+  // Backspace over the vertex removes it
+  await appIdle(page);
+  const at = await world(poly.vertices[1]);
+  await page.mouse.move(at.x, at.y);
+  await page.keyboard.press("Backspace");
+  poly = await polyOf(page);
+  expect(poly.vertices).toHaveLength(4);
+  await t.exact("Selected", String(inPolyCount(poly.vertices)));
+  // a double click on a vertex removes it too (down, up, down within the tap time)
+  await appIdle(page);
+  const second = await world(poly.vertices[2]);
+  await page.mouse.dblclick(second.x, second.y);
+  poly = await polyOf(page);
+  expect(poly.vertices).toHaveLength(3);
+  await t.exact("Selected", String(inPolyCount(poly.vertices)));
+  // never below three: Backspace over a vertex of a triangle changes nothing
+  const last = await world(poly.vertices[0]);
+  await page.mouse.move(last.x, last.y);
+  await page.keyboard.press("Backspace");
+  expect((await polyOf(page)).vertices).toHaveLength(3);
+  expect(t.posts.preview).toBe(0); // everything was the live first selection
+  await page.keyboard.press("Escape");
+  await expect(t.ctl("poly-edit")).toHaveAttribute("aria-pressed", "false");
+  expect((await polyOf(page)).phase).toBe("closed"); // the shape stays
+});
+
+test("E2E-116 13 a click without movement moves the Box tool's box to the clicked point; a drag orbits and a handle drag still resizes", async ({ page }) => {
+  const t = previewHelpers(page);
+  await openRoom(page, t.exact);
+  await t.ctl("cube-top").click();
+  await t.ctl("tool-box").click();
+  await appIdle(page);
+  expect((await t.box()).d).toEqual([3, 3, 3]);
+  const rows = finiteRows();
+  const target = [14, 6, 0];
+  const p = await settledScreen(page, target);
+  await page.mouse.click(p.x, p.y);
+  await expect.poll(async () => (await t.box()).c.map((v) => Math.round(v * 10) / 10)).toEqual([14, 6, 0]);
+  const b = await t.box();
+  expect(b.d).toEqual([3, 3, 3]);
+  await t.exact("Candidates", String(rows.filter((r) => inBox(r, b.c, b.d)).length));
+  await t.exact("Selected", String(rows.filter((r) => inBox(r, b.c, b.d)).length));
+  // a drag across the cloud is an orbit, not a click: the box stays
+  await appIdle(page);
+  const cam = await cameraOf(page);
+  const free = await freeCanvasPoint(page);
+  await dragBetween(page, free, { x: free.x + 60, y: free.y + 40 });
+  expect((await t.box()).c).toEqual(b.c);
+  expect((await cameraOf(page)).orientation).not.toEqual(cam.orientation);
+  // the handles still work
+  await t.ctl("cube-top").click();
+  await appIdle(page);
+  const h = await stableHandle(page, "resize-0+");
+  await dragBetween(page, h, { x: h.x + 40, y: h.y });
+  expect((await t.box()).d[0]).toBeGreaterThan(3);
+});
+
+test("E2E-117 13 Live preview off: an Add edit asks for no preview, and Commit draft previews once and commits", async ({ page }) => {
+  const t = previewHelpers(page);
+  await t.wallSelected();
+  await t.ctl("op-add").click();
+  await t.ctl("preview-live").click();
+  await expect(t.ctl("preview-live")).toHaveAttribute("aria-pressed", "false");
+  const before = t.posts.preview;
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  await appIdle(page);
+  expect(t.posts.preview).toBe(before); // moving the shape asked for nothing
+  await t.exact("Selected", String(ROOM.wall));
+  await expect(t.ctl("sel-commit")).toBeEnabled();
+  const rows = finiteRows();
+  const union = new Set([...rows.filter((r) => inBox(r, [-1, 4.5, 2.5], [1, 10, 5])), ...rows.filter((r) => inBox(r, GHOST_BOX.c, GHOST_BOX.d))].map(rowId)).size;
+  await t.ctl("sel-commit").click();
+  await t.exact("Selected", String(union));
+  expect(t.posts.preview - before).toBe(1);
+  expect(t.posts.commit).toBe(1);
+  await t.ctl("preview-live").click(); // back on
+  await expect(t.ctl("preview-live")).toHaveAttribute("aria-pressed", "true");
+});
+
+test("E2E-118 13 a step click centres the camera on that step, Edit shape reopens its box live without touching the history, and applying adds one new step that Undo removes", async ({ page }) => {
+  const t = tl(page);
+  await t.threeSteps();
+  await appIdle(page);
+  const before = await cameraOf(page);
+  await t.card(0).locator(".step-icon").click();
+  await expect.poll(async () => (await cameraOf(page)).target.map((v) => Math.round(v * 100) / 100)).toEqual([3, 13, 2]); // the blob step's bounds centre
+  const after = await cameraOf(page);
+  expect(after.orientation).toEqual(before.orientation); // framed, not turned
+  const edit = t.ctl("step-edit-shape");
+  await expect(edit).toBeVisible();
+  await expect(edit).toBeEnabled();
+  await expect(edit).toHaveAttribute("aria-label", "Edit the shape of step 1");
+  const hist = await sidsOf(page);
+  await edit.click();
+  await expect(t.ctl("tool-box")).toHaveClass(/active/);
+  for (const [id, v] of [["box-center-x", "3"], ["box-center-y", "13"], ["box-center-z", "2"], ["box-size-x", "4"], ["box-size-y", "4"], ["box-size-z", "3"]] as const) await expect(t.ctl(id)).toHaveValue(v);
+  await expect(page.locator("#live-note")).toBeVisible(); // a live first selection
+  await t.exact("Selected", "0"); // the blob is already deleted: nothing of it is left to select
+  expect(await sidsOf(page)).toEqual(hist); // the history did not move
+  await expect(t.cards).toHaveCount(3);
+  // move the reopened box onto four floor points: applying adds a fourth step
+  for (const [id, v] of [["box-center-x", 19], ["box-center-y", 19], ["box-center-z", 0], ["box-size-x", 2.2], ["box-size-y", 2.2], ["box-size-z", 1]] as const) await t.setNum(id, v);
+  await t.exact("Candidates", "4");
+  await t.ctl("apply").click();
+  await expect(t.cards).toHaveCount(4);
+  await t.exact("Active", String(ACTIVE_ALL - 4));
+  await t.ctl("undo").click();
+  await t.exact("Active", String(ACTIVE_ALL));
+  await expect(t.cards).toHaveCount(4); // the new step is greyed (redo), the first three are untouched
+  await expect(t.card(3)).toHaveClass(/greyed/);
+  for (const i of [0, 1, 2]) await expect(t.card(i)).not.toHaveClass(/greyed/);
+});
+
+test("E2E-118b 13 Edit shape reopens a polygon step (closed, in edit mode) and a cluster step (seed id, link distance) from their stored shapes", async ({ page }) => {
+  const t = tl(page);
+  await t.open();
+  await t.ctl("tool-cluster").click();
+  await t.setNum("cluster-radius", 1.1);
+  const seedAt = await settledScreen(page, [...CL.wall]);
+  await page.mouse.click(seedAt.x, seedAt.y);
+  await t.exact("Candidates", String(ROOM.wall));
+  await t.ctl("apply").click();
+  await expect(t.cards).toHaveCount(1);
+  await t.ctl("tool-polygon").click();
+  await t.ctl("cube-top").click();
+  await t.ctl("poly-draw").click();
+  for (const [x, y] of [[1.5, 11.5], [4.5, 11.5], [4.5, 14.8], [1.5, 14.8]]) {
+    const px = await settledScreen(page, [x, y, 0]);
+    await page.mouse.click(px.x, px.y);
+  }
+  await page.keyboard.press("Enter");
+  const drawn = await polyOf(page);
+  await t.exact("Selected", String(inPolyCount(drawn.vertices)));
+  await appIdle(page);
+  await t.ctl("apply").click();
+  await expect(t.cards).toHaveCount(2);
+  await appIdle(page);
+  const entries = await entriesOf(page);
+  expect(entries.map((e) => e.shape?.type)).toEqual(["cluster", "prism"]);
+  // the polygon step
+  await t.card(1).locator(".step-icon").click();
+  await t.ctl("step-edit-shape").click();
+  await expect(t.ctl("tool-polygon")).toHaveClass(/active/);
+  await expect(t.ctl("poly-edit")).toHaveAttribute("aria-pressed", "true");
+  const reopened = await polyOf(page);
+  expect(reopened.phase).toBe("closed");
+  expect(reopened.vertices).toEqual(drawn.vertices);
+  // the cluster step
+  await appIdle(page);
+  await t.card(0).locator(".step-icon").click();
+  await t.ctl("step-edit-shape").click();
+  await expect(t.ctl("tool-cluster")).toHaveClass(/active/);
+  await expect(t.ctl("cluster-pick-seed")).toHaveAttribute("data-state", "set");
+  await expect(t.ctl("cluster-radius")).toHaveValue("1.1");
+  const seed = await hook(page, (e) => (e.state() as unknown as { tools: { cluster: { seed: { id: number } | null } } }).tools.cluster.seed?.id ?? null);
+  expect(seed).toBe(entries[0].shape?.seed_id);
+  await expect(t.cards).toHaveCount(2); // still two steps
+});
+
+test("E2E-119 13 the stored shapes survive Save and reopen: the reopened step edits its box again and a step click centres the camera", async ({ page }, testInfo) => {
+  const t = tl(page);
+  await t.threeSteps();
+  const [dl] = await Promise.all([page.waitForEvent("download"), t.ctl("save-session").click()]);
+  const path = testInfo.outputPath("shapes.pcdsession");
+  await dl.saveAs(path);
+  const shapes = (await entriesOf(page)).map((e) => e.shape?.type ?? null);
+  expect(shapes.slice(0, 2)).toEqual(["box", "cluster"]);
+  await page.locator("#file-input").setInputFiles({ name: "other.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
+  await t.exact("Active", String(TOTAL));
+  await page.locator("#file-input").setInputFiles({ name: "shapes.pcdsession", mimeType: "application/octet-stream", buffer: readFileSync(path) });
+  await t.exact("Original", String(ROOM_TOTAL));
+  await expect(t.cards).toHaveCount(3);
+  expect((await entriesOf(page)).map((e) => e.shape?.type ?? null)).toEqual(shapes);
+  await appIdle(page);
+  await t.card(0).locator(".step-icon").click();
+  await expect.poll(async () => (await cameraOf(page)).target.map((v) => Math.round(v * 100) / 100)).toEqual([3, 13, 2]);
+  await t.ctl("step-edit-shape").click();
+  await expect(t.ctl("tool-box")).toHaveClass(/active/);
+  for (const [id, v] of [["box-center-x", "3"], ["box-center-y", "13"], ["box-center-z", "2"], ["box-size-x", "4"], ["box-size-y", "4"], ["box-size-z", "3"]] as const) await expect(t.ctl(id)).toHaveValue(v);
+  await expect(t.cards).toHaveCount(3);
+});
+
+test("E2E-120 13 Delete is a red button with readable text, and Select displayed and Invert refuse with the reason while a tool is armed", async ({ page }) => {
+  const t = previewHelpers(page);
+  await openRoom(page, t.exact);
+  await expect(t.ctl("apply")).toContainText("Delete");
+  const c = await t.ctl("apply").evaluate((e) => {
+    const s = getComputedStyle(e);
+    return { bg: s.backgroundColor, fg: s.color };
+  });
+  const rgb = (s: string) => (s.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+  const lum = (v: number[]) => {
+    const [r, g, b] = v.map((x) => { const u = x / 255; return u <= 0.03928 ? u / 12.92 : ((u + 0.055) / 1.055) ** 2.4; });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const [bg, fg] = [rgb(c.bg), rgb(c.fg)];
+  expect(bg[0], `the Delete fill ${c.bg} is red`).toBeGreaterThan(bg[1] + 40);
+  expect(bg[0]).toBeGreaterThan(bg[2] + 40);
+  const [hi, lo] = [Math.max(lum(bg), lum(fg)), Math.min(lum(bg), lum(fg))];
+  expect((hi + 0.05) / (lo + 0.05), `contrast of ${c.fg} on ${c.bg}`).toBeGreaterThanOrEqual(4.5);
+  // no tool armed: Select displayed works
+  await expect(t.ctl("sel-select-displayed")).toHaveAttribute("aria-disabled", "false");
+  await t.ctl("tool-box").click();
+  for (const id of ["sel-select-displayed", "sel-invert"]) {
+    await expect(t.ctl(id)).toHaveAttribute("aria-disabled", "true");
+    await expect(t.ctl(id)).toHaveAttribute("title", /Disarm the tool first/);
+  }
+  await appIdle(page);
+  const selected = await t.num("Selected"); // the armed box made its own first selection
+  await t.ctl("sel-select-displayed").click({ force: true }); // aria-disabled: Playwright would wait for it; a user can click it
+  await expect(page.locator("#notices")).toContainText("Disarm the tool first");
+  await t.exact("Selected", String(selected)); // the click changed nothing
+  await t.ctl("sel-clear").click(); // disarms
+  await expect(t.ctl("sel-select-displayed")).toHaveAttribute("aria-disabled", "false");
+  await t.ctl("sel-select-displayed").click();
+  await t.exact("Selected", String(ROOM_TOTAL - ROOM.invalid));
+});
+
+test("E2E-121 13 Sparse points selects only the floating artifacts of a dense floor and wall, and Delete removes exactly them", async ({ page }, testInfo) => {
+  const t = clusterHelpers(page);
+  await page.goto("/");
+  await page.locator("#file-input").setInputFiles({ name: "sparse.pcd", mimeType: "application/octet-stream", buffer: sparseRoomPcd() });
+  await t.exact("Original", SPARSE_TOTAL.toLocaleString("en-US"));
+  await expect(t.ctl("tool-sparse")).toHaveText("Sparse points");
+  await t.ctl("tool-sparse").click();
+  await expect(t.ctl("tool-sparse")).toHaveClass(/active/);
+  await expect(page.locator("#editpanels")).toContainText("fewer than 8 points");
+  await t.setNum("sparse-radius", 0.5);
+  await t.exact("Selected", String(SPARSE.artifacts));
+  await t.exact("Candidates", String(SPARSE.artifacts));
+  // the radius left empty is derived from the point spacing and finds the same artifacts
+  await t.ctl("sparse-radius").fill("");
+  await t.ctl("sparse-radius").press("Tab");
+  await t.exact("Selected", String(SPARSE.artifacts));
+  // a count of 1 neighbour finds nothing: every point has itself
+  await t.setNum("sparse-min", 1);
+  await t.exact("Selected", "0");
+  await t.setNum("sparse-min", 8);
+  await t.exact("Selected", String(SPARSE.artifacts));
+  await t.ctl("apply").click();
+  await t.exact("Active", (SPARSE_TOTAL - SPARSE.artifacts).toLocaleString("en-US"));
+  await t.ctl("export").click();
+  const [dl] = await Promise.all([page.waitForEvent("download"), t.ctl("export-go").click()]);
+  const path = testInfo.outputPath("sparse-cleaned.pcd");
+  await dl.saveAs(path);
+  const rows = parsePcd(readFileSync(path)).rows;
+  const all = parsePcd(sparseRoomPcd()).rows;
+  const kept = all.filter((r) => r[2] < 3).map(f32key).sort(); // independent truth: the artifacts are the points above z 3
+  expect(rows.length).toBe(SPARSE.floor + SPARSE.wall);
+  expect(rows.map(f32key).sort()).toEqual(kept);
+});
+
+for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-122 13 layout at ${w}x${hgt}: the operation icons fit one row, a highlighted step keeps its size with Edit shape inside it, and Sparse points fits the panel`, async ({ page }) => {
+    test.setTimeout(240000);
+    await page.setViewportSize({ width: w, height: hgt });
+    const t = tl(page);
+    await t.threeSteps();
+    await appIdle(page);
+    const opRow = await page.evaluate(() => {
+      const g = document.querySelector('[data-control="op-select"]') as HTMLElement;
+      const r = g.getBoundingClientRect();
+      const kids = [...g.children].map((c) => c.getBoundingClientRect());
+      const ins = document.getElementById("inspector")!;
+      return { w: r.width, tops: kids.map((k) => Math.round(k.top)), scroll: [ins.scrollWidth, ins.clientWidth] };
+    });
+    expect(new Set(opRow.tops).size, "the three operation icons share one row").toBe(1);
+    expect(opRow.scroll[0]).toBeLessThanOrEqual(opRow.scroll[1]);
+    const plain = (await t.card(0).boundingBox())!;
+    await t.card(0).locator(".step-icon").click();
+    const edit = t.ctl("step-edit-shape");
+    await expect(edit).toBeVisible();
+    const card = (await t.card(0).boundingBox())!;
+    const eb = (await edit.boundingBox())!;
+    expect(card.height).toBeCloseTo(plain.height, 0); // the card keeps its size
+    expect(card.width).toBeCloseTo(plain.width, 0);
+    expect(eb.x).toBeGreaterThanOrEqual(card.x - 1);
+    expect(eb.x + eb.width).toBeLessThanOrEqual(card.x + card.width + 1);
+    expect(eb.y).toBeGreaterThanOrEqual(card.y - 1);
+    expect(eb.y + eb.height).toBeLessThanOrEqual(card.y + card.height + 1);
+    const over = await page.evaluate(() => {
+      const rect = (e: Element) => e.getBoundingClientRect();
+      const b = rect(document.querySelector('[data-control="step-edit-shape"]')!);
+      const hits: string[] = [];
+      for (const [name, sel] of [["legend", "#legend"], ["cube", "#viewcube .cube-stage"], ["cluster", "#camera-cluster"], ["triad", "#triad"], ["box", "#fbox-layer .fbox"]] as const) {
+        for (const e of document.querySelectorAll(sel)) {
+          const r = rect(e);
+          if (r.width > 0 && r.height > 0 && b.left < r.right && b.right > r.left && b.top < r.bottom && b.bottom > r.top) hits.push(name);
+        }
+      }
+      const doc = document.documentElement;
+      return { hits, docScroll: [doc.scrollWidth - doc.clientWidth, doc.scrollHeight - doc.clientHeight] };
+    });
+    expect(over.hits).toEqual([]);
+    expect(over.docScroll).toEqual([0, 0]);
+    await t.ctl("tool-sparse").click();
+    await expect(page.locator('[data-section="sparse"]')).toBeVisible();
+    const fit = await page.evaluate(() => {
+      const p = document.getElementById("editpanels")!;
+      const s = document.querySelector('[data-section="sparse"]')!.getBoundingClientRect();
+      const box = p.getBoundingClientRect();
+      return { scroll: [p.scrollWidth, p.clientWidth], inside: s.left >= box.left - 1 && s.right <= box.right + 1 };
+    });
+    expect(fit.scroll[0]).toBeLessThanOrEqual(fit.scroll[1] + 1);
+    expect(fit.inside).toBe(true);
+    await page.screenshot({ path: `/out/part13-layout-${w}.png` });
+  });
+}
+
+test("E2E-123 13 keyboard only: the operation icons toggle with Space and arrow keys, and the polygon pencil toggles with Enter and leaves with Esc", async ({ page }) => {
+  const t = previewHelpers(page);
+  await openRoom(page, t.exact);
+  await t.ctl("tool-box").click();
+  await t.ctl("op-add").focus();
+  await page.keyboard.press("Space");
+  await expect(t.ctl("op-add")).toHaveAttribute("aria-checked", "true");
+  await page.keyboard.press("ArrowRight");
+  await expect(t.ctl("op-subtract")).toHaveAttribute("aria-checked", "true");
+  await expect(t.ctl("op-subtract")).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  await expect(t.ctl("op-add")).toHaveAttribute("aria-checked", "true");
+  await t.ctl("sel-clear").click();
+  await t.ctl("tool-polygon").click();
+  await t.ctl("cube-top").click();
+  await t.ctl("poly-draw").click();
+  for (const [x, y] of [[1.5, 11.5], [4.5, 11.5], [4.5, 14.8]]) {
+    const px = await settledScreen(page, [x, y, 0]);
+    await page.mouse.click(px.x, px.y);
+  }
+  await page.keyboard.press("Enter");
+  expect((await polyOf(page)).phase).toBe("closed");
+  await expect(t.ctl("poly-edit")).toBeEnabled();
+  await t.ctl("poly-edit").focus();
+  await page.keyboard.press("Enter"); // the focused pencil toggles itself; the key does not also leave the mode
+  await expect(t.ctl("poly-edit")).toHaveAttribute("aria-pressed", "true");
+  expect((await polyOf(page)).editing).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(t.ctl("poly-edit")).toHaveAttribute("aria-pressed", "false");
+  expect((await polyOf(page)).editing).toBe(false);
+  expect((await polyOf(page)).phase).toBe("closed");
+  // the per-vertex remove buttons are reachable by keyboard in edit mode
+  await t.ctl("poly-edit").focus();
+  await page.keyboard.press("Space");
+  const remove = page.locator("[data-vertex-remove]");
+  await expect(remove).toHaveCount(3);
+  await remove.first().focus();
+  await page.keyboard.press("Enter");
+  expect((await polyOf(page)).vertices).toHaveLength(3); // a triangle keeps its three vertices
 });

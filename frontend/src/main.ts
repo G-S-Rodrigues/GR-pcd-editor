@@ -305,7 +305,7 @@ window.addEventListener("keydown", (e) => {
   const t = e.target as HTMLElement | null;
   const id = classifyKey({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey, shiftKey: e.shiftKey, target: t?.tagName ?? "" });
   help.apply(id);
-  const pact = polygonKeyAction(store.get().tools.polygon, id);
+  const pact = polygonKeyAction(store.get().tools.polygon, id, t?.tagName ?? "");
   if (pact === "leave-edit") {
     store.update((st) => ({ ...st, tools: { ...st.tools, polygon: setEditing(st.tools.polygon, false) } }));
   } else if (pact === "remove-vertex") {

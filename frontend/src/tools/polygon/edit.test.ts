@@ -90,5 +90,9 @@ describe("polygon edit mode (13-7)", () => {
     expect(polygonKeyAction(edit, "polygon-remove-vertex")).toBe("remove-vertex");
     expect(polygonKeyAction(closed(), "polygon-remove-vertex")).toBeNull(); // Backspace removes only in edit mode
     expect(polygonKeyAction(edit, "apply")).toBeNull(); // Delete stays Apply
+    // Enter on a focused button activates that button (the pencil toggles itself): it must not also leave the mode
+    expect(polygonKeyAction(edit, "polygon-close", "BUTTON")).toBeNull();
+    expect(polygonKeyAction(edit, "cancel", "BUTTON")).toBe("leave-edit");
+    expect(polygonKeyAction(drawing, "polygon-close", "BUTTON")).toBe("close");
   });
 });

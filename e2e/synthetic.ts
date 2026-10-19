@@ -177,3 +177,22 @@ export function normalRoomPcd(): Buffer {
     "COUNT 1 1 1 1", `WIDTH ${rows.length}`, "HEIGHT 1", "VIEWPOINT 0 0 0 1 0 0 0", `POINTS ${rows.length}`, "DATA ascii"];
   return Buffer.from(`${head.join("\n")}\n${rows.join("\n")}\n`);
 }
+
+/**
+ * Sparse-point scene (E2E-121): a dense 40 x 40 floor at z 0 and a dense 40 x 10 wall at x -5 (both on a 0.2 m grid),
+ * and ten floating artifacts: five single points, one triple and one pair, all at least 3 m from the floor and the wall
+ * and from each other. Every floor and wall point has dozens of neighbours within a few grid steps; the artifacts have
+ * at most two. Truth is counted here, independently of the app: the artifacts are the points above z 3.
+ */
+export const SPARSE = { floor: 1600, wall: 400, artifacts: 10 };
+export const SPARSE_TOTAL = SPARSE.floor + SPARSE.wall + SPARSE.artifacts;
+export function sparseRoomPcd(): Buffer {
+  const rows: string[] = [];
+  const g = (i: number) => (i * 0.2).toFixed(1);
+  for (let i = 0; i < 40; i++) for (let j = 0; j < 40; j++) rows.push(`${g(i)} ${g(j)} 0 0.5`);
+  for (let j = 0; j < 40; j++) for (let k = 0; k < 10; k++) rows.push(`-5 ${g(j)} ${g(k)} 0.7`);
+  for (const [x, y, z] of [[1, 1, 3.5], [6.5, 1, 3.5], [1, 6.5, 3.5], [6.5, 6.5, 3.5], [3.8, 3.8, 3.5], [3.8, 0.5, 5], [3.9, 0.5, 5], [3.8, 0.6, 5], [6.5, 3.8, 4.5], [6.6, 3.8, 4.5]]) rows.push(`${x} ${y} ${z} 1.5`);
+  const head = ["# .PCD v.7 - synthetic sparse room", "VERSION .7", "FIELDS x y z intensity", "SIZE 4 4 4 4", "TYPE F F F F",
+    "COUNT 1 1 1 1", `WIDTH ${rows.length}`, "HEIGHT 1", "VIEWPOINT 0 0 0 1 0 0 0", `POINTS ${rows.length}`, "DATA ascii"];
+  return Buffer.from(`${head.join("\n")}\n${rows.join("\n")}\n`);
+}
