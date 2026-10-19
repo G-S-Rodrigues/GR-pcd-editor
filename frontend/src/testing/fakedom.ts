@@ -74,6 +74,9 @@ export class FakeEl {
   all(): FakeEl[] {
     return this.children.flatMap((c) => [c, ...c.all()]);
   }
+  contains(n: unknown): boolean {
+    return n === this || this.all().includes(n as FakeEl);
+  }
   control(id: string): FakeEl | undefined {
     return this.all().find((e) => e.attrs.get("data-control") === id);
   }

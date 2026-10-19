@@ -4,6 +4,7 @@ import { sessionFixture } from "../testing/fixtures";
 import { clusterPickState, pickText, pressPick } from "../tools/cluster/pick";
 import { setSeed } from "../tools/cluster/model";
 import { selectionDisabledReason } from "./selection";
+import { addVertex, closePolygon, emptyPolygon, setEditing, startDrawing } from "../tools/polygon/model";
 import { armTool, disarmed } from "./toolstate";
 
 const base = () => createAppStore().get();
@@ -75,4 +76,17 @@ test("UI-638 selectionDisabledReason: Select displayed and Invert are refused wi
     expect(selectionDisabledReason({ ...base(), tool: t })).toMatch(/Disarm the tool first/);
   }
   expect(selectionDisabledReason(disarmed({ ...base(), tool: "box" }))).toBeNull();
+});
+
+test("UI-657 changing or disarming the tool leaves the polygon edit mode and keeps the shape", () => {
+  let p = startDrawing(emptyPolygon());
+  for (const v of [[0, 0], [4, 0], [4, 4]] as [number, number][]) p = addVertex(p, v);
+  const s0 = base();
+  const editing = { ...s0, tool: "polygon" as const, tools: { ...s0.tools, polygon: setEditing(closePolygon(p).state, true) } };
+  expect(editing.tools.polygon.editing).toBe(true);
+  for (const t of ["none", "box", "polygon"] as const) {
+    const next = armTool(editing, t);
+    expect(next.tools.polygon.editing).toBe(false);
+    expect(next.tools.polygon.vertices).toHaveLength(3);
+  }
 });

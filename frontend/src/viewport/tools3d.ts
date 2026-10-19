@@ -13,6 +13,8 @@ import { clearGroup, drawHeavy, drawLines } from "./lines3d";
 
 const BAND_OPACITY = 0.12;
 const HEAD_PX = 9;
+/** Half-length of the vertex crosses of a polygon in edit mode, in pixels (the pointer pick radius is 10). */
+const POLY_EDIT_CROSS_PX = 8;
 const COL = { handle: 0xff9f1c, ring: 0x6ec1ff, poly: 0x7be07b, plane: 0xc77dff /* = PALETTE.slab */, seed: 0xff4d6d };
 
 /** Overlay for the editing tools: box wireframe and handles, polygon outline, protection planes, cluster seed. */
@@ -65,6 +67,16 @@ export function createToolsOverlay(scene: THREE.Scene) {
         if (t.polygon.phase === "closed" && v.length > 2) pairs.push([v.length - 1, 0]);
         if (s.draft) heavy(v, pairs, DRAFT_OUTLINE, origin, s, viewH);
         else lines(v, pairs, COL.poly, origin);
+        if (t.polygon.phase === "closed") {
+          // vertex handles: small crosses always (they can be dragged), large ones in edit mode, drawn heavy so they stand out
+          const k = (t.polygon.editing ? POLY_EDIT_CROSS_PX : HANDLE_CROSS_PX) / pxPerUnit(s.camera, Math.max(viewH, 1));
+          for (const p of v) {
+            const cross: Vec3[] = [[p[0] - k, p[1], p[2]], [p[0] + k, p[1], p[2]], [p[0], p[1] - k, p[2]], [p[0], p[1] + k, p[2]]];
+            const cp: [number, number][] = [[0, 1], [2, 3]];
+            if (t.polygon.editing) heavy(cross, cp, COL.handle, origin, s, viewH);
+            else lines(cross, cp, COL.poly, origin);
+          }
+        }
       }
 
       const b = s.session.active_bounds;

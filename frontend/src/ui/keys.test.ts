@@ -65,3 +65,13 @@ test("UI-141 ? toggles the help overlay, Escape closes it, other keys leave it a
 test("UI-418 the Esc row says it discards a pending draft", () => {
   expect(KEY_DOCS.find((d) => d.id === "cancel")!.label).toContain("discard a pending draft");
 });
+
+test("UI-664 Backspace is the polygon vertex removal key, Delete stays Apply, typing in a field ignores both", () => {
+  expect(classifyKey(ev({ key: "Backspace" }))).toBe("polygon-remove-vertex");
+  expect(classifyKey(ev({ key: "Delete" }))).toBe("apply");
+  expect(classifyKey(ev({ key: "Backspace", target: "INPUT" }))).toBeNull();
+  const doc = KEY_DOCS.find((d) => d.id === "polygon-remove-vertex")!;
+  expect(doc.keys).toBe("Backspace");
+  expect(doc.label).toMatch(/edit mode/);
+  expect(KEY_DOCS.find((d) => d.id === "cancel")!.label).toContain("leave polygon edit mode");
+});

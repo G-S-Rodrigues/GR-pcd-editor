@@ -8,6 +8,7 @@ import * as B from "../tools/box/model";
 import { displayedBounds, fitToView, rectAxis, rectDepth } from "../tools/box/rect";
 import { POLYGON_DEPTH_NOTE, Z_UNLIMITED } from "../tools/polygon/model";
 import * as PG from "../tools/polygon/model";
+import { polygonHint } from "../tools/polygon/edit";
 import { CLUSTER_LIMIT_TEXT, clusterLimitText, clusterPanel, regionOptions, setRadius } from "../tools/cluster/model";
 import { clusterPickState, pickText, pressPick } from "../tools/cluster/pick";
 import { headline } from "../status/headline";
@@ -417,9 +418,10 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
   const vertexList = h("div", { class: "verts" });
   let vertKey = "";
   syncs.push((s) => {
-    const key = `${s.tools.polygon.phase}|${s.tools.polygon.vertices.length}`;
+    const key = `${s.tools.polygon.phase}|${s.tools.polygon.vertices.length}|${s.tools.polygon.editing}`;
     if (key === vertKey && vertexList.contains(document.activeElement)) return;
     vertKey = key;
+    const editing = s.tools.polygon.editing;
     vertexList.replaceChildren(
       ...s.tools.polygon.vertices.map((v, i) => {
         const mk = (axis: 0 | 1) => {
@@ -444,16 +446,45 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
           });
           return inp;
         };
-        return h("div", { class: "vertrow" }, h("span", { text: `${i + 1}` }), mk(0), mk(1));
+        const remove = editing
+          ? h("button", {
+              type: "button",
+              "data-vertex-remove": String(i),
+              title: `Remove vertex ${i + 1}`,
+              "aria-label": `Remove vertex ${i + 1}`,
+              text: "×",
+              onclick: () => {
+                const r = PG.removeVertex(store.get().tools.polygon, i);
+                if (!r.ok) return showErr(r.message ?? "The vertex could not be removed");
+                showErr(null);
+                store.update((st) => ({ ...st, tools: { ...st.tools, polygon: r.state } }));
+                a.toolChanged();
+              },
+            })
+          : null;
+        return h("div", { class: editing ? "vertrow editing" : "vertrow" }, h("span", { text: `${i + 1}` }), mk(0), mk(1), remove);
       }),
     );
+  });
+  const drawBtn = button("poly-draw", "Draw polygon", a.startDrawing);
+  const editBtn = iconControl("poly-edit", "pencil", {
+    onclick: () => store.update((s) => ({ ...s, tools: { ...s.tools, polygon: PG.setEditing(s.tools.polygon, !s.tools.polygon.editing) } })),
+  });
+  const polyHint = h("p", { class: "note" });
+  syncs.push((s) => {
+    const hint = polygonHint(s.tools.polygon);
+    polyHint.textContent = hint.text;
+    drawBtn.classList.toggle("hint", hint.accentDraw);
+    editBtn.disabled = s.tools.polygon.phase !== "closed";
+    editBtn.setAttribute("aria-pressed", String(s.tools.polygon.editing));
+    editBtn.classList.toggle("active", s.tools.polygon.editing);
   });
   const polyPanel = section(
     "polygon",
     "Polygon",
     (s) => s.tool === "polygon",
-    h("div", { class: "stack" }, button("poly-draw", "Draw polygon", a.startDrawing), button("poly-finish", "Close polygon", () => showErr(a.finishPolygon())), button("poly-cancel", "Cancel drawing", a.cancelDrawing), button("poly-clear", "Clear polygon", a.clearPolygon)),
-    text((s) => (s.tools.polygon.phase === "drawing" ? `Drawing: ${s.tools.polygon.vertices.length} vertices. Click to add, Enter to close, Esc to cancel.` : s.tools.polygon.phase === "closed" ? "Polygon closed. Drag a vertex or edit it numerically." : "Press Draw polygon, then click in the view.")),
+    h("div", { class: "stack" }, drawBtn, button("poly-finish", "Close polygon", () => showErr(a.finishPolygon())), button("poly-cancel", "Cancel drawing", a.cancelDrawing), button("poly-clear", "Clear polygon", a.clearPolygon), editBtn),
+    polyHint,
     vertexList,
     row(polyZ("zMin", "poly-zmin", "Z min"), polyZ("zMax", "poly-zmax", "Z max")),
     text((s) => PG.polygonProblem(s.tools.polygon) ?? (s.tools.polygon.zMin <= -Z_UNLIMITED && s.tools.polygon.zMax >= Z_UNLIMITED ? "Z limits: unlimited" : "")),
@@ -463,6 +494,16 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     }),
     h("p", { class: "note", text: POLYGON_DEPTH_NOTE }),
   );
+
+  // choosing the Polygon tool brings its section to the top of the panel (once per choice, gently unless motion is reduced)
+  let prevTool = store.get().tool;
+  syncs.push((s) => {
+    if (s.tool === "polygon" && prevTool !== "polygon") {
+      const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+      (polyPanel as { scrollIntoView?: (o: ScrollIntoViewOptions) => void }).scrollIntoView?.({ block: "start", behavior: reduced ? "auto" : "smooth" });
+    }
+    prevTool = s.tool;
+  });
 
   // ---- cluster
   // Pick point is a toggle with three states (waiting, set, paused); pressing it always leaves it waiting

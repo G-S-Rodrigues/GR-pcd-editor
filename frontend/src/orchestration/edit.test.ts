@@ -4,6 +4,7 @@ import { historyRows } from "../inspector/history";
 import { setGlobal, setLocal, setOperationMode, acknowledge, toProtectionBody } from "../inspector/protection";
 import { createAppStore } from "../state/app";
 import { candidateFixture, sessionFixture } from "../testing/fixtures";
+import { addVertex, closePolygon, emptyPolygon, startDrawing } from "../tools/polygon/model";
 import { createEditor, keyAction } from "./edit";
 
 const hist = (n: number, cursor = n) => ({
@@ -181,5 +182,34 @@ describe("editor actions", () => {
     t.store.set({ candidate: candidateFixture({ candidates: 42, cloud_revision: 4, params_revision: 5 }) });
     await t.ed.apply();
     expect(t.api.apply).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("Apply with the Polygon tool (13-7, owner request a)", () => {
+  const closedSquare = () => {
+    let p = startDrawing(emptyPolygon());
+    for (const v of [[0, 0], [4, 0], [4, 4], [0, 4]] as [number, number][]) p = addVertex(p, v);
+    return { ...closePolygon(p).state, editing: true };
+  };
+  it("UI-667 a polygon delete leaves the tool armed with an empty polygon, out of edit mode, ready for the next shape", async () => {
+    const t = setup();
+    t.store.update((s) => ({ ...s, tool: "polygon", tools: { ...s.tools, polygon: closedSquare() } }));
+    t.store.set({ candidate: candidateFixture({ candidates: 42 }) });
+    await t.ed.apply();
+    expect(t.store.get().tool).toBe("polygon");
+    expect(t.store.get().tools.polygon).toEqual(emptyPolygon());
+  });
+  it("UI-667 other tools and a refused Apply keep their shapes", async () => {
+    const t = setup();
+    const box = t.store.get().tools.box;
+    t.store.set({ candidate: candidateFixture({ candidates: 42 }) });
+    await t.ed.apply();
+    expect(t.store.get().tools.box).toEqual(box);
+    const stale = setup();
+    stale.store.update((s) => ({ ...s, tool: "polygon", tools: { ...s.tools, polygon: closedSquare() } }));
+    stale.store.set({ candidate: candidateFixture({ candidates: 42 }) });
+    stale.api.apply.mockRejectedValueOnce(new ApiError(409, "stale_revision", "stale"));
+    await stale.ed.apply();
+    expect(stale.store.get().tools.polygon.phase).toBe("closed");
   });
 });

@@ -48,6 +48,7 @@ export const FIELD_SPECS: FieldSpec[] = [
   f("gizmo-step", "Snap step", "box", "Translation snap step in the file unit"),
   f("gizmo-angle-step", "Angle step", "box", "Rotation snap step in degrees"),
   f("gizmo-frame", "Axes", "box", "Translate along world axes or the box's own axes"),
+  f("poly-edit", "Edit polygon vertices", "polygon", "Edit mode: drag a vertex, click an edge to add a vertex, press Backspace over a vertex or double click it to remove it; Enter or Esc leaves edit mode"),
   f("poly-draw", "Draw polygon", "polygon", "Start drawing: click in the top view to add vertices"),
   f("poly-finish", "Close polygon", "polygon", "Close the polygon and preview (Enter)"),
   f("poly-cancel", "Cancel drawing", "polygon", "Stop drawing and restore the previous polygon (Escape)"),

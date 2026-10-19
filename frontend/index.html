@@ -124,6 +124,9 @@
       .verts { max-height: 160px; overflow: auto; }
       .vertrow { display: grid; grid-template-columns: 1.5em 1fr 1fr; gap: 4px; margin: 2px 0; }
       .vertrow input { width: 100%; }
+      .vertrow.editing { grid-template-columns: 1.5em 1fr 1fr 1.9em; }
+      .vertrow button { padding: 0; }
+      button.hint { background: #2b4a7a; border-color: var(--accent); }
       #history-list { margin: 4px 0; padding-left: 18px; color: var(--muted); }
       #history-list li.undone { opacity: .5; }
       .badge { padding: 2px 8px; border-radius: 10px; background: #2a313b; color: var(--muted); }

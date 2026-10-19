@@ -4,6 +4,7 @@ import { type AppState, addNotice } from "../state/app";
 import type { Store } from "../state/store";
 import type { SessionState } from "../state/types";
 import { deleteStepText, discardCount, discardText, mergeStepNames, stepsOf } from "../timeline/model";
+import { emptyPolygon } from "../tools/polygon/model";
 import { canApply } from "./runner";
 
 export interface EditApi {
@@ -100,7 +101,12 @@ export function createEditor(store: Store<AppState>, api: EditApi, confirmFn: (m
     await guarded(async () => {
       const state = await api.apply(rev(), c.candidate_id, `Delete ${c.candidates} points (${tool})`);
       await afterChange(state, {
-        tools: { ...store.get().tools, protection: resetOperation(store.get().tools.protection) },
+        tools: {
+          ...store.get().tools,
+          protection: resetOperation(store.get().tools.protection),
+          // the polygon that made the deleted points is spent: the tool stays armed with a blank polygon for the next shape
+          polygon: tool === "polygon" ? emptyPolygon() : store.get().tools.polygon,
+        },
       });
     });
   }

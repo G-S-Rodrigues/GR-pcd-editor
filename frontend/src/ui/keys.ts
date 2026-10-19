@@ -14,7 +14,7 @@ export const presetForKey = (k: string): PresetName | null => VIEW_KEYS.find((b)
 export type KeyId =
   | "view-1" | "view-2" | "view-3" | "view-4" | "view-5" | "view-6"
   | "perspective" | "fit" | "fit-selection" | "rect"
-  | "polygon-close" | "cancel" | "apply"
+  | "polygon-close" | "polygon-remove-vertex" | "cancel" | "apply"
   | "undo" | "redo" | "help";
 
 export interface KeyEvent {
@@ -43,8 +43,9 @@ export const KEY_DOCS: KeyDoc[] = [
   { id: "fit", keys: "F", label: "Fit the whole cloud", probes: [{ key: "f" }, { key: "F" }] },
   { id: "fit-selection", keys: "Alt+F", label: "Fit the camera to the current candidate", probes: [{ key: "f", altKey: true }, { key: "F", altKey: true }] },
   { id: "rect", keys: "R (hold)", label: "Rectangle select in a face view while held", probes: [{ key: "r" }, { key: "R" }] },
-  { id: "polygon-close", keys: "Enter", label: "Close the polygon being drawn", probes: [{ key: "Enter" }] },
-  { id: "cancel", keys: "Esc", label: "Leave pick mode, cancel polygon drawing, discard a pending draft, close help", probes: [{ key: "Escape" }] },
+  { id: "polygon-close", keys: "Enter", label: "Close the polygon being drawn, or leave polygon edit mode", probes: [{ key: "Enter" }] },
+  { id: "polygon-remove-vertex", keys: "Backspace", label: "Remove the polygon vertex under the pointer while the polygon pencil (edit mode) is on", probes: [{ key: "Backspace" }] },
+  { id: "cancel", keys: "Esc", label: "Leave pick mode, cancel polygon drawing, leave polygon edit mode, discard a pending draft, close help", probes: [{ key: "Escape" }] },
   { id: "apply", keys: "Delete", label: "Apply: delete the previewed points (same as the Apply button)", probes: [{ key: "Delete" }] },
   { id: "undo", keys: "Ctrl+Z", label: "Undo the last deletion", probes: [{ key: "z", ctrlKey: true }, { key: "Z", metaKey: true }] },
   { id: "redo", keys: "Ctrl+Y", label: "Redo (also Ctrl+Shift+Z)", probes: [{ key: "y", ctrlKey: true }, { key: "Z", ctrlKey: true, shiftKey: true }] },
@@ -69,6 +70,7 @@ export function classifyKey(e: KeyEvent): KeyId | null {
     case "f": return "fit";
     case "r": return "rect";
     case "enter": return "polygon-close";
+    case "backspace": return "polygon-remove-vertex";
     case "escape": return "cancel";
     case "delete": return "apply";
     case "?": return "help";

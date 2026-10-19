@@ -1,6 +1,6 @@
 import type { AppState } from "../state/app";
 import type { ToolKind } from "../state/types";
-import { emptyPolygon } from "../tools/polygon/model";
+import { emptyPolygon, setEditing } from "../tools/polygon/model";
 
 /** Arming a tool (or pressing the armed one again to disarm): Cluster waits for its seed click at once; any change drops the old seed. */
 export function armTool(st: AppState, t: ToolKind): AppState {
@@ -9,7 +9,8 @@ export function armTool(st: AppState, t: ToolKind): AppState {
     tool: t,
     interaction: t === "cluster" ? "pick-seed" : "orbit",
     liveFirst: (st.session?.selection.count ?? 0) === 0,
-    tools: { ...st.tools, cluster: { ...st.tools.cluster, seed: null } },
+    // switching tools also leaves the polygon's edit mode
+    tools: { ...st.tools, polygon: setEditing(st.tools.polygon, false), cluster: { ...st.tools.cluster, seed: null } },
   };
 }
 

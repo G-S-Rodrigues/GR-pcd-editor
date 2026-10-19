@@ -22,7 +22,8 @@ import { startBanner } from "./status/startbanner";
 import { defaultCluster } from "./tools/cluster/model";
 import { createParamsHook } from "./orchestration/params";
 import { createClearPolygon } from "./orchestration/polygonclear";
-import { startDrawing, cancelDrawing, closePolygon, emptyPolygon, enterTool } from "./tools/polygon/model";
+import { startDrawing, cancelDrawing, closePolygon, emptyPolygon, enterTool, setEditing } from "./tools/polygon/model";
+import { polygonKeyAction } from "./tools/polygon/edit";
 import { boxForOpen } from "./tools/box/model";
 import { applyPreset } from "./view/presets";
 import { buildEditPanels, buildToolPalette } from "./ui/panels";
@@ -295,7 +296,15 @@ window.addEventListener("keydown", (e) => {
   const t = e.target as HTMLElement | null;
   const id = classifyKey({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey, shiftKey: e.shiftKey, target: t?.tagName ?? "" });
   help.apply(id);
-  if (id === "rect") rectHeld = true;
+  const pact = polygonKeyAction(store.get().tools.polygon, id);
+  if (pact === "leave-edit") {
+    store.update((st) => ({ ...st, tools: { ...st.tools, polygon: setEditing(st.tools.polygon, false) } }));
+  } else if (pact === "remove-vertex") {
+    if (t?.tagName !== "BUTTON") {
+      e.preventDefault();
+      tools.removeHovered();
+    }
+  } else if (id === "rect") rectHeld = true;
   else if (id === "undo") {
     e.preventDefault();
     void editor.undo();

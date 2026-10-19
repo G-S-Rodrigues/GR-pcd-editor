@@ -14,6 +14,8 @@ export interface PolygonState {
   zMin: number;
   zMax: number;
   mode: "inside" | "outside";
+  /** Edit mode (pencil): vertex handles show, an edge click inserts a vertex, Backspace or a double tap removes one. Closed polygons only. */
+  editing: boolean;
 }
 
 export interface PolygonResult {
@@ -31,13 +33,14 @@ export const emptyPolygon = (): PolygonState => ({
   zMin: -Z_UNLIMITED,
   zMax: Z_UNLIMITED,
   mode: "inside",
+  editing: false,
 });
 
 /** Entering the polygon tool switches to the top view. */
 export const enterTool = () => ({ view: "top" as const });
 
 export function startDrawing(s: PolygonState): PolygonState {
-  return { ...s, phase: "drawing", previous: s.phase === "closed" ? s.vertices : s.previous, vertices: [] };
+  return { ...s, phase: "drawing", previous: s.phase === "closed" ? s.vertices : s.previous, vertices: [], editing: false };
 }
 export function addVertex(s: PolygonState, p: Vec2): PolygonState {
   return s.phase === "drawing" ? { ...s, vertices: [...s.vertices, p] } : s;
@@ -91,6 +94,34 @@ export function moveVertex(s: PolygonState, index: number, p: Vec2): PolygonResu
   return { ok: true, state: { ...s, vertices } };
 }
 export const setVertexNumeric = moveVertex;
+
+export const MIN_VERTICES = 3;
+
+/** Insert a vertex after the first vertex of edge `edgeIndex` (edge i runs from vertex i to vertex i+1, the last back to 0). */
+export function insertVertex(s: PolygonState, edgeIndex: number, p: Vec2): PolygonResult {
+  if (s.phase !== "closed" || !Number.isInteger(edgeIndex) || edgeIndex < 0 || edgeIndex >= s.vertices.length) {
+    return { ok: false, state: s, message: "Close the polygon before editing its vertices" };
+  }
+  const vertices = [...s.vertices.slice(0, edgeIndex + 1), p, ...s.vertices.slice(edgeIndex + 1)] as Vec2[];
+  const message = validatePolygon(vertices);
+  if (message) return { ok: false, state: s, message, invalidPreview: vertices };
+  return { ok: true, state: { ...s, vertices } };
+}
+
+/** Remove one vertex; a polygon keeps at least three and the result must still be valid. */
+export function removeVertex(s: PolygonState, index: number): PolygonResult {
+  if (s.phase !== "closed" || !Number.isInteger(index) || index < 0 || index >= s.vertices.length) {
+    return { ok: false, state: s, message: "Close the polygon before editing its vertices" };
+  }
+  if (s.vertices.length <= MIN_VERTICES) return { ok: false, state: s, message: "A polygon needs at least 3 vertices" };
+  const vertices = s.vertices.filter((_, i) => i !== index) as Vec2[];
+  const message = validatePolygon(vertices);
+  if (message) return { ok: false, state: s, message, invalidPreview: vertices };
+  return { ok: true, state: { ...s, vertices } };
+}
+
+/** Turns the edit mode on or off; only a closed polygon can be in it. */
+export const setEditing = (s: PolygonState, on: boolean): PolygonState => (s.editing === (on && s.phase === "closed") ? s : { ...s, editing: on && s.phase === "closed" });
 
 export function toPrismTool(s: PolygonState) {
   if (s.phase !== "closed" || validatePolygon(s.vertices) || s.zMin > s.zMax) return null;

@@ -18,12 +18,13 @@ import { pxPerUnit } from "../view/pointsize";
 import { lookDirection } from "../view/camera";
 import { ringAngle, rotationDelta, translateDelta } from "../tools/box/gizmo-math";
 import { boxHandles, hitHandle } from "../tools/box/handles";
-import { addVertex, moveVertex } from "../tools/polygon/model";
+import { addVertex, insertVertex, moveVertex, removeVertex } from "../tools/polygon/model";
+import type { Vec2 } from "../tools/polygon/validate";
 
 type PlaneKey = { which: "global" | "local"; edge: "min" | "max" };
 type Drag =
   | { kind: "box"; state: DragState }
-  | { kind: "vertex"; index: number }
+  | { kind: "vertex"; index: number; moved: boolean; t: number }
   | { kind: "rect"; p0: { x: number; y: number }; depth: Depth; narrow: BoxModel | null }
   | { kind: "filter"; d: FilterDrag; key: string; last: number; moved: boolean }
   | { kind: "plane"; key: PlaneKey; model0: ProtectionModel; anchor: Vec3; axis: Vec3; ray0: ReturnType<typeof screenRay> }
@@ -40,6 +41,8 @@ export interface ToolInteractionDeps {
 }
 
 const PICK_PX = 10;
+/** Two presses on the same polygon vertex within this many ms (edit mode) remove it. */
+const DOUBLE_TAP_MS = 400;
 
 /** Screen distance from point p to the segment a-b. */
 function segDist(p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }): number {
@@ -105,6 +108,56 @@ export function createToolInteraction(
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   };
   const zero: Vec3 = [0, 0, 0];
+  let hovered: number | null = null;
+  let lastTap: { index: number; t: number } | null = null;
+  /** The polygon vertex within the pick radius of screen point p (nearest wins), or -1. */
+  const vertexAt = (s: AppState, vp: { w: number; h: number }, p: { x: number; y: number }): number => {
+    const z = s.camera.target[2];
+    let best = -1;
+    let bd = PICK_PX;
+    s.tools.polygon.vertices.forEach((v, i) => {
+      const sp = project(s.camera, [v[0], v[1], z], zero, vp);
+      const d = sp ? Math.hypot(sp.x - p.x, sp.y - p.y) : Number.POSITIVE_INFINITY;
+      if (d <= bd) {
+        bd = d;
+        best = i;
+      }
+    });
+    return best;
+  };
+  /** The polygon edge within the pick radius of p, with the point on it (a convex mix of its two vertices), or null. */
+  const edgeAt = (s: AppState, vp: { w: number; h: number }, p: { x: number; y: number }): { edge: number; at: Vec2 } | null => {
+    const z = s.camera.target[2];
+    const v = s.tools.polygon.vertices;
+    let best: { edge: number; at: Vec2 } | null = null;
+    let bd = PICK_PX;
+    for (let i = 0; i < v.length; i++) {
+      const j = (i + 1) % v.length;
+      const a = project(s.camera, [v[i][0], v[i][1], z], zero, vp);
+      const b = project(s.camera, [v[j][0], v[j][1], z], zero, vp);
+      if (!a || !b) continue;
+      const d = segDist(p, a, b);
+      if (d > bd) continue;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const l2 = dx * dx + dy * dy;
+      const t = l2 === 0 ? 0 : Math.min(1, Math.max(0, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
+      bd = d;
+      best = { edge: i, at: [v[i][0] + t * (v[j][0] - v[i][0]), v[i][1] + t * (v[j][1] - v[i][1])] };
+    }
+    return best;
+  };
+  const removeAt = (index: number): boolean => {
+    const r = removeVertex(store.get().tools.polygon, index);
+    hovered = null;
+    if (!r.ok) {
+      if (r.message) deps.notify(`${r.message}; the vertex was not removed`);
+      return false;
+    }
+    store.update((st) => ({ ...st, tools: { ...st.tools, polygon: r.state } }));
+    deps.onToolChanged();
+    return true;
+  };
   const setInteracting = (key: string | null) => store.update((st) => ({ ...st, filterUi: { ...st.filterUi, interacting: key } }));
   const finishFilter = (value: number | null) => {
     if (drag?.kind !== "filter") return;
@@ -161,19 +214,15 @@ export function createToolInteraction(
         }
       }
       if (s.tool === "polygon" && s.tools.polygon.phase === "closed") {
-        const z = s.camera.target[2];
-        let best = -1;
-        let bd = PICK_PX;
-        s.tools.polygon.vertices.forEach((v, i) => {
-          const sp = project(s.camera, [v[0], v[1], z], zero, vp);
-          const d = sp ? Math.hypot(sp.x - p.x, sp.y - p.y) : Number.POSITIVE_INFINITY;
-          if (d <= bd) {
-            bd = d;
-            best = i;
-          }
-        });
+        const best = vertexAt(s, vp, p);
         if (best >= 0) {
-          drag = { kind: "vertex", index: best };
+          const tap = lastTap;
+          lastTap = null;
+          if (s.tools.polygon.editing && tap && tap.index === best && e.timeStamp - tap.t <= DOUBLE_TAP_MS) {
+            removeAt(best); // a second quick tap on the same vertex in edit mode removes it
+            return true;
+          }
+          drag = { kind: "vertex", index: best, moved: false, t: e.timeStamp };
           return true;
         }
       }
@@ -234,7 +283,13 @@ export function createToolInteraction(
     },
 
     pointerMove(e: PointerEvent): boolean {
-      if (!drag) return false;
+      if (!drag) {
+        // edit mode: remember the vertex under the pointer, for the Backspace key
+        const s = store.get();
+        hovered = s.tool === "polygon" && s.tools.polygon.phase === "closed" && s.tools.polygon.editing ? vertexAt(s, size(), px(e)) : -1;
+        if (hovered < 0) hovered = null;
+        return false;
+      }
       const s = store.get();
       const p = px(e);
       const ray = screenRay(s.camera, size(), p.x, p.y);
@@ -265,6 +320,7 @@ export function createToolInteraction(
       } else if (drag.kind === "vertex") {
         const xy = intersectZPlane(ray, s.camera.target[2]);
         if (!xy) return true;
+        drag.moved = true;
         const r = moveVertex(s.tools.polygon, drag.index, xy);
         if (r.ok) {
           store.update((st) => ({ ...st, tools: { ...st.tools, polygon: r.state } }));
@@ -287,6 +343,8 @@ export function createToolInteraction(
     pointerUp(): boolean {
       const was = drag !== null;
       if (drag?.kind === "filter") finishFilter(drag.moved ? drag.last : null);
+      // an untouched press on a vertex is the first tap of a possible double tap (edit mode removes the vertex)
+      lastTap = drag?.kind === "vertex" && !drag.moved ? { index: drag.index, t: drag.t } : null;
       drag = null;
       return was;
     },
@@ -329,6 +387,19 @@ export function createToolInteraction(
         deps.onToolChanged();
         return true;
       }
+      if (s.tool === "polygon" && s.tools.polygon.phase === "closed" && s.tools.polygon.editing && s.compare === "edited" && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {
+        // edit mode: a click on an edge adds a vertex there (a press on a vertex was already a drag)
+        const hit = edgeAt(s, size(), px(e));
+        if (!hit) return false;
+        const r = insertVertex(s.tools.polygon, hit.edge, hit.at);
+        if (!r.ok) {
+          if (r.message) deps.notify(`${r.message}; the vertex was not added`);
+          return true;
+        }
+        store.update((st) => ({ ...st, tools: { ...st.tools, polygon: r.state } }));
+        deps.onToolChanged();
+        return true;
+      }
       if (s.tool !== "polygon" || s.tools.polygon.phase !== "drawing" || s.compare !== "edited") return false;
       const p = px(e);
       const xy = intersectZPlane(screenRay(s.camera, size(), p.x, p.y), s.camera.target[2]);
@@ -337,6 +408,14 @@ export function createToolInteraction(
       return true;
     },
     dragging: () => drag !== null,
+    /** The polygon vertex under the pointer in edit mode, or null. */
+    hoveredVertex: (): number | null => hovered,
+    /** Backspace in edit mode: removes the hovered vertex; false when none is hovered or the removal is refused (a notice says why). */
+    removeHovered(): boolean {
+      const s = store.get();
+      if (hovered === null || s.tool !== "polygon" || s.tools.polygon.phase !== "closed" || !s.tools.polygon.editing) return false;
+      return removeAt(hovered);
+    },
   };
 }
 export type ToolInteraction = ReturnType<typeof createToolInteraction>;

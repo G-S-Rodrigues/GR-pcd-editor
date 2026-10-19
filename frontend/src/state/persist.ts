@@ -22,7 +22,7 @@ export function serialiseClientState(s: AppState): Json {
     pointSize: s.colour.pointSize,
     comparison: { mode: s.compare, opacity: s.overlayOpacity },
     unit: s.session?.unit ?? "m",
-    tools: { box: s.tools.box, polygon: s.tools.polygon, cluster: s.tools.cluster },
+    tools: { box: s.tools.box, polygon: { ...s.tools.polygon, editing: false }, cluster: s.tools.cluster },
     ui: { budget: s.budget, gizmo: s.gizmo, boxesCollapsed: s.filterUi.collapsed, floorPanelOpen: s.floorPanelOpen, sectionsOpen: s.sectionsOpen, ...(s.legendOpen ? {} : { legendOpen: false }), ...(s.previewLive ? {} : { previewLive: false }) },
   };
 }
@@ -105,7 +105,7 @@ export function restoreClientState(raw: unknown): ClientPatch | null {
       p.zMin <= p.zMax &&
       (p.mode === "inside" || p.mode === "outside")
     ) {
-      tools.polygon = { phase: p.phase, vertices: p.vertices, previous: null, zMin: p.zMin, zMax: p.zMax, mode: p.mode } as PolygonState;
+      tools.polygon = { phase: p.phase, vertices: p.vertices, previous: null, zMin: p.zMin, zMax: p.zMax, mode: p.mode, editing: false } as PolygonState;
     }
     const k = t.cluster;
     if (isObj(k) && finite(k.radius) && k.radius > 0 && typeof k.excludeProtected === "boolean" && ["none", "box", "prism"].includes(k.region as string) && (k.scope === "displayed" || k.scope === "active")) {
