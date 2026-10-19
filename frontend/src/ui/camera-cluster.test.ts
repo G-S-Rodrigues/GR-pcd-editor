@@ -3,7 +3,8 @@ import { createAppStore } from "../state/app";
 import { sessionFixture } from "../testing/fixtures";
 import { type FakeEl, installFakeDom } from "../testing/fakedom";
 import { RESERVED } from "../filterboxes/placement";
-import { CLUSTER, CUBE, CUBE_STAGE, CUBE_TOP } from "../view/layout";
+import { CLUSTER, CUBE, CUBE_RIGHT, CUBE_SIDE, CUBE_STAGE, CUBE_TOP, CUBE_NAV, CUBE_WRAP, CUBE_WRAP_TOP } from "../view/layout";
+import { cubeNavCss } from "./cube-arrows";
 import { togglePerspective } from "../view/camera";
 import { buildCameraCluster } from "./camera-cluster";
 import { describeControls } from "./describe";
@@ -67,8 +68,27 @@ test("UI-323 the typed pivot fields and Set pivot are gone", () => {
 });
 
 test("UI-326 the reserved top-right rectangle is the ViewCube plus the cluster, derived from the shared constants", () => {
-  expect(CUBE.h).toBeGreaterThanOrEqual(CUBE_TOP + CUBE_STAGE + CLUSTER.gap + CLUSTER.h);
+  expect(CUBE.h).toBeGreaterThanOrEqual(CUBE_TOP + CLUSTER.h + CLUSTER.gap + CUBE_STAGE);
   expect(CUBE.w).toBeGreaterThanOrEqual(CLUSTER.w);
   const [, r] = RESERVED({ w: 780, h: 560 });
   expect(r).toEqual({ l: 780 - CUBE.w, t: 0, r: 780, b: CUBE.h });
+});
+
+test("UI-710 the cluster row sits above the smaller ViewCube wrapper and the reserved rectangle follows the new stack", () => {
+  const top = Number.parseFloat(root.style.top);
+  expect(top + CLUSTER.h + CLUSTER.gap).toBeLessThanOrEqual(CUBE_WRAP_TOP);
+  expect(CUBE_WRAP_TOP).toBe(CUBE_TOP + CLUSTER.h + CLUSTER.gap);
+  expect(CUBE.h).toBe(CUBE_TOP + CLUSTER.h + CLUSTER.gap + CUBE_WRAP + 8);
+  expect(CUBE_WRAP).toBeGreaterThanOrEqual(2 * CUBE_NAV.ring + CUBE_NAV.arrow);
+  expect(CLUSTER.w).toBeLessThanOrEqual(CUBE_WRAP);
+  expect(CUBE_SIDE).toBeLessThanOrEqual(40);
+  expect(CUBE_STAGE).toBeLessThanOrEqual(80);
+  expect(CUBE_RIGHT).toBe(8);
+});
+
+test("UI-711 the cube stage and face sizes come from the constants in one stylesheet, not from index.html", () => {
+  const css = cubeNavCss();
+  expect(css).toContain(`.cube-stage { left: ${(CUBE_WRAP - CUBE_STAGE) / 2}px; top: ${(CUBE_WRAP - CUBE_STAGE) / 2}px; width: ${CUBE_STAGE}px; height: ${CUBE_STAGE}px;`);
+  expect(css).toContain(`.cube-face { left: ${(CUBE_STAGE - CUBE_SIDE) / 2}px; top: ${(CUBE_STAGE - CUBE_SIDE) / 2}px; width: ${CUBE_SIDE}px; height: ${CUBE_SIDE}px;`);
+  expect(css).toContain(`top: ${CUBE_WRAP_TOP}px`);
 });

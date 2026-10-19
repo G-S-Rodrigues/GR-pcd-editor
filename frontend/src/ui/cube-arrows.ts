@@ -1,4 +1,4 @@
-import { CUBE_NAV, CUBE_RIGHT, CUBE_STAGE, CUBE_TOP, CUBE_WRAP } from "../view/layout";
+import { CUBE_NAV, CUBE_RIGHT, CUBE_SIDE, CUBE_STAGE, CUBE_WRAP, CUBE_WRAP_TOP } from "../view/layout";
 import type { IconName } from "./icons";
 
 /**
@@ -29,9 +29,11 @@ export const STYLE_ID = "cube-nav-style";
 export function cubeNavCss(): string {
   const a = ARROW_STYLE;
   const offset = (CUBE_WRAP - CUBE_STAGE) / 2;
+  const face = (CUBE_STAGE - CUBE_SIDE) / 2;
   return [
-    `#viewcube { position: absolute; right: ${CUBE_RIGHT}px; top: ${CUBE_TOP}px; width: ${CUBE_WRAP}px; height: ${CUBE_WRAP}px; z-index: 3; pointer-events: none; }`,
-    `#viewcube .cube-stage { left: ${offset}px; top: ${offset}px; pointer-events: auto; }`,
+    `#viewcube { position: absolute; right: ${CUBE_RIGHT}px; top: ${CUBE_WRAP_TOP}px; width: ${CUBE_WRAP}px; height: ${CUBE_WRAP}px; z-index: 3; pointer-events: none; }`,
+    `#viewcube .cube-stage { left: ${offset}px; top: ${offset}px; width: ${CUBE_STAGE}px; height: ${CUBE_STAGE}px; pointer-events: auto; }`,
+    `#viewcube .cube-face { left: ${face}px; top: ${face}px; width: ${CUBE_SIDE}px; height: ${CUBE_SIDE}px; }`,
     `#viewcube .cube-arrow, #viewcube .cube-corner { position: absolute; padding: 0; display: grid; place-items: center; pointer-events: auto; border: 0; color: ${a.glyph}; opacity: ${a.restOpacity}; transition: opacity ${a.transitionSeconds}s, background ${a.transitionSeconds}s; }`,
     `#viewcube .cube-arrow { width: ${CUBE_NAV.arrow}px; height: ${CUBE_NAV.arrow}px; border-radius: 50%; background: ${a.fill}; }`,
     `#viewcube .cube-corner { width: ${CUBE_NAV.zone}px; height: ${CUBE_NAV.zone}px; border-radius: 50%; background: ${a.zoneFill}; }`,

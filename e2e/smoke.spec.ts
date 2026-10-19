@@ -2497,7 +2497,7 @@ test("E2E-71 12-2 the four data modes are an icon group with exact counts; the o
 });
 
 for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
-  test(`E2E-72 12-3 the camera cluster sits under the ViewCube, overlaps nothing, resets and picks the pivot; no typed pivot at ${w}x${hgt}`, async ({ page }) => {
+  test(`E2E-72 12-3 16-2 the camera cluster sits above the ViewCube, overlaps nothing, resets and picks the pivot; no typed pivot at ${w}x${hgt}`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: hgt });
     const { exact, ctl } = helpers(page);
     await openRoom(page, exact);
@@ -2523,7 +2523,7 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     const hit = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
       a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
     expect(hit(c, await box("#viewcube")), "cluster vs #viewcube").toBe(false);
-    expect((await box("#viewcube")).y + (await box("#viewcube")).height).toBeLessThanOrEqual(c.y);
+    expect(c.y + c.height).toBeLessThanOrEqual((await box("#viewcube")).y);
     const fboxes = await page.locator(".fbox").all();
     expect(fboxes.length).toBeGreaterThan(0);
     for (const f of fboxes) expect(hit(c, (await f.boundingBox())!), "cluster vs .fbox").toBe(false);
@@ -2552,6 +2552,54 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     await ctl("pivot-reset").click();
     await expect(page.locator("#inspector")).toContainText("Pivot9, 9.5, 2");
     await page.screenshot({ path: `/out/camera-cluster-${w}.png` });
+  });
+}
+
+for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-132 16-2 the cluster is above a smaller ViewCube and nothing in the top-right corner overlaps in Front, Left, Top and Back at ${w}x${hgt}`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: hgt });
+    const { exact } = helpers(page);
+    await openRoom(page, exact);
+    for (const [key, view] of [["3", "front"], ["5", "left"], ["1", "top"], ["4", "back"]] as const) {
+      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+      await page.keyboard.press(key);
+      await page.waitForTimeout(400);
+      const r = await page.evaluate(() => {
+        const rect = (e: Element) => {
+          const b = e.getBoundingClientRect();
+          return { l: b.left, t: b.top, r: b.right, b: b.bottom };
+        };
+        const one = (s: string) => {
+          const e = document.querySelector(s);
+          return e ? rect(e) : null;
+        };
+        return {
+          stage: one("#stage")!,
+          cluster: one("#camera-cluster")!,
+          cube: one("#viewcube")!,
+          cubeStage: one("#viewcube .cube-stage")!,
+          parts: [...document.querySelectorAll("#viewcube .cube-arrow, #viewcube .cube-corner")].filter((e) => !(e as HTMLButtonElement).disabled && !(e as HTMLElement).hidden).map(rect),
+          boxes: [...document.querySelectorAll(".fbox")].map((e) => ({ id: (e as HTMLElement).dataset.box!, ...rect(e) })),
+          others: ["#legend", "#triad", "#timeline", "#notices"].flatMap((s) => {
+            const x = one(s);
+            return x && x.r > x.l && x.b > x.t ? [{ id: s, ...x }] : [];
+          }),
+        };
+      });
+      type R = { l: number; t: number; r: number; b: number };
+      const hit = (a: R, b: R) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+      const tag = `${w} ${view}`;
+      expect(r.cluster.b, `${tag} cluster above cube`).toBeLessThanOrEqual(r.cube.t);
+      expect(r.cluster.l >= r.stage.l && r.cluster.r <= r.stage.r && r.cluster.t >= r.stage.t, `${tag} cluster inside stage`).toBe(true);
+      expect(r.cubeStage.r - r.cubeStage.l, `${tag} cube stage width`).toBeLessThanOrEqual(80);
+      expect(hit(r.cluster, r.cubeStage), `${tag} cluster x cube stage`).toBe(false);
+      for (const a of r.parts) expect(hit(r.cluster, a), `${tag} cluster x arrow or zone`).toBe(false);
+      for (const o of [...r.boxes, ...r.others]) {
+        for (const [name, rc] of [["cluster", r.cluster], ["cube", r.cube], ["cube stage", r.cubeStage]] as const) expect(hit(o, rc), `${tag} ${o.id} x ${name}`).toBe(false);
+        for (const a of r.parts) expect(hit(o, a), `${tag} ${o.id} x arrow or zone`).toBe(false);
+      }
+      await page.screenshot({ path: `/out/viewcube-${w}-${view}.png` });
+    }
   });
 }
 

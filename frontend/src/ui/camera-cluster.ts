@@ -17,7 +17,7 @@ const PROJECTION_TIP = {
 } as const;
 
 /**
- * The camera cluster under the ViewCube: projection (the icon shows the current one), fit, reset pivot and pick pivot
+ * The camera cluster above the ViewCube: projection (the icon shows the current one), fit, reset pivot and pick pivot
  * (clicking a point sets the pivot and returns to orbit; Esc cancels). The pivot is set by picking only.
  */
 export function buildCameraCluster(root: HTMLElement, store: Store<AppState>, a: ClusterActions): void {
@@ -42,7 +42,7 @@ export function buildCameraCluster(root: HTMLElement, store: Store<AppState>, a:
     onclick: () => store.set({ interaction: store.get().interaction === "pick-pivot" ? "orbit" : "pick-pivot" }),
   });
   root.style.right = `${CUBE_RIGHT + (CUBE_WRAP - CLUSTER.w) / 2}px`;
-  root.style.top = `${CUBE_TOP + CUBE_WRAP + CLUSTER.gap}px`;
+  root.style.top = `${CUBE_TOP}px`;
   root.style.width = `${CLUSTER.w}px`;
   root.style.height = `${CLUSTER.h}px`;
   root.style.gap = `${CLUSTER.between}px`;

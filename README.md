@@ -32,7 +32,7 @@ view, global height protection (the purple slab) and the live counts in the stat
 | Left-drag | Orbit about the pivot (drags a tool handle or the rectangle when one is active) |
 | Middle/right-drag, Shift+left-drag | Pan |
 | Wheel | Zoom |
-| ViewCube (top right of the view) | Click a face to look along that axis; click an edge or corner for a diagonal view; it follows every camera change |
+| ViewCube (top right of the view, under the four camera buttons) | Click a face to look along that axis; click an edge or corner for a diagonal view; it follows every camera change |
 | `1` `2` `3` `4` `5` `6` | Top, bottom, front, back, left, right (the ViewCube faces) |
 | `P`, `F`, `Alt+F` | Perspective/orthographic, fit the cloud, fit the camera to the current candidate |
 | Hold `R`, or the **Rect** button | Rectangle select: drag a rectangle in a face view to set the box (depth: the whole cloud along the view axis) |

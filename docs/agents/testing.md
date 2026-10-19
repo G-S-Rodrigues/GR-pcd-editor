@@ -315,6 +315,12 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
   `edit.test.ts`), smoke `E2E-130` (preview request held; RED seen at HEAD) and `E2E-131` (commit poll held; passed at HEAD
   too, so it is a regression guard only).
 
+- Part 16-2 (camera cluster above a smaller ViewCube; reverses the 12-3 "under"): cube edge 40, stage 80, arrow ring 68,
+  zone offset 5, wrapper 160 (`view/layout.ts`; ring and wrapper are larger than first planned because `UI-332` found
+  corner zones touching arrows at ring 62). Cube stage and face sizes now come from `cubeNavCss()` only. Tests: `UI-710`,
+  `UI-711` (`ui/camera-cluster.test.ts`), smoke `E2E-132` (Front/Left/Top/Back at 1280x720 and 1920x1080, screenshots
+  `viewcube-<w>-<view>.png`); changed: `UI-326`, `E2E-72` ("under" became "above"). Not seen RED: `E2E-132`.
+
 ## Part 13 additions (tool flow)
 
 - Backend: `STS-01..14` (`tests/unit/test_step_shapes.py`: `shape_of` per tool, `tool_summary` unchanged, the entry keeps its
