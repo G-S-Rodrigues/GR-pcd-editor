@@ -565,4 +565,52 @@ describe("cluster reacts to parameter changes and partial results (F-04, F-07)",
     await flush();
     expect(t.commits).toEqual([{ cloud_revision: 3, preview_id: "new" }]);
   });
+
+  it("UI-653 an edit that supersedes a live selection between its state refresh and its candidate does not lose the candidate: Apply is enabled once idle", async () => {
+    const t = setup({ count: 10 }); // the first (live) selection
+    let release: () => void = () => undefined;
+    t.api.refreshState.mockImplementationOnce(() => new Promise<undefined>((r) => (release = () => r(undefined))));
+    t.editBox(1);
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    t.polls[0].resolve({ selected: 10, operand: 10, candidate: candidateFixture() });
+    await flush(); // the selection is installed; the state refresh is in flight
+    t.store.set({ liveFirst: false, op: "add" }); // the user picks Add, then edits the shape: a draft
+    t.editBox(2);
+    release();
+    await flush();
+    expect(t.store.get().candidate?.candidate_id).toBe("c1");
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    t.polls[1].resolve(landing());
+    await flush();
+    expect(t.store.get().job.busy).toBe(false);
+    expect(t.store.get().preview).toMatchObject({ id: "p1" });
+    expect(t.store.get().candidate?.candidate_id).toBe("c1");
+    expect(canApply(t.store.get())).toBe(true);
+  });
+
+  it("UI-654 a candidate is not adopted from a superseded selection when the edit invalidated it (live re-select, filter change)", async () => {
+    const t = setup({ count: 10 });
+    let release: () => void = () => undefined;
+    t.api.refreshState.mockImplementationOnce(() => new Promise<undefined>((r) => (release = () => r(undefined))));
+    t.editBox(1);
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    t.polls[0].resolve({ selected: 10, operand: 10, candidate: candidateFixture({ candidate_id: "old" }) });
+    await flush();
+    t.editBox(2); // still the live first selection: a new selection follows
+    release();
+    await flush();
+    expect(t.store.get().candidate).toBeNull();
+    t.api.refreshState.mockImplementationOnce(() => new Promise<undefined>((r) => (release = () => r(undefined))));
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    t.polls[1].resolve({ selected: 10, operand: 10, candidate: candidateFixture({ candidate_id: "old2" }) });
+    await flush();
+    t.runner.paramsChanged("filter");
+    release();
+    await flush();
+    expect(t.store.get().candidate).toBeNull();
+  });
 });

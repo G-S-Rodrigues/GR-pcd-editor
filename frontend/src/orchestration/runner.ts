@@ -87,6 +87,8 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
   let previewRunning = false;
   let runningShape = -1;
   let commitWhenReady = false;
+  /** Bumped whenever the committed selection or its candidate is invalidated or a selection/candidate/commit job starts. */
+  let epoch = 0;
 
   const previewCurrent = (): boolean => {
     const s = store.get();
@@ -104,6 +106,7 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
     const signal = ctl.signal;
     store.set({ job: { busy: true, progress: null, message } });
     previewRunning = kind === "preview";
+    const mineEpoch = kind === "preview" ? epoch : ++epoch;
     const submittedShape = shape;
     runningShape = submittedShape;
     try {
@@ -146,9 +149,21 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
         }
         return;
       }
-      await api.refreshState();
-      if (mine !== gen) return;
       const raw = (result as { candidate?: unknown }).candidate ?? ("candidate_id" in result ? result : null);
+      await api.refreshState();
+      if (mine !== gen) {
+        // Superseded while the state refresh was in flight. The server already installed this selection (and its pending
+        // preview, if any, belongs to the newer edit's own job), so when the superseding edit was only a draft over it the
+        // candidate is still the committed selection's: keep it, or Apply stays disabled for good. A superseder that
+        // invalidated the selection (live re-select, params change, reset, another selection job) bumped the epoch.
+        if (epoch === mineEpoch) {
+          store.set({
+            candidate: (raw as Candidate | null) ?? null,
+            ...(kind === "commit" ? { liveFirst: false } : {}),
+          });
+        }
+        return;
+      }
       store.set({
         candidate: (raw as Candidate | null) ?? null,
         job: { ...IDLE },
@@ -270,6 +285,7 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
         return;
       }
       const had = s.preview !== null;
+      epoch++;
       store.set({ candidate: null, job: { ...IDLE }, draft: false, preview: null });
       if (had) {
         void api.discardPreview?.(s.session?.revision.cloud ?? 0)?.catch(() => undefined);
@@ -330,6 +346,7 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
       toolDebounce.cancel();
       paramsDebounce.cancel();
       const hadPreview = store.get().preview !== null;
+      epoch++;
       store.set({ candidate: null, job: { ...IDLE }, preview: null });
       const s = store.get();
       if (hadPreview && shouldPreview(s) && buildSelection(s).ok) {
@@ -355,6 +372,7 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
       supersede();
       toolDebounce.cancel();
       paramsDebounce.cancel();
+      epoch++;
       store.set({ candidate: null, job: { ...IDLE } });
       dropDraft();
     },

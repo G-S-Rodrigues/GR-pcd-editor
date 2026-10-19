@@ -297,3 +297,11 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
   protected, cancel). Truth is a fixture oracle in the spec (box inclusion, cluster BFS), never production code.
 - Read-only hook `previewLayer()`: drawn points of the main layer flagged will-be-added and will-be-removed, and the
   preview id. Changed existing tests: `E2E-23` (note text), `E2E-61` (Apply enabled during a draft, owner ruling A).
+
+## Runner candidate race
+
+- A live selection whose job result lands while its state refresh is in flight keeps its candidate when the superseding
+  edit was only a draft over it (runner `epoch`; a re-select, params change, reset or another selection job still drops
+  it). Tests: `UI-653`, `UI-654` (`orchestration/runner.test.ts`), smoke `E2E-88` (plain, immediate Link distance edit,
+  and a held render read as fault injection). Run `--repeat-each` with `--workers=1`: parallel workers share one server
+  session and fail each other.

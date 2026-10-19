@@ -3199,3 +3199,57 @@ test("E2E-87 12b Cluster tuning: Radius and Exclude protected re-preview live (o
   await t.exact("Selected", String(last));
   await expect(page.locator("#progress")).toBeHidden();
 });
+
+// ---- the owner's report: Apply stayed disabled after one Cluster selection (E2E-88)
+for (const immediate of [false, true]) {
+  test(`E2E-88 a single Cluster selection ends with Apply enabled and deletes exactly the cluster${immediate ? ", with a Link distance edit right after the seed click" : ""}`, async ({ page }, testInfo) => {
+    const t = clusterHelpers(page);
+    await openRoom(page, t.exact);
+    await t.ctl("tool-cluster").click();
+    await t.setNum("cluster-radius", 1);
+    await t.pickSeed(CL.wall);
+    if (immediate) {
+      await t.setNum("cluster-radius", 1.1); // no wait: the edit lands while the first selection is still being evaluated
+    }
+    await t.exact("Candidates", String(ROOM.wall));
+    await expect(t.ctl("apply")).toBeEnabled();
+    await t.ctl("apply").click();
+    await t.exact("Active", String(ROOM_TOTAL - ROOM.wall));
+    await t.expectActive(testInfo, inWall);
+  });
+}
+
+test("E2E-88 an edit made while the first Cluster selection's state refresh is in flight (Add, then a Link distance edit) still leaves Apply enabled, and Apply deletes exactly the selection", async ({ page }, testInfo) => {
+  const t = clusterHelpers(page);
+  await openRoom(page, t.exact);
+  await t.ctl("tool-cluster").click();
+  await t.setNum("cluster-radius", 1);
+  // fault injection, not a wait: hold the first render read that follows the selection POST (the state is read by then, so Selected has updated) until the edits are done
+  let selected = false;
+  let holding = false;
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((r) => (release = r));
+  let entered: () => void = () => undefined;
+  const reached = new Promise<void>((r) => (entered = r));
+  page.on("request", (r) => {
+    if (r.method() === "POST" && r.url().endsWith("/api/session/selection")) selected = true;
+  });
+  await page.route("**/api/session/render**", async (route) => {
+    if (selected && !holding && route.request().method() === "GET") {
+      holding = true;
+      entered();
+      await gate;
+    }
+    await route.continue().catch(() => undefined);
+  });
+  await t.pickSeed(CL.wall);
+  await reached; // the page knows the selection; its candidate is not set yet
+  await t.ctl("op-add").click();
+  await t.setNum("cluster-radius", 1.1); // a draft over the selection: previews only
+  release();
+  await t.exact("Candidates", String(ROOM.wall));
+  await expect(t.ctl("apply")).toBeEnabled();
+  await t.ctl("apply").click();
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.wall));
+  await t.expectActive(testInfo, inWall);
+});
