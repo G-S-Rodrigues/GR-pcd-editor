@@ -2240,6 +2240,7 @@ test("E2E-61 Cluster with Operation Add: after Commit draft the selection is |A 
   await t.ctl("sel-commit").click();
   await t.exact("Selected", String(ROOM.wall + FLOOR_CLUSTER));
   await t.exact("Candidates", String(ROOM.wall + FLOOR_CLUSTER));
+  await expect(t.ctl("cluster-pick-seed")).toHaveAttribute("data-state", "waiting"); // 17: the tool stays armed and waits for its next seed
   await expect(t.ctl("apply")).toBeEnabled();
   await t.ctl("apply").click();
   await t.exact("Active", String(ROOM_TOTAL - ROOM.wall - FLOOR_CLUSTER));
@@ -2369,6 +2370,39 @@ test("E2E-63 Preview with a pending Add cluster draft keeps the draft; Apply sta
   await t.expectActive(testInfo, inWall);
 });
 
+test("E2E-153 17 Commit draft leaves Cluster armed and waiting: two more clicks add two single points with no Pick point press", async ({ page }) => {
+  const rows = finiteRows();
+  const t = clusterHelpers(page);
+  await openRoom(page, t.exact);
+  await t.ctl("tool-cluster").click();
+  await t.setNum("cluster-radius", 1.1);
+  await t.pickSeed(CL.wall);
+  await t.exact("Selected", String(ROOM.wall));
+  await t.ctl("op-add").click();
+  await t.pickSeed(CL.floor);
+  await t.ctl("sel-commit").click();
+  const floor = clusterTruth(rows, [...CL.floor], 1.1);
+  await t.exact("Selected", String(ROOM.wall + floor.size));
+  const pick = t.ctl("cluster-pick-seed");
+  await expect(pick).toHaveAttribute("data-state", "waiting");
+  const clickAt = async (at: number[]) => {
+    const px = await page.evaluate((p) => (window as unknown as { __editor: EditorHook }).__editor.projectWorld(p as [number, number, number]), at);
+    expect(px).not.toBeNull();
+    await page.mouse.click(px!.x, px!.y);
+    await expect(pick).toHaveAttribute("data-state", "set");
+  };
+  let total = ROOM.wall + floor.size;
+  for (const noise of [[16.5, 3.5, 3], [8.5, 8.5, 2.5]]) {
+    await clickAt(noise);
+    const one = clusterTruth(rows, noise, 1.1);
+    await t.ctl("sel-commit").click();
+    total += one.size;
+    await t.exact("Selected", String(total));
+    await expect(pick).toHaveAttribute("data-state", "waiting");
+  }
+  await t.exact("Candidates", String(total));
+});
+
 test("E2E-64 Cluster Subtract and Intersect commit against the existing selection and Apply deletes exactly the result", async ({ page }, testInfo) => {
   const t = clusterHelpers(page);
   await openRoom(page, t.exact);
@@ -2387,6 +2421,7 @@ test("E2E-64 Cluster Subtract and Intersect commit against the existing selectio
   await t.ctl("sel-commit").click();
   await t.exact("Selected", String(FLOOR_CLUSTER));
   await t.exact("Candidates", String(FLOOR_CLUSTER));
+  await expect(t.ctl("cluster-pick-seed")).toHaveAttribute("data-state", "waiting");
   await expect(t.ctl("apply")).toBeEnabled();
   await t.ctl("apply").click();
   await t.exact("Active", String(ROOM_TOTAL - FLOOR_CLUSTER));
@@ -3307,6 +3342,7 @@ test("E2E-87 12b Cluster tuning: Radius and Exclude protected re-preview live (o
   await t.exact("Selected", String(last));
   // Cancel during a slow preview: selection unchanged, app idle
   await t.ctl("op-subtract").click();
+  await t.pickSeed(CL.blob); // 17: Commit draft cleared the seed; pick it again so the 0.4 edit has a cluster to preview
   await page.route("**/api/session/selection/preview", async (route) => {
     await new Promise((r) => setTimeout(r, 1500));
     await route.continue().catch(() => undefined);

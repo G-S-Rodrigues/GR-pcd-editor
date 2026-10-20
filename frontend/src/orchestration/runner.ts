@@ -4,6 +4,7 @@ import { type AppState, addNotice } from "../state/app";
 import type { Store } from "../state/store";
 import type { Candidate, PreviewState } from "../state/types";
 import { clusterErrorText } from "../tools/cluster/model";
+import { pressPick } from "../tools/cluster/pick";
 import { type SelectionRequest, buildSelection, shouldPreview } from "./selection";
 import { createDebouncer } from "./timing";
 
@@ -208,6 +209,8 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
         draft: false,
         preview: null,
         ...(kind === "commit" ? { liveFirst: false } : {}),
+        // Commit draft leaves every tool armed; the Cluster tool waits for its next seed (a seed picked meanwhile bumped `shape`)
+        ...(kind === "commit" && store.get().tool === "cluster" && shape === submittedShape ? pressPick(store.get()) : {}),
       });
     } catch (e) {
       if (mine !== gen) return;

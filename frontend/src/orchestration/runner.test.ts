@@ -758,3 +758,87 @@ describe("cluster reacts to parameter changes and partial results (F-04, F-07)",
     expect(deleteKeyOutcome(t.store.get())).toEqual({ run: true });
   });
 });
+
+describe("runner re-arm after Commit draft (R17-2)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+  const landing = (id = "p1") => ({ preview_id: id, selected_after: 12, base_selected: 10, added: 2, removed: 0, operand: 2 });
+
+  async function draftCluster() {
+    const t = setup({ op: "add", count: 10 });
+    t.store.update((s) => ({
+      ...s,
+      tool: "cluster",
+      interaction: "orbit",
+      tools: { ...s.tools, cluster: { ...setSeed(s.tools.cluster, { id: 7, point: [0, 0, 0] }), radius: 0.7, maxPoints: 123 } },
+    }));
+    t.runner.onToolChanged();
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    t.polls[0].resolve(landing("p7"));
+    await flush();
+    return t;
+  }
+
+  it("UI-878 after a successful cluster commit the seed is cleared, Pick point waits, other parameters stay and no job starts", async () => {
+    const t = await draftCluster();
+    t.runner.commitDraft();
+    await flush();
+    const before = t.api.submitPreview.mock.calls.length + t.api.submitSelection.mock.calls.length;
+    t.polls[1].resolve({ selected: 12, candidate: candidateFixture() });
+    await flush();
+    await vi.advanceTimersByTimeAsync(1000);
+    const s = t.store.get();
+    expect(s.tool).toBe("cluster");
+    expect(s.tools.cluster.seed).toBeNull();
+    expect(s.interaction).toBe("pick-seed");
+    expect(s.tools.cluster).toMatchObject({ radius: 0.7, maxPoints: 123 });
+    expect(s.draft).toBe(false);
+    expect(t.api.submitPreview.mock.calls.length + t.api.submitSelection.mock.calls.length).toBe(before);
+  });
+
+  it("UI-879 (regression guard, green at HEAD) after a box commit the tool and the box are unchanged", async () => {
+    const t = setup({ op: "add", count: 10 });
+    t.editBox(1);
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    t.polls[0].resolve(landing("p7"));
+    await flush();
+    const box = t.store.get().tools.box;
+    t.runner.commitDraft();
+    await flush();
+    t.polls[1].resolve({ selected: 12, candidate: candidateFixture() });
+    await flush();
+    expect(t.store.get().tool).toBe("box");
+    expect(t.store.get().tools.box).toEqual(box);
+    expect(t.store.get().interaction).not.toBe("pick-seed");
+  });
+
+  it("UI-880 a seed picked while the commit is in flight is kept and its preview runs when the commit settles", async () => {
+    const t = await draftCluster();
+    t.runner.commitDraft();
+    await flush();
+    t.store.update((s) => ({ ...s, interaction: "orbit", tools: { ...s.tools, cluster: setSeed(s.tools.cluster, { id: 99, point: [1, 1, 1] }) } }));
+    t.runner.onToolChanged();
+    t.polls[1].resolve({ selected: 12, candidate: candidateFixture() });
+    await flush();
+    expect(t.store.get().tools.cluster.seed).toMatchObject({ id: 99 });
+    expect(t.store.get().interaction).toBe("orbit");
+    await vi.advanceTimersByTimeAsync(250);
+    await flush();
+    expect(t.api.submitPreview).toHaveBeenCalledTimes(2);
+    expect((t.previews[1] as { tool: { seed_id: number } }).tool.seed_id).toBe(99);
+  });
+
+  it("UI-881 a commit that fails or is cancelled keeps the seed", async () => {
+    for (const code of ["stale_revision", "cancelled", "boom"]) {
+      const t = await draftCluster();
+      t.runner.commitDraft();
+      await flush();
+      t.polls[1].reject(new ApiError(code === "boom" ? 500 : 409, code, "x"));
+      await flush();
+      await vi.advanceTimersByTimeAsync(300);
+      expect(t.store.get().tools.cluster.seed).toMatchObject({ id: 7 });
+    }
+  });
+});
