@@ -67,5 +67,9 @@
 - **Selected colour:** The preset colour (Orange default, Magenta, White, Lime) the canvas and the legend use for selected
   points; a view setting saved with the session. The preview add and remove colours, protected and step colours are not
   user choices.
-- **Hidden points:** The points hidden by Hide selected: a per-session set of point ids that are not drawn and not
-  pickable. View only, never saved, no effect on counts, Delete or Export; part 15b replaces it with layer visibility.
+- **Layer:** A named group of points (at most 32) with a colour and a visibility flag. A point is in at most one layer;
+  Undoing a deletion puts the points back into their layer. Saved in the session (version 2).
+- **Main:** The points that are in no layer. Always present, never hidden by itself.
+- **Hidden layer:** A layer whose visibility is off: its points are not drawn, picked or selected by any tool, and still
+  count and export.
+- **Hidden points:** The points of hidden layers. Hide selected puts the selection in the layer named Hidden and hides it.

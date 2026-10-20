@@ -4478,3 +4478,205 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
     await checkLayout(page, w, h);
   });
 }
+
+// ---- part 15b: named sub layers (E2E-140..146)
+const layerHelpers = (page: Pg) => {
+  const t = hideHelpers(page);
+  const layers = () => hook(page, (e) => e.state().session!.layers.map((l: { id: number; name: string; visible: boolean; count: number }) => ({ id: l.id, name: l.name, visible: l.visible, count: l.count })));
+  const eye = (id: number) => page.locator(`[data-layer-eye="${id}"]`);
+  const edit = (id: number) => page.locator(`[data-layer-edit="${id}"]`);
+  const pick = (id: number) => page.locator(`[data-layer-row="${id}"]`);
+  const newLayer = async (name: string) => {
+    await page.locator('[data-control="layer-name"]').fill(name);
+    await t.ctl("layer-new").click();
+    await expect.poll(async () => (await layers()).some((l) => l.name === name), { timeout: 15000 }).toBe(true);
+    return (await layers()).find((l) => l.name === name)!.id;
+  };
+  /** Opens the room, boxes the floor (and its ghosts) and makes the layer "Floor" from them. */
+  const floorLayer = async () => {
+    const n = await t.floorSelected();
+    const id = await newLayer("Floor");
+    await expect.poll(async () => (await layers()).find((l) => l.id === id)?.count, { timeout: 15000 }).toBe(n);
+    return { id, n };
+  };
+  return { ...t, layers, eye, edit, pick, newLayer, floorLayer };
+};
+const wallSet = () => finiteRows().filter((r) => inBox(r, [0, 7.25, 2.5], [2, 5.5, 5]));
+
+test("E2E-140 15b a layer made from the floor and hidden: the drawn count drops by exactly its count and the counts are unchanged", async ({ page }) => {
+  const t = layerHelpers(page);
+  const { id, n } = await t.floorLayer();
+  const drawn0 = await t.drawn();
+  await t.eye(id).click();
+  await expect.poll(t.drawn, { timeout: 15000 }).toBe(drawn0 - n);
+  await t.exact("Original", String(ROOM_TOTAL));
+  await t.exact("Active", String(ROOM_TOTAL));
+  await expect(t.chip).toHaveText(`${n} hidden - Show`);
+  await t.eye(id).click();
+  await expect.poll(t.drawn, { timeout: 15000 }).toBe(drawn0);
+});
+
+test("E2E-141 15b layers and their visibility survive Save and reopen; a file saved without layers reopens without layers", async ({ page }, testInfo) => {
+  const t = layerHelpers(page);
+  const { id, n } = await t.floorLayer();
+  await t.eye(id).click();
+  await expect.poll(async () => (await t.layers()).find((l) => l.id === id)?.visible, { timeout: 15000 }).toBe(false);
+  const [dl] = await Promise.all([page.waitForEvent("download"), t.ctl("save-session").click()]);
+  const path = testInfo.outputPath("layers.pcdsession");
+  await dl.saveAs(path);
+  await page.locator("#file-input").setInputFiles({ name: "other.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
+  await t.exact("Active", String(TOTAL));
+  expect(await t.layers()).toEqual([]);
+  await page.locator("#file-input").setInputFiles({ name: "layers.pcdsession", mimeType: "application/octet-stream", buffer: readFileSync(path) });
+  await t.exact("Original", String(ROOM_TOTAL));
+  const back = await t.layers();
+  expect(back).toHaveLength(1);
+  expect(back[0]).toMatchObject({ name: "Floor", visible: false, count: n });
+  // a layer-less save reopens layer-less
+  await page.locator("#file-input").setInputFiles({ name: "other.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
+  await t.exact("Active", String(TOTAL));
+  const [dl2] = await Promise.all([page.waitForEvent("download"), t.ctl("save-session").click()]);
+  const path2 = testInfo.outputPath("plain.pcdsession");
+  await dl2.saveAs(path2);
+  await page.locator("#file-input").setInputFiles({ name: "plain.pcdsession", mimeType: "application/octet-stream", buffer: readFileSync(path2) });
+  await t.exact("Active", String(TOTAL));
+  expect(await t.layers()).toEqual([]);
+});
+
+test("E2E-142 15b with the floor layer hidden, a ghost box with Apply deletes only the ghosts and asks nothing", async ({ page }) => {
+  const t = layerHelpers(page);
+  const asked: string[] = [];
+  const { id } = await t.floorLayer();
+  page.on("dialog", (d) => asked.push(d.message())); // after the open: the "unsaved edits" ask of an earlier test's file is not under test
+  await t.eye(id).click();
+  await expect.poll(async () => (await t.layers()).find((l) => l.id === id)?.visible, { timeout: 15000 }).toBe(false);
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  await t.exact("Selected", String(ROOM.ghost));
+  await expect(t.ctl("apply")).toBeEnabled();
+  await t.ctl("apply").click();
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
+  expect(asked).toEqual([]);
+});
+
+test("E2E-143 15b Edit layer: the box starts at the member bounds, a resized box with Set layer to selection makes the members equal the fixture truth, the released points are in main, and points taken from another layer are confirmed", async ({ page }) => {
+  const t = layerHelpers(page);
+  const asked: string[] = [];
+  const { id, n } = await t.floorLayer();
+  page.on("dialog", (d) => asked.push(d.message())); // after the open: the "unsaved edits" ask of a file left by an earlier test is not under test
+  const main0 = await hook(page, (e) => e.state().session!.counts.main);
+  await expect(t.edit(id)).toHaveAttribute("aria-disabled", "false");
+  await t.edit(id).click();
+  await expect(t.ctl("layer-set")).toBeVisible();
+  await expect(page.locator("#layer-editing")).toContainText("Editing layer Floor");
+  await t.exact("Selected", String(n)); // the seeded box selects every member
+  // shrink the box to the floor proper (the thin slab), leaving the floor ghosts out
+  const FLOOR_ONLY = { c: [9.5, 9.5, 0], d: [22, 22, 0.02] };
+  await t.setBox(FLOOR_ONLY.c, FLOOR_ONLY.d);
+  const truth = finiteRows().filter((r) => inBox(r, FLOOR_ONLY.c, FLOOR_ONLY.d)).length;
+  await t.exact("Selected", String(truth));
+  await t.ctl("layer-set").click();
+  await expect.poll(async () => (await t.layers()).find((l) => l.id === id)?.count, { timeout: 15000 }).toBe(truth);
+  await expect(t.ctl("layer-set")).toBeHidden(); // edit mode ended
+  await t.exact("Selected", String(truth)); // and the selection is kept
+  expect(asked).toEqual([]);
+  expect(await hook(page, (e) => e.state().session!.counts.main)).toBe(main0 + (n - truth)); // the released points went to main
+  // the steal confirm: a second layer holds the wall, then the floor layer is set to a box over the wall
+  await t.ctl("sel-clear").click();
+  await t.ctl("tool-box").click();
+  await t.setBox([-1, 4.5, 2.5], [1, 10, 5]);
+  await t.exact("Selected", String(ROOM.wall));
+  const wallId = await t.newLayer("Wall");
+  await t.edit(id).click();
+  await t.setBox([-1, 4.5, 2.5], [1, 10, 5]);
+  await t.exact("Selected", String(ROOM.wall));
+  await t.ctl("layer-set").click();
+  await expect.poll(() => asked.length, { timeout: 15000 }).toBe(1);
+  expect(asked[0]).toBe(`Move ${ROOM.wall} points out of other layers into Floor?`);
+  await expect.poll(async () => (await t.layers()).find((l) => l.id === id)?.count, { timeout: 15000 }).toBe(ROOM.wall);
+  expect((await t.layers()).find((l) => l.id === wallId)?.count ?? 0).toBe(0);
+});
+
+test("E2E-144 15b the export picker: unticking the floor exports the room minus the floor, a hidden ticked layer is in the file, the exact count is reported, and Export all restores the whole cloud", async ({ page }, testInfo) => {
+  const t = layerHelpers(page);
+  const { id, n } = await t.floorLayer();
+  await t.eye(id).click();
+  await expect.poll(async () => (await t.layers()).find((l) => l.id === id)?.visible, { timeout: 15000 }).toBe(false);
+  const floorKeys = new Set(finiteRows().filter((r) => inBox(r, FLOOR_BOX.c, FLOOR_BOX.d)).map(f32key));
+  const download = async (name: string) => {
+    const [dl] = await Promise.all([page.waitForEvent("download"), t.ctl("export-go").click()]);
+    const path = testInfo.outputPath(name);
+    await dl.saveAs(path);
+    return parsePcd(readFileSync(path)).rows.map(f32key).sort();
+  };
+  const all = parsePcd(roomPcd()).rows.map(f32key);
+  // the hidden floor layer is ticked by default and is in the file
+  await t.ctl("export").click();
+  await expect(page.locator("#export-layers")).toContainText("(hidden, still exported)");
+  expect(await download("all.pcd")).toEqual([...all].sort());
+  // untick the floor layer
+  await t.ctl("export").click();
+  await page.locator(`[data-export-layer="${id}"]`).uncheck();
+  await expect(page.locator("#export-summary")).toContainText(String(ROOM_TOTAL - n));
+  const rest = await download("rest.pcd");
+  expect(rest).toEqual(all.filter((k) => !floorKeys.has(k)).sort());
+  expect(rest.length).toBe(ROOM_TOTAL - n);
+  expect(rest.some((k) => floorKeys.has(k))).toBe(false);
+  await expect(page.locator("#notices")).toContainText(`${ROOM_TOTAL - n} points exported`);
+  // Export all ticks everything again
+  await t.ctl("export").click();
+  await page.locator(`[data-export-layer="${id}"]`).uncheck();
+  await t.ctl("export-all").click();
+  await expect(page.locator(`[data-export-layer="${id}"]`)).toBeChecked();
+  expect((await download("again.pcd")).length).toBe(ROOM_TOTAL);
+});
+
+test("E2E-145 15b undoing a deletion puts the points back into their layer", async ({ page }) => {
+  const t = layerHelpers(page);
+  const { id, n } = await t.floorLayer();
+  await t.ctl("apply").click();
+  await t.exact("Active", String(ROOM_TOTAL - n));
+  await expect.poll(async () => (await t.layers()).find((l) => l.id === id)?.count, { timeout: 15000 }).toBe(0);
+  await t.ctl("undo").click();
+  await t.exact("Active", String(ROOM_TOTAL));
+  await expect.poll(async () => (await t.layers()).find((l) => l.id === id)?.count, { timeout: 15000 }).toBe(n);
+});
+
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-146 15b eight layers at ${w}x${h}: the panel, the legend rows and the chip do not overlap the ViewCube, the camera cluster or the timeline`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const t = layerHelpers(page);
+    await t.floorSelected();
+    await t.newLayer("L1");
+    for (let i = 2; i <= 8; i++) {
+      await t.ctl("sel-clear").click();
+      await t.ctl("tool-box").click();
+      await t.setBox([2 * i, 9.5, 0], [1.5, 22, 0.5]); // a strip of the floor: the points come out of L1 (the helpers accept the confirm)
+      await t.newLayer(`L${i}`);
+    }
+    expect((await t.layers()).length).toBe(8);
+    const first = (await t.layers())[0].id;
+    await t.eye(first).click();
+    await page.waitForTimeout(400);
+    const r = await page.evaluate(() => {
+      const box = (e: Element) => {
+        const b = e.getBoundingClientRect();
+        return { l: b.left, t: b.top, r: b.right, b: b.bottom };
+      };
+      const q = (s: string) => document.querySelector(s)!;
+      return {
+        legend: box(q("#legend")),
+        chip: box(q('[data-control="hidden-chip"]')),
+        tools: box(q("#inspector")),
+        list: box(q("#layer-list")),
+        others: ["#viewcube", "#camera-cluster", "#timeline"].map((s) => ({ s, ...box(q(s)) })),
+      };
+    });
+    const hit = (a: { l: number; t: number; r: number; b: number }, c: { l: number; t: number; r: number; b: number }) => a.l < c.r && c.l < a.r && a.t < c.b && c.t < a.b;
+    for (const o of r.others) {
+      expect(hit(r.legend, o), `legend x ${o.s}`).toBe(false);
+      expect(hit(r.chip, o), `chip x ${o.s}`).toBe(false);
+    }
+    expect(r.list.l >= r.tools.l - 1 && r.list.r <= r.tools.r + 1, `layer list inside the inspector ${JSON.stringify([r.list, r.tools])}`).toBe(true);
+    await checkLayout(page, w, h);
+  });
+}

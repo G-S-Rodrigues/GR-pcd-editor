@@ -90,14 +90,18 @@ Concepts worth knowing:
   again, or **Clear selection**, disarms it; **Select displayed** and **Invert** refuse
   with a reason while a tool is armed. A polygon delete leaves the Polygon tool armed with
   a blank polygon. The Box tool starts as a 3 m cube.
-- **Hide selected** (Selection section, after Clear selection) hides the selected points from the
-  view and clears the selection; the button then reads **Show hidden (N)** and a **N hidden -
-  Show** chip appears in the legend. Hidden points are not drawn and cannot be picked, but they
-  stay in the cloud, so **Delete** with a shape that covers them asks once more, **Select
-  displayed** and **Invert** are refused until they are shown, and **Export** still contains
-  them. It is view only: never saved (a saved session reopens with nothing hidden; Save says
-  so) and dropped when another file opens. Above the render budget only the drawn selected
-  points are hidden, and a warning says how many.
+- **Layers** (section before History) are named groups of points. **New layer** makes one from the selection,
+  **Assign selection** moves the selection into the chosen row, **Release to main** and a row's **To main** give points
+  back; each row has an eye (a hidden layer is not drawn, picked or selected, but stays in the cloud, the counts and
+  the export), **Select**, **Edit** and **To main**. **Edit** clears the selection, opens a Box at the layer's bounds as
+  a live selection; resize it and press **Set layer to selection** to make the layer hold exactly those points (points
+  taken from another layer are confirmed first; the selection stays). Layers are saved in the session (version 2, only
+  when layers exist), restored on reopen, and the Export dialog can export a subset of layers. Layer edits are not
+  steps in the timeline. The colour control has a **Layers** entry (layer colours, main in grey) while layers exist.
+- **Hide selected** (Selection section, after Clear selection) moves the selected points into the layer **Hidden** and
+  hides it; the button then reads **Show hidden (N)** and a **N hidden - Show** chip appears in the legend. Hidden
+  points are not drawn, picked or selected (Select displayed, Invert and Delete leave them alone), but they stay in the
+  cloud and **Export** contains them. Unlike the earlier view-only version it is saved with the session.
 - **Sparse points** selects points with fewer than a set number of neighbours (default 8)
   within a small cube around them, so isolated artifacts in the open go while dense walls
   and floors stay. The radius (empty: derived from the point spacing), the region (whole

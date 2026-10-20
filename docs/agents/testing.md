@@ -381,4 +381,16 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
 - Smoke `E2E-90` (hide the floor and its ghosts, the drawn count drops by exactly the count, Apply asks with the exact
   text, the export re-parsed with the independent reader equals the room minus the ghosts and includes the hidden floor,
   Show restores the draw, a reload shows nothing hidden) and `E2E-90b` (button and chip overlap sweep at 1280x720 and
-  1920x1080). 15b reserves `UI-535..549` and `E2E-91/92` to replace these when layer visibility lands.
+  1920x1080). Superseded by the layer-backed version below: E2E-90 was flipped in 15b-7 and the unit ids UI-500..506, 511 were replaced.
+
+## Part 15b additions (named layers)
+
+- Backend: `test_layers*.py`, `test_archive_layers.py`, `test_export_layers.py` and the tool-exclusion tests (LAY-00..72: the server-side layer model, the retained ids
+  property LAY-20/21, every tool excluding hidden points, archive version 2 only with layers, export by layer, the
+  layer render block with `X-Layers: 1` only when layers exist). The existing suite passes unedited.
+- Frontend unit: `UI-800..866` (model, api, params hook, Hide selected on layers, panel, legend rows, export picker,
+  colour by layer, Edit layer and Set layer to selection, never-persisted layer UI, Edit shape title for layer steps).
+- Smoke `E2E-140..146` (layer from the floor and hidden, save and reopen, ghost Apply with a hidden layer and no
+  confirm, Edit layer with the steal confirm, export picker re-parsed with the independent reader, Undo restoring layer
+  membership, eight-layer overlay sweep at 1280x720 and 1920x1080). `E2E-90` reads the layer Hidden. Run smoke with
+  `bash scripts/smoke.sh npx playwright test --workers=1`.
