@@ -201,7 +201,7 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     h("h2", { text: "Selection" }),
     h("div", { class: "oprow" }, h("span", { text: "Operation" }), op, previewLive),
     liveNote,
-    h("label", {}, "Scope ", scope),
+    h("div", { class: "oprow scoperow" }, h("label", { text: "Scope" }), scope),
     h("div", { class: "oprow" }, h("span", { text: "Selected colour" }), swatchGroup),
     h("div", { class: "stack" }, commit, discard),
     h(

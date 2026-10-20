@@ -173,3 +173,19 @@ test("UI-876 a #delete-blocked note under the Select/Clear/Hide stack carries th
   expect(note.hidden).toBe(true);
   expect(note.text()).toBe("");
 });
+
+test("UI-887 Scope sits on its own row (div.oprow.scoperow with a Scope label and the select), a sibling block of the swatch row, not inline before it", () => {
+  const all = dom.root.all();
+  const sel = ctl("scope-select");
+  const row = all.find((e) => e.children.includes(sel)) as FakeEl;
+  expect(row.tag).toBe("div");
+  expect(row.className).toBe("oprow scoperow");
+  expect(row.children.map((c) => c.tag)).toEqual(["label", "select"]);
+  expect(row.children[0].text()).toBe("Scope");
+  const swatchRow = all.find((e) => e.className === "oprow" && e.text().startsWith("Selected colour")) as FakeEl;
+  expect(swatchRow).toBeDefined();
+  const parentOf = (x: FakeEl) => all.concat(dom.root as unknown as FakeEl).find((e) => e.children.includes(x));
+  expect(parentOf(row)).toBe(parentOf(swatchRow));
+  expect(row).not.toBe(swatchRow);
+  expect(swatchRow.children.includes(sel)).toBe(false);
+});

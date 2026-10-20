@@ -4134,6 +4134,31 @@ async function selectWholeRoom(page: import("@playwright/test").Page, t: ReturnT
   await page.waitForTimeout(500);
 }
 
+for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-155 17 the focused Scope select and the selected-colour swatches keep their focus outlines apart at ${w}x${hgt}`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: hgt });
+    const t = helpers(page);
+    await openRoom(page, t.exact);
+    await t.ctl("preview-live").focus();
+    await page.keyboard.press("Tab");
+    await expect(t.ctl("scope-select")).toBeFocused();
+    const r = await page.evaluate(() => {
+      const grow = (el: Element) => {
+        const b = el.getBoundingClientRect();
+        return { l: b.left - 3, t: b.top - 3, r: b.right + 3, b: b.bottom + 3 };
+      };
+      const sel = grow(document.querySelector('[data-control="scope-select"]')!);
+      const sw = [...document.querySelectorAll('[data-control="sel-colour"] [data-control^="sel-colour-"]')].map(grow);
+      return { sel, sw };
+    });
+    expect(r.sw.length).toBeGreaterThan(0);
+    for (const s of r.sw) {
+      const overlap = s.l < r.sel.r && s.r > r.sel.l && s.t < r.sel.b && s.b > r.sel.t;
+      expect(overlap, "a swatch outline touches the Scope select outline").toBe(false);
+    }
+  });
+}
+
 test("E2E-133 16-3 the selected colour: swatches by real mouse and keyboard recolour the canvas and the legend, survive colour modes, Save and reopen, and Clear selection", async ({ page }, testInfo) => {
   const t = helpers(page);
   const { ctl, exact } = t;
