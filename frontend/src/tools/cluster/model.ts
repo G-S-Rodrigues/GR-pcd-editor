@@ -1,4 +1,6 @@
-import type { Candidate, Scope, Vec3 } from "../../state/types";
+import type { AppState } from "../../state/app";
+import type { Scope, Vec3 } from "../../state/types";
+import { previewClusterOf } from "../preview";
 import type { BoxTool } from "../../orchestration/tooltypes";
 import type { PrismTool } from "../../orchestration/tooltypes";
 
@@ -67,18 +69,21 @@ export const MEMORY_GUARD_TEXT =
 export const clusterErrorText = (code: string): string | null =>
   code === "component_limit_reached" ? CLUSTER_LIMIT_TEXT : code === "memory_guard" ? MEMORY_GUARD_TEXT : null;
 
-export function clusterPanel(c: Candidate | null): { label: string; value: string }[] {
-  const cl = c?.cluster as
+/** The rows of the Cluster block: the pending preview's cluster while one exists (marked), else the committed candidate's. */
+export function clusterPanel(s: AppState): { label: string; value: string }[] {
+  const cl = previewClusterOf(s) as
     | { seed_id: number; radius: number; size: number; bounds: { min: number[]; max: number[] } }
     | null
     | undefined;
-  if (!c || !cl) return [];
+  if (!cl) return [];
+  const pending = s.preview?.cluster !== undefined;
+  if (!pending && !s.candidate) return [];
   const f = (v: number[]) => v.map((x) => Math.round(x * 1000) / 1000).join(", ");
   return [
     { label: "Seed", value: String(cl.seed_id) },
     { label: "Radius", value: String(cl.radius) },
     { label: "Size", value: String(cl.size) },
-    { label: "Candidates", value: String(c.candidates) },
+    pending ? { label: "Status", value: "Preview, not committed" } : { label: "Candidates", value: String(s.candidate?.candidates ?? 0) },
     { label: "Bounds", value: `${f(cl.bounds.min)} to ${f(cl.bounds.max)}` },
   ];
 }

@@ -81,6 +81,7 @@ def _child(args):
     eligible = np.ones(len(xyz), dtype=bool)
     token = CancelToken()
     t0 = time.perf_counter()
+    c0 = time.process_time()
     cancelled_at = None
     if args["cancel_after"] is not None:
         threading.Timer(args["cancel_after"], token.cancel).start()
@@ -100,6 +101,7 @@ def _child(args):
         cancelled_at = time.perf_counter() - t0
         result["cancel_latency"] = cancelled_at - args["cancel_after"]
     result["seconds"] = time.perf_counter() - t0
+    result["cpu_seconds"] = time.process_time() - c0
     with open(
         "/proc/self/status"
     ) as fh:  # per exec; ru_maxrss inherits the parent peak

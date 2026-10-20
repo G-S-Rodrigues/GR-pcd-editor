@@ -652,10 +652,10 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     }),
     (() => {
       const dl = h("dl", { id: "cluster-result" });
-      syncs.push((s) => dl.replaceChildren(...clusterPanel(s.candidate).flatMap((r) => [h("dt", { text: r.label }), h("dd", { text: r.value })])));
+      syncs.push((s) => dl.replaceChildren(...clusterPanel(s).flatMap((r) => [h("dt", { text: r.label }), h("dd", { text: r.value })])));
       return dl;
     })(),
-    text((s) => clusterLimitText(s.candidate?.cluster) ?? (s.notices.some((n) => n.code === "component_limit_reached") ? CLUSTER_LIMIT_TEXT : ""), "note warn"),
+    text((s) => clusterLimitText(previewClusterOf(s)) ?? (s.notices.some((n) => n.code === "component_limit_reached") ? CLUSTER_LIMIT_TEXT : ""), "note warn"),
   );
 
   // ---- sparse points: select isolated points (floating artifacts), keep walls and floors

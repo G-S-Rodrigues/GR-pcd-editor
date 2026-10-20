@@ -2269,6 +2269,27 @@ test("E2E-150 17 Max points is an exact cap: 200 nearest points by hop, the note
   await t.expectActive(testInfo, (r) => want.has(f32key(r)));
 });
 
+test("E2E-151 17 the Cluster block shows the pending preview's seed and size, then the committed cluster after Commit draft", async ({ page }) => {
+  const t = clusterHelpers(page);
+  await openRoom(page, t.exact);
+  await t.ctl("tool-cluster").click();
+  await t.setNum("cluster-radius", 1.1);
+  await t.pickSeed(CL.wall);
+  await t.exact("Selected", String(ROOM.wall));
+  await t.ctl("op-add").click();
+  await t.pickSeed(CL.floor);
+  const seed = /Seed: point (\d+)/.exec(await page.locator("#inspector").innerText())![1];
+  const result = page.locator("#cluster-result");
+  await expect(result).toContainText("Preview, not committed");
+  await expect(result.locator("dd").nth(0)).toHaveText(seed); // the floor pick's seed, not the wall's
+  await expect(result.locator("dd").nth(2)).toHaveText(String(FLOOR_CLUSTER));
+  await t.ctl("sel-commit").click();
+  await t.exact("Selected", String(ROOM.wall + FLOOR_CLUSTER));
+  await expect(result).not.toContainText("Preview, not committed");
+  await expect(result.locator("dd").nth(0)).toHaveText(seed);
+  await expect(result).toContainText("Candidates");
+});
+
 test("E2E-62 a single Cluster keeps Apply enabled across scope, protection and display filter; a protected seed says why", async ({ page }) => {
   const t = clusterHelpers(page);
   await openRoom(page, t.exact);
