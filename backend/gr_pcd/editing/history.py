@@ -28,20 +28,22 @@ class HistoryEntry:
     )
 
 
-def clean_name(name: str | None) -> str | None:
-    """A step name: stripped, at most 80 chars, no control characters.
+def clean_name(
+    name: str | None, max_len: int = MAX_NAME, what: str = "a step name"
+) -> str | None:
+    """A name: stripped, at most `max_len` chars, no control characters.
     None or blank clears it (the default label is used)."""
     if name is None:
         return None
     if not isinstance(name, str):
-        raise EditError("invalid_name", "a step name must be text")
+        raise EditError("invalid_name", f"{what} must be text")
     name = name.strip()
-    if len(name) > MAX_NAME:
+    if len(name) > max_len:
         raise EditError(
-            "invalid_name", f"a step name has at most {MAX_NAME} characters"
+            "invalid_name", f"{what} has at most {max_len} characters"
         )
     if any(ord(c) < 32 or ord(c) == 127 for c in name):
-        raise EditError("invalid_name", "a step name has no control characters")
+        raise EditError("invalid_name", f"{what} has no control characters")
     return name or None
 
 
