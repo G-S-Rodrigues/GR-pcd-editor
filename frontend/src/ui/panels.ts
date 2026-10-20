@@ -15,6 +15,7 @@ import { clusterPickState, pickText, pressPick } from "../tools/cluster/pick";
 import { headline } from "../status/headline";
 import { commitEnabled, commitLabel, discardEnabled, previewText } from "../tools/preview";
 import { scopeNotice, selectionDisabledReason } from "../orchestration/selection";
+import { hideState } from "../orchestration/hide";
 import { historyRows } from "../inspector/history";
 import { control } from "./controls";
 import { SELECTED_COLOURS, type SelectedColourId } from "../colour/selectcolour";
@@ -43,6 +44,7 @@ export interface PanelActions {
   selectDisplayed: () => void;
   invert: () => void;
   clearSelection: () => void;
+  toggleHide: () => void;
   removeInvalid: () => void;
   removeInvalidVisible: () => boolean;
   removeInvalidLabel: () => string;
@@ -163,6 +165,8 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     if (why) addNotice(store, "warn", "selection_disabled", why);
     return why !== null;
   };
+  // Hide selected: a text button (no glyph); inactive buttons stay clickable so the click explains why (like Select displayed)
+  const hideBtn = control("button", { id: "sel-hide", "aria-pressed": "false", onclick: () => a.toggleHide() }, "Hide selected");
   const commit = control("button", { id: "sel-commit", onclick: a.commitDraft }, "Commit draft");
   const discard = control("button", { id: "sel-discard", onclick: a.discardDraft }, "Discard draft");
   const note = h("p", { id: "scope-note", class: "note" });
@@ -193,6 +197,7 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
       guarded(control("button", { id: "sel-select-displayed", onclick: () => refuse() || a.selectDisplayed() }, "Select displayed")),
       guarded(control("button", { id: "sel-invert", onclick: () => refuse() || a.invert() }, "Invert")),
       control("button", { id: "sel-clear", onclick: a.clearSelection }, "Clear selection"),
+      hideBtn,
     ),
     note,
     draftNote,
@@ -235,6 +240,12 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
       b.classList.toggle("inactive", why !== null);
       b.title = why ? `${TOOLTIPS[id]} (${why})` : (TOOLTIPS[id] ?? "");
     }
+    const hs = hideState(s);
+    hideBtn.textContent = hs.label;
+    hideBtn.setAttribute("aria-pressed", String(hs.pressed));
+    hideBtn.setAttribute("aria-disabled", String(hs.reason !== null));
+    hideBtn.classList.toggle("inactive", hs.reason !== null);
+    hideBtn.title = hs.reason ? `${TOOLTIPS["sel-hide"]} (${hs.reason})` : TOOLTIPS["sel-hide"];
     commit.disabled = !commitEnabled(s);
     commit.textContent = commitLabel(s);
     discard.disabled = !discardEnabled(s);

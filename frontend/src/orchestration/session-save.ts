@@ -2,6 +2,7 @@ import type { Download } from "../files/downloads";
 import { type AppState, addNotice } from "../state/app";
 import type { Store } from "../state/store";
 import type { SessionState } from "../state/types";
+import { HIDDEN_SAVE_TEXT } from "../view/hidden";
 
 export interface SaveDeps {
   startSave(): Promise<Download & { archiveId: string }>;
@@ -31,5 +32,7 @@ export async function runSave(store: Store<AppState>, deps: SaveDeps): Promise<{
   }
   const message = `Session download started: ${dl.filename}. Your browser decides where it is saved; reopen it with Open from this computer.`;
   addNotice(store, "info", "save_done", message);
+  const hidden = store.get().hidden.size;
+  if (hidden > 0) addNotice(store, "info", "hidden_saved", HIDDEN_SAVE_TEXT(hidden));
   return { ok: true, message };
 }

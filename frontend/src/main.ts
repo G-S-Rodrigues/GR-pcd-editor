@@ -41,6 +41,7 @@ import { control } from "./ui/controls";
 import { buildInspector } from "./ui/inspector-shell";
 import { buildStatusbar } from "./ui/statusbar";
 import { buildLegend } from "./ui/legend";
+import { createHide } from "./orchestration/hide";
 import { discardEnabled } from "./tools/preview";
 import { buildTimeline } from "./timeline/strip";
 import { createStepCentre } from "./timeline/centre";
@@ -116,6 +117,7 @@ const editor = createEditor(
   },
   (m) => window.confirm(m),
 );
+const hide = createHide(store, { clearSelection: () => editor.clearSelection(), refresh: () => refresher.refresh() });
 const paramsHook = createParamsHook(runner, () => refresher.refresh());
 const filters = createFilterController(store, {
   putFilter: api.putFilter,
@@ -247,6 +249,7 @@ const panelActions = {
     store.update(disarmed);
     void editor.clearSelection();
   },
+  toggleHide: () => void hide.toggle(),
   removeInvalid: () => void editor.removeInvalid(),
   removeInvalidVisible: () => editor.removeInvalidVisible(),
   removeInvalidLabel: () => editor.removeInvalidLabel(),

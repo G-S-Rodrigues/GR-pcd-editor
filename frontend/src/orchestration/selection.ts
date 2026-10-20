@@ -4,6 +4,7 @@ import { toBoxTool } from "../tools/box/model";
 import { toClusterTool } from "../tools/cluster/model";
 import { toSparseTool } from "../tools/sparse/model";
 import { toPrismTool } from "../tools/polygon/model";
+import { HIDDEN_SELECT_REASON } from "../view/hidden";
 import type { ToolBody } from "./tooltypes";
 
 export interface SelectionRequest {
@@ -30,6 +31,7 @@ export const shouldPreview = (s: AppState): boolean => !s.liveFirst && isDraftOp
  */
 export function selectionDisabledReason(s: AppState): string | null {
   if (s.tool !== "none") return "Disarm the tool first (Clear selection, or press the tool again)";
+  if (s.hidden.size > 0) return HIDDEN_SELECT_REASON;
   return null;
 }
 

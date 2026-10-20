@@ -5,6 +5,8 @@ import type { Store } from "../state/store";
 import type { SessionState } from "../state/types";
 import { deleteStepText, discardCount, discardText, mergeStepNames, stepsOf } from "../timeline/model";
 import { emptyPolygon } from "../tools/polygon/model";
+import { HIDDEN_APPLY_TEXT } from "../view/hidden";
+import { applyNeedsHiddenConfirm } from "./hide";
 import { canApply } from "./runner";
 
 export interface EditApi {
@@ -98,6 +100,8 @@ export function createEditor(store: Store<AppState>, api: EditApi, confirmFn: (m
       const fmt = (n: number) => n.toLocaleString("en-US");
       if (!confirmFn(`This deletes ${fmt(c.candidates)} of ${fmt(active)} points (${pct} %). It can be undone. Continue?`)) return;
     }
+    // hidden points are not drawn, so the shape may have selected some the user never saw
+    if (applyNeedsHiddenConfirm(s.hidden) && !confirmFn(HIDDEN_APPLY_TEXT(s.hidden.size))) return;
     // applying while rolled back throws the greyed steps away on the server: say so first
     if (discard > 0 && !confirmFn(discardText(discard))) return;
     await guarded(async () => {
