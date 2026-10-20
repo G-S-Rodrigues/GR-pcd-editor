@@ -23,13 +23,13 @@ test("UI-278 the legend lists Step highlight only while a highlight is active; t
   expect(step.colour).toBe(PALETTE.step);
 });
 
-test("UI-279 help lists the three timeline mouse rows and the key table is unchanged", () => {
+test("UI-279 help lists the three timeline mouse rows and the key table has no timeline key", () => {
   const keys = MOUSE_DOCS.map((d) => d.keys.toLowerCase()).join("|");
   expect(keys).toContain("timeline step");
   expect(keys).toContain("timeline marker");
   expect(keys).toContain("double-click a step name");
   expect(KEY_DOCS.map((d) => d.id)).toEqual([
     "view-1", "view-2", "view-3", "view-4", "view-5", "view-6", "perspective", "fit", "fit-selection", "rect",
-    "polygon-close", "polygon-remove-vertex", "cancel", "apply", "undo", "redo", "help",
+    "polygon-close", "polygon-remove-vertex", "cancel", "apply", "undo", "redo", "box-nudge", "box-grow", "box-turn", "help",
   ]);
 });

@@ -491,6 +491,10 @@ export function createToolInteraction(
     },
     dragging: () => drag !== null,
     /** True once after a pointerUp that ended an unmoved press on the box body: the caller then treats it as a click. */
+    /** Tells the app the Box tool state changed outside a drag (a keyboard edit): preview, overlay and fields follow. */
+    changed(): void {
+      deps.onToolChanged();
+    },
     takeClick(): boolean {
       const v = unmovedBody;
       unmovedBody = false;

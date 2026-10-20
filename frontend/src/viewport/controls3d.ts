@@ -4,6 +4,7 @@ import { resolveSeed, spacingEstimate } from "../pick/resolve";
 import { type AppState, addNotice } from "../state/app";
 import type { Store } from "../state/store";
 import { orbit, pan, togglePerspective, zoom } from "../view/camera";
+import { keyEditBox } from "../tools/box/keyedit";
 import { CLICK_SLOP_PX, type ToolInteraction } from "./interact";
 import { fitBounds } from "../view/fit";
 import { pickPivot } from "../view/pivot";
@@ -133,10 +134,24 @@ export function attachControls(
     }
   }
 
+  /** The box keys act only with the Box tool armed on the edited view, and not while a drag or rectangle is under way. */
+  const boxKeysLive = () => {
+    const s = store.get();
+    return s.tool === "box" && !!s.session && s.compare === "edited" && s.interaction === "orbit" && !s.rect && !drag;
+  };
   const onKey = (e: KeyboardEvent) => {
-    const id = classifyKey({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey, shiftKey: e.shiftKey, target: (e.target as HTMLElement | null)?.tagName ?? "" });
+    const id = classifyKey({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey, shiftKey: e.shiftKey, target: (e.target as HTMLElement | null)?.tagName ?? "", boxTool: boxKeysLive() });
     if (!id) return;
     const s = store.get();
+    if (id === "box-nudge" || id === "box-grow" || id === "box-turn") {
+      const box = keyEditBox(s.tools.box, e.key, { shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey }, s.camera, s.gizmo);
+      if (box) {
+        e.preventDefault();
+        store.update((st) => ({ ...st, tools: { ...st.tools, box } }));
+        tools?.changed();
+      }
+      return;
+    }
     const preset = presetForKey(e.key);
     if (preset && id.startsWith("view-")) {
       store.set({ camera: applyPreset(s.camera, preset) });

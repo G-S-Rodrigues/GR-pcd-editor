@@ -15,7 +15,7 @@ export type KeyId =
   | "view-1" | "view-2" | "view-3" | "view-4" | "view-5" | "view-6"
   | "perspective" | "fit" | "fit-selection" | "rect"
   | "polygon-close" | "polygon-remove-vertex" | "cancel" | "apply"
-  | "undo" | "redo" | "help";
+  | "undo" | "redo" | "help" | "box-nudge" | "box-grow" | "box-turn";
 
 export interface KeyEvent {
   key: string;
@@ -25,6 +25,8 @@ export interface KeyEvent {
   shiftKey: boolean;
   /** tagName of the event target. */
   target: string;
+  /** The Box tool is armed in the edited view: only then do the box keys mean anything. */
+  boxTool?: boolean;
 }
 
 export interface KeyDoc {
@@ -49,6 +51,9 @@ export const KEY_DOCS: KeyDoc[] = [
   { id: "apply", keys: "Delete", label: "Apply: delete the previewed points (same as the Apply button)", probes: [{ key: "Delete" }] },
   { id: "undo", keys: "Ctrl+Z", label: "Undo the last deletion", probes: [{ key: "z", ctrlKey: true }, { key: "Z", metaKey: true }] },
   { id: "redo", keys: "Ctrl+Y", label: "Redo (also Ctrl+Shift+Z)", probes: [{ key: "y", ctrlKey: true }, { key: "Z", ctrlKey: true, shiftKey: true }] },
+  { id: "box-nudge", keys: "Arrow keys, PageUp/PageDown", label: "Box tool: move the box by Step along the axes nearest the screen (Shift a tenth)", probes: [{ key: "ArrowLeft", boxTool: true }, { key: "PageUp", boxTool: true }, { key: "ArrowUp", shiftKey: true, boxTool: true }] },
+  { id: "box-grow", keys: "Alt+Arrow keys", label: "Box tool: grow (Right, Up) or shrink (Left, Down) both faces of the box axis nearest that direction by Step", probes: [{ key: "ArrowRight", altKey: true, boxTool: true }] },
+  { id: "box-turn", keys: ". and ,", label: "Box tool: turn the box by Angle step about its Z axis (Shift: the axis nearest screen-right; Ctrl+Shift: the view axis)", probes: [{ key: ".", boxTool: true }, { key: ",", boxTool: true }, { key: ">", shiftKey: true, boxTool: true }, { key: ".", ctrlKey: true, shiftKey: true, boxTool: true }] },
   { id: "help", keys: "?", label: "Show or hide this help", probes: [{ key: "?" }, { key: "?", shiftKey: true }] },
 ];
 
@@ -58,6 +63,13 @@ const TYPING = ["INPUT", "TEXTAREA", "SELECT"];
 export function classifyKey(e: KeyEvent): KeyId | null {
   if (TYPING.includes(e.target)) return e.key === "Escape" ? "cancel" : null;
   const k = e.key.toLowerCase();
+  if (e.boxTool && (e.target === "BODY" || e.target === "CANVAS")) {
+    const arrow = k.startsWith("arrow");
+    if (!e.metaKey && !e.ctrlKey && (arrow || k === "pageup" || k === "pagedown")) {
+      return e.altKey ? (arrow ? "box-grow" : null) : "box-nudge";
+    }
+    if (!e.metaKey && !e.altKey && [".", ",", ">", "<"].includes(e.key) && (!e.ctrlKey || e.shiftKey)) return "box-turn";
+  }
   if (e.ctrlKey || e.metaKey) {
     if (k === "z") return e.shiftKey ? "redo" : "undo";
     return k === "y" ? "redo" : null;
