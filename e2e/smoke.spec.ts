@@ -4112,3 +4112,71 @@ test("E2E-134 16-3 an Add preview keeps its own pink in the legend with a chosen
   await expect(page.locator('#legend [data-legend="preview-add"]')).toHaveCSS("background-color", "rgb(255, 79, 216)");
   await expect(page.locator('#legend [data-legend="selected"]')).toHaveCSS("background-color", "rgb(255, 0, 255)");
 });
+
+// ---------------------------------------------------------------- part 14: box gizmo (E2E-100..105)
+type BoxMeasure = { coverage: number; outside: boolean; arrowTipsOnCanvas: number; arrowTips: number };
+/** Measures the projected box against the canvas: share of the canvas the box hull covers, a free canvas pixel outside it, arrow tips on a canvas pixel. */
+const measureBox = (page: Pg) =>
+  page.evaluate((): BoxMeasure => {
+    const ed = (window as unknown as { __editor: { state: () => { tools: { box: { center: number[]; dimensions: number[] } } }; projectWorld: (p: number[]) => { x: number; y: number } | null; handlePositions: () => { id: string; x: number; y: number }[] } }).__editor;
+    const cv = document.getElementById("viewport")!;
+    const r = cv.getBoundingClientRect();
+    const { center: c, dimensions: d } = ed.state().tools.box;
+    const pts: { x: number; y: number }[] = [];
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
+      const p = ed.projectWorld([c[0] + (sx * d[0]) / 2, c[1] + (sy * d[1]) / 2, c[2] + (sz * d[2]) / 2]);
+      if (p) pts.push(p);
+    }
+    // convex hull (monotone chain)
+    const s = [...pts].sort((a, b) => a.x - b.x || a.y - b.y);
+    const cross = (o: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+    const half = (list: { x: number; y: number }[]) => {
+      const h: { x: number; y: number }[] = [];
+      for (const p of list) {
+        while (h.length >= 2 && cross(h[h.length - 2], h[h.length - 1], p) <= 0) h.pop();
+        h.push(p);
+      }
+      h.pop();
+      return h;
+    };
+    const hull = [...half(s), ...half([...s].reverse())];
+    const inside = (x: number, y: number) => hull.length >= 3 && hull.every((a, i) => cross(a, hull[(i + 1) % hull.length], { x, y }) >= 0);
+    let covered = 0;
+    let free = 0;
+    let n = 0;
+    for (let i = 0; i < 40; i++) for (let j = 0; j < 40; j++) {
+      const x = r.left + ((i + 0.5) / 40) * r.width;
+      const y = r.top + ((j + 0.5) / 40) * r.height;
+      n++;
+      if (inside(x, y)) covered++;
+      else if (document.elementFromPoint(x, y) === cv) free++;
+    }
+    const tips = ed.handlePositions().filter((h) => h.id.startsWith("translate-") || h.id.startsWith("resize-"));
+    const onCanvas = tips.filter((h) => h.x >= r.left && h.x <= r.right && h.y >= r.top && h.y <= r.bottom && document.elementFromPoint(h.x, h.y) === cv).length;
+    return { coverage: covered / n, outside: free > 0, arrowTipsOnCanvas: onCanvas, arrowTips: tips.length };
+  });
+
+for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-100 14-0 measuring: how much of the canvas a fitted box covers, and whether a drag can start outside it, at ${w}x${hgt}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: w, height: hgt });
+    const t = helpers(page);
+    await openRoom(page, t.exact);
+    await t.ctl("tool-box").click();
+    await appIdle(page);
+    const out: Record<string, BoxMeasure> = {};
+    for (const [view, key] of [["cube-top", "1"], ["cube-front", "3"]] as const) {
+      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+      await page.keyboard.press(key);
+      await page.waitForTimeout(500);
+      if (view === "cube-top") out[`${view} default`] = await measureBox(page);
+      for (const fit of ["box-fit-cloud", "box-fit-displayed", "box-fit-view"] as const) {
+        await t.ctl(fit).click();
+        await page.waitForTimeout(500);
+        out[`${view} ${fit}`] = await measureBox(page);
+      }
+    }
+    console.log(`E2E-100 ${w}x${hgt} ${JSON.stringify(out)}`);
+    testInfo.annotations.push({ type: "measure", description: JSON.stringify(out) });
+    expect(Object.keys(out).length).toBe(7);
+  });
+}
