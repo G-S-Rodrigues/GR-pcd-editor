@@ -3,6 +3,7 @@
 import pytest
 from test_api_session import GHOST_BOX, Api
 
+from fixtures.memory import trim
 from fixtures.pcdgen import SCENE_FLOOR, SCENE_GHOST
 from fixtures.sessions import make_settings, write_scene
 
@@ -27,7 +28,12 @@ def api(tmp_path):
     write_scene(settings)
     a = Api(settings)
     a.open()
-    return a
+    yield a
+    # leave no session behind: the memory guard test (PCD-61) measures a child
+    # that inherits this process's peak, and 20 open sessions tip it over
+    a.client.app.state.manager.jobs.shutdown()
+    a.client.close()
+    trim()
 
 
 def post(api, url, **body):

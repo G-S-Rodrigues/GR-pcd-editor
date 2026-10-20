@@ -16,6 +16,7 @@ import random
 import numpy as np
 import pytest
 
+from fixtures.memory import trim
 from fixtures.pcdgen import build_pcd, xyz_fields
 from fixtures.sessions import make_settings, select_box
 from gr_pcd.editing.errors import EditError
@@ -358,6 +359,12 @@ def run_sequence(tmp_path, seed, ops=OPS):
     except BaseException:
         mgr.jobs.shutdown()
         raise
+
+
+@pytest.fixture(autouse=True)
+def _trim():
+    yield
+    trim()
 
 
 def test_lay_20_property_against_oracle(tmp_path):

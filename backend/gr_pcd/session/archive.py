@@ -28,6 +28,7 @@ from gr_pcd.editing.history import (
     HistoryEntry,
     clean_name,
 )
+from gr_pcd.editing.layers import MAX_LAYERS, Layer, clean_layer_name
 from gr_pcd.editing.protection import (
     ProtectionState,
     validate_protection,
@@ -49,12 +50,14 @@ from gr_pcd.session.codec import (
 
 FORMAT = "gr-pcd-session"
 VERSION = 1
+LAYER_VERSION = 2  # written only when the session has layers
+ACCEPTED_VERSIONS = (VERSION, LAYER_VERSION)
 MAX_ENTRIES = 100_000
 MAX_MANIFEST = 16 * 1024 * 1024
 MAX_CLIENT_STATE = 1024 * 1024
 _OLD_TOOL = re.compile(r"\((box|polygon|prism|cluster|filter|selection)\)\s*$")
 _NAME = re.compile(
-    r"(manifest\.json|source\.pcd|selection\.bin|history/(0|[1-9][0-9]*)\.bin)"
+    r"(manifest\.json|source\.pcd|selection\.bin|layers\.bin|history/(0|[1-9][0-9]*)\.bin)"
 )
 
 
@@ -84,6 +87,8 @@ class LoadedArchive:
     unit: str
     client_state: dict
     next_sid: int = 0
+    layer: np.ndarray | None = None
+    layers: list | None = None
 
 
 # ---- writing -----------------------------------------------------------
@@ -102,11 +107,16 @@ def save_archive(session, path: Path, token) -> dict:
         filt, protection = session.display_filter, session.protection
         unit, client_state = session.unit, session.client_state
         edit_counter = session.edit_counter
+        layer, layers = session.layer, list(session.layers)
     cloud = session.cloud
+    has_layers = bool(layers) and layer is not None
+    layer_bytes = (
+        np.asarray(layer, dtype=np.uint8).tobytes() if has_layers else b""
+    )
     sel_ids = np.flatnonzero(selection & active & session.valid)
     manifest = {
         "format": FORMAT,
-        "version": VERSION,
+        "version": LAYER_VERSION if has_layers else VERSION,
         "source": {
             "filename": session.filename,
             "sha256": cloud.sha256,
@@ -156,6 +166,20 @@ def save_archive(session, path: Path, token) -> dict:
         "client_state": client_state,
         "created_utc": datetime.now(UTC).isoformat(),
     }
+    if has_layers:
+        manifest["layers"] = {
+            "file": "layers.bin",
+            "sha256": hashlib.sha256(layer_bytes).hexdigest(),
+            "items": [
+                {
+                    "id": x.id,
+                    "name": x.name,
+                    "colour": x.colour,
+                    "visible": x.visible,
+                }
+                for x in layers
+            ],
+        }
     fd, tmp_name = tempfile.mkstemp(
         dir=path.parent, prefix=".archive-", suffix=".part"
     )
@@ -176,6 +200,8 @@ def save_archive(session, path: Path, token) -> dict:
                         token.check()
                         dst.write(chunk)
                 zf.writestr("selection.bin", _ids_bytes(sel_ids))
+                if has_layers:
+                    zf.writestr("layers.bin", layer_bytes)
                 for i, e in enumerate(entries):
                     token.check()
                     zf.writestr(f"history/{i}.bin", _ids_bytes(e.ids))
@@ -397,7 +423,7 @@ def _load_open(zf, dest_source, budget, max_source_bytes) -> LoadedArchive:
         manifest = json.loads(_read_all(zf, minfo, minfo.file_size))
         if manifest.get("format") != FORMAT:
             raise _bad("not a gr-pcd session archive")
-        if manifest.get("version") != VERSION:
+        if manifest.get("version") not in ACCEPTED_VERSIONS:
             raise _bad(
                 f"unsupported session version {manifest.get('version')}",
                 "unsupported_session_version",
@@ -418,6 +444,8 @@ def _load_open(zf, dest_source, budget, max_source_bytes) -> LoadedArchive:
         protection = protection_from_dict(manifest["protection"])
         validate_filter(filt)
         validate_protection(protection)
+        version = manifest["version"]
+        lay_meta = _layer_manifest(manifest, version, by_name)
         ops = list(sel.get("ops", []))
         points = int(src["points"])
         filename = str(src["filename"])
@@ -481,6 +509,7 @@ def _load_open(zf, dest_source, budget, max_source_bytes) -> LoadedArchive:
         raise _bad("source.pcd does not match the manifest", "schema_mismatch")
 
     selection_ids = _read_ids(zf, by_name["selection.bin"], cloud.n)
+    layer_arr, layer_list = _read_layers(zf, by_name, lay_meta, cloud.n)
     entries: list[HistoryEntry] = []
     scratch = np.ones(cloud.n, dtype=bool)
     at_cursor = scratch.copy()
@@ -515,4 +544,77 @@ def _load_open(zf, dest_source, budget, max_source_bytes) -> LoadedArchive:
         unit=unit,
         client_state=client_state,
         next_sid=steps.next_sid,
+        layer=layer_arr,
+        layers=layer_list,
     )
+
+
+def _layer_manifest(manifest: dict, version: int, by_name: dict):
+    """The validated `layers` block, or None for a layer-less (v1) archive."""
+    has_key = "layers" in manifest
+    has_file = "layers.bin" in by_name
+    if version == VERSION:
+        if has_key or has_file:
+            raise _bad("a version 1 archive cannot carry layers")
+        return None
+    if not has_key and not has_file:
+        # no layers at all: not a file this build writes (SES-25 pins this)
+        raise _bad(
+            f"unsupported session version {version}",
+            "unsupported_session_version",
+        )
+    if not (has_key and has_file):
+        raise _bad("a version 2 archive needs its layers")
+    block = manifest["layers"]
+    if not isinstance(block, dict) or block.get("file") != "layers.bin":
+        raise _bad("invalid layers block")
+    sha, items = block.get("sha256"), block.get("items")
+    if not isinstance(sha, str) or not isinstance(items, list):
+        raise _bad("invalid layers block")
+    if not 1 <= len(items) <= MAX_LAYERS:
+        raise _bad("invalid layer count")
+    out, seen = [], set()
+    for it in items:
+        if not isinstance(it, dict):
+            raise _bad("invalid layer")
+        lid, name, colour, vis = (
+            it.get("id"),
+            it.get("name"),
+            it.get("colour"),
+            it.get("visible"),
+        )
+        if type(lid) is not int or not 1 <= lid <= 255 or lid in seen:
+            raise _bad("invalid or duplicate layer id")
+        if type(colour) is not int or not 0 <= colour <= 15:
+            raise _bad("invalid layer colour")
+        if type(vis) is not bool:
+            raise _bad("invalid layer visibility")
+        try:
+            if not isinstance(name, str) or clean_layer_name(name) != name:
+                raise _bad("invalid layer name")
+        except EditError:
+            raise _bad("invalid layer name")
+        seen.add(lid)
+        out.append(Layer(lid, name, colour, vis))
+    return sha, out
+
+
+def _read_layers(zf, by_name, meta, n: int):
+    if meta is None:
+        return None, None
+    sha, items = meta
+    info = by_name["layers.bin"]
+    if info.file_size != n:
+        raise _bad("layers.bin: bad length")
+    raw = _read_all(zf, info, n)
+    if hashlib.sha256(raw).hexdigest() != sha:
+        raise _bad("layers.bin does not match its recorded hash")
+    arr = np.frombuffer(raw, dtype=np.uint8).copy()
+    known = np.zeros(256, dtype=bool)
+    known[0] = True
+    for lay in items:
+        known[lay.id] = True
+    if n and not known[arr].all():
+        raise _bad("layers.bin holds an undeclared layer id")
+    arr.flags.writeable = False
+    return arr, items
