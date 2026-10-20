@@ -6,6 +6,7 @@ import { fetchRender as realFetchRender, type RenderData } from "../render/parse
 import { type AppState, addNotice } from "../state/app";
 import type { Store } from "../state/store";
 import type { RenderMode } from "../state/types";
+import { applyHidden, emptyHidden } from "../view/hidden";
 
 class StaleSession extends Error {}
 
@@ -22,6 +23,7 @@ export function createRefresher(store: Store<AppState>, fetchRender: FetchRender
     /** Drops every cached render (a different file or session was opened). */
     clear(): void {
       cache.clear();
+      if (store.get().hidden.size > 0) store.set({ hidden: emptyHidden() });
     },
     async refresh(): Promise<boolean> {
       const mine = ++gen;
@@ -62,7 +64,12 @@ export function createRefresher(store: Store<AppState>, fetchRender: FetchRender
       try {
         const [data, data2] = await Promise.all([get(s.renderMode), secondary ? get(secondary) : null]);
         if (mine !== gen) return false;
-        store.set({ render: data, render2: data2, rendering: false });
+        // hidden points belong to one session; the deleted overlay and the step highlight are never compacted
+        const now = store.get();
+        if (now.hidden.size > 0 && now.hidden.sessionId !== (now.session?.session_id ?? null)) store.set({ hidden: emptyHidden() });
+        const hid = store.get().hidden;
+        const view = (d: RenderData | null, mode: RenderMode): RenderData | null => (d && mode !== "deleted" ? applyHidden(d, hid) : d);
+        store.set({ render: view(data, s.renderMode), render2: view(data2, secondary ?? s.renderMode), rendering: false });
         return true;
       } catch (e) {
         if (mine !== gen) return false;
