@@ -46,8 +46,8 @@ export function createToolsOverlay(scene: THREE.Scene) {
             lines(r, r.map((_, i): [number, number] => [i, (i + 1) % r.length]), COL.ring, origin);
           } else {
             const tip: Vec3 = hd.anchor;
-            const base: Vec3 = hd.cls === "translate" ? t.box.center : hd.anchor;
-            const k = hd.cls === "translate" ? 0 : 0.5;
+            const base: Vec3 = hd.base ?? hd.anchor;
+            const k = 0.5;
             heavy([base, tip], [[0, 1]], COL.handle, origin, s, viewH);
             // a small cross marks the handle's hit point
             const d = (HANDLE_CROSS_PX / pxPerUnit(s.camera, Math.max(viewH, 1))) * (1 + k);

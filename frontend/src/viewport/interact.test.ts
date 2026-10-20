@@ -25,7 +25,7 @@ function setup() {
   store.update((s) => ({ ...s, tools: { ...s.tools, box } }));
   const changed = vi.fn();
   const tools = createToolInteraction(canvas, store, () => vp, { onToolChanged: changed, protectionEdit: (() => undefined) as never, notify: () => undefined });
-  const arrow = boxHandles(box, camera, true).find((h) => h.cls === "translate" && h.axis === 0)!;
+  const arrow = boxHandles(box, camera, true).find((h) => h.id === "resize-0+")!;
   const at = project(camera, arrow.anchor, [0, 0, 0], vp)!;
   const ev = (x: number, y: number, shiftKey: boolean) => ({ button: 0, clientX: x, clientY: y, shiftKey, altKey: false }) as unknown as PointerEvent;
   return { store, tools, at, ev, changed };
@@ -42,12 +42,12 @@ describe("tool pointer routing (F-06)", () => {
     expect(t.tools.dragging()).toBe(false);
   });
 
-  it("UI-108 a Shift drag moves the box by a tenth of a plain drag", () => {
+  it("UI-108 a Shift drag resizes the box by a tenth of a plain drag", () => {
     const moved = (shift: boolean) => {
       const t = setup();
       t.tools.pointerDown(t.ev(t.at.x, t.at.y, shift));
       t.tools.pointerMove(t.ev(t.at.x + 100, t.at.y, shift));
-      return t.store.get().tools.box.center[0];
+      return t.store.get().tools.box.dimensions[0] - 2;
     };
     const plain = moved(false);
     expect(plain).toBeGreaterThan(0.1);

@@ -14,7 +14,7 @@ test("UI-142 an arrow handle is a fixed number of pixels long at any zoom and vi
     for (const h of [400, 720, 1080]) {
       const cam = applyPreset({ ...defaultCamera(), distance }, "top");
       const vp = { w: h * 1.5, h };
-      const arrow = boxHandles(box, cam, true, h).find((x) => x.cls === "translate" && x.axis === 0)!;
+      const arrow = boxHandles(box, cam, true, h).find((x) => x.id === "resize-0+")!;
       const face: Vec3 = [1, 0, 0];
       const a = project(cam, arrow.anchor, zero, vp)!;
       const b = project(cam, face, zero, vp)!;

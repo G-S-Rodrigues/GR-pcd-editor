@@ -85,10 +85,9 @@ describe("gizmo math", () => {
     expect(routePointerDown(true)).toBe("gizmo");
     expect(routePointerDown(false)).toBe("camera");
     const s = Object.values(HANDLE_STYLES);
-    expect(new Set(s.map((x) => x.shape)).size).toBe(3);
-    expect(new Set(s.map((x) => x.colour)).size).toBe(3);
-    expect(HANDLE_STYLES.translate.shape).toBe("arrow");
-    expect(HANDLE_STYLES.resize.shape).toBe("square");
+    expect(new Set(s.map((x) => x.shape)).size).toBe(2);
+    expect(new Set(s.map((x) => x.colour)).size).toBe(2);
+    expect(HANDLE_STYLES.resize.shape).toBe("arrow");
     expect(HANDLE_STYLES.rotate.shape).toBe("ring");
   });
 });

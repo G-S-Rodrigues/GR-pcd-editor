@@ -81,10 +81,9 @@ export function rotateBox(b: BoxModel, worldAxis: Vec3, angle: number): BoxModel
 export const snap = (v: number, inc: number): number => (inc > 0 ? Math.round(v / inc) * inc : v);
 export const applyPrecision = (delta: number, on: boolean): number => (on ? delta * 0.1 : delta);
 
-export type HandleClass = "translate" | "resize" | "rotate";
-export const HANDLE_STYLES: Record<HandleClass, { shape: "arrow" | "square" | "ring"; colour: string }> = {
-  translate: { shape: "arrow", colour: "#ff5555" },
-  resize: { shape: "square", colour: "#ffd23f" },
+export type HandleClass = "resize" | "rotate";
+export const HANDLE_STYLES: Record<HandleClass, { shape: "arrow" | "ring"; colour: string }> = {
+  resize: { shape: "arrow", colour: "#ffd23f" },
   rotate: { shape: "ring", colour: "#4cc9f0" },
 };
 

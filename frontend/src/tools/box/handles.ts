@@ -11,8 +11,10 @@ export interface Handle {
   cls: HandleClass;
   axis: 0 | 1 | 2;
   sign: 1 | -1;
-  /** Hit-test point (world, float64): arrow tip, face centre. For rings the nearest ring sample is used. */
+  /** Hit-test point (world, float64): the arrow tip, `handleLength` outside the face. For rings the nearest ring sample is used. */
   anchor: Vec3;
+  /** Resize arrows: where the arrow starts, the centre of its face. */
+  base?: Vec3;
   /** World direction of the handle's axis. */
   dir: Vec3;
   /** Ring sample points (world), rotate handles only. */
@@ -45,10 +47,10 @@ export function boxHandles(box: BoxModel, cam: Camera, local: boolean, viewH: nu
   for (const i of [0, 1, 2] as const) {
     const ld = localDir(i);
     for (const sign of [1, -1] as const) {
-      out.push({ id: `resize-${i}${sign > 0 ? "+" : "-"}`, cls: "resize", axis: i, sign, anchor: add3(box.center, ld, sign * half[i]), dir: ld });
+      // the arrow always follows the box's own axis, whatever frame the rings use
+      out.push({ id: `resize-${i}${sign > 0 ? "+" : "-"}`, cls: "resize", axis: i, sign, anchor: add3(box.center, ld, sign * (half[i] + len)), base: add3(box.center, ld, sign * half[i]), dir: ld });
     }
     const td = local ? ld : E[i];
-    out.push({ id: `translate-${i}`, cls: "translate", axis: i, sign: 1, anchor: add3(box.center, td, half[i] + len), dir: td });
     const j = (i + 1) % 3;
     const k = (i + 2) % 3;
     const u = local ? localDir(j) : E[j];
@@ -67,7 +69,7 @@ export function boxHandles(box: BoxModel, cam: Camera, local: boolean, viewH: nu
 const POINT_PX = HANDLE_HIT_PX;
 const RING_PX = HANDLE_RING_HIT_PX;
 
-/** The handle under a pixel: resize squares first, then arrow tips, then rings. */
+/** The handle under a pixel: face arrow tips first (within 16 px), then rings. The box body is not a handle. */
 export function hitHandle(
   handles: Handle[],
   cam: Camera,
@@ -80,19 +82,17 @@ export function hitHandle(
     const s = project(cam, p, zero, vp);
     return s ? Math.hypot(s.x - px, s.y - py) : Number.POSITIVE_INFINITY;
   };
-  for (const cls of ["resize", "translate"] as const) {
-    let best: Handle | null = null;
-    let bd = POINT_PX;
-    for (const h of handles) {
-      if (h.cls !== cls) continue;
-      const d = dist(h.anchor);
-      if (d <= bd) {
-        bd = d;
-        best = h;
-      }
+  let arrow: Handle | null = null;
+  let score = 1;
+  for (const h of handles) {
+    if (h.cls !== "resize") continue;
+    const s = dist(h.anchor) / POINT_PX;
+    if (s <= score) {
+      score = s;
+      arrow = h;
     }
-    if (best) return best;
   }
+  if (arrow) return arrow;
   let best: Handle | null = null;
   let bd = RING_PX;
   for (const h of handles) {
