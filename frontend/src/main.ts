@@ -134,6 +134,7 @@ const tools = createToolInteraction(canvas, store, size, {
   onToolChanged: () => runner.onToolChanged(),
   protectionEdit: (fn) => protection.edit(fn),
   notify: note,
+  hint: (text) => addNotice(store, "info", "box_body_hint", text),
   filterEdit: (axis, side, value, o) => filters.editSide(axis, side, value, o),
 });
 window.addEventListener("keydown", (e) => {

@@ -17,13 +17,15 @@ import type { BoxModel } from "../tools/box/model";
 import { pxPerUnit } from "../view/pointsize";
 import { lookDirection } from "../view/camera";
 import { ringAngle, rotationDelta, translateDelta } from "../tools/box/gizmo-math";
-import { boxHandles, hitHandle } from "../tools/box/handles";
+import { moveOnPlane, rayBoxHit } from "../tools/box/body";
+import { type Handle, boxHandles, hitHandle } from "../tools/box/handles";
 import { addVertex, insertVertex, moveVertex, removeVertex } from "../tools/polygon/model";
 import type { Vec2 } from "../tools/polygon/validate";
 
 type PlaneKey = { which: "global" | "local"; edge: "min" | "max" };
 type Drag =
   | { kind: "box"; state: DragState }
+  | { kind: "body"; box0: BoxModel; grab: Vec3; x0: number; y0: number; moved: boolean }
   | { kind: "vertex"; index: number; moved: boolean; t: number }
   | { kind: "rect"; p0: { x: number; y: number }; depth: Depth; narrow: BoxModel | null }
   | { kind: "filter"; d: FilterDrag; key: string; last: number; moved: boolean }
@@ -38,7 +40,20 @@ export interface ToolInteractionDeps {
   filterEdit?: (axis: "x" | "y" | "z", side: Side, value: number, opts: { live: boolean }) => FilterEdit;
   /** True while the hold-R key is down (acts like the Rect toggle). */
   rectHeld?: () => boolean;
+  /** An informational (not warning) notice, shown once by the first body drag. */
+  hint?: (text: string) => void;
 }
+
+/** Cursor and handle id under the pointer (the box gizmo): the same hit tests a press uses. */
+export interface BoxHover {
+  cursor: "move" | "grab" | "ew-resize" | "ns-resize" | "nesw-resize" | "nwse-resize";
+  /** The hovered arrow or ring id; null over the body. */
+  id: string | null;
+}
+
+/** A press that moves less than this many pixels is a click, not a drag (shared with the camera controls). */
+export const CLICK_SLOP_PX = 4;
+export const BODY_HINT = "Dragging the box moves it. Ctrl+drag, or start outside the box, to orbit.";
 
 const PICK_PX = 10;
 /** Two presses on the same polygon vertex within this many ms (edit mode) remove it. */
@@ -167,8 +182,81 @@ export function createToolInteraction(
     setInteracting(null);
   };
 
+  /** The protection plane's arrow or outline under p (not end-on), or null. */
+  const protectionHit = (s: AppState, vp: { w: number; h: number }, p: { x: number; y: number }): PlaneAnchor | null => {
+    const normal = normalOf(s.tools.protection.tilt);
+    if (Math.abs(dot(lookDirection(s.camera), normal)) > END_ON_DOT) return null;
+    let best: PlaneAnchor | null = null;
+    let bd = PICK_PX;
+    for (const a of planeAnchors(s, vp.h)) {
+      const base = project(s.camera, a.anchor, zero, vp);
+      const tip = project(s.camera, a.tip, zero, vp);
+      const q = a.corners.map((c) => project(s.camera, c, zero, vp));
+      let d = base && tip ? segDist(p, base, tip) : Number.POSITIVE_INFINITY;
+      for (let i = 0; i < 4; i++) {
+        const c0 = q[i];
+        const c1 = q[(i + 1) % 4];
+        if (c0 && c1) d = Math.min(d, segDist(p, c0, c1));
+      }
+      if (d <= bd) {
+        bd = d;
+        best = a;
+      }
+    }
+    return best;
+  };
+  /** The tilted slab's rotation ring under p (shown only while the protection section is open), or null. */
+  const tiltRingHit = (s: AppState, vp: { w: number; h: number }, p: { x: number; y: number }): { id: "x" | "y"; centre: Vec3; axis: Vec3 } | null => {
+    const look = lookDirection(s.camera);
+    let best: { id: "x" | "y"; centre: Vec3; axis: Vec3 } | null = null;
+    let bd = PICK_PX;
+    for (const r of tiltRings(s, vp.h)) {
+      if (Math.abs(dot(look, r.axis)) < RING_EDGE_ON) continue;
+      const q = r.pts.map((pt) => project(s.camera, pt, zero, vp));
+      for (let i = 0; i < q.length; i++) {
+        const c0 = q[i];
+        const c1 = q[(i + 1) % q.length];
+        if (!c0 || !c1) continue;
+        const d = segDist(p, c0, c1);
+        if (d <= bd) {
+          bd = d;
+          best = r;
+        }
+      }
+    }
+    return best;
+  };
+  /** The box handle (arrow tip or ring) under p with the Box tool armed, or null. */
+  const boxHandleAt = (s: AppState, vp: { w: number; h: number }, p: { x: number; y: number }): Handle | null =>
+    s.tool === "box" ? hitHandle(boxHandles(s.tools.box, s.camera, s.gizmo.local, vp.h, vp.w), s.camera, vp, p.x, p.y) : null;
+  /** Where the pointer ray enters the box body, when a plain left press there should move the box; null otherwise. */
+  const bodyHit = (s: AppState, ray: ReturnType<typeof screenRay>, e: { shiftKey: boolean; ctrlKey?: boolean; metaKey?: boolean }) => {
+    if (s.tool !== "box" || s.interaction !== "orbit" || e.shiftKey || e.ctrlKey || e.metaKey) return null; // Shift pans, Ctrl always orbits
+    return rayBoxHit(ray, s.tools.box, s.camera.ortho);
+  };
+  /** The cursor class for the box gizmo at a pointer position, from the same hit tests a press uses; null when nothing there. */
+  const hoverAt = (s: AppState, vp: { w: number; h: number }, p: { x: number; y: number }, e: PointerEvent): BoxHover | null => {
+    if (s.tool !== "box" || !s.session || s.compare !== "edited" || s.rect || deps.rectHeld?.()) return null;
+    const hit = boxHandleAt(s, vp, p);
+    if (hit) {
+      if (hit.cls === "rotate") return { cursor: "grab", id: hit.id };
+      const a = project(s.camera, hit.base ?? s.tools.box.center, zero, vp);
+      const b = project(s.camera, hit.anchor, zero, vp);
+      if (!a || !b) return { cursor: "ew-resize", id: hit.id };
+      const deg = ((Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI + 180) % 180; // an arrow line has no sign
+      const cursor = deg < 22.5 || deg >= 157.5 ? "ew-resize" : deg < 67.5 ? "nwse-resize" : deg < 112.5 ? "ns-resize" : "nesw-resize";
+      return { cursor, id: hit.id };
+    }
+    if (protectionHit(s, vp, p) || tiltRingHit(s, vp, p)) return null;
+    const ray = screenRay(s.camera, vp, p.x, p.y);
+    return bodyHit(s, ray, e) ? { cursor: "move", id: null } : null;
+  };
+  let hintShown = false;
+  let unmovedBody = false;
+
   return {
     pointerDown(e: PointerEvent): boolean {
+      unmovedBody = false;
       const s = store.get();
       if (!s.session || s.compare !== "edited" || e.button !== 0) return false;
       const p = px(e);
@@ -206,12 +294,10 @@ export function createToolInteraction(
         deps.notify("Rectangle select needs an orthographic face view: click a ViewCube face first");
         return false;
       }
-      if (s.tool === "box") {
-        const hit = hitHandle(boxHandles(s.tools.box, s.camera, s.gizmo.local, vp.h, vp.w), s.camera, vp, p.x, p.y);
-        if (hit) {
-          drag = { kind: "box", state: beginDrag(hit, s.tools.box, ray) };
-          return true;
-        }
+      const hit = boxHandleAt(s, vp, p);
+      if (hit) {
+        drag = { kind: "box", state: beginDrag(hit, s.tools.box, ray) };
+        return true;
       }
       if (s.tool === "polygon" && s.tools.polygon.phase === "closed") {
         const best = vertexAt(s, vp, p);
@@ -226,58 +312,25 @@ export function createToolInteraction(
           return true;
         }
       }
-      // the protection band: each plane's arrow or outline; end-on (the look along the slab normal) the drag is disabled
-      const normal = normalOf(s.tools.protection.tilt);
-      if (Math.abs(dot(lookDirection(s.camera), normal)) <= END_ON_DOT) {
-        let best: PlaneAnchor | null = null;
-        let bd = PICK_PX;
-        for (const a of planeAnchors(s, vp.h)) {
-          const base = project(s.camera, a.anchor, zero, vp);
-          const tip = project(s.camera, a.tip, zero, vp);
-          const q = a.corners.map((c) => project(s.camera, c, zero, vp));
-          let d = base && tip ? segDist(p, base, tip) : Number.POSITIVE_INFINITY;
-          for (let i = 0; i < 4; i++) {
-            const c0 = q[i];
-            const c1 = q[(i + 1) % 4];
-            if (c0 && c1) d = Math.min(d, segDist(p, c0, c1));
-          }
-          if (d <= bd) {
-            bd = d;
-            best = a;
-          }
-        }
-        if (best) {
-          drag = { kind: "plane", key: best.key, model0: s.tools.protection, anchor: best.anchor, axis: normal, ray0: ray };
+      const prot = protectionHit(s, vp, p);
+      if (prot) {
+        drag = { kind: "plane", key: prot.key, model0: s.tools.protection, anchor: prot.anchor, axis: normalOf(s.tools.protection.tilt), ray0: ray };
+        return true;
+      }
+      const ringHit = tiltRingHit(s, vp, p);
+      if (ringHit) {
+        const a0 = ringAngle(ray, ringHit.centre, ringHit.axis);
+        const pv = pivotXY(s);
+        if (a0 !== null && pv) {
+          drag = { kind: "ring", which: ringHit.id, model0: s.tools.protection, centre: ringHit.centre, axis: ringHit.axis, a0, pivot: pv };
           return true;
         }
       }
-      // the rotation rings of the tilted slab (shown only while the protection section is open); arrows and edges win
-      {
-        const look = lookDirection(s.camera);
-        let best: { id: "x" | "y"; centre: Vec3; axis: Vec3 } | null = null;
-        let bd = PICK_PX;
-        for (const r of tiltRings(s, vp.h)) {
-          if (Math.abs(dot(look, r.axis)) < RING_EDGE_ON) continue;
-          const q = r.pts.map((pt) => project(s.camera, pt, zero, vp));
-          for (let i = 0; i < q.length; i++) {
-            const c0 = q[i];
-            const c1 = q[(i + 1) % q.length];
-            if (!c0 || !c1) continue;
-            const d = segDist(p, c0, c1);
-            if (d <= bd) {
-              bd = d;
-              best = r;
-            }
-          }
-        }
-        if (best) {
-          const a0 = ringAngle(ray, best.centre, best.axis);
-          const pv = pivotXY(s);
-          if (a0 !== null && pv) {
-            drag = { kind: "ring", which: best.id, model0: s.tools.protection, centre: best.centre, axis: best.axis, a0, pivot: pv };
-            return true;
-          }
-        }
+      // the box body is last, so every arrow, ring, protection and filter control over the box still wins
+      const body = bodyHit(s, ray, e);
+      if (body) {
+        drag = { kind: "body", box0: s.tools.box, grab: body.point, x0: e.clientX, y0: e.clientY, moved: false };
+        return true;
       }
       return false;
     },
@@ -317,6 +370,18 @@ export function createToolInteraction(
         });
         store.update((st) => ({ ...st, tools: { ...st.tools, box } }));
         deps.onToolChanged();
+      } else if (drag.kind === "body") {
+        if (!drag.moved) {
+          if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) <= CLICK_SLOP_PX) return true; // still a possible click
+          drag.moved = true;
+          if (!hintShown) {
+            hintShown = true;
+            deps.hint?.(BODY_HINT);
+          }
+        }
+        const box = moveOnPlane(drag.box0, drag.grab, ray, lookDirection(s.camera), { on: s.gizmo.snap, step: s.gizmo.step });
+        store.update((st) => ({ ...st, tools: { ...st.tools, box } }));
+        deps.onToolChanged();
       } else if (drag.kind === "vertex") {
         const xy = intersectZPlane(ray, s.camera.target[2]);
         if (!xy) return true;
@@ -342,6 +407,12 @@ export function createToolInteraction(
 
     pointerUp(): boolean {
       const was = drag !== null;
+      // a body press that never moved is a click: the camera controls pass it on to click() (box click-to-centre)
+      if (drag?.kind === "body" && !drag.moved) {
+        drag = null;
+        unmovedBody = true;
+        return false;
+      }
       if (drag?.kind === "filter") finishFilter(drag.moved ? drag.last : null);
       // an untouched press on a vertex is the first tap of a possible double tap (edit mode removes the vertex)
       lastTap = drag?.kind === "vertex" && !drag.moved ? { index: drag.index, t: drag.t } : null;
@@ -349,8 +420,19 @@ export function createToolInteraction(
       return was;
     },
 
-    /** Esc during a filter or protection arrow drag: restore the start value and stop. Returns whether a drag was cancelled. */
+    /** Esc during a filter, protection, box arrow, ring or body drag: restore the start value (the box from before the drag) and stop. Returns whether a drag was cancelled. */
     cancel(): boolean {
+      if (drag?.kind === "box" || drag?.kind === "body") {
+        const d = drag;
+        const box = d.kind === "box" ? d.state.box0 : d.box0;
+        const changed = d.kind === "box" || d.moved;
+        drag = null;
+        if (changed) {
+          store.update((st) => ({ ...st, tools: { ...st.tools, box } }));
+          deps.onToolChanged();
+        }
+        return true;
+      }
       if (drag?.kind === "plane" || drag?.kind === "ring") {
         const m = drag.model0;
         drag = null;
@@ -408,6 +490,17 @@ export function createToolInteraction(
       return true;
     },
     dragging: () => drag !== null,
+    /** True once after a pointerUp that ended an unmoved press on the box body: the caller then treats it as a click. */
+    takeClick(): boolean {
+      const v = unmovedBody;
+      unmovedBody = false;
+      return v;
+    },
+    /** The cursor class and handle id under the pointer for the Box tool (null elsewhere); not while a drag is under way. */
+    hover(e: PointerEvent): BoxHover | null {
+      if (drag) return null;
+      return hoverAt(store.get(), size(), px(e), e);
+    },
     /** The polygon vertex under the pointer in edit mode, or null. */
     hoveredVertex: (): number | null => hovered,
     /** Backspace in edit mode: removes the hovered vertex; false when none is hovered or the removal is refused (a notice says why). */

@@ -3,6 +3,7 @@ import { project } from "../pick/ray";
 import { createAppStore } from "../state/app";
 import { sessionFixture } from "../testing/fixtures";
 import type { Vec3 } from "../state/types";
+import { rayBoxHit } from "../tools/box/body";
 import { boxHandles } from "../tools/box/handles";
 import { defaultBox } from "../tools/box/model";
 import { screenRay, intersectZPlane } from "../pick/screenray";
@@ -393,5 +394,194 @@ describe("tilted protection band routing (10-6)", () => {
       t.tools.pointerUp();
       expect(t.store.get().tools.box.center).toEqual([0, 0, 0]);
     });
+  });
+});
+
+describe("box gizmo routing (Part 14)", () => {
+  type Mods = { shift?: boolean; ctrl?: boolean; meta?: boolean };
+  const evm = (x: number, y: number, m: Mods = {}) =>
+    ({ button: 0, clientX: x, clientY: y, shiftKey: !!m.shift, ctrlKey: !!m.ctrl, metaKey: !!m.meta, altKey: false }) as unknown as PointerEvent;
+  const bodySetup = (dims: Vec3 = [2, 2, 2], persp = false) => {
+    const store = createAppStore();
+    const camera = persp ? { ...applyPreset({ ...defaultCamera(), distance: 10 }, "top"), ortho: false } : applyPreset({ ...defaultCamera(), distance: 10 }, "top");
+    const box = { ...defaultBox([0, 0, 0]), dimensions: dims };
+    store.set({ session: sessionFixture({ active_bounds: { min: [-5, -5, 0], max: [5, 5, 3] } }), tool: "box", camera });
+    store.update((s) => ({ ...s, tools: { ...s.tools, box } }));
+    const changed = vi.fn();
+    const hints: string[] = [];
+    const protEdits: ProtectionModel[] = [];
+    const tools = createToolInteraction(canvas, store, () => vp, {
+      onToolChanged: changed,
+      protectionEdit: (fn) => {
+        const r = fn(store.get().tools.protection);
+        if (r.ok) {
+          store.update((s) => ({ ...s, tools: { ...s.tools, protection: r.model } }));
+          protEdits.push(r.model);
+        }
+        return r;
+      },
+      notify: () => undefined,
+      hint: (m) => hints.push(m),
+    });
+    const at = (p: Vec3) => project(store.get().camera, p, [0, 0, 0], vp)!;
+    const handle = (id: string) => {
+      const h = boxHandles(store.get().tools.box, store.get().camera, true, vp.h, vp.w).find((x) => x.id === id)!;
+      return { h, px: project(store.get().camera, h.anchor, [0, 0, 0], vp)! };
+    };
+    return { store, tools, at, changed, hints, protEdits, handle, box: () => store.get().tools.box };
+  };
+
+  it("UI-563 a body press moves the box, but only after rectangle, protection and the box arrows and rings declined it", () => {
+    // plain body: the box moves with the pointer
+    const t = bodySetup();
+    const p = t.at([0.7, 0.7, 1]);
+    expect(t.tools.pointerDown(evm(p.x, p.y))).toBe(true);
+    const to = t.at([1.7, 0.7, 1]); // one unit to the right
+    t.tools.pointerMove(evm(to.x, to.y));
+    expect(t.box().center[0]).toBeCloseTo(1, 6);
+    expect(t.box().dimensions).toEqual([2, 2, 2]);
+    t.tools.pointerUp();
+    // a ring over the body wins: the press rotates the box instead of moving it
+    const big = bodySetup([8, 8, 2]);
+    const ring = big.handle("rotate-2");
+    const rp = project(big.store.get().camera, ring.h.ring![12], [0, 0, 0], vp)!;
+    expect(big.tools.pointerDown(evm(rp.x, rp.y))).toBe(true);
+    big.tools.pointerMove(evm(rp.x - 40, rp.y + 40));
+    expect(big.box().center).toEqual([0, 0, 0]);
+    expect(big.box().quat).not.toEqual(defaultBox([0, 0, 0]).quat);
+    big.tools.pointerUp();
+    // an arrow over the body wins: the press resizes
+    const arrow = big.handle("resize-0+");
+    expect(big.tools.pointerDown(evm(arrow.px.x, arrow.px.y))).toBe(true);
+    big.tools.pointerMove(evm(arrow.px.x + 30, arrow.px.y));
+    expect(big.box().dimensions[0]).toBeGreaterThan(8);
+    big.tools.pointerUp();
+    // Rect on: the rectangle drag replaces the box (depth = bounds), the body does not move it
+    const r = bodySetup([8, 8, 2]);
+    r.store.update((s) => ({ ...s, rect: true }));
+    const q = r.at([0.7, 0.7, 1]);
+    expect(r.tools.pointerDown(evm(q.x, q.y))).toBe(true);
+    r.tools.pointerMove(evm(q.x + 80, q.y + 60));
+    expect(r.box().dimensions[2]).toBe(3);
+    r.tools.pointerUp();
+    // a protection outline over the body wins
+    const pr = bodySetup([8, 8, 2]);
+    pr.store.set({ camera: applyPreset({ ...defaultCamera(), distance: 10 }, "front") });
+    pr.store.update((s) => ({ ...s, tools: { ...s.tools, protection: { ...s.tools.protection, global: { enabled: true, min: -0.5, max: 0.5 } } } }));
+    const anchor = planeAnchors(pr.store.get(), vp.h)[0];
+    const ap = pr.at([2, 0, anchor.anchor[2]]); // on the band's outline, inside the body, clear of the rings
+    expect(rayBoxHit(screenRay(pr.store.get().camera, vp, ap.x, ap.y), pr.box(), true)).not.toBeNull(); // it does overlap the body
+    expect(pr.tools.pointerDown(evm(ap.x, ap.y))).toBe(true);
+    pr.tools.pointerMove(evm(ap.x, ap.y - 30));
+    expect(pr.protEdits.length).toBeGreaterThan(0);
+    expect(pr.box().center).toEqual([0, 0, 0]);
+  });
+
+  it("UI-564 Shift or Ctrl (or Meta) on the body falls through to the camera; outside the box and in another tool nothing is taken", () => {
+    const t = bodySetup();
+    const p = t.at([0.7, 0.7, 1]);
+    for (const m of [{ shift: true }, { ctrl: true }, { meta: true }]) {
+      expect(t.tools.pointerDown(evm(p.x, p.y, m))).toBe(false);
+      expect(t.tools.dragging()).toBe(false);
+    }
+    const out = t.at([3, 3, 0]);
+    expect(t.tools.pointerDown(evm(out.x, out.y))).toBe(false);
+    t.store.set({ tool: "polygon" });
+    expect(t.tools.pointerDown(evm(p.x, p.y))).toBe(false);
+    t.store.set({ tool: "box", interaction: "pick-pivot" });
+    expect(t.tools.pointerDown(evm(p.x, p.y))).toBe(false); // a pick mode is not a box move
+    t.store.set({ interaction: "orbit", compare: "original" });
+    expect(t.tools.pointerDown(evm(p.x, p.y))).toBe(false); // only the edited view moves the box
+  });
+
+  it("UI-565 an unmoved body press (or one within 4 px) is a click: the box is untouched and the caller is told; a real drag is not a click", () => {
+    const t = bodySetup();
+    const p = t.at([0.7, 0.7, 1]);
+    expect(t.tools.pointerDown(evm(p.x, p.y))).toBe(true);
+    t.tools.pointerMove(evm(p.x + 3, p.y));
+    expect(t.tools.pointerUp()).toBe(false);
+    expect(t.tools.takeClick()).toBe(true);
+    expect(t.tools.takeClick()).toBe(false); // once
+    expect(t.box().center).toEqual([0, 0, 0]);
+    expect(t.changed).not.toHaveBeenCalled();
+    expect(t.tools.dragging()).toBe(false);
+    t.tools.pointerDown(evm(p.x, p.y));
+    t.tools.pointerMove(evm(p.x + 30, p.y));
+    expect(t.tools.pointerUp()).toBe(true);
+    expect(t.tools.takeClick()).toBe(false);
+    expect(t.box().center[0]).toBeGreaterThan(0.4);
+    // the click itself still centres a 3 m box where it landed (Part 13), through click()
+    const c = bodySetup([3, 3, 3]);
+    const cp = c.at([0.7, 0.7, 1]);
+    c.tools.pointerDown(evm(cp.x, cp.y));
+    c.tools.pointerUp();
+    expect(c.tools.click(evm(cp.x, cp.y))).toBe(true);
+    expect(c.box().center[0]).toBeCloseTo(0.7, 1);
+  });
+
+  it("UI-566 Esc during a body, arrow or ring drag restores the box from before the drag and stops the drag", () => {
+    const t = bodySetup();
+    expect(t.tools.cancel()).toBe(false); // nothing to cancel
+    const start = t.box();
+    const p = t.at([0.7, 0.7, 1]);
+    t.tools.pointerDown(evm(p.x, p.y));
+    t.tools.pointerMove(evm(p.x + 50, p.y + 20));
+    expect(t.box().center).not.toEqual(start.center);
+    expect(t.tools.cancel()).toBe(true);
+    expect(t.box()).toEqual(start);
+    expect(t.tools.dragging()).toBe(false);
+    expect(t.tools.pointerUp()).toBe(false);
+    expect(t.tools.takeClick()).toBe(false);
+    for (const id of ["resize-1+", "rotate-2"]) {
+      const h = t.handle(id);
+      const q = id.startsWith("rotate") ? project(t.store.get().camera, h.h.ring![12], [0, 0, 0], vp)! : h.px;
+      t.tools.pointerDown(evm(q.x, q.y));
+      t.tools.pointerMove(evm(q.x + 40, q.y + 25));
+      expect(t.box()).not.toEqual(start);
+      expect(t.tools.cancel()).toBe(true);
+      expect(t.box()).toEqual(start);
+      expect(t.tools.dragging()).toBe(false);
+    }
+  });
+
+  it("UI-567 hover names the cursor from the same hit tests: move over the body, a resize cursor over an arrow, grab over a ring, nothing elsewhere", () => {
+    const t = bodySetup([8, 8, 2]);
+    const body = t.at([2, 2, 1]);
+    expect(t.tools.hover(evm(body.x, body.y))).toEqual({ cursor: "move", id: null });
+    const ax = t.handle("resize-0+").px;
+    expect(t.tools.hover(evm(ax.x, ax.y))).toEqual({ cursor: "ew-resize", id: "resize-0+" });
+    const ay = t.handle("resize-1-").px;
+    expect(t.tools.hover(evm(ay.x, ay.y))).toEqual({ cursor: "ns-resize", id: "resize-1-" });
+    const rp = project(t.store.get().camera, t.handle("rotate-2").h.ring![12], [0, 0, 0], vp)!;
+    expect(t.tools.hover(evm(rp.x, rp.y))).toEqual({ cursor: "grab", id: "rotate-2" });
+    expect(t.tools.hover(evm(5, 5))).toBeNull();
+    expect(t.tools.hover(evm(body.x, body.y, { shift: true }))).toBeNull(); // Shift pans there
+    expect(t.tools.hover(evm(body.x, body.y, { ctrl: true }))).toBeNull(); // Ctrl orbits there
+    t.store.update((s) => ({ ...s, rect: true }));
+    expect(t.tools.hover(evm(body.x, body.y))).toBeNull();
+    t.store.update((s) => ({ ...s, rect: false }));
+    t.tools.pointerDown(evm(body.x, body.y));
+    expect(t.tools.hover(evm(body.x, body.y))).toBeNull(); // not while a drag is under way
+  });
+
+  it("UI-568 the orbit hint shows once, on the first body drag that moves, never on a click or an arrow drag", () => {
+    const t = bodySetup();
+    const p = t.at([0.7, 0.7, 1]);
+    t.tools.pointerDown(evm(p.x, p.y));
+    t.tools.pointerUp();
+    expect(t.hints).toEqual([]);
+    const ax = t.handle("resize-0+").px;
+    t.tools.pointerDown(evm(ax.x, ax.y));
+    t.tools.pointerMove(evm(ax.x + 20, ax.y));
+    t.tools.pointerUp();
+    expect(t.hints).toEqual([]);
+    for (let i = 0; i < 2; i++) {
+      const q = t.at([0.6, 0.7, 1]);
+      t.tools.pointerDown(evm(q.x, q.y));
+      t.tools.pointerMove(evm(q.x + 20, q.y));
+      t.tools.pointerUp();
+    }
+    expect(t.hints).toHaveLength(1);
+    expect(t.hints[0]).toMatch(/Ctrl/);
   });
 });
