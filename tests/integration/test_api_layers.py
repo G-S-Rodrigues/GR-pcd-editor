@@ -400,3 +400,52 @@ def test_lay_58_export_layer_errors(api):
     none = export_job(api, [])
     assert none["status"] == "failed", none
     assert none["error"]["code"] == "no_layers_chosen"
+
+
+def layered_render(api, **params):
+    import numpy as np
+
+    r = api.client.get(
+        "/api/session/render",
+        params={"mode": "edited", "budget": 1000, **params},
+    )
+    assert r.status_code == 200, r.text
+    n = int(r.headers["X-Count"])
+    return r, n, np.frombuffer(r.content, "u1")
+
+
+def test_lay_70_a_session_with_layers_appends_one_uint8_id_per_drawn_point(api):
+    import numpy as np
+
+    make_layer(api, name="Floor")
+    r, n, raw = layered_render(api)
+    assert r.headers["X-Layers"] == "1"
+    assert len(raw) == n * 18  # coords, ids, flags, then the layer block
+    coords = np.frombuffer(r.content, "<f4", n * 3).reshape(n, 3)
+    origin = [float(v) for v in r.headers["X-Origin"].split(",")]
+    z = coords[:, 2].astype(np.float64) + origin[2]
+    layer = raw[n * 17 :]
+    # independent truth: the floor box holds exactly the points with |z| <= 0.25
+    assert np.array_equal(layer == 1, np.abs(z) <= 0.25)
+    assert set(np.unique(layer)) <= {0, 1}
+
+
+def test_lay_71_the_layer_block_follows_an_attribute_block(api):
+    import numpy as np
+
+    make_layer(api, name="Floor")
+    r, n, raw = layered_render(api, attr="@normal")
+    assert r.headers["X-Layers"] == "1" and r.headers["X-Attr-Kind"] == "u32"
+    assert len(raw) == n * 22
+    plain = layered_render(api)[2]
+    assert np.array_equal(raw[n * 21 :], plain[n * 17 :])
+
+
+def test_lay_72_with_no_layer_left_the_render_has_neither_header_nor_block(api):
+    make_layer(api, name="Floor")
+    r = api.client.request(
+        "DELETE", f"{L}/1", json={"cloud_revision": api.cloud()}
+    )
+    assert r.status_code == 200
+    r = api.render()[0]
+    assert "X-Layers" not in r.headers

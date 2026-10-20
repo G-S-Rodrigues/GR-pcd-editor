@@ -20,6 +20,7 @@ import {
   layerBoxShape,
   layerColour,
   layerButtons,
+  layerModeFix,
   layerRows,
   layersForRequest,
   stealConfirmText,
@@ -143,5 +144,16 @@ describe("layer panel and export model", () => {
     expect(exportedCount(s, new Set([0, 2]))).toBe(50 + 20 + 3);
     expect(exportedCount(s, new Set([0, 1, 2]))).toBe(103);
     expect(exportedCount(sessionFixture(), new Set())).toBe(900);
+  });
+});
+
+describe("colour by layer fallback", () => {
+  it("UI-856 layerModeFix turns Layers back into Turbo when the session has no layers, and leaves every other case alone", () => {
+    const s = initialState();
+    const on = { ...s, colour: { ...s.colour, mode: "layers" as const } };
+    expect(layerModeFix({ ...on, session: sessionFixture() })?.mode).toBe("turbo");
+    expect(layerModeFix({ ...on, session: null })?.mode).toBe("turbo");
+    expect(layerModeFix({ ...on, session: sessionFixture({ layers: [layer()] }) })).toBeNull();
+    expect(layerModeFix({ ...s, session: sessionFixture() })).toBeNull();
   });
 });

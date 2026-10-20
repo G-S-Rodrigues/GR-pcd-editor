@@ -122,6 +122,8 @@ class RenderArrays:
     attr_kind: str | None = None  # f32 | u32 | i32
     attr_field: str | None = None
     preview_id: str | None = None  # set only when a pending preview was drawn
+    # uint8 layer id per drawn point; set only when the session has layers
+    layer: np.ndarray | None = None
 
 
 def _ro(a: np.ndarray) -> np.ndarray:
@@ -1146,6 +1148,7 @@ class EditingSession:
                 pend = None
             step_ids = self.history.entry(step).ids if mode == "step" else None
             hidden = hidden_points(self.layer, self.layers)
+            layer = self.layer if self.layers else None
         display = self._display()
         valid = self.valid
         if mode == "step":
@@ -1240,6 +1243,7 @@ class EditingSession:
             kind,
             attr,
             None if pend is None else pend.id,
+            None if layer is None else layer[ids],
         ), rev
 
     def _attr_values(self, name: str, ids: np.ndarray):

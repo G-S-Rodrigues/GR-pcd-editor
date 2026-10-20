@@ -43,6 +43,7 @@ import { buildInspector } from "./ui/inspector-shell";
 import { buildStatusbar } from "./ui/statusbar";
 import { buildLegend } from "./ui/legend";
 import { createHide } from "./orchestration/hide";
+import { layerModeFix } from "./layers/model";
 import { createLayers, layerSelectBody } from "./orchestration/layers";
 import { discardEnabled } from "./tools/preview";
 import { buildTimeline } from "./timeline/strip";
@@ -192,6 +193,12 @@ function onOpened(state: SessionState) {
   // AC-17: a reopened session brings its saved view back; filters and protection come from the backend state above
   if (restored) store.update((st) => applyClientPatch(st, restored));
 }
+
+// colouring by layer needs layers: when the last one is gone (deleted, or a session without any opens) the mode is Turbo again
+store.subscribe((st) => {
+  const fix = layerModeFix(st);
+  if (fix) store.update((x) => ({ ...x, colour: fix }));
+});
 
 const canceller = createUploadCanceller(store);
 const deps = {

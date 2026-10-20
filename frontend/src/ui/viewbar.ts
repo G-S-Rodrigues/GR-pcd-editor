@@ -1,4 +1,4 @@
-import { type ColourMode, colourOptions } from "../colour/modes";
+import { type ColourMode, colourOptionsFor } from "../colour/modes";
 import type { AppState } from "../state/app";
 import type { Store } from "../state/store";
 import { AUTO_BUDGET, pointSizeFor, pxPerUnit } from "../view/pointsize";
@@ -93,7 +93,7 @@ export function buildViewbar(root: HTMLElement, store: Store<AppState>, a: Viewb
       modeGroup.replaceChildren(...compareButtons, ...(dm.showOpacity ? [opacityBox] : []));
     }
     autoSize.disabled = !has;
-    const opts = colourOptions(s.session?.schema ?? []);
+    const opts = colourOptionsFor(s.session?.schema ?? [], (s.session?.layers.length ?? 0) > 0);
     const key = opts.map((o) => `${o.id}${o.enabled}`).join();
     if (colour.dataset.key !== key) {
       colour.dataset.key = key;

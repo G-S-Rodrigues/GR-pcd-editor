@@ -84,3 +84,24 @@ test("UI-08 renderQuery builds and clamps", () => {
   expect(renderQuery("deleted", 0)).toBe("mode=deleted&budget=1");
   expect(renderQuery("edited", 12.7)).toBe("mode=edited&budget=12");
 });
+
+test("UI-851 parseRender reads the trailing layer block only when X-Layers is 1, after the attribute block, and rejects a wrong size", () => {
+  const n = 3;
+  const plain = body(n);
+  expect(parseRender(plain.buf, hdr(H)).layer).toBeUndefined();
+  const layered = (attr: boolean) => {
+    const a = attr ? new Float32Array([1, 2, 3]) : undefined;
+    const b = body(n, a);
+    const out = new Uint8Array(b.buf.byteLength + n);
+    out.set(new Uint8Array(b.buf), 0);
+    out.set([0, 2, 1], b.buf.byteLength);
+    return out.buffer;
+  };
+  const r = parseRender(layered(false), hdr({ ...H, "X-Layers": "1" }));
+  expect([...r.layer!]).toEqual([0, 2, 1]);
+  const ra = parseRender(layered(true), hdr({ ...H, "X-Layers": "1", "X-Attr-Field": "intensity", "X-Attr-Kind": "f32" }));
+  expect([...ra.layer!]).toEqual([0, 2, 1]);
+  expect([...ra.attr!]).toEqual([1, 2, 3]);
+  expect(() => parseRender(plain.buf, hdr({ ...H, "X-Layers": "1" }))).toThrow(/bytes/);
+  expect(() => parseRender(layered(false), hdr(H))).toThrow(/bytes/);
+});

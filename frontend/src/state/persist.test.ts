@@ -199,3 +199,16 @@ test("UI-725 selected colour: saved only when not orange, restored for a known i
   }
   expect(JSON.stringify(serialiseClientState(a.get()))).not.toMatch(/filters|protection/);
 });
+
+test("UI-857 a saved Layers colour mode restores as Layers with layers and as Turbo on a session without them", () => {
+  const saved = createAppStore();
+  saved.update((s) => ({ ...s, colour: { ...s.colour, mode: "layers" } }));
+  const patch = restoreClientState(JSON.parse(JSON.stringify(serialiseClientState(saved.get()))))!;
+  expect(patch.colour?.mode).toBe("layers");
+  const withLayers = createAppStore();
+  withLayers.set({ session: sessionFixture({ layers: [{ id: 1, name: "A", colour: 0, visible: true, count: 1, bounds: null }] }) });
+  expect(applyClientPatch(withLayers.get(), patch).colour.mode).toBe("layers");
+  const without = createAppStore();
+  without.set({ session: sessionFixture() });
+  expect(applyClientPatch(without.get(), patch).colour.mode).toBe("turbo");
+});

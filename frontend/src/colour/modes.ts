@@ -1,11 +1,12 @@
 import type { AttrArray } from "../render/parse";
-import type { Bounds, FieldInfo, Vec3 } from "../state/types";
+import { LAYER_COLOURS } from "../layers/model";
+import type { Bounds, FieldInfo, Layer, Vec3 } from "../state/types";
 import { type Tilt, slabCoordinate } from "../inspector/tilt";
 import { PALETTE, type Rgb } from "./palette";
 import { NORMAL_ATTR, decodeNormal, normalColour } from "./normals";
 import { RAMP_STOPS, rampAt } from "./ramps";
 
-export type ColourMode = "turbo" | "viridis" | "flat" | "distance" | "normals";
+export type ColourMode = "turbo" | "viridis" | "flat" | "distance" | "normals" | "layers";
 
 export interface ColourOption {
   id: ColourMode;
@@ -27,6 +28,21 @@ export function colourOptions(_schema: FieldInfo[]): ColourOption[] {
   ];
 }
 
+/** The five modes, plus Layers when the session has layers (a layer-less session never offers it). */
+export function colourOptionsFor(schema: FieldInfo[], hasLayers: boolean): ColourOption[] {
+  return [...colourOptions(schema), ...(hasLayers ? [{ id: "layers" as const, label: "Layers", enabled: true }] : [])];
+}
+
+const hexRgb = (hex: string): Rgb => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255) as unknown as Rgb;
+const LAYER_RGB: readonly Rgb[] = LAYER_COLOURS.map(hexRgb);
+
+/** Colour per layer id (index 0..255; main and unknown ids are undefined and draw in the base grey). */
+export function layerPaletteRgb(layers: readonly Layer[]): (Rgb | undefined)[] {
+  const out: (Rgb | undefined)[] = new Array(256).fill(undefined);
+  for (const l of layers) out[l.id] = LAYER_RGB[((l.colour % 16) + 16) % 16];
+  return out;
+}
+
 /** Colour of height z over [lo, hi] on a stop table (default Turbo), clamped; a zero range maps to the middle. */
 export function heightRamp(z: number, lo: number, hi: number, stops: readonly Rgb[] = RAMP_STOPS.turbo): Rgb {
   return rampAt(stops, hi > lo ? (z - lo) / (hi - lo) : 0.5);
@@ -39,11 +55,15 @@ export interface ColourInput {
   origin: Vec3;
   attr?: AttrArray;
   attrKind?: "f32" | "u32" | "i32";
+  /** Layer id per point (0 = main); used by the Layers mode only. */
+  layer?: Uint8Array;
 }
 export interface ColourContext {
   mode: ColourMode;
   bounds: Bounds | null;
   markDeleted: boolean;
+  /** Colour per layer id for the Layers mode (see `layerPaletteRgb`). */
+  layerRgb?: readonly (Rgb | undefined)[];
   /** Colour of selected (candidate) points; default PALETTE.selected. */
   selected?: Rgb;
   /** Protected slab intervals (Z, file frame) to draw strong; absent when the protection section is collapsed. */
@@ -66,6 +86,7 @@ export function colourizeMasked(r: ColourInput, ctx: ColourContext): { colours: 
   const hi = ctx.bounds ? ctx.bounds.max[2] : 0;
   const stops = ctx.mode === "turbo" ? RAMP_STOPS.turbo : ctx.mode === "viridis" ? RAMP_STOPS.viridis : null;
   const nrm = ctx.mode === "normals" && r.attr && r.attrKind === "u32" ? (r.attr as Uint32Array) : null;
+  const lay = ctx.mode === "layers" && r.layer && ctx.layerRgb ? r.layer : null;
   const tmp: [number, number, number] = [0, 0, 0];
   const region = ctx.region && ctx.region.intervals.length > 0 ? ctx.region : null;
   const tilt = region?.tilt;
@@ -86,7 +107,7 @@ export function colourizeMasked(r: ColourInput, ctx: ColourContext): { colours: 
     else if (region && inRegion(i)) c = PALETTE.protectedStrong;
     else {
       ovr[i] = 0;
-      c = stops ? heightRamp(r.coords[3 * i + 2] + r.origin[2], lo, hi, stops) : nrm ? normalColour(decodeNormal(nrm[i], tmp)) : PALETTE.base;
+      c = stops ? heightRamp(r.coords[3 * i + 2] + r.origin[2], lo, hi, stops) : nrm ? normalColour(decodeNormal(nrm[i], tmp)) : lay ? (ctx.layerRgb![lay[i]] ?? PALETTE.base) : PALETTE.base;
     }
     out[3 * i] = c[0];
     out[3 * i + 1] = c[1];

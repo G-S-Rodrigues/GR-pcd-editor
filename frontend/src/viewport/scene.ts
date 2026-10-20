@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { colourizeMasked } from "../colour/modes";
+import { colourizeMasked, layerPaletteRgb } from "../colour/modes";
 import { distanceRange } from "../colour/distance";
 import { distanceUniforms, useDistanceShader } from "./distanceShader";
 import { clampOpacity, overlayStyle } from "../compare/model";
@@ -174,7 +174,7 @@ export function createViewport(
       if (key !== st.key) {
         st.key = key;
         const attr = obj.geometry.getAttribute("color") as THREE.BufferAttribute;
-        const { colours, ovr } = colourizeMasked(data, { mode: s.colour.mode, bounds: s.session?.active_bounds ?? null, markDeleted: false, selected: selectedRgb(s.selectedColour), region: region ? colourRegion(s) : null });
+        const { colours, ovr } = colourizeMasked(data, { mode: s.colour.mode, bounds: s.session?.active_bounds ?? null, markDeleted: false, selected: selectedRgb(s.selectedColour), region: region ? colourRegion(s) : null, layerRgb: s.colour.mode === "layers" ? layerPaletteRgb(s.session?.layers ?? []) : undefined });
         attr.set(colours);
         attr.needsUpdate = true;
         const mask = obj.geometry.getAttribute("ovr") as THREE.BufferAttribute;

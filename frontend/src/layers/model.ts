@@ -145,3 +145,8 @@ export function exportedCount(s: SessionState, ticked: ReadonlySet<number>): num
 
 export const NONE_TICKED = "Tick at least one layer to export";
 export const EXPORT_WITHIN_LAYERS = "within the chosen layers; the exact count is reported after the export";
+
+/** Layers colouring needs layers: with none left the mode is Turbo again. Returns the fixed colour, or null when fine. */
+export function layerModeFix(s: Pick<AppState, "colour" | "session">): AppState["colour"] | null {
+  return s.colour.mode === "layers" && layersOf(s.session).length === 0 ? { ...s.colour, mode: "turbo" } : null;
+}
