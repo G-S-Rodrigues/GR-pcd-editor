@@ -18,6 +18,26 @@ export interface Counts {
   displayed: number;
   selected: number;
   protected: number;
+  /** Active points in no sub layer; 0 until a layer exists. */
+  main: number;
+  /** Active points in hidden layers; 0 until a layer exists. */
+  hidden: number;
+}
+/** A named sub layer as the server reports it (counts are active valid members). */
+export interface Layer {
+  id: number;
+  name: string;
+  /** Index 0..15 into LAYER_COLOURS. */
+  colour: number;
+  visible: boolean;
+  count: number;
+  bounds: Bounds | null;
+}
+/** What a layer call reports besides the state (the dry run and the real run). */
+export interface LayerOp {
+  moved: number;
+  from_other_layers: number;
+  released: number;
 }
 export interface AxisFilter {
   enabled: boolean;
@@ -96,6 +116,8 @@ export interface SessionState {
   height: number;
   viewpoint: number[];
   counts: Counts;
+  /** Sub layers in creation order; [] when the session has none. */
+  layers: Layer[];
   bounds: Bounds | null;
   active_bounds: Bounds | null;
   revision: { cloud: number; params: number };

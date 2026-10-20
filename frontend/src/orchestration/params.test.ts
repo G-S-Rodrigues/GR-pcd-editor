@@ -11,4 +11,12 @@ describe("params hook", () => {
     hook("protection");
     expect(calls).toEqual(["runner:filter", "refresh", "runner:protection", "refresh"]);
   });
+
+  it("UI-811 a layer change re-runs the preview as its own kind and redraws the canvas", () => {
+    const calls: string[] = [];
+    const runner = { paramsChanged: vi.fn((k: string) => void calls.push(`runner:${k}`)) };
+    const refresh = vi.fn(() => void calls.push("refresh"));
+    createParamsHook(runner, refresh)("layers");
+    expect(calls).toEqual(["runner:layers", "refresh"]);
+  });
 });

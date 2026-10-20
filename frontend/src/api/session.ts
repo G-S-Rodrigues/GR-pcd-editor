@@ -23,6 +23,8 @@ export function normaliseState(raw: unknown): SessionState {
   const r = raw as Json;
   return {
     ...(r as unknown as SessionState),
+    counts: { main: 0, hidden: 0, ...(r.counts as object) } as SessionState["counts"],
+    layers: (r.layers as SessionState["layers"]) ?? [],
     bounds: (r.bounds as SessionState["bounds"]) ?? null,
     active_bounds: (r.active_bounds as SessionState["active_bounds"]) ?? null,
     client_state: (r.client_state as Record<string, unknown>) ?? {},

@@ -271,6 +271,18 @@ describe("runner invalidation (F-01/F-02)", () => {
     expect(t.api.submitSelection).toHaveBeenCalledTimes(1);
   });
 
+  it("UI-812 a layer change with a live box re-selects like a filter change; the stale candidate never applies", async () => {
+    const t = setup();
+    withSelection(t);
+    t.runner.paramsChanged("layers");
+    expect(t.store.get().candidate).toBeNull();
+    expect(canApply(t.store.get())).toBe(false);
+    await vi.advanceTimersByTimeAsync(300);
+    await flush();
+    expect(t.api.submitSelection).toHaveBeenCalledTimes(1);
+    expect(t.api.submitCandidate).not.toHaveBeenCalled();
+  });
+
   it("UI-102 a filter change with no live tool: the backend refuses the frozen selection; Apply stays off and the user is told", async () => {
     const t = setup();
     t.store.set({ tool: "none" });

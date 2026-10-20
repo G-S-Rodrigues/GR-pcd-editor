@@ -27,7 +27,7 @@ export interface RunnerApi {
   refreshState(): Promise<void>;
 }
 
-export type ParamsKind = "filter" | "scope" | "protection";
+export type ParamsKind = "filter" | "scope" | "protection" | "layers";
 export const OUTDATED_TEXT = "The display filter changed since this selection was made. Select again to refresh the preview.";
 
 export const PREVIEW_REFRESHED_TEXT = "The selection changed; the preview was refreshed. Check it and commit again.";
