@@ -355,3 +355,18 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
   unit-tested, `UI-675`, and the loader by `STS-09`); the look of the vertex crosses and of the red Delete (computed styles
   are asserted, no golden image). The seed cross of an edited cluster step is drawn at the step's centre because the
   server stores the seed id, not its position.
+
+## Part 14 additions (box gizmo)
+
+- Backend `BXR-01..06` (`tests/unit`): the rotated-box mask against a per-point Rodrigues oracle, level and yaw-only bit
+  identical to the old formulas, pitch +-90, outside is the complement, the wire accepts three finite angles, quaternion
+  to rpy to backend round trip.
+- Unit `UI-550..559` (`tools/box/handles.test.ts`, `body.test.ts`: arrows resize, body move model), `UI-563..568`
+  (`viewport/interact*.test.ts`: priorities, Shift/Ctrl, click kept, Esc restore, hover), `UI-569/570` (overlay spec),
+  `UI-571..575` (`ui/keys.box.test.ts`, `tools/box/keyedit.test.ts`: keyboard), `UI-576/577` (`tools/box/docs.test.ts`:
+  note text and the stored-shape round trip), `UI-578` (an edge-on ring is never picked).
+- Smoke `E2E-100..105`: `E2E-100` is the layout sweep at 1280x720 and 1920x1080 (a fitted box covers 5 to 50 percent of
+  the canvas so a plain drag can start outside it; Fit to view covers it all, so only Ctrl+drag orbits there), `E2E-101`
+  arrow drag, `E2E-102` body drag with Shift pan and Ctrl orbit, `E2E-103` three real ring drags against an independent
+  rotation oracle, `E2E-104` keyboard sequence, `E2E-105` Esc mid-drag. Face views are reached by their keys (1, 3, 6),
+  not by clicking the ViewCube, because a face turned away is not clickable. No browser test covers hover cursors.

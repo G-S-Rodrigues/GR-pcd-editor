@@ -509,9 +509,10 @@ test("E2E-14 7a first load logs no console errors or failed requests; a bad file
 });
 
 type EditorHook = {
-  state: () => { camera: { target: number[]; orientation: number[]; distance: number; ortho: boolean }; tools: { box: { center: number[]; dimensions: number[] }; protection: { global: { enabled: boolean; min: number; max: number } } } };
+  state: () => { camera: { target: number[]; orientation: number[]; distance: number; ortho: boolean }; tools: { box: { center: number[]; dimensions: number[]; quat: number[] }; protection: { global: { enabled: boolean; min: number; max: number } } } };
   projectWorld: (p: number[]) => { x: number; y: number } | null;
   handlePositions: () => { id: string; x: number; y: number }[];
+  boxBodyPoint: () => { x: number; y: number } | null;
   drawnCount: () => number;
   previewLayer: () => { id: string | null; add: number; remove: number };
 };
@@ -4114,11 +4115,11 @@ test("E2E-134 16-3 an Add preview keeps its own pink in the legend with a chosen
 });
 
 // ---------------------------------------------------------------- part 14: box gizmo (E2E-100..105)
-type BoxMeasure = { coverage: number; outside: boolean; arrowTipsOnCanvas: number; arrowTips: number };
+type BoxMeasure = { coverage: number; outside: boolean; arrowTipsOnCanvas: number; arrowTips: number; body: boolean };
 /** Measures the projected box against the canvas: share of the canvas the box hull covers, a free canvas pixel outside it, arrow tips on a canvas pixel. */
 const measureBox = (page: Pg) =>
   page.evaluate((): BoxMeasure => {
-    const ed = (window as unknown as { __editor: { state: () => { tools: { box: { center: number[]; dimensions: number[] } } }; projectWorld: (p: number[]) => { x: number; y: number } | null; handlePositions: () => { id: string; x: number; y: number }[] } }).__editor;
+    const ed = (window as unknown as { __editor: { state: () => { tools: { box: { center: number[]; dimensions: number[] } } }; projectWorld: (p: number[]) => { x: number; y: number } | null; handlePositions: () => { id: string; x: number; y: number }[]; boxBodyPoint: () => unknown } }).__editor;
     const cv = document.getElementById("viewport")!;
     const r = cv.getBoundingClientRect();
     const { center: c, dimensions: d } = ed.state().tools.box;
@@ -4151,13 +4152,13 @@ const measureBox = (page: Pg) =>
       if (inside(x, y)) covered++;
       else if (document.elementFromPoint(x, y) === cv) free++;
     }
-    const tips = ed.handlePositions().filter((h) => h.id.startsWith("translate-") || h.id.startsWith("resize-"));
+    const tips = ed.handlePositions().filter((h) => h.id.startsWith("resize-"));
     const onCanvas = tips.filter((h) => h.x >= r.left && h.x <= r.right && h.y >= r.top && h.y <= r.bottom && document.elementFromPoint(h.x, h.y) === cv).length;
-    return { coverage: covered / n, outside: free > 0, arrowTipsOnCanvas: onCanvas, arrowTips: tips.length };
+    return { coverage: covered / n, outside: free > 0, arrowTipsOnCanvas: onCanvas, arrowTips: tips.length, body: ed.boxBodyPoint() !== null };
   });
 
 for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
-  test(`E2E-100 14-0 measuring: how much of the canvas a fitted box covers, and whether a drag can start outside it, at ${w}x${hgt}`, async ({ page }, testInfo) => {
+  test(`E2E-100 14 layout: how much of the canvas a fitted box covers, a plain drag can start outside it or on its body, and the six arrow tips are on canvas pixels, at ${w}x${hgt}`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width: w, height: hgt });
     const t = helpers(page);
     await openRoom(page, t.exact);
@@ -4178,5 +4179,188 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     console.log(`E2E-100 ${w}x${hgt} ${JSON.stringify(out)}`);
     testInfo.annotations.push({ type: "measure", description: JSON.stringify(out) });
     expect(Object.keys(out).length).toBe(7);
+    // measured at 14-0 (coverage 0.005 default, 0.27..0.30 top and 0.0675..0.075 front when fitted; 1.0 for Fit to view)
+    expect(out["cube-top default"].coverage).toBeGreaterThanOrEqual(0.004);
+    expect(out["cube-top default"].outside).toBe(true);
+    for (const k of ["cube-top box-fit-cloud", "cube-top box-fit-displayed", "cube-front box-fit-cloud", "cube-front box-fit-displayed"]) {
+      expect(out[k].coverage).toBeGreaterThanOrEqual(0.05); // a body drag has something to grab
+      expect(out[k].coverage).toBeLessThan(0.5); // and a plain drag can still start outside the box to orbit
+      expect(out[k].outside).toBe(true);
+      expect(out[k].body).toBe(true);
+    }
+    for (const k of Object.keys(out)) expect(out[k].arrowTipsOnCanvas).toBeGreaterThanOrEqual(k.endsWith("box-fit-view") ? 2 : 6);
+    // Fit to view covers the whole canvas: there only Ctrl+drag (or the right/middle button) can orbit
+    for (const v of ["cube-top", "cube-front"]) expect(out[`${v} box-fit-view`].outside).toBe(false);
   });
 }
+
+// ---- Part 14 real-mouse box gizmo tests
+const rot3 = (rpy: number[]) => {
+  const [r, p, y] = rpy.map((a) => (a * Math.PI) / 180);
+  const [cr, sr, cp, sp, cy, sy] = [Math.cos(r), Math.sin(r), Math.cos(p), Math.sin(p), Math.cos(y), Math.sin(y)];
+  return [
+    [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
+    [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
+    [-sp, cp * sr, cp * cr],
+  ];
+};
+/** Independent oracle: |R^T (p - c)| <= d / 2 on every box axis, with the test's own Rz(yaw) Ry(pitch) Rx(roll). */
+const inTurnedBox = (r: number[], c: number[], d: number[], rpy: number[]) => {
+  const R = rot3(rpy);
+  return [0, 1, 2].every((j) => Math.abs([0, 1, 2].reduce((a, i) => a + R[i][j] * (r[i] - c[i]), 0)) <= d[j] / 2 + 1e-9);
+};
+/** roll, pitch, yaw (degrees) of the app's box quaternion, from the test's own formulas. */
+const rpyOf = (q: number[]) => {
+  const [x, y, z, w] = q;
+  const m20 = 2 * (x * z - w * y);
+  const roll = Math.atan2(2 * (y * z + w * x), 1 - 2 * (x * x + y * y));
+  const pitch = Math.asin(Math.max(-1, Math.min(1, -m20)));
+  const yaw = Math.atan2(2 * (x * y + w * z), 1 - 2 * (y * y + z * z));
+  return [roll, pitch, yaw].map((a) => (a * 180) / Math.PI);
+};
+const boxState = (page: Pg) => hook(page, (e) => ({ c: [...e.state().tools.box.center], d: [...e.state().tools.box.dimensions], q: [...e.state().tools.box.quat] }));
+const bodyPoint = async (page: Pg) => {
+  await expect.poll(() => hook(page, (e) => e.boxBodyPoint())).not.toBeNull();
+  return (await hook(page, (e) => e.boxBodyPoint()))!;
+};
+/** Looks along a face by its key (a ViewCube face that turns away is not clickable). */
+const lookFrom = async (page: Pg, preset: "top" | "front" | "right") => {
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press({ top: "1", front: "3", right: "6" }[preset]);
+  await page.waitForTimeout(500);
+};
+const gizmoBox = async (page: Pg, preset: string) => {
+  const t = previewHelpers(page);
+  await openRoom(page, t.exact);
+  await t.ctl("tool-box").click();
+  await lookFrom(page, preset);
+  await t.setBox([10, 10, 0], [8, 8, 2]);
+  await t.exact("Selected", String(finiteRows().filter((r) => inBox(r, [10, 10, 0], [8, 8, 2])).length));
+  await appIdle(page);
+  return t;
+};
+
+test("E2E-101 14 a real drag on a face arrow resizes only that dimension, the camera stays, and Selected equals the fixture count", async ({ page }) => {
+  const t = await gizmoBox(page, "top");
+  const cam = await cameraOf(page);
+  const b0 = await boxState(page);
+  const h = await stableHandle(page, "resize-0+");
+  await dragBetween(page, h, { x: h.x + 50, y: h.y });
+  const b = await boxState(page);
+  expect(b.d[0]).toBeGreaterThan(b0.d[0] + 0.5);
+  expect(b.d[1]).toBeCloseTo(b0.d[1], 9);
+  expect(b.d[2]).toBeCloseTo(b0.d[2], 9);
+  expect(b.c[1]).toBeCloseTo(b0.c[1], 9);
+  expect(b.c[0] - b0.c[0]).toBeCloseTo((b.d[0] - b0.d[0]) / 2, 6); // the opposite face stayed
+  expect(b.q.map((v, i) => Math.abs(v - b0.q[i])).every((v) => v < 1e-9)).toBe(true);
+  expect(await cameraOf(page)).toEqual(cam);
+  await t.exact("Selected", String(finiteRows().filter((r) => inBox(r, b.c, b.d)).length));
+});
+
+test("E2E-102 14 a real drag on the box body moves it (size and rotation unchanged), Shift pans, Ctrl orbits, and Selected equals the fixture count", async ({ page }) => {
+  const t = await gizmoBox(page, "top");
+  const b0 = await boxState(page);
+  const cam0 = await cameraOf(page);
+  const p = await bodyPoint(page);
+  await dragBetween(page, p, { x: p.x + 40, y: p.y - 30 });
+  const b = await boxState(page);
+  expect(Math.hypot(b.c[0] - b0.c[0], b.c[1] - b0.c[1])).toBeGreaterThan(0.3);
+  expect(b.c[2]).toBeCloseTo(b0.c[2], 6); // top view: the drag plane is horizontal
+  expect(b.d).toEqual(b0.d);
+  expect(b.q).toEqual(b0.q);
+  expect(await cameraOf(page)).toEqual(cam0); // the camera did not move
+  await t.exact("Selected", String(finiteRows().filter((r) => inBox(r, b.c, b.d)).length));
+  // Ctrl+drag over the body orbits: the camera turns, the box stays
+  const p2 = await bodyPoint(page);
+  await page.keyboard.down("Control");
+  await dragBetween(page, p2, { x: p2.x + 50, y: p2.y + 30 });
+  await page.keyboard.up("Control");
+  expect(await boxState(page)).toEqual(b);
+  expect((await cameraOf(page)).orientation).not.toEqual(cam0.orientation);
+  // Shift+drag over the body pans: the camera target moves, the box stays
+  await lookFrom(page, "top");
+  await appIdle(page);
+  const cam1 = await cameraOf(page);
+  const p3 = await bodyPoint(page);
+  await page.keyboard.down("Shift");
+  await dragBetween(page, p3, { x: p3.x + 40, y: p3.y + 20 });
+  await page.keyboard.up("Shift");
+  expect(await boxState(page)).toEqual(b);
+  expect((await cameraOf(page)).target).not.toEqual(cam1.target);
+});
+
+test("E2E-103 14 three real ring drags (X, Y, then Z) give a box with roll, pitch and yaw all non-zero that selects what an independent rotation says, and Reset rotation levels it", async ({ page }) => {
+  const t = await gizmoBox(page, "right");
+  const ringDrag = async (i: number, preset: string) => {
+    await lookFrom(page, preset);
+    await appIdle(page);
+    const a = await stableHandle(page, `rotate-${i}`);
+    const b = await boxState(page);
+    const c = await settledScreen(page, b.c);
+    const [vx, vy] = [a.x - c.x, a.y - c.y];
+    const n = Math.hypot(vx, vy) || 1;
+    await dragBetween(page, a, { x: a.x - (vy / n) * 45, y: a.y + (vx / n) * 45 });
+  };
+  await ringDrag(0, "right");
+  const afterX = rpyOf((await boxState(page)).q);
+  expect(Math.abs(afterX[0])).toBeGreaterThan(1);
+  await ringDrag(1, "front");
+  await ringDrag(2, "top");
+  const b = await boxState(page);
+  const rpy = rpyOf(b.q);
+  for (const a of rpy) expect(Math.abs(a)).toBeGreaterThan(1);
+  expect(b.c).toEqual([10, 10, 0]);
+  expect(b.d).toEqual([8, 8, 2]);
+  await t.exact("Selected", String(finiteRows().filter((r) => inTurnedBox(r, b.c, b.d, rpy)).length));
+  await t.ctl("box-reset-rotation").click();
+  const level = await boxState(page);
+  expect(level.q.map((v, i) => Math.abs(v - [0, 0, 0, 1][i])).every((v) => v < 1e-9)).toBe(true);
+  await t.exact("Selected", String(finiteRows().filter((r) => inBox(r, level.c, level.d)).length));
+});
+
+test("E2E-104 14 one keyboard sequence (nudge, grow, turn) edits the box and Selected equals the independent count", async ({ page }) => {
+  const t = await gizmoBox(page, "top");
+  await t.setNum("gizmo-step", 1);
+  await t.setNum("gizmo-angle-step", 30);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("ArrowRight"); // +1 along X (top view: screen-right)
+  await page.keyboard.press("Alt+ArrowUp"); // both faces of the box axis nearest screen-up grow by 1
+  await page.keyboard.press("."); // yaw +30
+  const b = await boxState(page);
+  expect(b.c[0]).toBeCloseTo(11, 9);
+  expect(b.c[1]).toBeCloseTo(10, 9);
+  expect(b.d[0]).toBeCloseTo(8, 9);
+  expect(b.d[1]).toBeCloseTo(10, 9);
+  const rpy = rpyOf(b.q);
+  expect(rpy[2]).toBeCloseTo(30, 6);
+  expect(Math.abs(rpy[0]) + Math.abs(rpy[1])).toBeLessThan(1e-6);
+  await t.exact("Selected", String(finiteRows().filter((r) => inTurnedBox(r, b.c, b.d, rpy)).length));
+  // a key typed in a field never edits the box
+  await t.ctl("box-center-x").focus();
+  await page.keyboard.press("ArrowRight");
+  expect((await boxState(page)).c[0]).toBeCloseTo(11, 9);
+});
+
+test("E2E-105 14 Esc during a body drag and during an arrow drag restores the box from before the drag", async ({ page }) => {
+  const t = await gizmoBox(page, "top");
+  const b0 = await boxState(page);
+  const p = await bodyPoint(page);
+  await page.mouse.move(p.x, p.y);
+  await page.mouse.down();
+  await page.mouse.move(p.x + 40, p.y + 20, { steps: 5 });
+  await page.mouse.move(p.x + 80, p.y + 40, { steps: 5 });
+  expect(Math.hypot(...(await boxState(page)).c.map((v, i) => v - b0.c[i]))).toBeGreaterThan(0.3);
+  await page.keyboard.press("Escape");
+  await page.mouse.move(p.x + 120, p.y + 60, { steps: 5 });
+  await page.mouse.up();
+  expect(await boxState(page)).toEqual(b0);
+  const h = await stableHandle(page, "resize-0+");
+  await page.mouse.move(h.x, h.y);
+  await page.mouse.down();
+  await page.mouse.move(h.x + 60, h.y, { steps: 6 });
+  expect((await boxState(page)).d[0]).toBeGreaterThan(b0.d[0] + 0.5);
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  expect(await boxState(page)).toEqual(b0);
+  await t.exact("Selected", String(finiteRows().filter((r) => inBox(r, b0.c, b0.d)).length));
+});

@@ -1,7 +1,8 @@
+import { RING_EDGE_ON } from "../../inspector/rings";
 import { rotate } from "../../math/quat";
 import { project } from "../../pick/ray";
 import type { Vec3 } from "../../state/types";
-import { type Camera } from "../../view/camera";
+import { type Camera, lookDirection } from "../../view/camera";
 import { pxPerUnit } from "../../view/pointsize";
 import type { HandleClass } from "./gizmo-math";
 import type { BoxModel } from "./model";
@@ -21,6 +22,7 @@ export interface Handle {
   ring?: Vec3[];
 }
 
+const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const E: Vec3[] = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
 const RING_SAMPLES = 48;
 const add3 = (a: Vec3, b: Vec3, k: number): Vec3 => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
@@ -97,6 +99,7 @@ export function hitHandle(
   let bd = RING_PX;
   for (const h of handles) {
     if (h.cls !== "rotate" || !h.ring) continue;
+    if (Math.abs(dot(lookDirection(cam), h.dir)) < RING_EDGE_ON) continue; // an edge-on ring cannot be turned by a drag: leave it to the ring that faces the camera
     for (const p of h.ring) {
       const d = dist(p);
       if (d <= bd) {

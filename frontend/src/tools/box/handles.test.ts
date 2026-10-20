@@ -147,4 +147,19 @@ describe("box handles", () => {
     const c = project(topCam, [0.5, 0.5, 0], [0, 0, 0], vp)!; // inside the box, away from every handle
     expect(hitHandle(hs, topCam, vp, c.x, c.y)).toBeNull();
   });
+
+  it("UI-578 a ring seen edge-on is never picked: in a side view a press where two edge-on rings end grabs the ring that faces the camera", () => {
+    const rightCam = applyPreset({ ...defaultCamera(), distance: 10 }, "right");
+    const hs = boxHandles(box, rightCam, true);
+    // looking along X, the X ring is a full circle and the Y and Z rings are straight lines through the centre
+    const faces = hs.find((x) => x.id === "rotate-0")!;
+    const s = project(rightCam, faces.ring![0], [0, 0, 0], vp)!;
+    expect(hitHandle(hs.filter((x) => x.cls === "rotate"), rightCam, vp, s.x, s.y)?.id).toBe("rotate-0");
+    // a press on an edge-on ring's line, away from the circle, grabs nothing
+    const c = project(rightCam, box.center, [0, 0, 0], vp)!;
+    const edge = hs.find((x) => x.id === "rotate-2")!;
+    const far = project(rightCam, edge.ring![0], [0, 0, 0], vp)!;
+    const mid = { x: (c.x + far.x) / 2, y: (c.y + far.y) / 2 };
+    expect(hitHandle(hs.filter((x) => x.cls === "rotate"), rightCam, vp, mid.x, mid.y)).toBeNull();
+  });
 });
