@@ -128,3 +128,19 @@ test("UI-286 save flushes the pending client state before the archive is made, a
   });
   expect(r.ok).toBe(true);
 });
+
+test("UI-843 a layer export passes the chosen ids and the notice reports the exact count the server wrote", async () => {
+  const startExport = vi.fn(async () => ({ url: "/u", filename: "a_cleaned.pcd", count: 12345 }));
+  const store = createAppStore();
+  const r = await runExport(store, { ...exportDefaults(), layers: [0, 2] }, { startExport });
+  expect(startExport).toHaveBeenCalledWith("binary", "active", [0, 2]);
+  expect(r.message).toContain("12,345 points exported");
+});
+
+test("UI-844 without layers the call and the message are exactly as before, even when the server sends a count", async () => {
+  const startExport = vi.fn(async () => ({ url: "/u", filename: "a_cleaned.pcd", count: 9 }));
+  const r = await runExport(createAppStore(), exportDefaults(), { startExport });
+  expect(startExport).toHaveBeenCalledWith("binary", "active");
+  expect(r.message).not.toMatch(/exported\./);
+  expect(r.message).toBe("Export prepared; your browser decides where it is saved. Suggested name: a_cleaned.pcd. The source file is never overwritten.");
+});

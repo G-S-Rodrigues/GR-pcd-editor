@@ -59,3 +59,13 @@ test("FE-F-19 a failed export rejects and never clicks", async () => {
   await expect(startExport("ascii", "selected")).rejects.toMatchObject({ code: "storage_full" });
   expect(clicks).toHaveLength(0);
 });
+
+test("UI-842 the export request carries layers only when asked, so the default body is exactly format and scope", async () => {
+  const calls = jobFlow({ export_id: "e1", filename: "a_cleaned.pcd" });
+  await startExport("binary", "active");
+  expect(calls[0]!.body).toEqual({ format: "binary", scope: "active" });
+  const calls2 = jobFlow({ export_id: "e2", filename: "a_cleaned.pcd", count: 12 });
+  const dl = await startExport("ascii", "active", {}, [0, 2]);
+  expect(calls2[0]!.body).toEqual({ format: "ascii", scope: "active", layers: [0, 2] });
+  expect(dl.count).toBe(12);
+});

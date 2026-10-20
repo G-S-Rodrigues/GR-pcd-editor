@@ -43,7 +43,7 @@ import { buildInspector } from "./ui/inspector-shell";
 import { buildStatusbar } from "./ui/statusbar";
 import { buildLegend } from "./ui/legend";
 import { createHide } from "./orchestration/hide";
-import { createLayers } from "./orchestration/layers";
+import { createLayers, layerSelectBody } from "./orchestration/layers";
 import { discardEnabled } from "./tools/preview";
 import { buildTimeline } from "./timeline/strip";
 import { createStepCentre } from "./timeline/centre";
@@ -122,8 +122,12 @@ const editor = createEditor(
 const paramsHook = createParamsHook(runner, () => refresher.refresh());
 const layers = createLayers(
   store,
-  { createLayer: layerApi.createLayer, assignLayer: layerApi.assignLayer, setVisibility: layerApi.setVisibility, refreshState },
-  { paramsHook, confirm: (m) => window.confirm(m) },
+  { createLayer: layerApi.createLayer, assignLayer: layerApi.assignLayer, deleteLayer: layerApi.deleteLayer, patchLayer: layerApi.patchLayer, setVisibility: layerApi.setVisibility, refreshState },
+  {
+    paramsHook,
+    confirm: (m) => window.confirm(m),
+    selectLayer: (id) => runner.oneShot((rev) => layerSelectBody(rev, id, store.get().scope)),
+  },
 );
 const hide = createHide(store, { hideSelected: () => layers.hideSelected(), showAll: () => layers.showAll() });
 const filters = createFilterController(store, {
@@ -206,7 +210,7 @@ const deps = {
   onOpened,
 };
 
-const exportDialog = buildExportDialog(store, (o) => runExport(store, o, { startExport: (f, s) => startExport(f, s) }));
+const exportDialog = buildExportDialog(store, (o) => runExport(store, o, { startExport: (f, s, l) => startExport(f, s, {}, l) }));
 const persister = createPersister(store, api.putClientState, { dragging: () => tools.dragging() });
 window.addEventListener("beforeunload", beforeUnloadHandler(() => store.get()));
 
@@ -257,6 +261,13 @@ const panelActions = {
     void editor.clearSelection();
   },
   toggleHide: () => void hide.toggle(),
+  layerCreate: (name: string) => void layers.create(name),
+  layerAssign: () => void layers.assign(),
+  layerRelease: () => void layers.release(),
+  layerSelect: (id: number) => layers.select(id),
+  layerToggle: (id: number) => void layers.toggle(id),
+  layerToMain: (id: number) => void layers.toMain(id),
+  layerChoose: (id: number) => layers.setActive(id),
   removeInvalid: () => void editor.removeInvalid(),
   removeInvalidVisible: () => editor.removeInvalidVisible(),
   removeInvalidLabel: () => editor.removeInvalidLabel(),
@@ -283,7 +294,7 @@ const panelActions = {
 };
 buildInspector($("fileinfo"), store);
 buildToolPalette($("tools"), store, panelActions);
-const legend = buildLegend($("legend"), store, $("modebar"), () => void hide.show());
+const legend = buildLegend($("legend"), store, $("modebar"), () => void hide.show(), (id) => void layers.toggle(id));
 store.subscribe((s) => legend.update(s.timeline.highlight !== null, s.preview?.op ?? null));
 const stepEdit = createEditShape(store, {
   resetRunner: () => runner.reset(),

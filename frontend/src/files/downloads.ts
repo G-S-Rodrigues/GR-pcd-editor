@@ -7,6 +7,8 @@ export type ExportScope = "active" | "selected" | "displayed";
 export interface Download {
   url: string;
   filename: string;
+  /** The exact number of points written (the server's answer). */
+  count?: number;
 }
 
 /** Starts a browser download without loading the file into memory. */
@@ -23,10 +25,12 @@ export async function startExport(
   format: ExportFormat,
   scope: ExportScope,
   opts: PollOptions = {},
+  /** Layer ids to export (0 = main); omit for every layer, which keeps the request exactly as it was. */
+  layers?: number[],
 ): Promise<Download> {
-  const job = await postJson<{ id: string }>("/api/session/export", { format, scope });
-  const res = await pollJob<{ export_id: string; filename: string }>(job.id, opts);
-  const dl = { url: `/api/exports/${res.export_id}`, filename: res.filename };
+  const job = await postJson<{ id: string }>("/api/session/export", layers ? { format, scope, layers } : { format, scope });
+  const res = await pollJob<{ export_id: string; filename: string; count?: number }>(job.id, opts);
+  const dl: Download = { url: `/api/exports/${res.export_id}`, filename: res.filename, ...(res.count !== undefined ? { count: res.count } : {}) };
   triggerDownload(dl.url, dl.filename);
   return dl;
 }

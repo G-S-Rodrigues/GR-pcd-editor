@@ -3,18 +3,25 @@ import { renderCacheKey } from "../compare/model";
 import { initialState } from "../state/app";
 import { sessionFixture } from "../testing/fixtures";
 import {
+  AT_LIMIT,
   HIDDEN_LAYER_NAME,
   LAYER_COLOURS,
   MAIN_COLOUR,
+  NO_SELECTION,
+  PICK_LAYER,
   SHOW_FIRST,
   editingText,
+  exportItems,
+  exportedCount,
   findLayer,
   hiddenExportNote,
   hiddenLayer,
   hiddenPointCount,
   layerBoxShape,
   layerColour,
+  layerButtons,
   layerRows,
+  layersForRequest,
   stealConfirmText,
 } from "./model";
 import { MIN_EXTENT } from "../tools/box/model";
@@ -78,5 +85,63 @@ describe("layer model", () => {
     const a = { ...initialState(), session: sessionFixture() };
     const bumped = sessionFixture({ revision: { cloud: 3, params: 5 } });
     expect(renderCacheKey(a, "edited")).not.toBe(renderCacheKey({ ...a, session: bumped }, "edited"));
+  });
+});
+
+describe("layer panel and export model", () => {
+  const withLayers = (over: Record<string, unknown> = {}) => {
+    const s = initialState();
+    return {
+      ...s,
+      session: sessionFixture({
+        selection: { count: 4, ops: [] },
+        layers: [layer({ id: 1, name: "Floor", count: 30 }), layer({ id: 2, name: "Wall", count: 20, visible: false })],
+        counts: { ...sessionFixture().counts, main: 50, hidden: 20, active: 100, invalid_active: 3 },
+      }),
+      ...over,
+    };
+  };
+
+  it("UI-821 layerButtons names the first reason each button is inactive, and null when it works", () => {
+    expect(layerButtons({ ...initialState(), session: null }).create).toBe("No file is open");
+    expect(layerButtons(withLayers({ compare: "original" })).create).toBe("Return to the edited view first");
+    expect(layerButtons(withLayers({ draft: true })).create).toBe("Commit or discard the draft first");
+    expect(layerButtons(withLayers({ session: sessionFixture({ selection: { count: 0, ops: [] }, layers: [layer()] }) })).assign).toBe(NO_SELECTION);
+    const b = layerButtons(withLayers());
+    expect(b.create).toBeNull();
+    expect(b.assign).toBe(PICK_LAYER); // no row chosen yet
+    expect(b.release).toBeNull();
+    const c = layerButtons(withLayers({ layerUi: { editing: null, active: 2 } }));
+    expect(c.assign).toBeNull();
+    expect(c.active?.name).toBe("Wall");
+    expect(layerButtons(withLayers({ layerUi: { editing: null, active: 9 } })).assign).toBe(PICK_LAYER);
+    const none = sessionFixture({ selection: { count: 4, ops: [] } });
+    expect(layerButtons(withLayers({ session: none })).release).toBe("There are no layers yet");
+    const full = sessionFixture({ selection: { count: 4, ops: [] }, layers: Array.from({ length: 32 }, (_, i) => layer({ id: i + 1 })) });
+    expect(layerButtons(withLayers({ session: full })).create).toBe(AT_LIMIT);
+  });
+
+  it("UI-822 the export picker lists Main first, marks hidden layers, and is empty without layers", () => {
+    expect(exportItems(sessionFixture())).toEqual([]);
+    expect(exportItems(null)).toEqual([]);
+    const items = exportItems(withLayers().session);
+    expect(items.map((i) => i.id)).toEqual([0, 1, 2]);
+    expect(items.map((i) => i.label)).toEqual(["Main (50)", "Floor (30)", "Wall (20) (hidden, still exported)"]);
+  });
+
+  it("UI-823 layersForRequest is null unless a strict subset is ticked, so the default request does not change", () => {
+    const s = withLayers().session;
+    expect(layersForRequest(s, new Set([0, 1, 2]))).toBeNull();
+    expect(layersForRequest(s, new Set([1, 2]))).toEqual([1, 2]);
+    expect(layersForRequest(s, new Set())).toEqual([]);
+    expect(layersForRequest(sessionFixture(), new Set())).toBeNull();
+  });
+
+  it("UI-824 exportedCount is the exact sum of the ticked layers, invalid points riding with main", () => {
+    const s = withLayers().session;
+    expect(exportedCount(s, new Set([1]))).toBe(30);
+    expect(exportedCount(s, new Set([0, 2]))).toBe(50 + 20 + 3);
+    expect(exportedCount(s, new Set([0, 1, 2]))).toBe(103);
+    expect(exportedCount(sessionFixture(), new Set())).toBe(900);
   });
 });

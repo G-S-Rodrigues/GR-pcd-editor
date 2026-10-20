@@ -1,3 +1,4 @@
+import type { AppState } from "../state/app";
 import { MIN_EXTENT } from "../tools/box/model";
 import type { Bounds, Layer, LayerOp, SessionState, StepBox } from "../state/types";
 
@@ -75,3 +76,72 @@ export function layerBoxShape(b: Bounds): StepBox {
 /** The panel line while a layer is being edited. */
 export const editingText = (name: string, members: number, selected: number): string =>
   `Editing layer ${name}: ${fmt(members)} members, the box selects ${fmt(selected)}`;
+
+export const NO_SELECTION = "Select some points first";
+export const AT_LIMIT = `At most ${MAX_LAYERS} layers`;
+export const PICK_LAYER = "Click a layer row to choose it first";
+
+type PanelState = Pick<AppState, "session" | "compare" | "draft" | "preview" | "layerUi">;
+
+export interface LayerButtons {
+  /** Null when the button works; else the reason (also its tooltip suffix). */
+  create: string | null;
+  assign: string | null;
+  release: string | null;
+  /** The layer the Assign button targets, if it still exists. */
+  active: Layer | null;
+}
+
+/** Why the layer buttons are inactive now. One place; the panel and its tests read it. */
+export function layerButtons(s: PanelState): LayerButtons {
+  const active = findLayer(s.session, s.layerUi.active ?? -1);
+  const base = !s.session
+    ? "No file is open"
+    : s.compare !== "edited"
+      ? "Return to the edited view first"
+      : s.draft || s.preview
+        ? "Commit or discard the draft first"
+        : s.session.selection.count === 0
+          ? NO_SELECTION
+          : null;
+  return {
+    create: base ?? (layersOf(s.session).length >= MAX_LAYERS ? AT_LIMIT : null),
+    assign: base ?? (active ? null : PICK_LAYER),
+    release: base ?? (layersOf(s.session).length === 0 ? "There are no layers yet" : null),
+    active,
+  };
+}
+
+export interface ExportItem {
+  /** 0 is Main. */
+  id: number;
+  label: string;
+  count: number;
+}
+
+/** Main first, then every layer; hidden ones are marked because they are exported anyway. */
+export function exportItems(s: SessionState | null): ExportItem[] {
+  if (!s || s.layers.length === 0) return [];
+  return [
+    { id: 0, label: MAIN_LABEL(s.counts.main), count: s.counts.main },
+    ...s.layers.map((l) => ({ id: l.id, label: `${l.name} (${fmt(l.count)})${l.visible ? "" : " (hidden, still exported)"}`, count: l.count })),
+  ];
+}
+
+/** The `layers` field of an export request: null unless a strict subset is ticked, so the default request is unchanged. */
+export function layersForRequest(s: SessionState | null, ticked: ReadonlySet<number>): number[] | null {
+  const items = exportItems(s);
+  if (items.length === 0 || items.every((i) => ticked.has(i.id))) return null;
+  return items.filter((i) => ticked.has(i.id)).map((i) => i.id);
+}
+
+/** The exact number of points scope "active" exports for the ticked layers (invalid points travel with Main). */
+export function exportedCount(s: SessionState, ticked: ReadonlySet<number>): number {
+  const items = exportItems(s);
+  if (items.length === 0) return s.counts.active;
+  const sum = items.filter((i) => ticked.has(i.id)).reduce((n, i) => n + i.count, 0);
+  return sum + (ticked.has(0) ? s.counts.invalid_active : 0);
+}
+
+export const NONE_TICKED = "Tick at least one layer to export";
+export const EXPORT_WITHIN_LAYERS = "within the chosen layers; the exact count is reported after the export";

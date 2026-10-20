@@ -6,9 +6,11 @@ import type { Counts } from "../state/types";
 export interface ExportOptions {
   scope: ExportScope;
   format: ExportFormat;
+  /** A strict subset of layer ids (0 = main); absent means every layer. */
+  layers?: number[];
 }
 export interface ExportDeps {
-  startExport(format: ExportFormat, scope: ExportScope): Promise<Download>;
+  startExport(format: ExportFormat, scope: ExportScope, layers?: number[]): Promise<Download>;
 }
 
 const n = (v: number) => v.toLocaleString("en-US");
@@ -38,8 +40,9 @@ export async function runExport(
   deps: ExportDeps,
 ): Promise<{ ok: boolean; message: string }> {
   try {
-    const dl = await deps.startExport(opts.format, opts.scope);
-    const message = `Export prepared; your browser decides where it is saved. Suggested name: ${dl.filename}. The source file is never overwritten.`;
+    const dl = opts.layers ? await deps.startExport(opts.format, opts.scope, opts.layers) : await deps.startExport(opts.format, opts.scope);
+    const exact = opts.layers && dl.count !== undefined ? ` ${n(dl.count)} points exported.` : "";
+    const message = `Export prepared; your browser decides where it is saved. Suggested name: ${dl.filename}. The source file is never overwritten.${exact}`;
     addNotice(store, "info", "export_done", message);
     return { ok: true, message };
   } catch (e) {

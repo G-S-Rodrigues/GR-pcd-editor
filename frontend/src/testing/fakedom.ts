@@ -8,6 +8,9 @@ export class FakeEl {
   disabled = false;
   value = "";
   hidden = false;
+  checked = false;
+  showModal(): void {}
+  close(): void {}
   tabIndex = 0;
   focused = 0;
   focus(): void {

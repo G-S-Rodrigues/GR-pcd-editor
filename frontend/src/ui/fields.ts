@@ -1,4 +1,4 @@
-export type FieldGroup = "tool" | "box" | "polygon" | "cluster" | "sparse" | "filter" | "protection" | "history";
+export type FieldGroup = "tool" | "box" | "polygon" | "cluster" | "sparse" | "filter" | "protection" | "history" | "layer";
 /** Tooltip of the Gizmo Axes select. */
 export const GIZMO_FRAME_TIP = "Rotation rings turn about the box axes or the world axes";
 
@@ -38,6 +38,11 @@ export const FIELD_SPECS: FieldSpec[] = [
   f("sel-hide", "Hide selected", "tool", "Hide the selected points in the layer \"Hidden\" (not drawn, not selectable) and clear the selection; nothing is deleted and Export still includes them unless you untick the layer. Press again to show them"),
   f("sel-show-kept", "Show kept points", "tool", "Draw the selected points that protection keeps larger and bright cyan (view only; nothing is deleted)"),
   f("sel-delete-kept", "Also delete the kept points", "tool", "Delete the selected points that height protection keeps too: this operation ignores the protection slab (it comes back after Apply)"),
+  f("layer-new", "New layer", "layer", "Move the selected points into a new layer with the name typed above (blank: the server names it); a layer edit is not a timeline step"),
+  f("layer-name", "Layer name", "layer", "Name for the next new layer, up to 40 characters"),
+  f("layer-assign", "Assign selection", "layer", "Move the selected points into the layer chosen in the list (click a row first); points taken from other layers are confirmed first"),
+  f("layer-release", "Release to main", "layer", "Move the selected points out of their layers back to main"),
+  f("export-all", "Export all layers", "layer", "Tick every layer again so the export holds the whole cloud"),
   f("remove-invalid", "Remove invalid", "tool", "Remove points whose coordinates are NaN or infinite from the active cloud (undoable)"),
   ...AX.map((a) => f(`box-center-${a}`, `Centre ${up(a)}`, "box", `Box centre ${up(a)} coordinate in the file frame`)),
   ...AX.map((a) => f(`box-size-${a}`, `Size ${up(a)}`, "box", `Box size along its local ${up(a)} axis; must be greater than 0`)),

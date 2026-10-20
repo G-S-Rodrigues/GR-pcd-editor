@@ -17,6 +17,7 @@ import { commitEnabled, commitLabel, discardEnabled, previewText } from "../tool
 import { scopeNotice, selectionDisabledReason } from "../orchestration/selection";
 import { hideState } from "../orchestration/hide";
 import { historyRows } from "../inspector/history";
+import { MAIN_COLOUR, MAIN_LABEL, layerButtons, layerRows } from "../layers/model";
 import { control } from "./controls";
 import { SELECTED_COLOURS, type SelectedColourId } from "../colour/selectcolour";
 import { cssColour } from "./legend";
@@ -45,6 +46,13 @@ export interface PanelActions {
   invert: () => void;
   clearSelection: () => void;
   toggleHide: () => void;
+  layerCreate: (name: string) => void;
+  layerAssign: () => void;
+  layerRelease: () => void;
+  layerSelect: (id: number) => void;
+  layerToggle: (id: number) => void;
+  layerToMain: (id: number) => void;
+  layerChoose: (id: number) => void;
   removeInvalid: () => void;
   removeInvalidVisible: () => boolean;
   removeInvalidLabel: () => string;
@@ -761,6 +769,68 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     text((s) => effectiveText(s.candidate)),
   );
 
+  // ---- layers
+  const layerList = h("ul", { id: "layer-list", class: "layer-list" });
+  const layerName = control("input", { id: "layer-name", type: "text", maxlength: "40", placeholder: "Layer name" });
+  const layerBtn = (id: string, label: string, onclick: () => void) => control("button", { id, "aria-disabled": "false", onclick }, label);
+  const newBtn = layerBtn("layer-new", "New layer", () => {
+    a.layerCreate(layerName.value);
+    layerName.value = "";
+  });
+  const assignBtn = layerBtn("layer-assign", "Assign selection", () => a.layerAssign());
+  const releaseBtn = layerBtn("layer-release", "Release to main", () => a.layerRelease());
+  const reasonOn = (b: HTMLElement, tipId: string, why: string | null) => {
+    b.setAttribute("aria-disabled", String(why !== null));
+    b.classList.toggle("inactive", why !== null);
+    b.title = why ? `${TOOLTIPS[tipId]} (${why})` : TOOLTIPS[tipId];
+  };
+  const chipOf = (colour: string) => {
+    const c = h("span", { class: "chip" });
+    c.style.background = colour;
+    return c;
+  };
+  let layerKey = "";
+  syncs.push((s) => {
+    const rows = layerRows(s.session);
+    const b = layerButtons(s);
+    reasonOn(newBtn, "layer-new", b.create);
+    reasonOn(assignBtn, "layer-assign", b.assign);
+    reasonOn(releaseBtn, "layer-release", b.release);
+    // rebuild the rows only when they change: a store update between mousedown and mouseup must not swallow a click
+    const key = JSON.stringify([rows, s.layerUi.active, s.session?.counts.main]);
+    if (key === layerKey) return;
+    layerKey = key;
+    const out: Node[] = [];
+    if (rows.length > 0) out.push(h("li", { class: "layer-row main", "data-layer-row": "0" }, chipOf(MAIN_COLOUR), h("span", { class: "layer-name", text: MAIN_LABEL(s.session?.counts.main ?? 0) })));
+    for (const r of rows) {
+      const eye = h("button", { type: "button", class: "layer-eye", "data-layer-eye": r.id, "aria-pressed": String(r.visible), "aria-label": r.eyeLabel, title: r.eyeLabel, onclick: (e: Event) => (e.stopPropagation?.(), a.layerToggle(r.id)) }, iconSvg(r.visible ? "eye" : "eyeoff", 14));
+      const sel = h("button", { type: "button", "data-layer-select": r.id, "aria-disabled": String(r.selectDisabled !== null), class: r.selectDisabled ? "inactive" : "", title: r.selectDisabled ?? `Select the ${r.count.toLocaleString("en-US")} points of ${r.name}`, onclick: (e: Event) => (e.stopPropagation?.(), a.layerSelect(r.id)) }, "Select");
+      const tomain = h("button", { type: "button", "data-layer-tomain": r.id, title: `Move every point of ${r.name} back to main and remove the layer`, onclick: (e: Event) => (e.stopPropagation?.(), a.layerToMain(r.id)) }, "To main");
+      out.push(
+        h(
+          "li",
+          { class: `layer-row${s.layerUi.active === r.id ? " active" : ""}`, "data-layer-row": r.id, "aria-selected": String(s.layerUi.active === r.id), onclick: () => a.layerChoose(r.id) },
+          chipOf(r.colour),
+          h("span", { class: "layer-name", text: r.label }),
+          eye,
+          sel,
+          tomain,
+        ),
+      );
+    }
+    layerList.replaceChildren(...out);
+  });
+  const layersPanel = section(
+    "layers",
+    "Layers",
+    (s) => s.session !== null,
+    h("p", { class: "note", text: "Named groups of points. Layer edits are not in the timeline; undo one by re-assigning the points. Hidden layers are not drawn or selectable but are still exported." }),
+    text((s) => (s.session && s.session.layers.length === 0 ? "No layers yet: select points, type a name, then press New layer" : "")),
+    layerList,
+    h("label", { class: "f" }, "Name ", layerName),
+    h("div", { class: "stack" }, newBtn, assignBtn, releaseBtn),
+  );
+
   // ---- history
   const histList = h("ol", { id: "history-list" });
   syncs.push((s) => {
@@ -772,7 +842,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
   });
   const histPanel = section("history", "History", (s) => s.session !== null, histList, text((s) => (s.session && s.session.history.entries.length === 0 ? "No edits yet" : "")));
 
-  root.append(errors, boxPanel, polyPanel, clusterPanelEl, sparsePanel, filterPanel, protPanel, histPanel);
+  root.append(errors, boxPanel, polyPanel, clusterPanelEl, sparsePanel, filterPanel, protPanel, layersPanel, histPanel);
   const syncAll = (s: AppState) => {
     for (const f of syncs) f(s);
   };

@@ -33,4 +33,8 @@ export interface SparseTool {
   region: BoxTool | PrismTool | null;
   exclude_protected: boolean;
 }
-export type ToolBody = BoxTool | PrismTool | FilterTool | ClusterTool | SparseTool;
+export interface LayerTool {
+  type: "layer";
+  layer_id: number;
+}
+export type ToolBody = BoxTool | PrismTool | FilterTool | ClusterTool | SparseTool | LayerTool;
