@@ -33,7 +33,7 @@ class ClusterTool:
     radius: float
     region: BoxSpec | PrismSpec | None = None
     exclude_protected: bool = True
-    max_points: int | None = 2_000_000
+    max_points: int | None = 500
     on_limit: str = "fail"  # fail | partial
 
 

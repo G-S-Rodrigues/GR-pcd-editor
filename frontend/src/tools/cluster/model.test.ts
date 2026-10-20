@@ -28,7 +28,7 @@ describe("cluster model", () => {
       radius: s.radius,
       region: null,
       exclude_protected: true,
-      max_points: 2_000_000,
+      max_points: 500,
     });
     for (const bad of [0, -1, NaN, Infinity]) {
       const r = setRadius(s, bad);
@@ -94,7 +94,8 @@ describe("cluster model", () => {
     expect(CLUSTER_LIMIT_TEXT).toMatch(/not complete/);
     expect(clusterErrorText("other")).toBeNull();
     const m = defaultCluster();
-    expect(m.maxPoints).toBe(2_000_000);
+    expect(m.maxPoints).toBe(500);
+    expect(m.radius).toBe(0.3);
   });
 });
 

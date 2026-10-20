@@ -496,3 +496,12 @@ def test_clu_36_radius_too_small_for_the_extent_raises_cleanly():
         connected_component(pts, np.ones(2, bool), 0, 1e-5)
     assert err.value.code == "radius_too_small"
     assert "at least" in err.value.message
+
+
+def test_api_102_cluster_default_max_points_is_500():
+    from gr_pcd.api.schemas import ClusterToolBody
+    from gr_pcd.session.codec import ClusterTool as CodecClusterTool
+
+    body = ClusterToolBody(type="cluster", seed_id=1, radius=1.0)
+    assert body.to_spec().max_points == 500
+    assert CodecClusterTool(1, 1.0).max_points == 500

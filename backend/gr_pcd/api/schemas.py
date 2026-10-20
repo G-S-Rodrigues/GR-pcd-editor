@@ -72,7 +72,7 @@ class ClusterToolBody(Model):
     radius: float
     region: Region | None = None
     exclude_protected: bool = True
-    max_points: int | None = 2_000_000
+    max_points: int | None = 500
     on_limit: Literal["fail", "partial"] = "fail"
 
     def to_spec(self) -> ClusterTool:

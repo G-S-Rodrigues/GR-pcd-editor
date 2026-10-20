@@ -922,7 +922,7 @@ test("E2E-24 7b2 first page shows the start banner; a reloaded session starts Ad
   await expect(page.locator("#modebar")).toContainText("Op: Add");
   await expect(page.locator("#modebar")).toContainText("Scope: Displayed");
   await ctl("tool-cluster").click();
-  await expect(ctl("cluster-max-points")).toHaveValue(/^2[, ]?000[, ]?000$/);
+  await expect(ctl("cluster-max-points")).toHaveValue(/^500$/);
 });
 
 test("E2E-24b 7b2 with no file open the banner explains why the tools are inert", async ({ page, request }) => {
@@ -952,6 +952,8 @@ test("E2E-25 7c1 cluster r=2 on a 300k-point room finishes, Apply deletes the co
   await ctl("cube-top").click();
   await pickPivotAt(page, [22, 22, 0]);
   await ctl("tool-cluster").click(); // arming Cluster waits for the seed click
+  await ctl("cluster-max-points").fill(""); // 17: the default limit is 500 and this 80,000-point component must be complete (empty means no limit)
+  await ctl("cluster-max-points").press("Tab");
   await page.locator("#viewport").click(); // top view: the greatest Z under the pivot is a ghost point
   await expect(page.locator("#editpanels")).toContainText("Seed: point");
   await setNum("cluster-radius", 2);
@@ -4556,8 +4558,8 @@ test("E2E-90 15a Hide selected: the drawn count drops by exactly the hidden coun
 test("E2E-154 17 Show hidden also reselects the hidden points: the union with the selection, Candidates match, Delete works, the Box stays armed (button, then the legend chip)", async ({ page }) => {
   const t = hideHelpers(page);
   const asked: string[] = [];
-  page.on("dialog", (d) => asked.push(d.message()));
   const n = await t.floorSelected();
+  page.on("dialog", (d) => asked.push(d.message())); // after the open: the "unsaved edits" ask of a file left by an earlier test is not under test
   const drawn0 = await t.drawn();
   const WALL = { c: [-1, 4.5, 2.5], d: [1, 10, 5] };
   for (const via of ["button", "chip"] as const) {

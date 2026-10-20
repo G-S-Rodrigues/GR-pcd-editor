@@ -221,3 +221,15 @@ test("UI-866 the layer panel state (the layer being edited, the chosen row) is n
   const patch = restoreClientState(JSON.parse(json))!;
   expect(applyClientPatch(createAppStore().get(), patch).layerUi).toEqual({ editing: null, active: null });
 });
+
+test("UI-886 a fresh session starts Link distance 0.3 and Max points 500; a saved radius still wins and Max points is always the default", () => {
+  const fresh = createAppStore().get();
+  expect(fresh.tools.cluster.radius).toBe(0.3);
+  expect(fresh.tools.cluster.maxPoints).toBe(500);
+  const a = createAppStore();
+  a.update((s) => ({ ...s, tools: { ...s.tools, cluster: { ...s.tools.cluster, radius: 0.5, maxPoints: 99 } } }));
+  const saved = JSON.parse(JSON.stringify(serialiseClientState(a.get())));
+  const out = applyClientPatch(fresh, restoreClientState(saved)!);
+  expect(out.tools.cluster.radius).toBe(0.5);
+  expect(out.tools.cluster.maxPoints).toBe(500);
+});

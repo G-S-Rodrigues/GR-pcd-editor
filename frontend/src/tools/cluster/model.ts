@@ -19,10 +19,10 @@ export const CLUSTER_LIMIT_TEXT = "Expansion paused: cluster larger than the lim
 
 export const defaultCluster = (): ClusterModel => ({
   seed: null,
-  radius: 0.5,
+  radius: 0.3,
   region: "none",
   excludeProtected: true,
-  maxPoints: 2_000_000,
+  maxPoints: 500,
   scope: "displayed",
 });
 
