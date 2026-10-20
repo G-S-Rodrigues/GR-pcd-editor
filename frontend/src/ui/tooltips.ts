@@ -9,6 +9,7 @@ export const TOOLTIPS: Record<string, string> = {
   redo: "Redo the last undone deletion (Ctrl+Y)",
   preview: "Compute exact counts for the current selection without deleting",
   apply: "Delete the selected points from the active cloud (undoable, key Delete); enabled only for an up-to-date preview",
+  "hidden-chip": "Points hidden by Hide selected are not drawn; click to show them again (view only, they are still in the cloud and in the export)",
   "legend-menu": "Fold or unfold the legend and the mode line (tool, operation, scope, frame, unit); the choice is saved with the session",
   timeline: "History timeline: one card per deletion. Click a step icon to highlight its points, double-click a name to rename, hover for Roll back, Rename and Delete",
   "timeline-marker": "History marker: drag it, or press Left/Right/Home/End, to roll back to that point; steps after it are greyed and can be redone",

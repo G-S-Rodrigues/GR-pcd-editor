@@ -4,6 +4,7 @@ import { type RampLegend, cssGradient, rampLegend } from "../colour/ramps";
 import type { AppState } from "../state/app";
 import type { Store } from "../state/store";
 import type { PreviewState } from "../state/types";
+import { HIDDEN_CHIP_TEXT } from "../view/hidden";
 import { LEGEND_BOX } from "../view/layout";
 import { control } from "./controls";
 import { h } from "./dom";
@@ -40,7 +41,7 @@ export const cssColour = (c: Rgb): string => `rgb(${c.map((v) => Math.round(v * 
  * mode line (`modebar`, id kept). `update(true)` adds the Step highlight row; a preview op adds its live-preview row.
  * Open by default; the folded state lives in `AppState.legendOpen` and is saved with the session.
  */
-export function buildLegend(root: HTMLElement, store: Store<AppState>, modebar: HTMLElement): { update(stepActive: boolean, previewOp?: PreviewState["op"] | null): void } {
+export function buildLegend(root: HTMLElement, store: Store<AppState>, modebar: HTMLElement, onShowHidden: () => void = () => undefined): { update(stepActive: boolean, previewOp?: PreviewState["op"] | null): void } {
   let shown = false;
   let shownPreview: PreviewState["op"] | null = null;
   const rows = h("div", { class: "legend-rows" });
@@ -62,7 +63,9 @@ export function buildLegend(root: HTMLElement, store: Store<AppState>, modebar: 
   root.style.top = `${LEGEND_BOX.top}px`;
   root.style.width = `${LEGEND_BOX.w}px`;
   root.style.maxHeight = `${LEGEND_BOX.maxH}px`;
-  root.append(header, body);
+  // "N hidden - Show": the on-canvas reminder of "Hide selected"; inside the legend box, so no new reserved rectangle
+  const chip = control("button", { id: "hidden-chip", type: "button", class: "hidden-chip", hidden: true, onclick: onShowHidden });
+  root.append(header, chip, body);
   const draw = () => {
     rows.replaceChildren();
     for (const e of legendEntries(shown, shownPreview, selectedRgb(store.get().selectedColour))) {
@@ -113,6 +116,8 @@ export function buildLegend(root: HTMLElement, store: Store<AppState>, modebar: 
     header.setAttribute("aria-expanded", String(s.legendOpen));
     header.classList.toggle("closed", !s.legendOpen);
     body.hidden = !s.legendOpen;
+    chip.hidden = s.hidden.size === 0;
+    if (!chip.hidden) chip.textContent = HIDDEN_CHIP_TEXT(s.hidden.size);
   };
   syncRamp(store.get());
   draw();

@@ -65,6 +65,8 @@
       #legend { position: absolute; display: flex; flex-direction: column; gap: 2px; font-size: 12px; background: rgba(21,24,29,0.85); padding: 2px 8px 4px; border-radius: 6px; pointer-events: none; z-index: 1; overflow: hidden; }
       #legend .legend-head { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 6px 0 2px; background: transparent; border-color: transparent; color: var(--text); font-weight: 600; pointer-events: auto; }
       #legend .legend-head:hover { background: #36404c; }
+      #legend .hidden-chip { align-self: flex-start; height: 22px; padding: 0 8px; margin: 0 0 2px; pointer-events: auto; font-size: 12px; }
+      #legend .hidden-chip[hidden] { display: none; }
       #legend .legend-head svg { transition: transform .15s; }
       #legend .legend-head.closed svg { transform: rotate(-90deg); }
       @media (prefers-reduced-motion: reduce) { #legend .legend-head svg { transition: none; } }

@@ -276,7 +276,7 @@ const panelActions = {
 };
 buildInspector($("fileinfo"), store);
 buildToolPalette($("tools"), store, panelActions);
-const legend = buildLegend($("legend"), store, $("modebar"));
+const legend = buildLegend($("legend"), store, $("modebar"), () => void hide.show());
 store.subscribe((s) => legend.update(s.timeline.highlight !== null, s.preview?.op ?? null));
 const stepEdit = createEditShape(store, {
   resetRunner: () => runner.reset(),
