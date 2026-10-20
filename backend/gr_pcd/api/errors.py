@@ -39,7 +39,7 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(NotFoundError)
     def _not_found(_: Request, exc: NotFoundError):
-        return _body("not_found", exc.message, 404)
+        return _body(exc.code, exc.message, 404)
 
     @app.exception_handler(StaleRevision)
     def _stale(_: Request, exc: StaleRevision):

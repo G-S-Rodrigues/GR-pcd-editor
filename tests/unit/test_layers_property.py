@@ -104,13 +104,14 @@ class Oracle:
     def lowest_free(self):
         return next(k for k in range(1, 256) if k not in self.layers)
 
-    def members(self, k):
-        act = self.active()
+    def members(self, k, act=None):
+        act = self.active() if act is None else act
         return {i for i in act if self.lid[i] == k}
 
 
 def check(s, o):
     active_o = o.active()
+    hidden_o = o.hidden_pts()
     assert set(np.flatnonzero(s.active).tolist()) == active_o
     # the stored id of EVERY point, deleted ones included
     got = (
@@ -119,30 +120,37 @@ def check(s, o):
         else np.asarray(s.layer)
     )
     assert got.tolist() == o.lid
-    assert [lay.id for lay in s.layers] == sorted(o.layers)
+    assert sorted(lay.id for lay in s.layers) == sorted(o.layers)
     assert len(o.layers) <= MAX_LAYERS
     for lay in s.layers:
         assert lay.visible == o.layers[lay.id]["visible"]
         assert lay.name == o.layers[lay.id]["name"]
     st = s.state()
-    by_id = {e["id"]: e for e in st["layers"]}
-    assert set(by_id) == set(o.layers)
-    for k, e in by_id.items():
-        mem = o.members(k)
-        assert e["count"] == len(mem)
-        assert (e["bounds"] is None) == (not mem)
-        assert e["visible"] == o.layers[k]["visible"]
-    hidden_active = {i for i in active_o if i in o.hidden_pts()}
-    assert st["counts"]["hidden"] == len(hidden_active)
-    assert st["counts"]["main"] == len([i for i in active_o if o.lid[i] == 0])
+    if not o.layers:
+        # a layer-less session sends exactly the keys it always sent
+        assert "layers" not in st
+        assert "main" not in st["counts"] and "hidden" not in st["counts"]
+    else:
+        assert [e["id"] for e in st["layers"]] == [lay.id for lay in s.layers]
+        by_id = {e["id"]: e for e in st["layers"]}
+        assert set(by_id) == set(o.layers)
+        for k, e in by_id.items():
+            mem = o.members(k, active_o)
+            assert e["count"] == len(mem)
+            assert (e["bounds"] is None) == (not mem)
+            assert e["visible"] == o.layers[k]["visible"]
+        assert st["counts"]["hidden"] == len(active_o & hidden_o)
+        assert st["counts"]["main"] == len(
+            [i for i in active_o if o.lid[i] == 0]
+        )
     assert st["counts"]["active"] == len(active_o)
     # the stored selection never holds a hidden point
     eff = set(np.flatnonzero(s.selection & s.active & s.valid).tolist())
     assert eff == o.effective_selection()
-    assert not (eff & o.hidden_pts())
+    assert not (eff & hidden_o)
     # a hidden layer is not drawn, a deleted point is not drawn, nothing else is dropped
     drawn = set(s.render(10**9, "edited")[0].ids.tolist())
-    assert drawn == o.selectable()
+    assert drawn == active_o - hidden_o
     # export ignores visibility
     assert set(np.flatnonzero(s.export_mask("active")).tolist()) == active_o
     # layer edits never touch the cloud revision or the timeline

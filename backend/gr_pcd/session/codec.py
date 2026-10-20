@@ -21,6 +21,13 @@ class FilterTool:
 
 
 @dataclass(frozen=True)
+class LayerTool:
+    """'Select layer': the active members of one visible layer."""
+
+    layer_id: int
+
+
+@dataclass(frozen=True)
 class ClusterTool:
     seed_id: int
     radius: float
@@ -127,6 +134,8 @@ def tool_summary(tool) -> dict | None:
         return {"type": "filter"}
     if isinstance(tool, SparseSpec):
         return {"type": "sparse"}
+    if isinstance(tool, LayerTool):
+        return {"type": "layer", "layer_id": tool.layer_id}
     return {
         "type": "cluster",
         "seed_id": tool.seed_id,
@@ -197,7 +206,7 @@ def shape_of(
     """The full editable shape of a selection tool (what the client needs to
     recreate it), unlike `tool_summary`, which is the short label kept for the
     selection log. A filter step becomes the box of its filter bounds."""
-    if tool is None:
+    if tool is None or isinstance(tool, LayerTool):
         return None
     if isinstance(tool, BoxSpec):
         return _box_shape(tool)
