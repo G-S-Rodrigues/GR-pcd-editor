@@ -1,4 +1,5 @@
 import { PALETTE, type Rgb } from "../colour/palette";
+import { selectedRgb } from "../colour/selectcolour";
 import { type RampLegend, cssGradient, rampLegend } from "../colour/ramps";
 import type { AppState } from "../state/app";
 import type { Store } from "../state/store";
@@ -17,10 +18,10 @@ export interface LegendEntry {
 }
 
 /** Legend rows; colours are the same constants the renderer uses. */
-export function legendEntries(stepActive = false, previewOp: PreviewState["op"] | null = null): LegendEntry[] {
+export function legendEntries(stepActive = false, previewOp: PreviewState["op"] | null = null, selected: Rgb = PALETTE.selected): LegendEntry[] {
   return [
     { id: "base", label: "Unselected", colour: PALETTE.base },
-    { id: "selected", label: "Candidate (will delete)", colour: PALETTE.selected },
+    { id: "selected", label: "Candidate (will delete)", colour: selected },
     { id: "protected", label: "Protected (kept)", colour: PALETTE.protected },
     { id: "slab", label: "Protection slab", colour: PALETTE.slab },
     { id: "deleted", label: "Deleted overlay", colour: PALETTE.deleted },
@@ -64,7 +65,7 @@ export function buildLegend(root: HTMLElement, store: Store<AppState>, modebar: 
   root.append(header, body);
   const draw = () => {
     rows.replaceChildren();
-    for (const e of legendEntries(shown, shownPreview)) {
+    for (const e of legendEntries(shown, shownPreview, selectedRgb(store.get().selectedColour))) {
       const chip = h("span", { class: "chip", "data-legend": e.id });
       chip.style.background = e.id === "base" && current ? cssGradient(current.stops) : cssColour(e.colour);
       rows.append(h("span", { class: "legend-item" }, chip, e.label));
@@ -102,8 +103,13 @@ export function buildLegend(root: HTMLElement, store: Store<AppState>, modebar: 
     }
     if (rampChanged) draw();
   };
+  let shownSelected = store.get().selectedColour;
   const sync = (s: AppState) => {
     syncRamp(s);
+    if (s.selectedColour !== shownSelected) {
+      shownSelected = s.selectedColour;
+      draw();
+    }
     header.setAttribute("aria-expanded", String(s.legendOpen));
     header.classList.toggle("closed", !s.legendOpen);
     body.hidden = !s.legendOpen;

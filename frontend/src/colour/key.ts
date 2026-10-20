@@ -11,5 +11,5 @@ export function layerColourKey(s: AppState, withRegion: boolean): string {
   const r = withRegion ? colourRegion(s) : null;
   const tilt = r?.tilt ? `@${r.tilt.rx}:${r.tilt.ry}:${r.tilt.pivot[0]}:${r.tilt.pivot[1]}` : "";
   const region = r ? r.intervals.map((i) => `${i.min}:${i.max}`).join(",") + tilt : "";
-  return `${s.colour.mode}|${s.session?.session_id}|${s.session?.revision.cloud}|${b?.min[2]}|${b?.max[2]}|${region}`;
+  return `${s.colour.mode}|${s.selectedColour}|${s.session?.session_id}|${s.session?.revision.cloud}|${b?.min[2]}|${b?.max[2]}|${region}`;
 }

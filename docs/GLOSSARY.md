@@ -58,3 +58,6 @@
 - **Rolled back:** A step after the marker: its points are active again, and applying a new deletion discards it.
 - **Step highlight:** The overlay of one step's deleted points in a distinct colour, a view-only layer that changes no
   count.
+- **Selected colour:** The preset colour (Orange default, Magenta, White, Lime) the canvas and the legend use for selected
+  points; a view setting saved with the session. The preview add and remove colours, protected and step colours are not
+  user choices.

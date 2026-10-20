@@ -44,6 +44,8 @@ export interface ColourContext {
   mode: ColourMode;
   bounds: Bounds | null;
   markDeleted: boolean;
+  /** Colour of selected (candidate) points; default PALETTE.selected. */
+  selected?: Rgb;
   /** Protected slab intervals (Z, file frame) to draw strong; absent when the protection section is collapsed. */
   region?: { intervals: { min: number; max: number }[]; tilt?: Tilt } | null;
 }
@@ -79,7 +81,7 @@ export function colourizeMasked(r: ColourInput, ctx: ColourContext): { colours: 
     if (f & 2) c = region ? PALETTE.protectedStrong : PALETTE.protected;
     else if (f & 8) c = PALETTE.previewAdd;
     else if (f & 16) c = PALETTE.previewRemove;
-    else if (f & 1) c = PALETTE.selected;
+    else if (f & 1) c = ctx.selected ?? PALETTE.selected;
     else if (f & 4 && ctx.markDeleted) c = PALETTE.deleted;
     else if (region && inRegion(i)) c = PALETTE.protectedStrong;
     else {

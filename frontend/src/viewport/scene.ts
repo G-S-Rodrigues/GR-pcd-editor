@@ -9,6 +9,7 @@ import type { RenderData } from "../render/parse";
 import { PALETTE } from "../colour/palette";
 import { type AppState } from "../state/app";
 import type { Store } from "../state/store";
+import { selectedRgb } from "../colour/selectcolour";
 import { layerColourKey } from "../colour/key";
 import { colourRegion } from "../inspector/band";
 import { createFilterPlanesOverlay } from "./filterplanes3d";
@@ -173,7 +174,7 @@ export function createViewport(
       if (key !== st.key) {
         st.key = key;
         const attr = obj.geometry.getAttribute("color") as THREE.BufferAttribute;
-        const { colours, ovr } = colourizeMasked(data, { mode: s.colour.mode, bounds: s.session?.active_bounds ?? null, markDeleted: false, region: region ? colourRegion(s) : null });
+        const { colours, ovr } = colourizeMasked(data, { mode: s.colour.mode, bounds: s.session?.active_bounds ?? null, markDeleted: false, selected: selectedRgb(s.selectedColour), region: region ? colourRegion(s) : null });
         attr.set(colours);
         attr.needsUpdate = true;
         const mask = obj.geometry.getAttribute("ovr") as THREE.BufferAttribute;

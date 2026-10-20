@@ -17,6 +17,8 @@ import { commitEnabled, commitLabel, discardEnabled, previewText } from "../tool
 import { scopeNotice, selectionDisabledReason } from "../orchestration/selection";
 import { historyRows } from "../inspector/history";
 import { control } from "./controls";
+import { SELECTED_COLOURS, type SelectedColourId } from "../colour/selectcolour";
+import { cssColour } from "./legend";
 import { iconControl } from "./iconbutton";
 import { iconSvg } from "./icons";
 import { commitNumber } from "./numfield";
@@ -118,6 +120,37 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     h("option", { value: "displayed", text: "Displayed" }),
     h("option", { value: "active", text: "Active" }),
   );
+  // Selected colour: four swatch radios (Orange default); view-only, saved with the session when not orange
+  const chooseColour = (id: SelectedColourId) => store.set({ selectedColour: id });
+  const swatches = SELECTED_COLOURS.map((p, i) => {
+    const b = control(
+      "button",
+      {
+        id: `sel-colour-${p.id}`,
+        type: "button",
+        role: "radio",
+        class: "swatch",
+        "aria-label": `Selected colour ${p.label}`,
+        onclick: () => chooseColour(p.id),
+        onkeydown: (e: KeyboardEvent) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            chooseColour(p.id);
+            return;
+          }
+          const d = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+          if (!d) return;
+          e.preventDefault();
+          const j = (i + d + SELECTED_COLOURS.length) % SELECTED_COLOURS.length;
+          chooseColour(SELECTED_COLOURS[j].id);
+          swatches[j].focus();
+        },
+      },
+    );
+    b.style.background = cssColour(p.colour);
+    return b;
+  });
+  const swatchGroup = control("div", { id: "sel-colour", role: "radiogroup", "aria-label": "Selected colour", class: "opgroup" }, ...swatches);
   // Select displayed and Invert stay clickable but inactive (aria-disabled) while a tool is armed: the click explains why
   const guardedBtns: HTMLButtonElement[] = [];
   const guarded = (b: HTMLButtonElement) => (guardedBtns.push(b), b);
@@ -148,6 +181,7 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     h("div", { class: "oprow" }, h("span", { text: "Operation" }), op, previewLive),
     liveNote,
     h("label", {}, "Scope ", scope),
+    h("div", { class: "oprow" }, h("span", { text: "Selected colour" }), swatchGroup),
     h("div", { class: "stack" }, commit, discard),
     h(
       "div",
@@ -184,6 +218,12 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     liveNote.hidden = !(s.liveFirst && s.tool !== "none");
     liveNote.textContent = liveNote.hidden ? "" : "First selection: edits are live. Choose Add, Subtract or Intersect to preview changes instead.";
     scope.value = s.scope;
+    SELECTED_COLOURS.forEach((p, i) => {
+      const on = s.selectedColour === p.id;
+      swatches[i].setAttribute("aria-checked", String(on));
+      swatches[i].tabIndex = on ? 0 : -1;
+      swatches[i].disabled = !open;
+    });
     const why = selectionDisabledReason(s);
     for (const b of guardedBtns) {
       const id = b.getAttribute("data-control") ?? "";

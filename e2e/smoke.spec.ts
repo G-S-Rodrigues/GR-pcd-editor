@@ -3998,3 +3998,117 @@ test("E2E-123 13 keyboard only: the operation icons toggle with Space and arrow 
   await page.keyboard.press("Enter");
   expect((await polyOf(page)).vertices).toHaveLength(3); // a triangle keeps its three vertices
 });
+
+const RGB_OF = { orange: [255, 159, 28], magenta: [255, 0, 255], white: [255, 255, 255], lime: [57, 255, 20] } as const;
+/** Counts the viewport pixels within a small RGB distance of a colour (decodes a real screenshot in the page). */
+async function pixelsNear(page: import("@playwright/test").Page, rgb: readonly number[]): Promise<number> {
+  const png = (await page.locator("#viewport").screenshot()).toString("base64");
+  return page.evaluate(
+    async ([b64, target]) => {
+      const bin = atob(b64);
+      const bytes = Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
+      const img = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+      const c = new OffscreenCanvas(img.width, img.height);
+      const g = c.getContext("2d")!;
+      g.drawImage(img, 0, 0);
+      const d = g.getImageData(0, 0, img.width, img.height).data;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) if (Math.hypot(d[i] - target[0], d[i + 1] - target[1], d[i + 2] - target[2]) < 24) n++;
+      return n;
+    },
+    [png, rgb] as [string, readonly number[]],
+  );
+}
+async function selectWholeRoom(page: import("@playwright/test").Page, t: ReturnType<typeof helpers>) {
+  await t.ctl("tool-box").click();
+  for (const [id, v] of [["box-center-x", 9], ["box-center-y", 9], ["box-center-z", 2], ["box-size-x", 30], ["box-size-y", 30], ["box-size-z", 10]] as const) await t.setNum(id, v);
+  await t.exact("Selected", String(ROOM_TOTAL - ROOM.invalid));
+  await page.waitForTimeout(500);
+}
+
+test("E2E-133 16-3 the selected colour: swatches by real mouse and keyboard recolour the canvas and the legend, survive colour modes, Save and reopen, and Clear selection", async ({ page }, testInfo) => {
+  const t = helpers(page);
+  const { ctl, exact } = t;
+  await openRoom(page, exact);
+  await ctl("cube-top").click();
+  await selectWholeRoom(page, t);
+  const legend = page.locator('#legend [data-legend="selected"]');
+  await expect(legend).toHaveCSS("background-color", "rgb(255, 159, 28)");
+  await expect(ctl("sel-colour-orange")).toHaveAttribute("aria-checked", "true");
+  const orangeBefore = await pixelsNear(page, RGB_OF.orange); // selected points plus the orange box handles
+  expect(orangeBefore).toBeGreaterThan(20);
+  expect(await pixelsNear(page, RGB_OF.magenta)).toBe(0);
+  // real mouse
+  await ctl("sel-colour-magenta").click();
+  await expect(legend).toHaveCSS("background-color", "rgb(255, 0, 255)");
+  await expect(ctl("sel-colour-magenta")).toHaveAttribute("aria-checked", "true");
+  await page.waitForTimeout(500);
+  expect(await pixelsNear(page, RGB_OF.magenta)).toBeGreaterThan(20);
+  expect(await pixelsNear(page, RGB_OF.orange)).toBeLessThan(orangeBefore - 20); // the points left orange (the handles stay)
+  // keyboard: Tab from the Scope select lands on the checked swatch, Arrow moves and selects, Space selects
+  await ctl("scope-select").focus();
+  await page.keyboard.press("Tab");
+  await expect(ctl("sel-colour-magenta")).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(ctl("sel-colour-white")).toHaveAttribute("aria-checked", "true");
+  await expect(legend).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("Space");
+  await expect(ctl("sel-colour-magenta")).toHaveAttribute("aria-checked", "true");
+  await expect(legend).toHaveCSS("background-color", "rgb(255, 0, 255)");
+  // the choice persists across colour modes
+  for (const mode of ["viridis", "distance", "turbo"]) {
+    await ctl("colour-mode").selectOption(mode);
+    await page.waitForTimeout(500);
+    await expect(legend).toHaveCSS("background-color", "rgb(255, 0, 255)");
+    expect(await pixelsNear(page, RGB_OF.magenta), mode).toBeGreaterThan(20);
+  }
+  // Clear selection keeps the colour
+  await ctl("sel-clear").click();
+  await exact("Selected", "0");
+  await expect(ctl("sel-colour-magenta")).toHaveAttribute("aria-checked", "true");
+  // Save, replace by another file, reopen: swatch and legend are still magenta
+  const [dl] = await Promise.all([page.waitForEvent("download"), ctl("save-session").click()]);
+  const path = testInfo.outputPath("colour.pcdsession");
+  await dl.saveAs(path);
+  await page.locator("#file-input").setInputFiles({ name: "other.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
+  await exact("Active", String(TOTAL));
+  await expect(ctl("sel-colour-magenta")).toHaveAttribute("aria-checked", "true"); // a colour is a view setting: it stays across files
+  await page.locator("#file-input").setInputFiles({ name: "colour.pcdsession", mimeType: "application/octet-stream", buffer: readFileSync(path) });
+  await exact("Original", String(ROOM_TOTAL));
+  await expect(ctl("sel-colour-magenta")).toHaveAttribute("aria-checked", "true");
+  await expect(legend).toHaveCSS("background-color", "rgb(255, 0, 255)");
+});
+
+test("E2E-134 16-3 an Add preview keeps its own pink in the legend with a chosen selected colour; screenshots of 3 colour modes x 4 presets for the owner", async ({ page }) => {
+  const t = helpers(page);
+  const { ctl, exact, setNum } = t;
+  await openRoom(page, exact);
+  await ctl("cube-top").click();
+  await selectWholeRoom(page, t);
+  for (const mode of ["turbo", "viridis", "distance"]) {
+    await ctl("colour-mode").selectOption(mode);
+    for (const preset of ["orange", "magenta", "white", "lime"] as const) {
+      await ctl(`sel-colour-${preset}`).click();
+      await expect(page.locator('#legend [data-legend="selected"]')).toHaveCSS("background-color", `rgb(${RGB_OF[preset].join(", ")})`);
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: `/out/selected-colour-${mode}-${preset}.png` });
+    }
+  }
+  await ctl("colour-mode").selectOption("turbo");
+  await ctl("sel-colour-magenta").click();
+  // select the wall, press Add, move the box over the ghosts: the added points are previewed in the add colour
+  await ctl("sel-clear").click();
+  await ctl("tool-box").click();
+  const setBox = async (c: number[], d: number[]) => {
+    for (const [id, v] of [["box-center-x", c[0]], ["box-center-y", c[1]], ["box-center-z", c[2]], ["box-size-x", d[0]], ["box-size-y", d[1]], ["box-size-z", d[2]]] as const) await setNum(id, v);
+  };
+  await setBox([-1, 4.5, 2.5], [1, 10, 5]);
+  await exact("Selected", String(ROOM.wall));
+  await ctl("op-add").click();
+  await setBox(GHOST_BOX.c, GHOST_BOX.d);
+  await expect(page.locator('#legend [data-legend="preview-add"]')).toHaveCSS("background-color", "rgb(255, 79, 216)");
+  await expect(page.locator('#legend [data-legend="selected"]')).toHaveCSS("background-color", "rgb(255, 0, 255)");
+});

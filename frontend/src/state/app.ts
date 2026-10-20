@@ -1,5 +1,6 @@
 import type { SectionsOpen } from "../ui/sections";
 import type { ColourMode } from "../colour/modes";
+import { DEFAULT_SELECTED, type SelectedColourId } from "../colour/selectcolour";
 import { type FilterModel, emptyFilter } from "../inspector/filters";
 import { DEFAULT_FLOOR_T, type ProtectionModel, emptyProtection } from "../inspector/protection";
 import type { CompareMode } from "../compare/model";
@@ -58,6 +59,8 @@ export interface AppState {
   scope: Scope;
   camera: Camera;
   colour: { mode: ColourMode; pointSize: number };
+  /** Colour preset of selected (candidate) points; saved only when not the default. */
+  selectedColour: SelectedColourId;
   renderMode: RenderMode;
   compare: CompareMode;
   /** Opacity of the deleted overlay (0.05..1). */
@@ -105,6 +108,7 @@ export function initialState(): AppState {
     scope: "displayed",
     camera: defaultCamera(),
     colour: { mode: "turbo", pointSize: 3 },
+    selectedColour: DEFAULT_SELECTED,
     renderMode: "edited",
     compare: "edited",
     overlayOpacity: 0.35,

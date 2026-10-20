@@ -181,3 +181,21 @@ test("UI-365 saved colour modes migrate: height, rgb and intensity open as turbo
   expect(saved.colour).toBe("turbo");
   expect(JSON.stringify(saved)).not.toMatch(/filters|protection/);
 });
+
+test("UI-725 selected colour: saved only when not orange, restored for a known id, hostile values give the default", () => {
+  const a = createAppStore();
+  expect((serialiseClientState(a.get()).ui as Record<string, unknown>).selectedColour).toBeUndefined();
+  a.set({ selectedColour: "magenta" });
+  const saved = JSON.parse(JSON.stringify(serialiseClientState(a.get())));
+  expect(saved.ui.selectedColour).toBe("magenta");
+  const patch = restoreClientState(saved);
+  expect(patch?.selectedColour).toBe("magenta");
+  const b = createAppStore();
+  expect(applyClientPatch(b.get(), patch!).selectedColour).toBe("magenta");
+  for (const bad of ["pink", 7, { id: "lime" }, null, "orange"]) {
+    const p = restoreClientState({ v: 1, ui: { selectedColour: bad } });
+    expect(p?.selectedColour, String(bad)).toBeUndefined();
+    expect(applyClientPatch(b.get(), p!).selectedColour).toBe("orange");
+  }
+  expect(JSON.stringify(serialiseClientState(a.get()))).not.toMatch(/filters|protection/);
+});

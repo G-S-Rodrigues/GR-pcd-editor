@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import { PALETTE } from "../colour/palette";
+import { selectedRgb } from "../colour/selectcolour";
 import { cssColour, legendEntries } from "./legend";
 
 test("UI-128 legend entries are exactly the palette constants", () => {
@@ -20,4 +21,11 @@ test("UI-171 the Protection slab entry uses the colour the slab outline is drawn
 
 test("UI-128 css colour is rgb() of the palette triple", () => {
   expect(cssColour([1, 0, 0.5])).toBe("rgb(255, 0, 128)");
+});
+
+test("UI-724 the selected legend row carries the chosen selected colour; the default call is unchanged", () => {
+  const row = (e: ReturnType<typeof legendEntries>) => e.find((x) => x.id === "selected")!;
+  expect(row(legendEntries(false, null, selectedRgb("magenta"))).colour).toEqual(selectedRgb("magenta"));
+  expect(row(legendEntries()).colour).toBe(PALETTE.selected);
+  expect(legendEntries(false, null, selectedRgb("lime")).map((x) => x.id)).toEqual(legendEntries().map((x) => x.id));
 });

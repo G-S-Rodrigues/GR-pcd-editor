@@ -5,6 +5,7 @@ import type { BoxModel } from "../tools/box/model";
 import { type ClusterModel, defaultCluster } from "../tools/cluster/model";
 import type { PolygonState } from "../tools/polygon/model";
 import type { Camera } from "../view/camera";
+import { type SelectedColourId, isSelectedColourId } from "../colour/selectcolour";
 import { SECTION_IDS, type SectionId, type SectionsOpen } from "../ui/sections";
 import type { AppState } from "./app";
 import type { Store } from "./store";
@@ -23,7 +24,7 @@ export function serialiseClientState(s: AppState): Json {
     comparison: { mode: s.compare, opacity: s.overlayOpacity },
     unit: s.session?.unit ?? "m",
     tools: { box: s.tools.box, polygon: { ...s.tools.polygon, editing: false }, cluster: s.tools.cluster },
-    ui: { budget: s.budget, gizmo: s.gizmo, boxesCollapsed: s.filterUi.collapsed, floorPanelOpen: s.floorPanelOpen, sectionsOpen: s.sectionsOpen, ...(s.legendOpen ? {} : { legendOpen: false }), ...(s.previewLive ? {} : { previewLive: false }) },
+    ui: { budget: s.budget, gizmo: s.gizmo, boxesCollapsed: s.filterUi.collapsed, floorPanelOpen: s.floorPanelOpen, sectionsOpen: s.sectionsOpen, ...(s.legendOpen ? {} : { legendOpen: false }), ...(s.previewLive ? {} : { previewLive: false }), ...(s.selectedColour === "orange" ? {} : { selectedColour: s.selectedColour }) },
   };
 }
 
@@ -42,6 +43,7 @@ export interface ClientPatch {
   sectionsOpen?: SectionsOpen;
   legendOpen?: boolean;
   previewLive?: boolean;
+  selectedColour?: SelectedColourId;
   tools?: Partial<Pick<AppState["tools"], "box" | "polygon" | "cluster">>;
 }
 
@@ -80,6 +82,7 @@ export function restoreClientState(raw: unknown): ClientPatch | null {
     }
     if (ui.legendOpen === false) out.legendOpen = false;
     if (ui.previewLive === false) out.previewLive = false;
+    if (isSelectedColourId(ui.selectedColour) && ui.selectedColour !== "orange") out.selectedColour = ui.selectedColour;
     if (typeof ui.floorPanelOpen === "boolean") out.floorPanelOpen = ui.floorPanelOpen;
     if (isObj(ui.sectionsOpen)) {
       const kept: SectionsOpen = {};
@@ -184,6 +187,7 @@ export function applyClientPatch(s: AppState, p: ClientPatch): AppState {
     sectionsOpen: p.sectionsOpen ?? s.sectionsOpen,
     legendOpen: p.legendOpen ?? s.legendOpen,
     previewLive: p.previewLive ?? s.previewLive,
+    selectedColour: p.selectedColour ?? s.selectedColour,
     tools: { ...s.tools, ...p.tools },
   };
 }

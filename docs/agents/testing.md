@@ -321,6 +321,14 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
   `UI-711` (`ui/camera-cluster.test.ts`), smoke `E2E-132` (Front/Left/Top/Back at 1280x720 and 1920x1080, screenshots
   `viewcube-<w>-<view>.png`); changed: `UI-326`, `E2E-72` ("under" became "above"). Not seen RED: `E2E-132`.
 
+- Part 16-3 (selected colour): four presets (Orange default, Magenta, White, Lime; `colour/selectcolour.ts`), a radiogroup
+  `sel-colour` of `sel-colour-<id>` swatches in the Selection block after Scope; `AppState.selectedColour`, saved as
+  `client_state.ui.selectedColour` only when not orange. Tests: `UI-720..724` (`colour/selectcolour.test.ts`, `legend.test.ts`),
+  `UI-725` (`persist.test.ts`), `UI-726` (`ui/selectcolour-panel.test.ts`), smoke `E2E-133` (real mouse, keyboard, colour modes,
+  Save and reopen, Clear selection; canvas pixels read from a real screenshot) and `E2E-134` (Add preview keeps its pink; writes
+  `selected-colour-<mode>-<preset>.png`, 3 modes x 4 presets, to look at with `SMOKE_SHOTS_DIR`). The box handles are drawn
+  in the same orange as the default colour, so a pixel count of orange includes them. Not seen RED: `E2E-133`, `E2E-134`.
+
 ## Part 13 additions (tool flow)
 
 - Backend: `STS-01..14` (`tests/unit/test_step_shapes.py`: `shape_of` per tool, `tool_summary` unchanged, the entry keeps its
