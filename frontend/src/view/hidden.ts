@@ -80,3 +80,5 @@ export const HIDDEN_APPLY_TEXT = (n: number): string =>
 export const HIDDEN_SAVE_TEXT = (n: number): string => `${fmt(n)} hidden points are saved as visible`;
 export const HIDDEN_SEED_TEXT = "That point is hidden";
 export const HIDDEN_SELECT_REASON = "Show the hidden points first (this would include them)";
+/** The export dialog line while points are hidden: the view-only hide never changes what is exported. */
+export const hiddenExportNote = (n: number): string => (n > 0 ? `${fmt(n)} hidden points are exported too (hiding is view only)` : "");

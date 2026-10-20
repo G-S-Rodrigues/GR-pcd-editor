@@ -3,6 +3,7 @@ import { exportDefaults, exportInfo } from "../orchestration/export";
 import type { AppState } from "../state/app";
 import type { Store } from "../state/store";
 import { control } from "./controls";
+import { hiddenExportNote } from "../view/hidden";
 import { h } from "./dom";
 
 /** Modal export dialog: scope and format with an exact summary of what is exported. */
@@ -32,6 +33,7 @@ export function buildExportDialog(store: Store<AppState>, run: (o: { scope: Expo
   const summary = h("p", { id: "export-summary" });
   const invalid = h("p", { id: "export-invalid", class: "note" });
   const structure = h("p", { id: "export-structure", class: "note" });
+  const hiddenNote = h("p", { id: "export-hidden", class: "note" });
   const dialog = h("dialog", { id: "export-dialog" });
   const go = control(
     "button",
@@ -57,6 +59,7 @@ export function buildExportDialog(store: Store<AppState>, run: (o: { scope: Expo
     summary,
     invalid,
     structure,
+    hiddenNote,
     h("p", { class: "note", text: "The file is a new download named <original>_cleaned.pcd; your browser decides where it is saved and the source file is never overwritten." }),
     h("div", { class: "stack" }, go, cancel),
   );
@@ -69,6 +72,7 @@ export function buildExportDialog(store: Store<AppState>, run: (o: { scope: Expo
     summary.textContent = info.summary;
     invalid.textContent = info.retainedInvalid ?? "";
     structure.textContent = info.structureNote;
+    hiddenNote.textContent = hiddenExportNote(store.get().hidden.size);
     go.disabled = (scope.value === "selected" && c.selected === 0) || (scope.value === "displayed" && c.displayed === 0);
     go.title = go.disabled ? "Nothing to export for this scope" : "Prepare the export and start the browser download";
   }

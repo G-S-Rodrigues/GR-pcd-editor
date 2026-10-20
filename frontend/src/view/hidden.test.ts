@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { RenderData } from "../render/parse";
-import { applyHidden, emptyHidden, hiddenCount, hidePartialText, isHidden, stashSelected } from "./hidden";
+import { applyHidden, emptyHidden, hiddenCount, hiddenExportNote, hidePartialText, isHidden, stashSelected } from "./hidden";
 
 /** Render of ids 10..(10+n-1); `flags[i]` as given. */
 const render = (flags: number[], withAttr = false): RenderData => {
@@ -76,4 +76,9 @@ test("UI-504 an empty set (or one that hides nothing in this render) returns the
   const h = stashSelected(emptyHidden(), render([1]), "s1", 100, 1).hidden; // id 10
   const far: RenderData = { ...r, ids: Uint32Array.from([50, 51]) };
   expect(applyHidden(far, h)).toBe(far);
+});
+
+test("UI-517 the export dialog note names the hidden points and is empty when none are hidden", () => {
+  expect(hiddenExportNote(0)).toBe("");
+  expect(hiddenExportNote(1234)).toBe("1,234 hidden points are exported too (hiding is view only)");
 });

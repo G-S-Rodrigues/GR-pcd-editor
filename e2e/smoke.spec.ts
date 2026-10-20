@@ -4364,3 +4364,118 @@ test("E2E-105 14 Esc during a body drag and during an arrow drag restores the bo
   expect(await boxState(page)).toEqual(b0);
   await t.exact("Selected", String(finiteRows().filter((r) => inBox(r, b0.c, b0.d)).length));
 });
+
+// ---- part 15a: Hide selected (client-side, view only)
+const FLOOR_BOX = { c: [9.5, 9.5, 0], d: [22, 22, 0.5] };
+const hideHelpers = (page: import("@playwright/test").Page) => {
+  const t = previewHelpers(page);
+  const drawn = () => hook(page, (e) => e.drawnCount());
+  const hideBtn = t.ctl("sel-hide");
+  const chip = page.locator('[data-control="hidden-chip"]');
+  /** Opens the room with the floor (and the nine floor ghosts) selected by a live Box, ready to hide. */
+  const floorSelected = async () => {
+    await openRoom(page, t.exact);
+    await t.ctl("cube-top").click();
+    await t.ctl("tool-box").click();
+    await t.setBox(FLOOR_BOX.c, FLOOR_BOX.d);
+    const n = finiteRows().filter((r) => inBox(r, FLOOR_BOX.c, FLOOR_BOX.d)).length;
+    expect(n).toBe(ROOM.floor + ROOM.floorGhost);
+    await t.exact("Selected", String(n));
+    await t.exact("Candidates", String(n));
+    return n;
+  };
+  return { ...t, drawn, hideBtn, chip, floorSelected };
+};
+
+test("E2E-90 15a Hide selected: the drawn count drops by exactly the hidden count, Select displayed and Invert are refused, Apply asks, the export still holds the hidden points, Show restores the draw, a reload shows nothing hidden", async ({ page }, testInfo) => {
+  const t = hideHelpers(page);
+  const asked: string[] = [];
+  page.on("dialog", (d) => asked.push(d.message()));
+  const n = await t.floorSelected();
+  const drawn0 = await t.drawn();
+  await expect(t.hideBtn).toHaveText("Hide selected");
+  await t.hideBtn.click();
+  await expect.poll(t.drawn, { timeout: 15000 }).toBe(drawn0 - n);
+  await t.exact("Selected", "0");
+  await expect(t.hideBtn).toHaveText(`Show hidden (${n})`);
+  await expect(t.hideBtn).toHaveAttribute("aria-pressed", "true");
+  await expect(t.chip).toHaveText(`${n} hidden - Show`);
+  await expect(t.ctl("tool-box")).toHaveClass(/active/); // hiding never disarms the tool
+  // Select displayed and Invert refuse while points are hidden (with the tool armed the tool reason comes first, so disarm it)
+  await t.ctl("tool-box").click();
+  for (const id of ["sel-select-displayed", "sel-invert"]) {
+    await expect(t.ctl(id)).toHaveAttribute("aria-disabled", "true");
+    await expect(t.ctl(id)).toHaveAttribute("title", /Show the hidden points first/);
+  }
+  await t.ctl("sel-invert").dispatchEvent("click"); // aria-disabled: Playwright will not click it
+  await expect(page.locator("#notices")).toContainText("Show the hidden points first");
+  await t.exact("Selected", "0");
+  await t.ctl("tool-box").click(); // arm the Box tool again
+  // box the ghost region and delete it: Apply asks once about the hidden points
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  await t.exact("Selected", String(ROOM.ghost));
+  await expect(t.ctl("apply")).toBeEnabled();
+  await t.ctl("apply").click();
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
+  expect(asked).toEqual([`${n} points are hidden (view only); the selection may include hidden points inside the shape. Continue?`]);
+  // the export holds the whole active cloud, hidden floor included
+  await t.ctl("export").click();
+  await expect(page.locator("#export-hidden")).toHaveText(`${n} hidden points are exported too (hiding is view only)`);
+  const [dl] = await Promise.all([page.waitForEvent("download"), t.ctl("export-go").click()]);
+  const path = testInfo.outputPath("hidden-export.pcd");
+  await dl.saveAs(path);
+  const expected = parsePcd(roomPcd()).rows.filter((r) => !inBox(r, GHOST_BOX.c, GHOST_BOX.d)).map(f32key).sort();
+  const rows = parsePcd(readFileSync(path)).rows;
+  expect(rows.length).toBe(expected.length);
+  expect(rows.map(f32key).sort()).toEqual(expected);
+  // Show restores the draw (minus the deleted ghosts)
+  await t.hideBtn.click();
+  await expect.poll(t.drawn, { timeout: 15000 }).toBe(drawn0 - ROOM.ghost);
+  await expect(t.chip).toBeHidden();
+  await expect(t.hideBtn).toHaveText("Hide selected");
+  // hide again, reload: nothing is hidden (the set is view state and is never saved)
+  await t.setBox([-1, 4.5, 2.5], [1, 10, 5]);
+  await t.exact("Selected", String(ROOM.wall));
+  await t.hideBtn.click();
+  await expect(t.chip).toBeVisible();
+  await page.waitForTimeout(1600);
+  await page.reload();
+  await t.exact("Original", String(ROOM_TOTAL));
+  await expect(t.chip).toBeHidden();
+  await expect(t.hideBtn).toHaveText("Hide selected");
+  await expect.poll(t.drawn, { timeout: 15000 }).toBe(drawn0 - ROOM.ghost);
+});
+
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-90b 15a the Hide selected button and the chip never overlap the legend rows, the ViewCube, the camera cluster or the timeline, and the panel does not overflow at ${w}x${h}`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const t = hideHelpers(page);
+    await t.floorSelected();
+    await t.hideBtn.click();
+    await expect(t.chip).toBeVisible();
+    await page.waitForTimeout(300);
+    const r = await page.evaluate(() => {
+      const box = (e: Element) => {
+        const b = e.getBoundingClientRect();
+        return { l: b.left, t: b.top, r: b.right, b: b.bottom };
+      };
+      const q = (s: string) => document.querySelector(s)!;
+      return {
+        chip: box(q('[data-control="hidden-chip"]')),
+        legend: box(q("#legend")),
+        head: box(q('[data-control="legend-menu"]')),
+        rows: box(q("#legend-body")),
+        btn: box(q('[data-control="sel-hide"]')),
+        tools: box(q("#tools")),
+        others: ["#viewcube", "#camera-cluster", "#timeline"].map((s) => ({ s, ...box(q(s)) })),
+      };
+    });
+    const hit = (a: { l: number; t: number; r: number; b: number }, c: { l: number; t: number; r: number; b: number }) => a.l < c.r && c.l < a.r && a.t < c.b && c.t < a.b;
+    expect(r.chip.l >= r.legend.l - 1 && r.chip.r <= r.legend.r + 1 && r.chip.t >= r.legend.t - 1 && r.chip.b <= r.legend.b + 1, "chip inside the legend box").toBe(true);
+    expect(hit(r.chip, r.head), "chip x legend header").toBe(false);
+    expect(hit(r.chip, r.rows), "chip x legend rows").toBe(false);
+    for (const o of r.others) expect(hit(r.chip, o), `chip x ${o.s}`).toBe(false);
+    expect(r.btn.l >= r.tools.l - 1 && r.btn.r <= r.tools.r + 1, "button inside the tools panel").toBe(true);
+    await checkLayout(page, w, h);
+  });
+}

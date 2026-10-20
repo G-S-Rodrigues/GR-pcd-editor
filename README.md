@@ -90,6 +90,14 @@ Concepts worth knowing:
   again, or **Clear selection**, disarms it; **Select displayed** and **Invert** refuse
   with a reason while a tool is armed. A polygon delete leaves the Polygon tool armed with
   a blank polygon. The Box tool starts as a 3 m cube.
+- **Hide selected** (Selection section, after Clear selection) hides the selected points from the
+  view and clears the selection; the button then reads **Show hidden (N)** and a **N hidden -
+  Show** chip appears in the legend. Hidden points are not drawn and cannot be picked, but they
+  stay in the cloud, so **Delete** with a shape that covers them asks once more, **Select
+  displayed** and **Invert** are refused until they are shown, and **Export** still contains
+  them. It is view only: never saved (a saved session reopens with nothing hidden; Save says
+  so) and dropped when another file opens. Above the render budget only the drawn selected
+  points are hidden, and a warning says how many.
 - **Sparse points** selects points with fewer than a set number of neighbours (default 8)
   within a small cube around them, so isolated artifacts in the open go while dense walls
   and floors stay. The radius (empty: derived from the point spacing), the region (whole

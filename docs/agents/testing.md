@@ -370,3 +370,15 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
   arrow drag, `E2E-102` body drag with Shift pan and Ctrl orbit, `E2E-103` three real ring drags against an independent
   rotation oracle, `E2E-104` keyboard sequence, `E2E-105` Esc mid-drag. Face views are reached by their keys (1, 3, 6),
   not by clicking the ViewCube, because a face turned away is not clickable. No browser test covers hover cursors.
+
+## Part 15a additions (Hide selected)
+
+- Unit `UI-500..504` (`view/hidden.test.ts`: the id bitmap, exactness, `applyHidden` compaction, same object when empty),
+  `UI-505/506` (`orchestration/refresh.test.ts`: primary and second render compacted, the deleted overlay is not, the set
+  drops with the cache or a different session id), `UI-507..514` (`orchestration/hide.test.ts`: button states, refusal
+  reasons, Select displayed and Invert refused, the extra Apply confirm, hidden seed pick, never persisted, hide keeps the
+  tool armed, Save notice), `UI-515/516` (`ui/hiddenchip.test.ts`: the legend chip), `UI-517` (export dialog note).
+- Smoke `E2E-90` (hide the floor and its ghosts, the drawn count drops by exactly the count, Apply asks with the exact
+  text, the export re-parsed with the independent reader equals the room minus the ghosts and includes the hidden floor,
+  Show restores the draw, a reload shows nothing hidden) and `E2E-90b` (button and chip overlap sweep at 1280x720 and
+  1920x1080). 15b reserves `UI-535..549` and `E2E-91/92` to replace these when layer visibility lands.

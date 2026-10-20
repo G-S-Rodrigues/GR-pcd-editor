@@ -67,3 +67,5 @@
 - **Selected colour:** The preset colour (Orange default, Magenta, White, Lime) the canvas and the legend use for selected
   points; a view setting saved with the session. The preview add and remove colours, protected and step colours are not
   user choices.
+- **Hidden points:** The points hidden by Hide selected: a per-session set of point ids that are not drawn and not
+  pickable. View only, never saved, no effect on counts, Delete or Export; part 15b replaces it with layer visibility.
