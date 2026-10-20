@@ -842,3 +842,38 @@ describe("runner re-arm after Commit draft (R17-2)", () => {
     }
   });
 });
+
+describe("runner one-shot landing (R17-8)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+  const body = (rev: number) => ({ cloud_revision: rev, op: "add" as const, scope: "active" as const, tool: { type: "layer" as const, layer_id: 1 }, evaluate_candidate: true });
+
+  it("UI-884 a params-hook reselect pending when a one-shot starts is dropped: exactly one selection request, and the one-shot resolves true when it lands", async () => {
+    const t = setup({ op: "add", count: 10 });
+    t.store.set({ liveFirst: true });
+    t.runner.paramsChanged("layers");
+    const landed = t.runner.oneShot(body);
+    await flush();
+    expect(t.polls).toHaveLength(1);
+    t.polls[0].resolve({ selected: 12, operand: 2, candidate: candidateFixture() });
+    await expect(landed).resolves.toBe(true);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(t.api.submitSelection).toHaveBeenCalledTimes(1);
+    expect(t.api.submitCandidate).not.toHaveBeenCalled();
+  });
+
+  it("UI-884 a one-shot superseded by a user action resolves false, and so does one that fails", async () => {
+    const t = setup({ op: "add", count: 10 });
+    const first = t.runner.oneShot(body);
+    await flush();
+    t.runner.oneShot(body);
+    await flush();
+    t.polls[0].resolve({ selected: 12, operand: 2, candidate: candidateFixture() });
+    await expect(first).resolves.toBe(false);
+    const u = setup({ op: "add", count: 10 });
+    const failing = u.runner.oneShot(body);
+    await flush();
+    u.polls[0].reject(new ApiError(500, "boom", "no"));
+    await expect(failing).resolves.toBe(false);
+  });
+});

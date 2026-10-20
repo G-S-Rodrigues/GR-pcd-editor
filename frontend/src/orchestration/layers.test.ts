@@ -4,7 +4,7 @@ import type { LayerReply } from "../api/layers";
 import { createAppStore } from "../state/app";
 import type { Layer, LayerOp } from "../state/types";
 import { sessionFixture } from "../testing/fixtures";
-import { createLayers, layerSelectBody } from "./layers";
+import { createLayers, layerAddBody, layerSelectBody } from "./layers";
 
 const layer = (over: Partial<Layer> = {}): Layer => ({ id: 1, name: "Hidden", colour: 0, visible: true, count: 5, bounds: null, ...over });
 const OP: LayerOp = { moved: 5, from_other_layers: 0, released: 0 };
@@ -25,8 +25,13 @@ function setup(layers: Layer[] = []) {
   };
   const calls: string[] = [];
   const paramsHook = vi.fn((k: string) => void calls.push(k));
-  const layers_ = createLayers(store, api as never, { paramsHook, confirm: () => true, selectLayer: () => undefined, openShape: async () => ({ ok: true }) });
-  return { store, api, paramsHook, calls, layers: layers_ };
+  const selectLayerAdd = vi.fn(async (id: number) => {
+    calls.push(`add:${id}:vis=${store.get().session?.layers.every((l) => l.visible)}`);
+    return true;
+  });
+  const discardDraft = vi.fn(() => void calls.push("discard"));
+  const layers_ = createLayers(store, api as never, { paramsHook, confirm: () => true, selectLayer: () => undefined, selectLayerAdd, discardDraft, openShape: async () => ({ ok: true }) });
+  return { store, api, paramsHook, calls, selectLayerAdd, discardDraft, layers: layers_ };
 }
 
 test("UI-813 hideSelected makes the layer Hidden, hidden from the start, in one call with the cloud revision", async () => {
@@ -52,11 +57,39 @@ test("UI-815 a layer call replaces the session, runs the params hook once, and k
   expect(t.store.get().draft).toBe(true); // not afterChange: the draft and the preview are not reset here
 });
 
-test("UI-816 showAll sends visibility for every layer (ids null) and then the params hook", async () => {
+test("UI-816 showHidden sends visibility for every layer (ids null), then the params hook, then reselects the layer Hidden", async () => {
   const t = setup([layer({ visible: false })]);
-  await t.layers.showAll();
+  t.api.setVisibility.mockImplementationOnce(async () => ({ session: sessionFixture({ revision: { cloud: 7, params: 5 }, layers: [layer({ visible: true })] }), op: OP }));
+  await t.layers.showHidden();
   expect(t.api.setVisibility).toHaveBeenCalledWith(null, true);
-  expect(t.calls).toEqual(["layers"]);
+  expect(t.calls).toEqual(["discard", "layers", "add:1:vis=true"]);
+  expect(t.selectLayerAdd).toHaveBeenCalledTimes(1);
+});
+
+test("UI-882 only the layer named Hidden with points is reselected (a user layer hidden by its eye comes back visible, not selected; an empty Hidden is skipped)", async () => {
+  const t = setup([layer({ id: 2, name: "Mine", visible: false }), layer({ id: 1, visible: false })]);
+  await t.layers.showHidden();
+  expect(t.selectLayerAdd.mock.calls).toEqual([[1]]);
+  const u = setup([layer({ visible: false, count: 0 })]);
+  await u.layers.showHidden();
+  expect(u.selectLayerAdd).not.toHaveBeenCalled();
+  const v = setup([layer({ id: 2, name: "Mine", visible: false })]);
+  await v.layers.showHidden();
+  expect(v.selectLayerAdd).not.toHaveBeenCalled();
+});
+
+test("UI-883 showHidden discards a draft first, keeps the tool armed, sets liveFirst false and never replaces the selection", async () => {
+  const t = setup([layer({ visible: false })]);
+  t.store.set({ tool: "box", liveFirst: true, draft: true });
+  await t.layers.showHidden();
+  expect(t.discardDraft).toHaveBeenCalledTimes(1);
+  expect(t.store.get().tool).toBe("box");
+  expect(t.store.get().liveFirst).toBe(false);
+  expect(layerAddBody(7, 1)).toMatchObject({ op: "add", scope: "active", tool: { type: "layer", layer_id: 1 } });
+  const u = setup([layer({ visible: false })]);
+  u.store.set({ draft: false });
+  await u.layers.showHidden();
+  expect(u.discardDraft).not.toHaveBeenCalled();
 });
 
 test("UI-817 a 409 reloads the state with a stale notice and does not run the params hook", async () => {
@@ -100,7 +133,7 @@ function panel(over: { confirm?: boolean; op?: LayerOp; layers?: Layer[]; active
   const confirm = vi.fn(() => over.confirm ?? true);
   const selectLayer = vi.fn();
   const paramsHook = vi.fn();
-  const layersCtl = createLayers(store, api as never, { paramsHook, confirm, selectLayer, openShape: async () => ({ ok: true }) });
+  const layersCtl = createLayers(store, api as never, { paramsHook, confirm, selectLayer, selectLayerAdd: async () => true, discardDraft: () => undefined, openShape: async () => ({ ok: true }) });
   return { store, api, confirm, selectLayer, paramsHook, layers: layersCtl };
 }
 

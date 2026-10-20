@@ -43,7 +43,7 @@ function setup(layers: Layer[] = [layer(), layer({ id: 2, name: "Wall", visible:
   };
   const confirm = vi.fn(() => confirmAnswer);
   const paramsHook = vi.fn();
-  const ctl = createLayers(store, api as never, { paramsHook, confirm, selectLayer: () => undefined, openShape: shape.openShape });
+  const ctl = createLayers(store, api as never, { paramsHook, confirm, selectLayer: () => undefined, selectLayerAdd: async () => true, discardDraft: () => undefined, openShape: shape.openShape });
   return { store, api, confirm, paramsHook, calls, ctl };
 }
 

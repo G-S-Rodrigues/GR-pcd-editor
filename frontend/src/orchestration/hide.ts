@@ -30,8 +30,8 @@ export function hideState(s: AppState): HideState {
 export interface HideDeps {
   /** Moves the selection into the layer "Hidden" and hides it (one server call). */
   hideSelected(): Promise<void>;
-  /** Shows every hidden layer again. */
-  showAll(): Promise<void>;
+  /** Shows every hidden layer again and reselects the points of the layer Hidden. */
+  showHidden(): Promise<void>;
 }
 
 export function createHide(store: Store<AppState>, deps: HideDeps) {
@@ -44,8 +44,8 @@ export function createHide(store: Store<AppState>, deps: HideDeps) {
     await deps.hideSelected();
   }
   return {
-    toggle: (): Promise<void> => (hiddenPointCount(store.get().session) > 0 ? deps.showAll() : hide()),
+    toggle: (): Promise<void> => (hiddenPointCount(store.get().session) > 0 ? deps.showHidden() : hide()),
     hide,
-    show: (): Promise<void> => deps.showAll(),
+    show: (): Promise<void> => deps.showHidden(),
   };
 }

@@ -4536,6 +4536,9 @@ test("E2E-90 15a Hide selected: the drawn count drops by exactly the hidden coun
   await expect.poll(t.drawn, { timeout: 15000 }).toBe(drawn0 - ROOM.ghost);
   await expect(t.chip).toBeHidden();
   await expect(t.hideBtn).toHaveText("Hide selected");
+  await t.exact("Selected", String(n)); // 17: Show hidden also reselects the points of the layer Hidden
+  await t.ctl("sel-clear").click(); // Clear selection disarms the tool; the next box is a first (live) selection again
+  await t.ctl("tool-box").click();
   // hide again (the wall joins the layer Hidden, which hides its floor again), reload: the server still hides them
   await t.setBox([-1, 4.5, 2.5], [1, 10, 5]);
   await t.exact("Selected", String(ROOM.wall));
@@ -4548,6 +4551,36 @@ test("E2E-90 15a Hide selected: the drawn count drops by exactly the hidden coun
   await expect(t.chip).toHaveText(`${n + ROOM.wall} hidden - Show`);
   await expect(t.hideBtn).toHaveText(`Show hidden (${n + ROOM.wall})`);
   await expect.poll(t.drawn, { timeout: 15000 }).toBe(drawn0 - ROOM.ghost - n - ROOM.wall);
+});
+
+test("E2E-154 17 Show hidden also reselects the hidden points: the union with the selection, Candidates match, Delete works, the Box stays armed (button, then the legend chip)", async ({ page }) => {
+  const t = hideHelpers(page);
+  const asked: string[] = [];
+  page.on("dialog", (d) => asked.push(d.message()));
+  const n = await t.floorSelected();
+  const drawn0 = await t.drawn();
+  const WALL = { c: [-1, 4.5, 2.5], d: [1, 10, 5] };
+  for (const via of ["button", "chip"] as const) {
+    await t.hideBtn.click();
+    await expect.poll(t.drawn, { timeout: 15000 }).toBe(drawn0 - n);
+    await t.exact("Selected", "0");
+    await t.setBox(WALL.c, WALL.d);
+    await t.exact("Selected", String(ROOM.wall));
+    await (via === "button" ? t.hideBtn : t.chip).click();
+    await t.exact("Selected", String(n + ROOM.wall));
+    await t.exact("Candidates", String(n + ROOM.wall));
+    await expect(t.ctl("apply")).toBeEnabled();
+    await expect(t.ctl("tool-box")).toHaveClass(/active/);
+    await expect.poll(t.drawn, { timeout: 15000 }).toBe(drawn0);
+    if (via === "button") {
+      // start the second round from a clean slate: the floor is selected again by the live Box
+      await t.ctl("sel-clear").click();
+      await t.ctl("tool-box").click();
+      await t.setBox(FLOOR_BOX.c, FLOOR_BOX.d);
+      await t.exact("Selected", String(n));
+    }
+  }
+  expect(asked).toEqual([]);
 });
 
 for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {

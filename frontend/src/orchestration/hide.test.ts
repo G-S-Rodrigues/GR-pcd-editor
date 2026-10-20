@@ -79,19 +79,19 @@ test("UI-512 nothing about hidden or layers is in the serialised client state, a
 test("UI-513 hide makes one hideSelected call, raises no hide_partial notice and leaves the armed tool armed; refused cases call nothing", async () => {
   const store = withSel({ tool: "box" });
   const hideSelected = vi.fn(async () => undefined);
-  const showAll = vi.fn(async () => undefined);
-  const hide = createHide(store, { hideSelected, showAll });
+  const showHidden = vi.fn(async () => undefined);
+  const hide = createHide(store, { hideSelected, showHidden });
   await hide.toggle();
   expect(hideSelected).toHaveBeenCalledTimes(1);
   expect(store.get().tool).toBe("box");
   expect(store.get().notices.some((n) => n.code === "hide_partial")).toBe(false);
   store.set({ session: hiddenSess(0, 2) });
   await hide.toggle(); // now Show
-  expect(showAll).toHaveBeenCalledTimes(1);
+  expect(showHidden).toHaveBeenCalledTimes(1);
   expect(hideSelected).toHaveBeenCalledTimes(1);
   const none = withSel({ session: sess(0) });
   hideSelected.mockClear();
-  await createHide(none, { hideSelected, showAll }).toggle();
+  await createHide(none, { hideSelected, showHidden }).toggle();
   expect(hideSelected).not.toHaveBeenCalled();
   expect(none.get().notices.find((n) => n.code === "hide_disabled")?.text).toBe("Select some points first");
 });
@@ -104,4 +104,13 @@ test("UI-514 saving says nothing about hidden points, with or without hidden lay
   const store = withSel({ session: hiddenSess(2, 2) });
   await runSave(store, deps);
   expect(store.get().notices.some((n) => n.code === "hidden_saved")).toBe(false);
+});
+
+test("UI-885 (regression guard, green at HEAD) the Show state of the button and the legend chip both call showHidden", async () => {
+  const store = withSel({ session: hiddenSess(0, 2) });
+  const showHidden = vi.fn(async () => undefined);
+  const hide = createHide(store, { hideSelected: vi.fn(async () => undefined), showHidden });
+  await hide.toggle();
+  await hide.show();
+  expect(showHidden).toHaveBeenCalledTimes(2);
 });

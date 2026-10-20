@@ -24,6 +24,10 @@ export interface LayersDeps {
   confirm(message: string): boolean;
   /** Sends the one-shot selection of one layer's members. */
   selectLayer(id: number): void;
+  /** Adds one layer's members (scope Active) to the selection; true when it landed, false when something superseded it or it failed. */
+  selectLayerAdd(id: number): Promise<boolean>;
+  /** Forgets the drafted preview (client and server); the committed selection stays. */
+  discardDraft(): void;
   /** Arms the Box seeded from a shape as a live first selection (clearing the selection first). */
   openShape(shape: StepBox, centre: Vec3 | null): Promise<EditShapeResult>;
 }
@@ -36,6 +40,9 @@ export const layerSelectBody = (rev: number, id: number, scope: Scope): Selectio
   tool: { type: "layer", layer_id: id },
   evaluate_candidate: true,
 });
+
+/** Adds a layer's members to the selection regardless of the display filter (R17-8). */
+export const layerAddBody = (rev: number, id: number): SelectionRequest => ({ ...layerSelectBody(rev, id, "active"), op: "add" });
 
 /**
  * Layer calls. A layer edit is not a timeline step, so the reply replaces the session and goes through the params hook;
@@ -70,10 +77,19 @@ export function createLayers(store: Store<AppState>, api: LayersApi, deps: Layer
           : await api.createLayer(rev(), { name: HIDDEN_LAYER_NAME, visible: false });
         adopt(reply);
       }),
-    /** Show every hidden layer again (the legend chip and the pressed Hide button). */
-    showAll: (): Promise<void> =>
+    /**
+     * Show hidden: every hidden layer is visible again and the members of the layer named Hidden (the one Hide selected
+     * fills) join the selection, so Delete works on them at once. A user layer hidden by its eye comes back visible, not
+     * selected. The tool stays armed; `liveFirst` goes false so neither the params hook nor the next tool edit replaces the union.
+     */
+    showHidden: (): Promise<void> =>
       guarded(async () => {
+        const h = hiddenLayer(store.get().session);
+        const reselect = h && !h.visible && h.count > 0 ? h.id : null;
+        if (store.get().draft) deps.discardDraft();
+        store.set({ liveFirst: false });
         adopt(await api.setVisibility(null, true));
+        if (reselect !== null) await deps.selectLayerAdd(reselect);
       }),
     /** New layer from the selection; a blank name lets the server name it. */
     create: (rawName: string): Promise<void> => {

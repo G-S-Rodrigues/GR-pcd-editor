@@ -44,7 +44,7 @@ import { buildStatusbar } from "./ui/statusbar";
 import { buildLegend } from "./ui/legend";
 import { createHide } from "./orchestration/hide";
 import { editEnded, layerModeFix } from "./layers/model";
-import { createLayers, layerSelectBody } from "./orchestration/layers";
+import { createLayers, layerAddBody, layerSelectBody } from "./orchestration/layers";
 import { discardEnabled } from "./tools/preview";
 import { buildTimeline } from "./timeline/strip";
 import { createStepCentre } from "./timeline/centre";
@@ -127,11 +127,13 @@ const layers = createLayers(
   {
     paramsHook,
     confirm: (m) => window.confirm(m),
-    selectLayer: (id) => runner.oneShot((rev) => layerSelectBody(rev, id, store.get().scope)),
+    selectLayer: (id) => void runner.oneShot((rev) => layerSelectBody(rev, id, store.get().scope)),
+    selectLayerAdd: (id) => runner.oneShot((rev) => layerAddBody(rev, id)),
+    discardDraft: () => runner.discardDraft(),
     openShape: (shape, centre) => stepEdit.openShape(shape, centre),
   },
 );
-const hide = createHide(store, { hideSelected: () => layers.hideSelected(), showAll: () => layers.showAll() });
+const hide = createHide(store, { hideSelected: () => layers.hideSelected(), showHidden: () => layers.showHidden() });
 const filters = createFilterController(store, {
   putFilter: api.putFilter,
   onParamsChanged: () => paramsHook("filter"),

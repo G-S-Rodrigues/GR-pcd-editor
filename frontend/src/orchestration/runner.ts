@@ -105,6 +105,8 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
   let shape = 0;
   let previewShape = -1;
   let previewRunning = false;
+  /** The generation of the last job that ran to its end and was still current; a one-shot has landed when it is `gen`. */
+  let landedGen = -1;
   let runningShape = -1;
   let commitWhenReady = false;
   /** Bumped whenever the committed selection or its candidate is invalidated or a selection/candidate/commit job starts. */
@@ -212,6 +214,7 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
         // Commit draft leaves every tool armed; the Cluster tool waits for its next seed (a seed picked meanwhile bumped `shape`)
         ...(kind === "commit" && store.get().tool === "cluster" && shape === submittedShape ? pressPick(store.get()) : {}),
       });
+      landedGen = mine;
     } catch (e) {
       if (mine !== gen) return;
       jobId = null;
@@ -389,11 +392,17 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
       dropDraft();
       void api.refreshState().catch(() => undefined);
     },
-    /** One-shot selection (Select displayed, Invert): sent at once, independent of the tool. */
-    oneShot(make: (cloudRevision: number) => SelectionRequest): void {
+    /**
+     * One-shot selection (Select displayed, Invert, a layer's members): sent at once, independent of the tool. Resolves
+     * true when it landed, false when a newer action superseded it or it failed. It also drops a pending params-hook
+     * job, which would otherwise supersede it 300 ms later (the one-shot evaluates its own candidate).
+     */
+    async oneShot(make: (cloudRevision: number) => SelectionRequest): Promise<boolean> {
       toolDebounce.cancel();
+      paramsDebounce.cancel();
       store.set({ draft: false });
-      void run(() => api.submitSelection(make(store.get().session?.revision.cloud ?? 0)), "Evaluating selection", false);
+      await run(() => api.submitSelection(make(store.get().session?.revision.cloud ?? 0)), "Evaluating selection", false);
+      return landedGen === gen;
     },
     /** The Preview button: recompute now. */
     previewNow(): void {
