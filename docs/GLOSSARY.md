@@ -17,6 +17,12 @@
   archives and live session data; it is the only persistent thing the container writes (plus a 256 MiB `/tmp` tmpfs).
 - **Session:** Versioned editing state, optionally including the source cloud,
   that can be reopened later.
+- **Face arrow:** The arrow of the Box tool that starts on a box face and resizes that face when dragged
+  (Alt: both opposite faces); it never moves the box.
+- **Rotation ring:** One of the three rings of the Box tool, each turning the box about one of its axes
+  (or a world axis with Axes set to World).
+- **Box body:** The inside of the box on the canvas: a plain left-drag there moves the box, Ctrl+drag orbits,
+  Shift+drag pans, and an unmoved click still moves the box to the clicked point.
 - **Candidate:** The exact set of points a previewed selection would delete,
   after height protection has been applied; Apply deletes exactly this set.
 - **Draft:** A tool shape that has been edited but not yet committed to the

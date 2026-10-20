@@ -459,3 +459,11 @@ Initial targets, to be benchmarked on a documented desktop Linux reference PC wi
   and Edit shape reopens the shape; it never changes the history.
 - Sparse points is a new selection tool (a point with fewer than a set number of points in its 3 x 3 x 3 cubes of edge
   radius). AC-17 stands; AC-15 is unchanged.
+
+## Part 14 amendment
+
+- Direct manipulation (lines 254-258): the face arrows resize (they no longer translate); a plain left-drag on the box
+  body moves the box in the plane facing the camera; rings rotate the box about all three axes. Ctrl+drag always orbits
+  and Shift+drag pans, even over the box. Esc during a drag restores the box from before the drag; there is no box undo
+  stack and Ctrl+Z stays deletions only. Keyboard: arrows nudge, Alt+arrows resize, `,` and `.` rotate (owner rulings
+  2026-10-18 and 2026-10-20).
