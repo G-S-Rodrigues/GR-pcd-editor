@@ -25,7 +25,7 @@ function setup(layers: Layer[] = []) {
   };
   const calls: string[] = [];
   const paramsHook = vi.fn((k: string) => void calls.push(k));
-  const layers_ = createLayers(store, api as never, { paramsHook, confirm: () => true, selectLayer: () => undefined });
+  const layers_ = createLayers(store, api as never, { paramsHook, confirm: () => true, selectLayer: () => undefined, openShape: async () => ({ ok: true }) });
   return { store, api, paramsHook, calls, layers: layers_ };
 }
 
@@ -100,7 +100,7 @@ function panel(over: { confirm?: boolean; op?: LayerOp; layers?: Layer[]; active
   const confirm = vi.fn(() => over.confirm ?? true);
   const selectLayer = vi.fn();
   const paramsHook = vi.fn();
-  const layersCtl = createLayers(store, api as never, { paramsHook, confirm, selectLayer });
+  const layersCtl = createLayers(store, api as never, { paramsHook, confirm, selectLayer, openShape: async () => ({ ok: true }) });
   return { store, api, confirm, selectLayer, paramsHook, layers: layersCtl };
 }
 

@@ -1,8 +1,9 @@
 import type { LayerReply } from "../api/layers";
 import { type AppState, addNotice } from "../state/app";
 import type { Store } from "../state/store";
-import type { Scope } from "../state/types";
-import { HIDDEN_LAYER_NAME, SHOW_FIRST, findLayer, hiddenLayer, layerButtons, layersOf, stealConfirmText } from "../layers/model";
+import type { Scope, StepBox, Vec3 } from "../state/types";
+import type { EditShapeResult } from "./editshape";
+import { HIDDEN_LAYER_NAME, SHOW_FIRST, findLayer, hiddenLayer, layerBoxShape, layerButtons, layerRows, layersOf, stealConfirmText } from "../layers/model";
 import { makeGuard } from "./edit";
 import type { ParamsKind } from "./runner";
 import type { SelectionRequest } from "./selection";
@@ -11,6 +12,7 @@ export interface LayersApi {
   createLayer(rev: number, o?: { name?: string; visible?: boolean; dry_run?: boolean }): Promise<LayerReply>;
   assignLayer(rev: number, id: number, o?: { visible?: boolean; dry_run?: boolean }): Promise<LayerReply>;
   deleteLayer(rev: number, id: number): Promise<LayerReply>;
+  setMembers(rev: number, id: number, o?: { dry_run?: boolean }): Promise<LayerReply>;
   patchLayer(id: number, o: { name?: string; colour?: number; visible?: boolean }): Promise<LayerReply>;
   setVisibility(ids: number[] | null, visible: boolean): Promise<LayerReply>;
   refreshState(): Promise<unknown>;
@@ -22,6 +24,8 @@ export interface LayersDeps {
   confirm(message: string): boolean;
   /** Sends the one-shot selection of one layer's members. */
   selectLayer(id: number): void;
+  /** Arms the Box seeded from a shape as a live first selection (clearing the selection first). */
+  openShape(shape: StepBox, centre: Vec3 | null): Promise<EditShapeResult>;
 }
 
 /** The one-shot selection of a layer's members (replace). */
@@ -124,6 +128,31 @@ export function createLayers(store: Store<AppState>, api: LayersApi, deps: Layer
       }
       deps.selectLayer(id);
     },
+    /** Edit layer: clear the selection, seed a Box at the member bounds and start a live selection; the box then picks the new members. */
+    async editLayer(id: number): Promise<void> {
+      const l = findLayer(store.get().session, id);
+      const row = layerRows(store.get().session).find((r) => r.id === id);
+      if (!l || !row) return;
+      if (refuse(row.editDisabled) || !l.bounds) return;
+      const b = l.bounds;
+      const centre = [0, 1, 2].map((i) => (b.min[i] + b.max[i]) / 2) as Vec3;
+      const r = await deps.openShape(layerBoxShape(b), centre);
+      if (r.ok) store.update((s) => ({ ...s, layerUi: { editing: id, active: id } }));
+    },
+    /** Set layer to selection: the layer's members become exactly the selection. Leaves edit mode and keeps the selection. */
+    setMembers: (): Promise<void> => {
+      const st = store.get();
+      const id = st.layerUi.editing;
+      const l = id === null ? null : findLayer(st.session, id);
+      if (!l || refuse(layerButtons(st).set)) return Promise.resolve();
+      return guarded(async () => {
+        if (!(await confirmed(api.setMembers(rev(), l.id, { dry_run: true }), l.name))) return;
+        adopt(await api.setMembers(rev(), l.id));
+        store.update((s) => ({ ...s, layerUi: { ...s.layerUi, editing: null } }));
+      });
+    },
+    /** Esc, Clear selection or a stale layer: edit mode ends with no change to the layer. */
+    leaveEdit: (): void => store.update((s) => (s.layerUi.editing === null ? s : { ...s, layerUi: { ...s.layerUi, editing: null } })),
     setActive: (id: number | null): void => store.update((s) => ({ ...s, layerUi: { ...s.layerUi, active: id } })),
   };
 }

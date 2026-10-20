@@ -43,7 +43,7 @@ import { buildInspector } from "./ui/inspector-shell";
 import { buildStatusbar } from "./ui/statusbar";
 import { buildLegend } from "./ui/legend";
 import { createHide } from "./orchestration/hide";
-import { layerModeFix } from "./layers/model";
+import { editEnded, layerModeFix } from "./layers/model";
 import { createLayers, layerSelectBody } from "./orchestration/layers";
 import { discardEnabled } from "./tools/preview";
 import { buildTimeline } from "./timeline/strip";
@@ -123,11 +123,12 @@ const editor = createEditor(
 const paramsHook = createParamsHook(runner, () => refresher.refresh());
 const layers = createLayers(
   store,
-  { createLayer: layerApi.createLayer, assignLayer: layerApi.assignLayer, deleteLayer: layerApi.deleteLayer, patchLayer: layerApi.patchLayer, setVisibility: layerApi.setVisibility, refreshState },
+  { createLayer: layerApi.createLayer, assignLayer: layerApi.assignLayer, deleteLayer: layerApi.deleteLayer, setMembers: layerApi.setMembers, patchLayer: layerApi.patchLayer, setVisibility: layerApi.setVisibility, refreshState },
   {
     paramsHook,
     confirm: (m) => window.confirm(m),
     selectLayer: (id) => runner.oneShot((rev) => layerSelectBody(rev, id, store.get().scope)),
+    openShape: (shape, centre) => stepEdit.openShape(shape, centre),
   },
 );
 const hide = createHide(store, { hideSelected: () => layers.hideSelected(), showAll: () => layers.showAll() });
@@ -198,6 +199,7 @@ function onOpened(state: SessionState) {
 store.subscribe((st) => {
   const fix = layerModeFix(st);
   if (fix) store.update((x) => ({ ...x, colour: fix }));
+  if (editEnded(st)) layers.leaveEdit();
 });
 
 const canceller = createUploadCanceller(store);
@@ -275,6 +277,8 @@ const panelActions = {
   layerToggle: (id: number) => void layers.toggle(id),
   layerToMain: (id: number) => void layers.toMain(id),
   layerChoose: (id: number) => layers.setActive(id),
+  layerEdit: (id: number) => void layers.editLayer(id),
+  layerSet: () => void layers.setMembers(),
   removeInvalid: () => void editor.removeInvalid(),
   removeInvalidVisible: () => editor.removeInvalidVisible(),
   removeInvalidLabel: () => editor.removeInvalidLabel(),
@@ -357,6 +361,8 @@ window.addEventListener("keydown", (e) => {
   } else if (id === "polygon-close" && store.get().tool === "polygon" && store.get().tools.polygon.phase === "drawing") {
     const msg = panelActions.finishPolygon();
     if (msg) note(msg);
+  } else if (id === "cancel" && store.get().layerUi.editing !== null) {
+    layers.leaveEdit();
   } else if (id === "cancel" && store.get().tools.polygon.phase === "drawing") {
     panelActions.cancelDrawing();
   } else if (id === "cancel" && store.get().interaction === "orbit" && discardEnabled(store.get())) {

@@ -12,13 +12,14 @@ import { TOOLTIPS } from "./tooltips";
 const dom = installFakeDom();
 afterAll(() => dom.restore());
 const store = createAppStore();
-const calls = { create: vi.fn(), assign: vi.fn(), release: vi.fn(), select: vi.fn(), toggle: vi.fn(), toMain: vi.fn(), choose: vi.fn() };
+const calls = { create: vi.fn(), assign: vi.fn(), release: vi.fn(), select: vi.fn(), toggle: vi.fn(), toMain: vi.fn(), choose: vi.fn(), edit: vi.fn(), set: vi.fn() };
 const actions = new Proxy(
-  { layerCreate: calls.create, layerAssign: calls.assign, layerRelease: calls.release, layerSelect: calls.select, layerToggle: calls.toggle, layerToMain: calls.toMain, layerChoose: calls.choose } as Record<string, unknown>,
+  { layerCreate: calls.create, layerAssign: calls.assign, layerRelease: calls.release, layerSelect: calls.select, layerToggle: calls.toggle, layerToMain: calls.toMain, layerChoose: calls.choose, layerEdit: calls.edit, layerSet: calls.set } as Record<string, unknown>,
   { get: (t, k: string) => t[k] ?? (() => undefined) },
 ) as unknown as PanelActions;
 buildEditPanels(dom.root as unknown as HTMLElement, store, actions);
 const ctl = (id: string) => dom.root.control(id) as FakeEl;
+const byId = (id: string) => dom.root.all().find((e) => e.getAttribute("id") === id) as FakeEl;
 const section = () => dom.root.all().find((e) => e.getAttribute("data-section") === "layers") as FakeEl;
 const rows = () => section().all().filter((e) => e.getAttribute("data-layer-row") !== null);
 const rowBtn = (id: number, kind: string) => section().all().find((e) => e.getAttribute(`data-layer-${kind}`) === String(id)) as FakeEl;
@@ -98,7 +99,7 @@ test("UI-836 the layer buttons give the reason in their title and aria-disabled:
 });
 
 test("UI-837 every layer control is described and has a tooltip; the section note says edits are not in the timeline", () => {
-  for (const id of ["layer-new", "layer-name", "layer-assign", "layer-release"]) {
+  for (const id of ["layer-new", "layer-name", "layer-assign", "layer-release", "layer-set"]) {
     expect(describeControls().find((d) => d.id === id)?.label).toBeTruthy();
     expect(TOOLTIPS[id]).toBeTruthy();
   }
@@ -110,4 +111,30 @@ test("UI-838 a layer-less session shows only Main-less empty state: no rows and 
   store.set({ session: sessionFixture() });
   expect(rows()).toHaveLength(0);
   expect(section().text()).toContain("No layers yet");
+});
+
+test("UI-863 each row has an Edit button: inactive for a hidden layer (Show the layer first) and a click on a working one asks to edit that layer", () => {
+  store.set({ session: base([layer({ bounds: { min: [0, 0, 0], max: [1, 1, 1] } }), layer({ id: 2, name: "Wall", colour: 1, visible: false, count: 20 })]) });
+  expect(rowBtn(1, "edit").getAttribute("aria-disabled")).toBe("false");
+  expect(rowBtn(2, "edit").getAttribute("aria-disabled")).toBe("true");
+  expect(rowBtn(2, "edit").title).toContain("Show the layer first");
+  rowBtn(1, "edit").fire("click");
+  expect(calls.edit).toHaveBeenCalledWith(1);
+});
+
+test("UI-864 while a layer is being edited the panel says how many members it has and how many the box selects, and Set layer to selection appears", () => {
+  const set = () => ctl("layer-set");
+  expect(set().hidden).toBe(true);
+  expect(byId("layer-editing").hidden).toBe(true);
+  store.set({ session: base([layer({}), layer({ id: 2, name: "Wall", visible: false, count: 20 })], 12), layerUi: { editing: 1, active: 1 } });
+  expect(set().hidden).toBe(false);
+  expect(byId("layer-editing").hidden).toBe(false);
+  expect(byId("layer-editing").text()).toBe("Editing layer Floor: 30 members, the box selects 12");
+  set().fire("click");
+  expect(calls.set).toHaveBeenCalledTimes(1);
+  store.set({ session: base([layer({}), layer({ id: 2, name: "Wall", visible: false, count: 20 })], 0) });
+  expect(set().getAttribute("aria-disabled")).toBe("true");
+  expect(set().title).toContain("Select some points first");
+  store.set({ layerUi: { editing: null, active: 1 } });
+  expect(set().hidden).toBe(true);
 });

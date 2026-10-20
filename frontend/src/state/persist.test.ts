@@ -212,3 +212,12 @@ test("UI-857 a saved Layers colour mode restores as Layers with layers and as Tu
   without.set({ session: sessionFixture() });
   expect(applyClientPatch(without.get(), patch).colour.mode).toBe("turbo");
 });
+
+test("UI-866 the layer panel state (the layer being edited, the chosen row) is never in the saved client state", () => {
+  const store = createAppStore();
+  store.set({ layerUi: { editing: 3, active: 3 } });
+  const json = JSON.stringify(serialiseClientState(store.get()));
+  expect(json).not.toMatch(/layerUi|"editing":3|"active":3/);
+  const patch = restoreClientState(JSON.parse(json))!;
+  expect(applyClientPatch(createAppStore().get(), patch).layerUi).toEqual({ editing: null, active: null });
+});

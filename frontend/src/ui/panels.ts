@@ -17,7 +17,7 @@ import { commitEnabled, commitLabel, discardEnabled, previewText } from "../tool
 import { scopeNotice, selectionDisabledReason } from "../orchestration/selection";
 import { hideState } from "../orchestration/hide";
 import { historyRows } from "../inspector/history";
-import { MAIN_COLOUR, MAIN_LABEL, layerButtons, layerRows } from "../layers/model";
+import { MAIN_COLOUR, MAIN_LABEL, editingText, findLayer, layerButtons, layerRows } from "../layers/model";
 import { control } from "./controls";
 import { SELECTED_COLOURS, type SelectedColourId } from "../colour/selectcolour";
 import { cssColour } from "./legend";
@@ -53,6 +53,8 @@ export interface PanelActions {
   layerToggle: (id: number) => void;
   layerToMain: (id: number) => void;
   layerChoose: (id: number) => void;
+  layerEdit: (id: number) => void;
+  layerSet: () => void;
   removeInvalid: () => void;
   removeInvalidVisible: () => boolean;
   removeInvalidLabel: () => string;
@@ -779,6 +781,9 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
   });
   const assignBtn = layerBtn("layer-assign", "Assign selection", () => a.layerAssign());
   const releaseBtn = layerBtn("layer-release", "Release to main", () => a.layerRelease());
+  const setBtn = layerBtn("layer-set", "Set layer to selection", () => a.layerSet());
+  setBtn.hidden = true;
+  const editingLine = h("p", { id: "layer-editing", class: "note", hidden: true });
   const reasonOn = (b: HTMLElement, tipId: string, why: string | null) => {
     b.setAttribute("aria-disabled", String(why !== null));
     b.classList.toggle("inactive", why !== null);
@@ -796,6 +801,11 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     reasonOn(newBtn, "layer-new", b.create);
     reasonOn(assignBtn, "layer-assign", b.assign);
     reasonOn(releaseBtn, "layer-release", b.release);
+    const editing = findLayer(s.session, s.layerUi.editing ?? -1);
+    setBtn.hidden = !editing;
+    editingLine.hidden = !editing;
+    editingLine.textContent = editing ? editingText(editing.name, editing.count, s.session?.selection.count ?? 0) : "";
+    reasonOn(setBtn, "layer-set", b.set);
     // rebuild the rows only when they change: a store update between mousedown and mouseup must not swallow a click
     const key = JSON.stringify([rows, s.layerUi.active, s.session?.counts.main]);
     if (key === layerKey) return;
@@ -805,6 +815,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     for (const r of rows) {
       const eye = h("button", { type: "button", class: "layer-eye", "data-layer-eye": r.id, "aria-pressed": String(r.visible), "aria-label": r.eyeLabel, title: r.eyeLabel, onclick: (e: Event) => (e.stopPropagation?.(), a.layerToggle(r.id)) }, iconSvg(r.visible ? "eye" : "eyeoff", 14));
       const sel = h("button", { type: "button", "data-layer-select": r.id, "aria-disabled": String(r.selectDisabled !== null), class: r.selectDisabled ? "inactive" : "", title: r.selectDisabled ?? `Select the ${r.count.toLocaleString("en-US")} points of ${r.name}`, onclick: (e: Event) => (e.stopPropagation?.(), a.layerSelect(r.id)) }, "Select");
+      const edit = h("button", { type: "button", "data-layer-edit": r.id, "aria-disabled": String(r.editDisabled !== null), class: r.editDisabled ? "inactive" : "", title: r.editDisabled ?? `Edit ${r.name}: select the layer's points again with a box, then press Set layer to selection`, onclick: (e: Event) => (e.stopPropagation?.(), a.layerEdit(r.id)) }, "Edit");
       const tomain = h("button", { type: "button", "data-layer-tomain": r.id, title: `Move every point of ${r.name} back to main and remove the layer`, onclick: (e: Event) => (e.stopPropagation?.(), a.layerToMain(r.id)) }, "To main");
       out.push(
         h(
@@ -814,6 +825,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
           h("span", { class: "layer-name", text: r.label }),
           eye,
           sel,
+          edit,
           tomain,
         ),
       );
@@ -827,8 +839,9 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     h("p", { class: "note", text: "Named groups of points. Layer edits are not in the timeline; undo one by re-assigning the points. Hidden layers are not drawn or selectable but are still exported." }),
     text((s) => (s.session && s.session.layers.length === 0 ? "No layers yet: select points, type a name, then press New layer" : "")),
     layerList,
+    editingLine,
     h("label", { class: "f" }, "Name ", layerName),
-    h("div", { class: "stack" }, newBtn, assignBtn, releaseBtn),
+    h("div", { class: "stack" }, newBtn, assignBtn, releaseBtn, setBtn),
   );
 
   // ---- history

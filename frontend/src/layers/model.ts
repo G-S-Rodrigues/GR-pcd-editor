@@ -36,12 +36,15 @@ export interface LayerRow {
   eyeLabel: string;
   /** Null when Select works; else the reason, shown as the tooltip. */
   selectDisabled: string | null;
+  /** Null when Edit works (a shown layer with points); else the reason. */
+  editDisabled: string | null;
 }
 
 export const HIDE_LABEL = "Hide selected";
 export const SHOW_LABEL = (n: number): string => `Show hidden (${fmt(n)})`;
 export const HIDDEN_CHIP_TEXT = (n: number): string => `${fmt(n)} hidden - Show`;
 export const SHOW_FIRST = "Show the layer first";
+export const NO_POINTS = "The layer has no points";
 
 export function layerRows(s: SessionState | null): LayerRow[] {
   return layersOf(s).map((l) => ({
@@ -53,6 +56,7 @@ export function layerRows(s: SessionState | null): LayerRow[] {
     label: `${l.name} (${fmt(l.count)})`,
     eyeLabel: `${l.visible ? "Hide" : "Show"} layer ${l.name}`,
     selectDisabled: !l.visible ? SHOW_FIRST : l.count === 0 ? "The layer has no points" : null,
+    editDisabled: !l.visible ? SHOW_FIRST : l.count === 0 || !l.bounds ? NO_POINTS : null,
   }));
 }
 
@@ -88,6 +92,8 @@ export interface LayerButtons {
   create: string | null;
   assign: string | null;
   release: string | null;
+  /** Set layer to selection (edit mode). */
+  set: string | null;
   /** The layer the Assign button targets, if it still exists. */
   active: Layer | null;
 }
@@ -108,6 +114,7 @@ export function layerButtons(s: PanelState): LayerButtons {
     create: base ?? (layersOf(s.session).length >= MAX_LAYERS ? AT_LIMIT : null),
     assign: base ?? (active ? null : PICK_LAYER),
     release: base ?? (layersOf(s.session).length === 0 ? "There are no layers yet" : null),
+    set: base,
     active,
   };
 }
@@ -149,4 +156,12 @@ export const EXPORT_WITHIN_LAYERS = "within the chosen layers; the exact count i
 /** Layers colouring needs layers: with none left the mode is Turbo again. Returns the fixed colour, or null when fine. */
 export function layerModeFix(s: Pick<AppState, "colour" | "session">): AppState["colour"] | null {
   return s.colour.mode === "layers" && layersOf(s.session).length === 0 ? { ...s.colour, mode: "turbo" } : null;
+}
+
+/** Whether edit mode has lost its footing: the file closed, the layer is gone or hidden, or the tool was disarmed (Clear selection). */
+export function editEnded(s: Pick<AppState, "layerUi" | "session" | "tool">): boolean {
+  const id = s.layerUi.editing;
+  if (id === null) return false;
+  const l = findLayer(s.session, id);
+  return !l || !l.visible || s.tool === "none";
 }
