@@ -12,6 +12,7 @@ const H = 600;
 const base = (over: Partial<AppState> = {}, z = { enabled: true, min: 2, max: 8 }): AppState => {
   const st = createAppStore();
   st.set({ session: sessionFixture(), camera: { ...defaultCamera(), target: [5, 5, 5] as Vec3, distance: 20 }, ...over });
+  st.update((s) => ({ ...s, filterUi: { ...s.filterUi, collapsed: { "z-min": false, "z-max": false } } })); // boxes open collapsed (17): expanded is an explicit false
   st.update((s) => ({ ...s, tools: { ...s.tools, filters: { ...s.tools.filters, z } } }));
   return st.get();
 };
@@ -23,13 +24,13 @@ describe("filter plane model", () => {
     expect(keys(base({}, { enabled: false, min: 0, max: 10 }))).toEqual([]);
     expect(keys(base({}, { enabled: true, min: 0, max: 8 }))).toEqual(["z-max"]); // min is at the bound: inactive
     const collapsed = base();
-    expect(keys({ ...collapsed, filterUi: { ...collapsed.filterUi, collapsed: { "z-max": true } } })).toEqual(["z-min"]);
+    expect(keys({ ...collapsed, filterUi: { ...collapsed.filterUi, collapsed: { "z-min": false, "z-max": true } } })).toEqual(["z-min"]);
     for (const compare of ["original", "overlay", "split"] as const) expect(keys(base({ compare }))).toEqual([]);
   });
 
   it("UI-202 an inactive side shows its plane only while interacting with it (and not when collapsed)", () => {
     const s = base({}, { enabled: false, min: 0, max: 10 });
-    expect(keys({ ...s, filterUi: { ...s.filterUi, interacting: "x-max" } })).toEqual(["x-max"]);
+    expect(keys({ ...s, filterUi: { collapsed: { "x-max": false }, interacting: "x-max" } })).toEqual(["x-max"]);
     expect(keys({ ...s, filterUi: { collapsed: { "x-max": true }, interacting: "x-max" } })).toEqual([]);
   });
 

@@ -98,6 +98,14 @@ test("E2E-01 open by dropping a file", async ({ page }) => {
   await expect(page.locator("#notices")).toContainText("Only .pcd and .pcdsession");
 });
 
+/** Filter boxes open collapsed (17): expand the box behind a `filter-<axis>-<side>[-grip|-reset|-toggle]` control before touching it. */
+async function expandFilterBox(page: import("@playwright/test").Page, id: string): Promise<void> {
+  const m = /^filter-([xyz]-(?:min|max))(?:-grip|-reset|-toggle)?$/.exec(id);
+  if (!m) return;
+  const tog = page.locator(`[data-control="filter-${m[1]}-toggle"]`);
+  if ((await tog.getAttribute("aria-expanded")) === "false") await tog.click();
+}
+
 test("6b real UI: filter, box select by numbers, preview counts, apply, undo, redo", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
@@ -114,6 +122,7 @@ test("6b real UI: filter, box select by numbers, preview counts, apply, undo, re
   const num = async (name: string) => Number((await stat(name).innerText()).replace(/[^0-9]/g, ""));
   const ctl = (id: string) => page.locator(`[data-control="${id}"]`);
   const setNum = async (id: string, v: number) => {
+    await expandFilterBox(page, id);
     await ctl(id).fill(String(v));
     await ctl(id).press("Tab");
   };
@@ -175,6 +184,7 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
   const num = async (name: string) => Number((await stat(name).innerText()).replace(/[^0-9]/g, ""));
   const ctl = (id: string) => page.locator(`[data-control="${id}"]`);
   const setNum = async (id: string, v: number) => {
+    await expandFilterBox(page, id);
     await ctl(id).fill(String(v));
     await ctl(id).press("Tab");
   };
@@ -322,6 +332,7 @@ function helpers(page: import("@playwright/test").Page) {
   const num = async (name: string) => Number((await stat(name).innerText()).replace(/[^0-9]/g, ""));
   const ctl = (id: string) => page.locator(`[data-control="${id}"]`);
   const setNum = async (id: string, v: number) => {
+    await expandFilterBox(page, id);
     await ctl(id).fill(String(v));
     await ctl(id).press("Tab");
   };
@@ -804,6 +815,7 @@ test("E2E-20 7b2 the ? key and the ? button open a help overlay listing every ke
   await ctl("help").click();
   await expect(help).not.toBeVisible();
   // typing a ? in a field must not open it
+  await expandFilterBox(page, "filter-z-max");
   await ctl("filter-z-max").click(); // a number field: typing a ? in it must not open the help
   await page.keyboard.type("?");
   await expect(help).not.toBeVisible();
@@ -835,6 +847,7 @@ async function checkLayout(page: import("@playwright/test").Page, w: number, h: 
   expect(await scan(), `${w}x${h} initial`).toEqual([]);
   for (const tool of ["tool-box", "tool-polygon", "tool-cluster"]) {
     await page.locator(`[data-control="${tool}"]`).click();
+    await expandFilterBox(page, "filter-z-max");
     await page.locator('[data-control="filter-z-max"]').focus();
     await page.waitForTimeout(150);
     expect(await scan(), `${w}x${h} with ${tool}`).toEqual([]);
@@ -1189,6 +1202,7 @@ test("E2E-35 10 dragging a filter grip with the real mouse filters live, Esc res
   await page.keyboard.press("3");
   await page.waitForTimeout(400);
   const rows = roomValid();
+  await expandFilterBox(page, "filter-z-max");
   const grip = ctl("filter-z-max-grip");
   await expect(grip).toBeVisible();
   const g = await centre(grip);
@@ -1236,6 +1250,27 @@ test("E2E-36 10 a collapsed but active box shows a chip with its value and the f
   await exact("Displayed", n);
 });
 
+test("E2E-156 17 the six filter boxes open collapsed as chips with no plane drawn; expanding one survives a reload and leaves the others collapsed", async ({ page }) => {
+  const { exact, ctl } = helpers(page);
+  await openRoom(page, exact);
+  const fboxes = page.locator(".fbox");
+  await expect(fboxes).toHaveCount(6);
+  for (const b of await fboxes.all()) {
+    await expect(b).toHaveClass(/collapsed/);
+    await expect(b.locator(".ftog")).toHaveText(/^[XYZ](>=|<=) /);
+  }
+  await expect(ctl("filter-x-min")).toBeHidden();
+  expect((await planesNow(page)).map((q) => q.key)).toEqual([]);
+  const saved = page.waitForRequest((r) => r.method() === "PUT" && r.url().endsWith("/api/session/client-state") && JSON.parse(r.postData() ?? "{}")?.ui?.boxesCollapsed?.["x-min"] === false);
+  await ctl("filter-x-min-toggle").click();
+  await expect(ctl("filter-x-min")).toBeVisible();
+  await saved;
+  await page.reload();
+  await exact("Original", String(ROOM_TOTAL));
+  await expect(ctl("filter-x-min")).toBeVisible();
+  for (const key of ["x-max", "y-min", "y-max", "z-min", "z-max"]) await expect(page.locator(`.fbox[data-box="${key}"]`)).toHaveClass(/collapsed/);
+});
+
 test("E2E-37 10 box placement follows the view: end-on axes dock at the bottom of the left edge", async ({ page }) => {
   const { exact, ctl } = helpers(page);
   await openRoom(page, exact);
@@ -1248,6 +1283,7 @@ test("E2E-37 10 box placement follows the view: end-on axes dock at the bottom o
     const e = await edges();
     for (const side of ["min", "max"]) {
       expect(e[`${endOn}-${side}`], `${cube} ${endOn}-${side}`).toBe("dock");
+      await expandFilterBox(page, `filter-${endOn}-${side}`);
       const b = (await ctl(`filter-${endOn}-${side}`).boundingBox())!;
       expect(b.x, `${cube} ${endOn}-${side} inside`).toBeGreaterThanOrEqual(stageBox.x - 1);
     }
@@ -1257,6 +1293,8 @@ test("E2E-37 10 box placement follows the view: end-on axes dock at the bottom o
   const front = await (async () => {
     await page.keyboard.press("3");
     await page.waitForTimeout(400);
+    await expandFilterBox(page, "filter-z-max");
+    await expandFilterBox(page, "filter-z-min");
     const z = (await ctl("filter-z-max").boundingBox())!;
     const zmin = (await ctl("filter-z-min").boundingBox())!;
     return { zMaxY: z.y, zMinY: zmin.y };
@@ -1291,6 +1329,7 @@ test("E2E-41 10 the boxes never overlap each other, the ViewCube, the legend or 
     await page.setViewportSize({ width: w, height: h });
     await openRoom(page, exact);
     await setNum("filter-z-max", 1.5);
+    await expandFilterBox(page, "filter-x-min");
     let lastLook = "";
     for (const [key, cube] of [["3", "front"], ["5", "left"], ["1", "top"], ["4", "back"]] as const) {
       await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); // keys typed into a field would not change the view
@@ -1387,6 +1426,7 @@ test("E2E-35b 10 focusing an inactive box shows its plane; leaving it with an in
   await openRoom(page, exact);
   await page.keyboard.press("3");
   expect((await planesNow(page)).map((q) => q.key)).toEqual([]);
+  await expandFilterBox(page, "filter-x-min");
   await ctl("filter-x-min").focus();
   await expect.poll(async () => (await planesNow(page)).map((q) => q.key)).toEqual(["x-min"]);
   await ctl("filter-x-min").evaluate((e) => (e as HTMLInputElement).blur());

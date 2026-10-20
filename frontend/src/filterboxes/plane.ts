@@ -2,7 +2,7 @@ import { AXES, type Axis, type Side, sideActive, sideValue } from "../inspector/
 import type { AppState } from "../state/app";
 import type { Bounds, Vec3 } from "../state/types";
 import { pxPerUnit } from "../view/pointsize";
-import { boxKey } from "./model";
+import { boxKey, isBoxCollapsed } from "./model";
 
 /** Edge length of a filter plane on screen. */
 export const PLANE_PX = 96;
@@ -46,7 +46,7 @@ export function filterPlanes(s: AppState, viewH: number): FilterPlane[] {
   for (const axis of AXES) {
     for (const sd of ["max", "min"] as Side[]) {
       const key = boxKey({ axis, side: sd });
-      if (s.filterUi.collapsed[key]) continue;
+      if (isBoxCollapsed(s.filterUi, key)) continue;
       if (!sideActive(s.tools.filters, b, axis, sd) && s.filterUi.interacting !== key) continue;
       const i = IDX[axis];
       const value = sideValue(s.tools.filters, b, axis, sd);

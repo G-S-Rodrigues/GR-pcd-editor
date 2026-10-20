@@ -120,7 +120,7 @@ describe("filter arrow routing (part 10)", () => {
     store.update((s) => ({
       ...s,
       tools: { ...s.tools, filters: { ...s.tools.filters, z: over.z ?? { enabled: true, min: 2, max: 8 } } },
-      filterUi: { ...s.filterUi, collapsed: over.collapsed ? { "z-max": true } : ({} as Record<string, boolean>) },
+      filterUi: { ...s.filterUi, collapsed: over.collapsed ? { "z-min": false, "z-max": true } : { "z-min": false, "z-max": false } },
     }));
     const edits: [string, string, number, boolean][] = [];
     const tools = createToolInteraction(canvas, store, () => vp, {

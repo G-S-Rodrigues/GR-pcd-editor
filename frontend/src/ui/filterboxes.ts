@@ -1,5 +1,5 @@
 import { beginFilterDrag, cancelFilterDrag, END_ON_DOT, type FilterDrag, moveFilterDrag } from "../filterboxes/drag";
-import { BOX_IDS, boxKey } from "../filterboxes/model";
+import { BOX_IDS, boxKey, isBoxCollapsed } from "../filterboxes/model";
 import { type PlaceState, placeBoxes } from "../filterboxes/placement";
 import { boxView, nudgeValue, parseBoxInput } from "../filterboxes/view";
 import { type Axis, type FilterEdit, type Side, sideValue } from "../inspector/filters";
@@ -49,7 +49,7 @@ export function buildFilterBoxes(
   const bounds = () => store.get().session?.bounds ?? null;
   const current = (axis: Axis, side: Side) => sideValue(store.get().tools.filters, bounds(), axis, side);
   const toggle = (key: string) =>
-    store.update((s) => ({ ...s, filterUi: { ...s.filterUi, collapsed: { ...s.filterUi.collapsed, [key]: !s.filterUi.collapsed[key] } } }));
+    store.update((s) => ({ ...s, filterUi: { ...s.filterUi, collapsed: { ...s.filterUi.collapsed, [key]: !isBoxCollapsed(s.filterUi, key) } } }));
 
   let drag: { d: FilterDrag; pointer: number; el: HTMLElement } | null = null;
   const ray = (e: PointerEvent) => {
@@ -86,7 +86,7 @@ export function buildFilterBoxes(
     const grip = control("div", { id: `${fid}-grip`, class: "fgrip", role: "slider", tabindex: "0", "aria-label": `${A} ${side} filter`, text: `${A} ${side}` });
     const input = control("input", { id: fid, class: "fin", type: "text", inputmode: "decimal", "aria-label": `${A} ${side} value` });
     const reset = control("button", { id: `${fid}-reset`, class: "frst", onclick: () => actions.resetSide(axis, side) }, "↺");
-    const tog = control("button", { id: `${fid}-toggle`, class: "ftog", "aria-expanded": "true", onclick: () => toggle(key) }, "–");
+    const tog = control("button", { id: `${fid}-toggle`, class: "ftog", "aria-expanded": "false", onclick: () => toggle(key) }, "–");
     const el = h("div", { class: "fbox", "data-axis": axis, "data-side": side, "data-box": key }, grip, input, reset, tog);
     const box: Box = { axis, side, key, el, grip, input, reset, toggle: tog };
     boxes.push(box);
@@ -150,13 +150,13 @@ export function buildFilterBoxes(
     if (s.session === null) return;
     const b = s.session.bounds;
     const look = lookDirection(s.camera);
-    const sizes = (id: string) => (s.filterUi.collapsed[id] ? COLLAPSED : EXPANDED);
+    const sizes = (id: string) => (isBoxCollapsed(s.filterUi, id) ? COLLAPSED : EXPANDED);
     const stage = { w: layer.clientWidth, h: layer.clientHeight };
     const lock = new Set<string>(s.filterUi.interacting ? [s.filterUi.interacting] : []);
     const placed = placeBoxes(s.camera.orientation, stage, place, sizes, lock);
     place = placed.state;
     for (const box of boxes) {
-      const collapsed = !!s.filterUi.collapsed[box.key];
+      const collapsed = isBoxCollapsed(s.filterUi, box.key);
       const v = boxView(s.tools.filters, b, box.axis, box.side, collapsed);
       box.el.className = v.classes;
       box.el.dataset.active = String(v.active);
