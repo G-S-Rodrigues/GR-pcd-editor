@@ -5,8 +5,6 @@ import type { Store } from "../state/store";
 import type { SessionState } from "../state/types";
 import { deleteStepText, discardCount, discardText, mergeStepNames, stepsOf } from "../timeline/model";
 import { emptyPolygon } from "../tools/polygon/model";
-import { HIDDEN_APPLY_TEXT } from "../view/hidden";
-import { applyNeedsHiddenConfirm } from "./hide";
 import { canApply } from "./runner";
 
 export interface EditApi {
@@ -45,6 +43,26 @@ export function keyAction(e: { key: string; ctrlKey: boolean; shiftKey: boolean;
   return null;
 }
 
+/**
+ * Runs `fn`; a 409 clears the candidate, reloads the state and says `staleText`; any other failure is an error notice.
+ * Shared with the layer calls so both answer a stale revision the same way.
+ */
+export function makeGuard(store: Store<AppState>, refreshState: () => Promise<unknown>) {
+  return async function guarded(fn: () => Promise<void>, staleText = STALE_PREVIEW_TEXT): Promise<void> {
+    try {
+      await fn();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        store.set({ candidate: null });
+        await refreshState().catch(() => undefined);
+        addNotice(store, "warn", "stale_revision", staleText);
+        return;
+      }
+      addNotice(store, "error", "edit_failed", e instanceof Error ? e.message : "The edit failed");
+    }
+  };
+}
+
 export function createEditor(store: Store<AppState>, api: EditApi, confirmFn: (m: string) => boolean) {
   const rev = () => store.get().session?.revision.cloud ?? 0;
 
@@ -54,19 +72,7 @@ export function createEditor(store: Store<AppState>, api: EditApi, confirmFn: (m
   }
 
   /** `staleText`: what a 409 says. A history gesture is not a preview, so it must not tell the user to preview again. */
-  async function guarded(fn: () => Promise<void>, staleText = STALE_PREVIEW_TEXT): Promise<void> {
-    try {
-      await fn();
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 409) {
-        store.set({ candidate: null });
-        await api.refreshState().catch(() => undefined);
-        addNotice(store, "warn", "stale_revision", staleText);
-        return;
-      }
-      addNotice(store, "error", "edit_failed", e instanceof Error ? e.message : "The edit failed");
-    }
-  }
+  const guarded = makeGuard(store, () => api.refreshState());
 
   const busyNotice = (): void => addNotice(store, "info", "busy", BUSY_TEXT);
 
@@ -100,8 +106,6 @@ export function createEditor(store: Store<AppState>, api: EditApi, confirmFn: (m
       const fmt = (n: number) => n.toLocaleString("en-US");
       if (!confirmFn(`This deletes ${fmt(c.candidates)} of ${fmt(active)} points (${pct} %). It can be undone. Continue?`)) return;
     }
-    // hidden points are not drawn, so the shape may have selected some the user never saw
-    if (applyNeedsHiddenConfirm(s.hidden) && !confirmFn(HIDDEN_APPLY_TEXT(s.hidden.size))) return;
     // applying while rolled back throws the greyed steps away on the server: say so first
     if (discard > 0 && !confirmFn(discardText(discard))) return;
     await guarded(async () => {

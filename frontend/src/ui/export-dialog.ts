@@ -3,7 +3,7 @@ import { exportDefaults, exportInfo } from "../orchestration/export";
 import type { AppState } from "../state/app";
 import type { Store } from "../state/store";
 import { control } from "./controls";
-import { hiddenExportNote } from "../view/hidden";
+import { hiddenExportNote, hiddenPointCount } from "../layers/model";
 import { h } from "./dom";
 
 /** Modal export dialog: scope and format with an exact summary of what is exported. */
@@ -72,7 +72,7 @@ export function buildExportDialog(store: Store<AppState>, run: (o: { scope: Expo
     summary.textContent = info.summary;
     invalid.textContent = info.retainedInvalid ?? "";
     structure.textContent = info.structureNote;
-    hiddenNote.textContent = hiddenExportNote(store.get().hidden.size);
+    hiddenNote.textContent = hiddenExportNote(hiddenPointCount(store.get().session));
     go.disabled = (scope.value === "selected" && c.selected === 0) || (scope.value === "displayed" && c.displayed === 0);
     go.title = go.disabled ? "Nothing to export for this scope" : "Prepare the export and start the browser download";
   }

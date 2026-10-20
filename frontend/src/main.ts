@@ -1,4 +1,5 @@
 import * as api from "./api/session";
+import * as layerApi from "./api/layers";
 import { getState } from "./api/session";
 import { postJson, setSessionChangedHandler, setSessionId } from "./files/http";
 import { startExport, startSave, markSaved } from "./files/downloads";
@@ -42,6 +43,7 @@ import { buildInspector } from "./ui/inspector-shell";
 import { buildStatusbar } from "./ui/statusbar";
 import { buildLegend } from "./ui/legend";
 import { createHide } from "./orchestration/hide";
+import { createLayers } from "./orchestration/layers";
 import { discardEnabled } from "./tools/preview";
 import { buildTimeline } from "./timeline/strip";
 import { createStepCentre } from "./timeline/centre";
@@ -117,8 +119,13 @@ const editor = createEditor(
   },
   (m) => window.confirm(m),
 );
-const hide = createHide(store, { clearSelection: () => editor.clearSelection(), refresh: () => refresher.refresh() });
 const paramsHook = createParamsHook(runner, () => refresher.refresh());
+const layers = createLayers(
+  store,
+  { createLayer: layerApi.createLayer, assignLayer: layerApi.assignLayer, setVisibility: layerApi.setVisibility, refreshState },
+  { paramsHook, confirm: (m) => window.confirm(m) },
+);
+const hide = createHide(store, { hideSelected: () => layers.hideSelected(), showAll: () => layers.showAll() });
 const filters = createFilterController(store, {
   putFilter: api.putFilter,
   onParamsChanged: () => paramsHook("filter"),

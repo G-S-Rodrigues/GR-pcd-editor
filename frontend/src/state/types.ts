@@ -1,4 +1,9 @@
 export type Vec3 = [number, number, number];
+/** View-only layer panel state (never saved). */
+export interface LayerUi {
+  editing: number | null;
+  active: number | null;
+}
 export interface Bounds {
   min: Vec3;
   max: Vec3;

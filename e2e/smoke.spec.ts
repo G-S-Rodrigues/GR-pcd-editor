@@ -4387,7 +4387,7 @@ const hideHelpers = (page: import("@playwright/test").Page) => {
   return { ...t, drawn, hideBtn, chip, floorSelected };
 };
 
-test("E2E-90 15a Hide selected: the drawn count drops by exactly the hidden count, Select displayed and Invert are refused, Apply asks, the export still holds the hidden points, Show restores the draw, a reload shows nothing hidden", async ({ page }, testInfo) => {
+test("E2E-90 15a Hide selected: the drawn count drops by exactly the hidden count, Select displayed and Invert run and leave the hidden points out, Apply asks nothing, the export still holds the hidden points, Show restores the draw, a reload still shows the hidden layer", async ({ page }, testInfo) => {
   const t = hideHelpers(page);
   const asked: string[] = [];
   page.on("dialog", (d) => asked.push(d.message()));
@@ -4401,26 +4401,24 @@ test("E2E-90 15a Hide selected: the drawn count drops by exactly the hidden coun
   await expect(t.hideBtn).toHaveAttribute("aria-pressed", "true");
   await expect(t.chip).toHaveText(`${n} hidden - Show`);
   await expect(t.ctl("tool-box")).toHaveClass(/active/); // hiding never disarms the tool
-  // Select displayed and Invert refuse while points are hidden (with the tool armed the tool reason comes first, so disarm it)
+  // Select displayed and Invert are not refused: the server leaves the hidden floor out (disarm the tool first)
   await t.ctl("tool-box").click();
-  for (const id of ["sel-select-displayed", "sel-invert"]) {
-    await expect(t.ctl(id)).toHaveAttribute("aria-disabled", "true");
-    await expect(t.ctl(id)).toHaveAttribute("title", /Show the hidden points first/);
-  }
-  await t.ctl("sel-invert").dispatchEvent("click"); // aria-disabled: Playwright will not click it
-  await expect(page.locator("#notices")).toContainText("Show the hidden points first");
+  const visible = finiteRows().length - n;
+  await t.ctl("sel-select-displayed").click();
+  await t.exact("Selected", String(visible));
+  await t.ctl("sel-invert").click();
   await t.exact("Selected", "0");
   await t.ctl("tool-box").click(); // arm the Box tool again
-  // box the ghost region and delete it: Apply asks once about the hidden points
+  // box the ghost region and delete it: Apply asks nothing, the candidate already excludes hidden points
   await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
   await t.exact("Selected", String(ROOM.ghost));
   await expect(t.ctl("apply")).toBeEnabled();
   await t.ctl("apply").click();
   await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
-  expect(asked).toEqual([`${n} points are hidden (view only); the selection may include hidden points inside the shape. Continue?`]);
+  expect(asked).toEqual([]);
   // the export holds the whole active cloud, hidden floor included
   await t.ctl("export").click();
-  await expect(page.locator("#export-hidden")).toHaveText(`${n} hidden points are exported too (hiding is view only)`);
+  await expect(page.locator("#export-hidden")).toHaveText(`${n} hidden points are exported too (hidden layers are exported unless unticked)`);
   const [dl] = await Promise.all([page.waitForEvent("download"), t.ctl("export-go").click()]);
   const path = testInfo.outputPath("hidden-export.pcd");
   await dl.saveAs(path);
@@ -4433,7 +4431,7 @@ test("E2E-90 15a Hide selected: the drawn count drops by exactly the hidden coun
   await expect.poll(t.drawn, { timeout: 15000 }).toBe(drawn0 - ROOM.ghost);
   await expect(t.chip).toBeHidden();
   await expect(t.hideBtn).toHaveText("Hide selected");
-  // hide again, reload: nothing is hidden (the set is view state and is never saved)
+  // hide again (the wall joins the layer Hidden, which hides its floor again), reload: the server still hides them
   await t.setBox([-1, 4.5, 2.5], [1, 10, 5]);
   await t.exact("Selected", String(ROOM.wall));
   await t.hideBtn.click();
@@ -4441,9 +4439,10 @@ test("E2E-90 15a Hide selected: the drawn count drops by exactly the hidden coun
   await page.waitForTimeout(1600);
   await page.reload();
   await t.exact("Original", String(ROOM_TOTAL));
-  await expect(t.chip).toBeHidden();
-  await expect(t.hideBtn).toHaveText("Hide selected");
-  await expect.poll(t.drawn, { timeout: 15000 }).toBe(drawn0 - ROOM.ghost);
+  await expect(t.chip).toBeVisible();
+  await expect(t.chip).toHaveText(`${n + ROOM.wall} hidden - Show`);
+  await expect(t.hideBtn).toHaveText(`Show hidden (${n + ROOM.wall})`);
+  await expect.poll(t.drawn, { timeout: 15000 }).toBe(drawn0 - ROOM.ghost - n - ROOM.wall);
 });
 
 for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {

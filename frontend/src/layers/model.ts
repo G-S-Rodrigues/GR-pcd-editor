@@ -37,6 +37,9 @@ export interface LayerRow {
   selectDisabled: string | null;
 }
 
+export const HIDE_LABEL = "Hide selected";
+export const SHOW_LABEL = (n: number): string => `Show hidden (${fmt(n)})`;
+export const HIDDEN_CHIP_TEXT = (n: number): string => `${fmt(n)} hidden - Show`;
 export const SHOW_FIRST = "Show the layer first";
 
 export function layerRows(s: SessionState | null): LayerRow[] {

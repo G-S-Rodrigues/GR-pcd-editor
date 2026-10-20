@@ -35,7 +35,7 @@ export const FIELD_SPECS: FieldSpec[] = [
   f("sel-select-displayed", "Select displayed", "tool", "Select every displayed point (those passing the display filter), including points not drawn"),
   f("sel-invert", "Invert", "tool", "Invert the selection relative to the chosen scope"),
   f("sel-clear", "Clear selection", "tool", "Clear the whole selection; nothing is deleted"),
-  f("sel-hide", "Hide selected", "tool", "Hide the selected points from the view (not drawn, not pickable) and clear the selection; view only, nothing is deleted and Export still includes them. Press again to show them"),
+  f("sel-hide", "Hide selected", "tool", "Hide the selected points in the layer \"Hidden\" (not drawn, not selectable) and clear the selection; nothing is deleted and Export still includes them unless you untick the layer. Press again to show them"),
   f("sel-show-kept", "Show kept points", "tool", "Draw the selected points that protection keeps larger and bright cyan (view only; nothing is deleted)"),
   f("sel-delete-kept", "Also delete the kept points", "tool", "Delete the selected points that height protection keeps too: this operation ignores the protection slab (it comes back after Apply)"),
   f("remove-invalid", "Remove invalid", "tool", "Remove points whose coordinates are NaN or infinite from the active cloud (undoable)"),

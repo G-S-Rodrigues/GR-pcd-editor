@@ -63,7 +63,7 @@ describe("layer model", () => {
     expect(stealConfirmText(null, "Floor")).toBeNull();
   });
 
-  it("UI-808 the export note names the hidden points and is empty when none are hidden", () => {
+  it("UI-517 (moved from view/hidden.test.ts, text per 15b) the export note names the hidden points and is empty when none are hidden", () => {
     expect(hiddenExportNote(0)).toBe("");
     expect(hiddenExportNote(1234)).toBe("1,234 hidden points are exported too (hidden layers are exported unless unticked)");
   });

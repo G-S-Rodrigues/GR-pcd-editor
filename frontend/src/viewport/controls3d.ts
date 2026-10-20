@@ -1,6 +1,5 @@
 import { pickPoint } from "../pick/ray";
 import { editAllowed } from "../compare/model";
-import { seedHiddenReason } from "../orchestration/hide";
 import { resolveSeed, spacingEstimate } from "../pick/resolve";
 import { type AppState, addNotice } from "../state/app";
 import type { Store } from "../state/store";
@@ -110,11 +109,6 @@ export function attachControls(
       });
       if (!seed.ok) {
         addNotice(store, "info", "no_point", "No point near the click; try again closer to a point");
-        return;
-      }
-      const hiddenWhy = seedHiddenReason(store.get().hidden, seed.id);
-      if (hiddenWhy) {
-        addNotice(store, "info", "hidden_pick", hiddenWhy);
         return;
       }
       if (s.interaction === "pick-floor") {

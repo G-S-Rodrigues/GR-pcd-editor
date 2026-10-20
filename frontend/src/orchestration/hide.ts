@@ -1,10 +1,11 @@
-import { type AppState, addNotice } from "../state/app";
+import type { AppState } from "../state/app";
+import { addNotice } from "../state/app";
 import type { Store } from "../state/store";
-import { HIDDEN_SEED_TEXT, HIDE_LABEL, SHOW_LABEL, emptyHidden, hidePartialText, isHidden, stashSelected, type HiddenSet } from "../view/hidden";
+import { HIDE_LABEL, SHOW_LABEL, hiddenPointCount } from "../layers/model";
 
 export interface HideState {
   label: string;
-  /** The set is non-empty: the button shows them again. */
+  /** Points are in hidden layers: the button shows them again. */
   pressed: boolean;
   /** Why the button is inactive now, or null. */
   reason: string | null;
@@ -12,7 +13,7 @@ export interface HideState {
 
 /** The "Hide selected" / "Show hidden (N)" button for this state. One place for label, pressed and reasons. */
 export function hideState(s: AppState): HideState {
-  const n = s.hidden.size;
+  const n = hiddenPointCount(s.session);
   if (n > 0) return { label: SHOW_LABEL(n), pressed: true, reason: s.session ? null : "No file is open" };
   const reason = !s.session
     ? "No file is open"
@@ -26,39 +27,25 @@ export function hideState(s: AppState): HideState {
   return { label: HIDE_LABEL, pressed: false, reason };
 }
 
-/** Apply asks once more while points are hidden: the selection may include hidden points inside the shape. */
-export const applyNeedsHiddenConfirm = (hidden: HiddenSet): boolean => hidden.size > 0;
-
-/** A picked seed that is hidden is refused: the server does not know the set. Null when the pick is allowed. */
-export const seedHiddenReason = (hidden: HiddenSet, id: number): string | null => (isHidden(hidden, id) ? HIDDEN_SEED_TEXT : null);
-
 export interface HideDeps {
-  /** Clears the selection through the server route only: it must not disarm the tool. */
-  clearSelection(): Promise<void>;
-  refresh(): Promise<unknown>;
+  /** Moves the selection into the layer "Hidden" and hides it (one server call). */
+  hideSelected(): Promise<void>;
+  /** Shows every hidden layer again. */
+  showAll(): Promise<void>;
 }
 
 export function createHide(store: Store<AppState>, deps: HideDeps) {
   async function hide(): Promise<void> {
-    const s = store.get();
-    const why = hideState(s).reason;
+    const why = hideState(store.get()).reason;
     if (why) {
       addNotice(store, "info", "hide_disabled", why);
       return;
     }
-    if (!s.session || !s.render) return;
-    const r = stashSelected(s.hidden, s.render, s.session.session_id, s.session.counts.original, s.session.selection.count);
-    store.set({ hidden: r.hidden });
-    if (!r.exact) addNotice(store, "warn", "hide_partial", hidePartialText(r.flagged, s.session.selection.count));
-    await deps.clearSelection();
-  }
-  async function show(): Promise<void> {
-    store.set({ hidden: emptyHidden() });
-    await deps.refresh();
+    await deps.hideSelected();
   }
   return {
-    toggle: (): Promise<void> => (store.get().hidden.size > 0 ? show() : hide()),
+    toggle: (): Promise<void> => (hiddenPointCount(store.get().session) > 0 ? deps.showAll() : hide()),
     hide,
-    show,
+    show: (): Promise<void> => deps.showAll(),
   };
 }

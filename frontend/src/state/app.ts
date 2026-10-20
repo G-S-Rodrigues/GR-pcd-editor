@@ -10,11 +10,11 @@ import { type SparseModel, defaultSparse } from "../tools/sparse/model";
 import { type PolygonState, emptyPolygon } from "../tools/polygon/model";
 import type { RenderData } from "../render/parse";
 import { type TimelineState, emptyTimeline } from "../timeline/model";
-import { type HiddenSet, emptyHidden } from "../view/hidden";
 import { type Camera, defaultCamera } from "../view/camera";
 import { type Store, createStore } from "./store";
 import type {
   Candidate,
+  LayerUi,
   Notice,
   PreviewState,
   RenderMode,
@@ -95,8 +95,8 @@ export interface AppState {
   legendOpen: boolean;
   /** History strip view state (highlight, hover, rename, marker drag); never saved. */
   timeline: TimelineState;
-  /** Points hidden by "Hide selected" (not drawn, not pickable); view-only, never saved, dropped with the session. */
-  hidden: HiddenSet;
+  /** Layer panel view state: the layer being edited and the one a legend row last acted on. Never saved. */
+  layerUi: LayerUi;
 }
 
 export function initialState(): AppState {
@@ -143,7 +143,7 @@ export function initialState(): AppState {
     sectionsOpen: {},
     legendOpen: true,
     timeline: emptyTimeline(),
-    hidden: emptyHidden(),
+    layerUi: { editing: null, active: null },
   };
 }
 

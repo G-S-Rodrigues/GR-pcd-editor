@@ -1,7 +1,7 @@
 import { expect, test, vi } from "vitest";
 import type { RenderData } from "../render/parse";
 import { createAppStore } from "../state/app";
-import { emptyHidden, stashSelected } from "../view/hidden";
+import { sessionFixture } from "../testing/fixtures";
 import { createRefresher } from "./refresh";
 
 const data = (n: number): RenderData => ({
@@ -93,39 +93,15 @@ test("UI-410 edited render requests carry preview=<id> only when a preview is se
 });
 
 const flaggedData = (): RenderData => ({ ...data(4), ids: Uint32Array.from([10, 11, 12, 13]), flags: Uint8Array.from([0, 1, 0, 0]) });
-const withSession = (store: ReturnType<typeof createAppStore>, id: string) =>
-  store.set({ session: { session_id: id, schema: [], counts: { original: 100 } } as never });
-
-test("UI-505 a non-empty hidden set compacts the primary and the second render (not the deleted overlay) and an empty one keeps the very object", async () => {
+test("UI-801 the refresher passes the very same render object for every mode and never touches the layers", async () => {
   const store = createAppStore();
-  withSession(store, "s1");
+  const session = sessionFixture({ layers: [{ id: 1, name: "A", colour: 0, visible: false, count: 3, bounds: null }] });
+  store.set({ session, compare: "split", renderMode: "original" });
   const raw = flaggedData();
   const r = createRefresher(store, async () => raw);
   await r.refresh();
   expect(store.get().render).toBe(raw);
-  const hidden = stashSelected(emptyHidden(), raw, "s1", 100, 1).hidden; // hides id 11
-  store.set({ hidden, compare: "split", renderMode: "original" });
-  await r.refresh();
-  expect(Array.from(store.get().render?.ids ?? [])).toEqual([10, 12, 13]);
-  expect(Array.from(store.get().render2?.ids ?? [])).toEqual([10, 12, 13]);
-  store.set({ compare: "overlay", renderMode: "edited" });
-  await r.refresh();
-  expect(Array.from(store.get().render?.ids ?? [])).toEqual([10, 12, 13]);
-  expect(store.get().render2).toBe(raw); // the deleted overlay keeps every point
-});
-
-test("UI-506 the hidden set is dropped when the cache is cleared (open) or the session id differs (replaced session)", async () => {
-  const store = createAppStore();
-  withSession(store, "s1");
-  const raw = flaggedData();
-  const r = createRefresher(store, async () => raw);
-  const hidden = stashSelected(emptyHidden(), raw, "s1", 100, 1).hidden;
-  store.set({ hidden });
+  expect(store.get().render2).toBe(raw);
   r.clear();
-  expect(store.get().hidden.size).toBe(0);
-  store.set({ hidden });
-  withSession(store, "s2");
-  await r.refresh();
-  expect(store.get().hidden.size).toBe(0);
-  expect(store.get().render).toBe(raw);
+  expect(store.get().session?.layers).toBe(session.layers);
 });
