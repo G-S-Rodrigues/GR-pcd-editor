@@ -13,7 +13,7 @@ import { CLUSTER_LIMIT_TEXT, type RegionKind, clusterLimitText, clusterPanel, re
 import { type SparseModel, setMinNeighbours, setSparseRadius, sparseSummary } from "../tools/sparse/model";
 import { clusterPickState, pickText, pressPick } from "../tools/cluster/pick";
 import { headline } from "../status/headline";
-import { commitEnabled, commitLabel, discardEnabled, previewText } from "../tools/preview";
+import { commitEnabled, commitLabel, discardEnabled, previewClusterOf, previewText } from "../tools/preview";
 import { scopeNotice, selectionDisabledReason } from "../orchestration/selection";
 import { hideState } from "../orchestration/hide";
 import { historyRows } from "../inspector/history";
@@ -180,6 +180,7 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
   const commit = control("button", { id: "sel-commit", onclick: a.commitDraft }, "Commit draft");
   const discard = control("button", { id: "sel-discard", onclick: a.discardDraft }, "Discard draft");
   const note = h("p", { id: "scope-note", class: "note" });
+  const clusterLimit = h("p", { id: "cluster-limit", class: "note warn", hidden: true });
   const invalid = control("button", { id: "remove-invalid", onclick: a.removeInvalid }, "Remove invalid");
   const draftNote = h("p", { id: "draft-note", class: "note warn", hidden: true });
   const keptWarn = h("p", { id: "kept-warning", class: "note warn", hidden: true });
@@ -210,6 +211,7 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
       hideBtn,
     ),
     note,
+    clusterLimit,
     draftNote,
     keptWarn,
     keptDelete,
@@ -264,6 +266,9 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     draftNote.textContent = dn ?? "";
     const n = scopeNotice(s);
     note.textContent = n ?? "";
+    const lim = clusterLimitText(previewClusterOf(s));
+    clusterLimit.hidden = lim === null;
+    clusterLimit.textContent = lim ?? "";
     const hl = headline(s);
     keptWarn.hidden = hl.warning === null;
     keptWarn.textContent = hl.warning ?? "";
@@ -650,7 +655,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
       syncs.push((s) => dl.replaceChildren(...clusterPanel(s.candidate).flatMap((r) => [h("dt", { text: r.label }), h("dd", { text: r.value })])));
       return dl;
     })(),
-    text((s) => clusterLimitText(s.candidate) ?? (s.notices.some((n) => n.code === "component_limit_reached") ? CLUSTER_LIMIT_TEXT : ""), "note warn"),
+    text((s) => clusterLimitText(s.candidate?.cluster) ?? (s.notices.some((n) => n.code === "component_limit_reached") ? CLUSTER_LIMIT_TEXT : ""), "note warn"),
   );
 
   // ---- sparse points: select isolated points (floating artifacts), keep walls and floors

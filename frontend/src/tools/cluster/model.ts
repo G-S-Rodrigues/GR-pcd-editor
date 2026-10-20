@@ -53,10 +53,11 @@ export function toClusterTool(m: ClusterModel, box: BoxTool | null, prism: Prism
 }
 
 /** A limit hit selects the partial cluster; say so and how to go on. Null when the cluster is complete. */
-export function clusterLimitText(c: Candidate | null): string | null {
-  const cl = c?.cluster as { complete?: boolean; limit?: number | null } | null | undefined;
+export function clusterLimitText(cluster: unknown): string | null {
+  const cl = cluster as { complete?: boolean; limit?: number | null } | null | undefined;
   if (!cl || cl.complete !== false) return null;
-  return `Stopped at ${(cl.limit ?? 0).toLocaleString("en-US")} points; raise Max points or clear the field for no limit`;
+  const n = (cl.limit ?? 0).toLocaleString("en-US");
+  return `Stopped at limit ${n}: the ${n} points nearest the seed are selected; raise Max points or clear the field for no limit`;
 }
 
 export const MEMORY_GUARD_TEXT =

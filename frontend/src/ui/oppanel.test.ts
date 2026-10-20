@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, expect, test, vi } from "vitest";
 import { createAppStore } from "../state/app";
-import { sessionFixture } from "../testing/fixtures";
+import { candidateFixture, sessionFixture } from "../testing/fixtures";
 import { type FakeEl, installFakeDom } from "../testing/fakedom";
 import { type PanelActions, buildToolPalette } from "./panels";
 import { describeControls } from "./describe";
@@ -145,4 +145,17 @@ test("UI-682 Sparse points is a text tool button beside the other tools: it arms
   b.fire("click");
   expect(setTool).toHaveBeenLastCalledWith("none");
   expect(b.classList.contains("active")).toBe(true);
+});
+
+test("UI-871 a Selection-block note names the Max points limit from the pending cluster, and is hidden when the cluster is complete", () => {
+  const { store } = build();
+  const note = dom.root.all().find((e) => e.getAttribute("id") === "cluster-limit") as FakeEl;
+  expect(note.className).toBe("note warn");
+  expect(note.hidden).toBe(true);
+  const cl = (complete: boolean) => ({ seed_id: 1, radius: 0.5, size: 200, complete, limit: complete ? null : 200, bounds: { min: [0, 0, 0], max: [1, 1, 1] } });
+  store.update((s) => ({ ...s, tool: "cluster", candidate: candidateFixture({ cluster: cl(false) }) }));
+  expect(note.hidden).toBe(false);
+  expect(note.text()).toBe("Stopped at limit 200: the 200 points nearest the seed are selected; raise Max points or clear the field for no limit");
+  store.update((s) => ({ ...s, candidate: candidateFixture({ cluster: cl(true) }) }));
+  expect(note.hidden).toBe(true);
 });

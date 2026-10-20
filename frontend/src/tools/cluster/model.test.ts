@@ -75,12 +75,12 @@ describe("cluster model", () => {
 describe("cluster partial results (F-04)", () => {
   it("UI-109 a limit hit is reported as partial with a way out; a complete cluster says nothing", () => {
     const partial = candidateFixture({
-      cluster: { seed_id: 3, radius: 0.5, size: 41, complete: false, limit: 40, bounds: { min: [0, 0, 0], max: [1, 1, 1] } },
+      cluster: { seed_id: 3, radius: 0.5, size: 40, complete: false, limit: 40, bounds: { min: [0, 0, 0], max: [1, 1, 1] } },
     });
-    expect(clusterLimitText(partial)).toBe("Stopped at 40 points; raise Max points or clear the field for no limit");
+    expect(clusterLimitText(partial.cluster)).toBe("Stopped at limit 40: the 40 points nearest the seed are selected; raise Max points or clear the field for no limit");
     const done = candidateFixture({ cluster: { seed_id: 3, radius: 0.5, size: 41, complete: true, limit: null, bounds: { min: [0, 0, 0], max: [1, 1, 1] } } });
-    expect(clusterLimitText(done)).toBeNull();
-    expect(clusterLimitText(candidateFixture())).toBeNull();
+    expect(clusterLimitText(done.cluster)).toBeNull();
+    expect(clusterLimitText(candidateFixture().cluster)).toBeNull();
     expect(clusterLimitText(null)).toBeNull();
   });
 

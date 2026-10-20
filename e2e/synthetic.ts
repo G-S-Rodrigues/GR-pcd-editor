@@ -196,3 +196,31 @@ export function sparseRoomPcd(): Buffer {
     "COUNT 1 1 1 1", `WIDTH ${rows.length}`, "HEIGHT 1", "VIEWPOINT 0 0 0 1 0 0 0", `POINTS ${rows.length}`, "DATA ascii"];
   return Buffer.from(`${head.join("\n")}\n${rows.join("\n")}\n`);
 }
+
+/**
+ * Oracle for the exact Max points cap (independent of the app): the first `k` points of the seed's component by
+ * (hops from the seed in the radius graph, squared distance to the seed, file index). Brute force, small clouds only.
+ */
+export function clusterNearestTruth(rows: number[][], seed: number, radius: number, k: number): number[] {
+  const r2 = (radius * (1 + 1e-12)) ** 2;
+  const d2 = (a: number[], b: number[]) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
+  const ok = rows.map((r) => Number.isFinite(r[0]) && Number.isFinite(r[1]) && Number.isFinite(r[2]));
+  const hop = new Array<number>(rows.length).fill(-1);
+  hop[seed] = 0;
+  let frontier = [seed];
+  for (let level = 1; frontier.length; level++) {
+    const next: number[] = [];
+    for (const p of frontier) {
+      for (let q = 0; q < rows.length; q++) {
+        if (ok[q] && hop[q] < 0 && d2(rows[p], rows[q]) <= r2) {
+          hop[q] = level;
+          next.push(q);
+        }
+      }
+    }
+    frontier = next;
+  }
+  const members = hop.map((h, i) => (h >= 0 ? i : -1)).filter((i) => i >= 0);
+  members.sort((a, b) => hop[a] - hop[b] || d2(rows[a], rows[seed]) - d2(rows[b], rows[seed]) || a - b);
+  return members.slice(0, k).sort((a, b) => a - b);
+}

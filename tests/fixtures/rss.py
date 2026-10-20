@@ -23,6 +23,8 @@ def run_cluster(
     cancel_after=None,
     scene_seed=7,
     timeout=120,
+    max_points=None,
+    fixture="room",
 ):
     args = {
         "n": n,
@@ -30,6 +32,8 @@ def run_cluster(
         "seed": scene_seed,
         "limit_as": limit_as,
         "cancel_after": cancel_after,
+        "max_points": max_points,
+        "fixture": fixture,
     }
     env = dict(os.environ, PYTHONPATH=os.pathsep.join(p for p in sys.path if p))
     try:
@@ -67,8 +71,13 @@ def _child(args):
     from gr_pcd.editing.cancel import Cancelled, CancelToken
     from gr_pcd.editing.cluster import connected_component
 
-    xyz, lab = room_rows(args["n"], args["seed"])
-    seed_id = int(np.flatnonzero(lab == ROOM_GHOST)[0])
+    if args.get("fixture") == "chain":  # n points in a line, spaced 0.9 r
+        xyz = np.zeros((args["n"], 3))
+        xyz[:, 0] = np.arange(args["n"]) * 0.9 * args["radius"]
+        seed_id = 0
+    else:
+        xyz, lab = room_rows(args["n"], args["seed"])
+        seed_id = int(np.flatnonzero(lab == ROOM_GHOST)[0])
     eligible = np.ones(len(xyz), dtype=bool)
     token = CancelToken()
     t0 = time.perf_counter()
@@ -83,6 +92,7 @@ def _child(args):
             seed_id,
             args["radius"],
             token=token,
+            max_points=args.get("max_points"),
             on_limit="partial",
         )
         result["size"] = len(res.ids)
@@ -90,6 +100,12 @@ def _child(args):
         cancelled_at = time.perf_counter() - t0
         result["cancel_latency"] = cancelled_at - args["cancel_after"]
     result["seconds"] = time.perf_counter() - t0
+    with open(
+        "/proc/self/status"
+    ) as fh:  # per exec; ru_maxrss inherits the parent peak
+        for line in fh:
+            if line.startswith("VmHWM:"):
+                result["hwm_mib"] = int(line.split()[1]) / 1024
     result["peak_rss_mib"] = (
         resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
     )

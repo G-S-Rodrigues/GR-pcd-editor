@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
-import { BIG, FLOOR, GHOST, NORMAL_ROOM_TOTAL, ROOM, ROOM_TOTAL, SPARSE, SPARSE_TOTAL, TILTED, TOTAL, bigRoomPcd, bigRoomXyz, countInTiltedSlab, countInXyz, normalRoomPcd, parsePcd, roomPcd, rowKey, sparseRoomPcd, syntheticPcd, tiltedFloorAngles, tiltedFloorPcd, truthKeys } from "./synthetic";
+import { BIG, FLOOR, GHOST, NORMAL_ROOM_TOTAL, ROOM, ROOM_TOTAL, SPARSE, SPARSE_TOTAL, TILTED, TOTAL, bigRoomPcd, bigRoomXyz, countInTiltedSlab, clusterNearestTruth, countInXyz, normalRoomPcd, parsePcd, roomPcd, rowKey, sparseRoomPcd, syntheticPcd, tiltedFloorAngles, tiltedFloorPcd, truthKeys } from "./synthetic";
 
 test("open a cloud, navigate, pick a pivot, colour, read counts", async ({ page }) => {
   const errors: string[] = [];
@@ -465,9 +465,9 @@ test("E2E-13 7a cluster: partial result, no limit, and re-run when protection ch
 
   await ctl("cluster-max-points").fill("5");
   await ctl("cluster-max-points").press("Tab");
-  await expect(page.locator("#editpanels")).toContainText("Stopped at 5 points", { timeout: 15000 });
-  expect(await num("Candidates")).toBeGreaterThanOrEqual(5);
-  await expect(ctl("apply")).toBeDisabled();
+  await expect(page.locator("#editpanels")).toContainText("Stopped at limit 5", { timeout: 15000 });
+  await exact("Candidates", "5"); // the cap is exact
+  await expect(ctl("apply")).toBeEnabled(); // a partial cluster can be deleted (R17-1)
 
   await ctl("cluster-max-points").fill("");
   await ctl("cluster-max-points").press("Tab");
@@ -2245,6 +2245,28 @@ test("E2E-61 Cluster with Operation Add: after Commit draft the selection is |A 
   await t.exact("Active", String(ROOM_TOTAL - ROOM.wall - FLOOR_CLUSTER));
   expect(t.confirms[0]).toContain(`${ROOM.wall + FLOOR_CLUSTER} of ${ROOM_TOTAL} points`);
   await t.expectActive(testInfo, (r) => inWall(r) || inFloorCluster(r));
+});
+
+test("E2E-150 17 Max points is an exact cap: 200 nearest points by hop, the note says so, Delete removes exactly them", async ({ page }, testInfo) => {
+  const t = clusterHelpers(page);
+  await openRoom(page, t.exact);
+  await t.ctl("tool-cluster").click();
+  await t.setNum("cluster-radius", 1.0);
+  await t.ctl("cluster-max-points").fill("200");
+  await t.ctl("cluster-max-points").press("Tab");
+  await t.pickSeed(CL.floor);
+  await t.exact("Selected", "200");
+  await t.exact("Candidates", "200");
+  await expect(page.locator("#cluster-limit")).toContainText("Stopped at limit 200");
+  await expect(t.ctl("apply")).toBeEnabled();
+  const seedText = await page.locator("#inspector").innerText();
+  const seed = Number(/Seed: point (\d+)/.exec(seedText)![1]);
+  const rows = parsePcd(roomPcd()).rows;
+  const want = new Set(clusterNearestTruth(rows, seed, 1.0, 200).map((i) => f32key(rows[i])));
+  expect(want.size).toBe(200);
+  await t.ctl("apply").click();
+  await t.exact("Active", String(ROOM_TOTAL - 200));
+  await t.expectActive(testInfo, (r) => want.has(f32key(r)));
 });
 
 test("E2E-62 a single Cluster keeps Apply enabled across scope, protection and display filter; a protected seed says why", async ({ page }) => {

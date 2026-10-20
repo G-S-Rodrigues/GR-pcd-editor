@@ -40,7 +40,6 @@ export function canApply(s: AppState): boolean {
   const c = s.candidate;
   const sess = s.session;
   if (!c || !sess) return false;
-  if ((c.cluster as { complete?: boolean } | null)?.complete === false) return false; // a partial cluster is not what was asked for
   return (
     c.cloud_revision === sess.revision.cloud &&
     c.params_revision === sess.revision.params &&
@@ -57,9 +56,6 @@ export function applyBlockedText(s: AppState): string {
   if (s.job.busy && !s.job.preview) return "a job is running";
   const p = protectionBlock(s.tools.protection);
   if (p) return p;
-  if ((s.candidate?.cluster as { complete?: boolean } | null | undefined)?.complete === false) {
-    return "the cluster stopped at its Max points limit and is not complete; raise Max points or clear the field";
-  }
   return s.candidate ? "the preview is out of date or empty; preview again" : "preview a selection first";
 }
 

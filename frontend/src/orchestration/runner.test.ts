@@ -204,10 +204,10 @@ describe("runner", () => {
     expect(t.store.get().notices.map((n) => n.code)).toContain("draft_pending");
   });
 
-  it("UI-291 the Apply tooltip names a partial cluster and a pending draft, not a generic out-of-date preview", () => {
+  it("UI-291 the Apply tooltip never blames Max points (a partial cluster can be applied), and a pending draft has no case", () => {
     const base = createAppStore().get();
     const partial = candidateFixture({ candidates: 5, cluster: { seed_id: 1, radius: 0.5, size: 5, complete: false, limit: 5, bounds: { min: [0, 0, 0], max: [1, 1, 1] } } });
-    expect(applyBlockedText({ ...base, session: sessionFixture(), candidate: partial })).toMatch(/Max points/);
+    expect(applyBlockedText({ ...base, session: sessionFixture(), candidate: partial })).not.toMatch(/Max points/);
     // a draft no longer disables Apply, so the tooltip has no draft case (ruling A)
     expect(applyBlockedText({ ...base, session: sessionFixture(), draft: true })).toBe("preview a selection first");
     expect(applyBlockedText({ ...base, session: sessionFixture() })).toBe("preview a selection first");
@@ -317,13 +317,20 @@ describe("cluster reacts to parameter changes and partial results (F-04, F-07)",
     expect(t.api.submitCandidate).not.toHaveBeenCalled();
   });
 
-  it("UI-109 a partial cluster cannot be applied", () => {
+  it("UI-109 a partial cluster (exactly Max points, labelled) can be applied", () => {
     const t = setup();
     const cluster = (complete: boolean) => ({ seed_id: 1, radius: 0.5, size: 41, complete, limit: complete ? null : 40, bounds: { min: [0, 0, 0], max: [1, 1, 1] } });
     t.store.set({ candidate: candidateFixture({ cluster: cluster(true) }) });
     expect(canApply(t.store.get())).toBe(true);
     t.store.set({ candidate: candidateFixture({ cluster: cluster(false) }) });
-    expect(canApply(t.store.get())).toBe(false);
+    expect(canApply(t.store.get())).toBe(true);
+  });
+
+  it("UI-870 the Delete key runs Apply for a current partial cluster candidate", () => {
+    const t = setup();
+    const partial = { seed_id: 1, radius: 0.5, size: 40, complete: false, limit: 40, bounds: { min: [0, 0, 0], max: [1, 1, 1] } };
+    t.store.set({ candidate: candidateFixture({ cluster: partial }) });
+    expect(deleteKeyOutcome(t.store.get())).toEqual({ run: true });
   });
 
   it("UI-151 pagehide beacons a cancel for the in-flight job only", async () => {

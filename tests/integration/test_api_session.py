@@ -831,6 +831,70 @@ def test_api_51_cluster_partial_result(api):
     assert job["error"]["code"] == "component_limit_reached"
 
 
+def test_api_100_partial_cluster_selects_exactly_max_points(api):
+    api.open()
+    tool = {"type": "cluster", "seed_id": 100, "radius": 1.0, "max_points": 5}
+    job = api.select_wait({**tool, "on_limit": "partial"})
+    assert job["status"] == "complete", job
+    assert job["result"]["selected"] == 5
+    cand = job["result"]["candidate"]
+    assert cand["cluster"]["size"] == 5 and cand["cluster"]["limit"] == 5
+    assert cand["cluster"]["complete"] is False
+    assert len(api.candidate_ids(cand["candidate_id"])) == 5
+    for bad in (0, -3):
+        job = api.select_wait(
+            {**tool, "max_points": bad, "on_limit": "partial"}
+        )
+        assert job["status"] == "failed", job
+        assert job["error"]["code"] == "invalid_max_points"
+
+
+def test_api_101_partial_cluster_add_preview_and_commit_match(api):
+    api.open()
+    tool = {
+        "type": "cluster",
+        "seed_id": 100,
+        "radius": 1.0,
+        "max_points": 5,
+        "on_limit": "partial",
+    }
+    kset = api.candidate_ids(
+        api.select_wait(tool)["result"]["candidate"]["candidate_id"]
+    )
+    box = {
+        "type": "box",
+        "center": [2.5, 2.5, 0.5],
+        "dimensions": [3.5, 3.5, 1.5],
+    }
+    base_job = api.select_wait(box)
+    base = api.candidate_ids(base_job["result"]["candidate"]["candidate_id"])
+    body = {
+        "cloud_revision": api.cloud(),
+        "op": "add",
+        "scope": "active",
+        "tool": tool,
+    }
+    prev = api.wait(
+        api.client.post("/api/session/selection/preview", json=body)
+    )
+    assert prev["status"] == "complete", prev
+    want = base | kset
+    assert prev["result"]["selected_after"] == len(want)
+    committed = api.wait(
+        api.client.post(
+            "/api/session/selection/commit",
+            json={
+                "cloud_revision": api.cloud(),
+                "preview_id": prev["result"]["preview_id"],
+            },
+        )
+    )
+    assert committed["status"] == "complete", committed
+    assert committed["result"]["selected"] == len(want)
+    got = api.candidate_ids(committed["result"]["candidate"]["candidate_id"])
+    assert got == want
+
+
 def test_api_52_get_session_without_a_session_is_200_no_session(api):
     r = api.client.get("/api/session")
     assert r.status_code == 200 and r.json() == {"no_session": True}

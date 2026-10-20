@@ -1,5 +1,10 @@
 """Connected-component growth over eligible points (cell-level BFS).
 
+With `on_limit="partial"` the result is exactly the first `max_points` points
+of the seed's component ordered by (hop count from the seed, distance to the
+seed, index): the cell BFS only finds the neighbourhood, a point-level BFS over
+the visited cells (`_nearest_prefix`) orders it. Any prefix is connected.
+
 Points are binned in cubes of side `s = r_eff / sqrt(3)`, so every point of a
 cell is within `r_eff` of every other point of it: one verified point pair
 between a visited cell and an unvisited one proves the whole unvisited cell
@@ -12,6 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
+from scipy.spatial import cKDTree
 
 from gr_pcd.editing.cancel import CancelToken
 from gr_pcd.editing.errors import EditError
@@ -40,7 +46,8 @@ class ComponentLimitReached(Exception):
 class ClusterResult:
     ids: np.ndarray  # sorted uint32 original indices
     bounds: tuple[tuple[float, ...], tuple[float, ...]]
-    # complete False: growth stopped at `limit` (on_limit="partial")
+    # complete False: exactly `limit` points, the nearest to the seed
+    # (hop, distance, index), on_limit="partial"
     complete: bool = True
     limit: int | None = None
 
@@ -155,6 +162,71 @@ class _Cells:
         return hit
 
 
+def _nearest_prefix(
+    pts: np.ndarray,
+    orig: np.ndarray,
+    seed: int,
+    k: int,
+    r_eff: float,
+    r2: float,
+    tick: Callable[[], None],
+) -> tuple[np.ndarray, int]:
+    """Point-level BFS over `pts` (hops inside this set, which is >= the true
+    hops). Stops at the first complete level whose cumulative count reaches k.
+    Returns (positions of the first k points by (hop, distance2, orig), that
+    level). Each step holds at most PAIR_EVAL_CAP neighbour entries."""
+    n = len(pts)
+    tree = cKDTree(pts)
+    reach = r_eff * (1.0 + 1e-12)
+    hop = np.full(n, -1, dtype=np.int64)
+    hop[seed] = 0
+    frontier = np.array([seed], dtype=np.int64)
+    count = 1
+    level = 0
+    while count < k and len(frontier):
+        level += 1
+        tick()
+        # rows per step from the mean neighbour count of a small sample
+        sample = frontier[:: max(1, len(frontier) // 64)][:64]
+        mean = float(
+            np.mean(
+                tree.query_ball_point(pts[sample], reach, return_length=True)
+            )
+        )
+        step = max(1, int(PAIR_EVAL_CAP / max(mean, 1.0)))
+        parts: list[np.ndarray] = []
+        lo = 0
+        while lo < len(frontier):
+            hi = min(len(frontier), lo + step)
+            tick()
+            chunk = frontier[lo:hi]
+            sub = cKDTree(pts[chunk])
+            m = sub.sparse_distance_matrix(tree, reach, output_type="ndarray")
+            i, j, v = m["i"], m["j"], m["v"]
+            keep = hop[j] < 0
+            i, j, v = i[keep], j[keep], v[keep]
+            # clearly inside: accept; the thin band at the radius is checked
+            # with the exact arithmetic of _Cells
+            edge = np.flatnonzero(v > r_eff * (1.0 - 1e-9))
+            if len(edge):
+                d = pts[chunk[i[edge]]] - pts[j[edge]]
+                bad = (d * d).sum(axis=1) > r2
+                j = np.delete(j, edge[bad])
+            j = np.unique(j)
+            hop[j] = level
+            parts.append(j)
+            lo = hi
+        frontier = (
+            np.concatenate(parts) if parts else np.empty(0, dtype=np.int64)
+        )
+        count += len(frontier)
+    members = np.flatnonzero(hop >= 0)
+    d = pts[members] - pts[seed]
+    d2 = (d * d).sum(axis=1)
+    order = np.lexsort((orig[members], d2, hop[members]))
+    return members[order[:k]], level
+
+
 def connected_component(
     xyz: np.ndarray,
     eligible: np.ndarray,
@@ -171,6 +243,10 @@ def connected_component(
         raise EditError(
             "invalid_seed",
             "seed must be an active, valid, in-scope, unexcluded point",
+        )
+    if max_points is not None and max_points < 1:
+        raise EditError(
+            "invalid_max_points", "Max points must be at least 1 (or empty)"
         )
     idx = np.flatnonzero(eligible)
     if budget is not None:
@@ -215,6 +291,8 @@ def connected_component(
     )
     rnd = 0
     complete = True
+    chosen: np.ndarray | None = None
+    need_hops: int | None = None  # a point pass inside V_R was not yet exact
     m = len(cells.keys)
     while len(frontier):
         if on_round is not None:
@@ -250,12 +328,32 @@ def connected_component(
             if on_limit != "partial":
                 raise ComponentLimitReached(visited_points)
             complete = False
-            break
+            # V_R holds every point within R hops of the seed, so hops
+            # computed inside it are exact up to R (and everywhere when the
+            # frontier is empty: V is the whole component).
+            if need_hops is None or rnd >= need_hops or len(fresh) == 0:
+                in_v = np.flatnonzero(visited[cells.inverse])
+                picked, level = _nearest_prefix(
+                    pts[in_v],
+                    idx[in_v],
+                    int(np.searchsorted(in_v, local_seed)),
+                    max_points,
+                    r,
+                    r * r,
+                    tick,
+                )
+                if level <= rnd or len(fresh) == 0:
+                    chosen = in_v[picked]
+                    break
+                need_hops = level
         frontier = fresh
         tick()
     if token is not None:
         token.check()
-    members = np.flatnonzero(visited[cells.inverse])
+    if chosen is not None:
+        members = np.sort(chosen)
+    else:
+        members = np.flatnonzero(visited[cells.inverse])
     out_ids = idx[members].astype(np.uint32)
     sel = pts[members]
     bounds = (tuple(sel.min(axis=0).tolist()), tuple(sel.max(axis=0).tolist()))
