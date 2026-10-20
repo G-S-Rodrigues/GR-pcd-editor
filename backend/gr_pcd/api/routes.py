@@ -17,6 +17,12 @@ from gr_pcd.api.schemas import (
     DeleteStepBody,
     DisplayFilterBody,
     ExportBody,
+    LayerAssignBody,
+    LayerCreateBody,
+    LayerMembersBody,
+    LayerPatchBody,
+    LayerToolBody,
+    LayerVisibilityBody,
     MarkSavedBody,
     NearestBody,
     PreviewBody,
@@ -223,6 +229,8 @@ def build_router(manager: SessionManager, settings: Settings) -> APIRouter:
     def post_selection(body: SelectionBody):
         s = manager.require()
         s.require_cloud(body.cloud_revision)
+        if isinstance(body.tool, LayerToolBody):
+            s.check_layer_tool(body.tool.layer_id)
         tool = None if body.tool is None else body.tool.to_spec()
         spec = SelectSpec(body.op, body.scope, tool, body.evaluate_candidate)
         return _job(manager.submit_select(spec))
@@ -237,6 +245,8 @@ def build_router(manager: SessionManager, settings: Settings) -> APIRouter:
             )
         if body.tool is None:
             raise EditError("tool_required", "a preview needs a tool")
+        if isinstance(body.tool, LayerToolBody):
+            s.check_layer_tool(body.tool.layer_id)
         spec = SelectSpec(body.op, body.scope, body.tool.to_spec(), False)
         return _job(manager.submit_preview(spec))
 
@@ -259,6 +269,47 @@ def build_router(manager: SessionManager, settings: Settings) -> APIRouter:
     def clear_selection(body: RevisionBody):
         s = manager.require()
         s.clear_selection(body.cloud_revision)
+        return s.state()
+
+    # ---- layers: synchronous, under the session lock, not timeline steps --
+    @router.post("/session/layers")
+    def create_layer(body: LayerCreateBody):
+        s = manager.require()
+        op = s.create_layer(
+            body.cloud_revision, body.name, body.visible, body.dry_run
+        )
+        return {**s.state(), "layer_op": op}
+
+    @router.put("/session/layers/visibility")
+    def layers_visibility(body: LayerVisibilityBody):
+        s = manager.require()
+        s.set_layers_visibility(body.ids, body.visible)
+        return s.state()
+
+    @router.post("/session/layers/{layer_id}/assign")
+    def assign_layer(layer_id: int, body: LayerAssignBody):
+        s = manager.require()
+        op = s.assign_layer(
+            body.cloud_revision, layer_id, body.visible, body.dry_run
+        )
+        return {**s.state(), "layer_op": op}
+
+    @router.post("/session/layers/{layer_id}/set-members")
+    def set_layer_members(layer_id: int, body: LayerMembersBody):
+        s = manager.require()
+        op = s.set_layer_members(body.cloud_revision, layer_id, body.dry_run)
+        return {**s.state(), "layer_op": op}
+
+    @router.patch("/session/layers/{layer_id}")
+    def patch_layer(layer_id: int, body: LayerPatchBody):
+        s = manager.require()
+        s.patch_layer(layer_id, body.name, body.colour, body.visible)
+        return s.state()
+
+    @router.delete("/session/layers/{layer_id}")
+    def delete_layer(layer_id: int, body: RevisionBody):
+        s = manager.require()
+        s.delete_layer(body.cloud_revision, layer_id)
         return s.state()
 
     @router.post("/session/candidate")
@@ -339,7 +390,7 @@ def build_router(manager: SessionManager, settings: Settings) -> APIRouter:
     @router.post("/session/export")
     def export(body: ExportBody):
         sweep_runtime(manager)
-        return _job(manager.submit_export(body.format, body.scope))
+        return _job(manager.submit_export(body.format, body.scope, body.layers))
 
     @router.get("/exports/{export_id}")
     def download_export(export_id: str):

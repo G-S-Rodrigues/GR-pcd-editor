@@ -22,7 +22,13 @@ def sha256_file(path: Path) -> str:
 
 
 def export_session(
-    session, dest: Path, fmt: str, scope: str, token, overwrite=False
+    session,
+    dest: Path,
+    fmt: str,
+    scope: str,
+    token,
+    overwrite=False,
+    layers=None,
 ) -> dict:
     dest = Path(dest)
     for src in (session.source_path, session.original_path):
@@ -30,7 +36,7 @@ def export_session(
             raise PcdError(
                 "would_overwrite_source", "refusing to overwrite the source"
             )
-    mask = session.export_mask(scope)
+    mask = session.export_mask(scope, layers)
     # upper bound: the whole record array (binary); compressed is smaller
     ensure_free_space(dest.parent, session.cloud.records.nbytes)
     count = write_pcd_file(

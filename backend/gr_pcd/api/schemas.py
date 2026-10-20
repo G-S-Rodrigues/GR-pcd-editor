@@ -14,7 +14,7 @@ from gr_pcd.editing.sparse import DEFAULT_MIN_NEIGHBOURS, SparseSpec
 from gr_pcd.geometry.box import BoxSpec
 from gr_pcd.geometry.filters import AxisRange, DisplayFilter
 from gr_pcd.geometry.prism import PrismSpec
-from gr_pcd.session.codec import ClusterTool, FilterTool
+from gr_pcd.session.codec import ClusterTool, FilterTool, LayerTool
 
 Vec3 = Annotated[list[float], Field(min_length=3, max_length=3)]
 Vec2 = Annotated[list[float], Field(min_length=2, max_length=2)]
@@ -102,8 +102,21 @@ class SparseToolBody(Model):
         )
 
 
+class LayerToolBody(Model):
+    type: Literal["layer"]
+    layer_id: int = Field(ge=1, le=255)
+
+    def to_spec(self) -> LayerTool:
+        return LayerTool(self.layer_id)
+
+
 Tool = Annotated[
-    BoxTool | PrismTool | FilterToolBody | ClusterToolBody | SparseToolBody,
+    BoxTool
+    | PrismTool
+    | FilterToolBody
+    | ClusterToolBody
+    | SparseToolBody
+    | LayerToolBody,
     Field(discriminator="type"),
 ]
 
@@ -204,6 +217,36 @@ class RollbackBody(Model):
     cursor: int
 
 
+class LayerCreateBody(Model):
+    cloud_revision: int
+    name: str | None = None
+    visible: bool = True
+    dry_run: bool = False
+
+
+class LayerAssignBody(Model):
+    cloud_revision: int
+    visible: bool | None = None
+    dry_run: bool = False
+
+
+class LayerMembersBody(Model):
+    cloud_revision: int
+    dry_run: bool = False
+
+
+class LayerPatchBody(Model):
+    name: str | None = None
+    # a plain int: the engine answers invalid_colour for anything else
+    colour: int | str | float | None = None
+    visible: bool | None = None
+
+
+class LayerVisibilityBody(Model):
+    ids: list[int] | None
+    visible: bool
+
+
 class DeleteStepBody(Model):
     cloud_revision: int
     sid: int
@@ -228,6 +271,8 @@ class NearestBody(Model):
 class ExportBody(Model):
     format: Literal["binary", "ascii"] = "binary"
     scope: Literal["active", "selected", "displayed"] = "active"
+    # layer ids to export (0 = main); None = every layer
+    layers: list[int] | None = None
 
 
 class MarkSavedBody(Model):

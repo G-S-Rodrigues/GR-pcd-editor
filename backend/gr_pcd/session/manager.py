@@ -170,12 +170,16 @@ class SessionManager:
             lambda s, ctx, t: s.run_candidate(t, ctx.token, ctx.progress),
         )
 
-    def submit_export(self, fmt: str, scope: str):
+    def submit_export(
+        self, fmt: str, scope: str, layers: list[int] | None = None
+    ):
         export_id = uuid.uuid4().hex
 
         def body(session, ctx, _ticket):
             dest = self._dir("exports") / f"{export_id}.pcd"
-            summary = export_session(session, dest, fmt, scope, ctx.token)
+            summary = export_session(
+                session, dest, fmt, scope, ctx.token, layers=layers
+            )
             self.downloads[export_id] = Download(
                 dest, summary["filename"], kind="exports"
             )
