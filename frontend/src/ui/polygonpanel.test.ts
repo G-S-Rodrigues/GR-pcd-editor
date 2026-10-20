@@ -11,13 +11,12 @@ import { TOOLTIPS } from "./tooltips";
 const dom = installFakeDom();
 afterAll(() => dom.restore());
 const store = createAppStore();
-const scroll = vi.fn();
+const scroller = { scrollTop: 40 };
 const toolChanged = vi.fn();
 const actions = new Proxy({ toolChanged } as Record<string, unknown>, { get: (t, k: string) => t[k] ?? (() => undefined) }) as unknown as PanelActions;
-buildEditPanels(dom.root as unknown as HTMLElement, store, actions);
+buildEditPanels(dom.root as unknown as HTMLElement, store, actions, { scroller });
 const ctl = (id: string) => dom.root.control(id) as FakeEl;
 const section = () => dom.root.all().find((e) => e.getAttribute("data-section") === "polygon") as FakeEl;
-(section() as unknown as { scrollIntoView: unknown }).scrollIntoView = scroll;
 
 const closedSquare = () => {
   let p = startDrawing(emptyPolygon());
@@ -25,7 +24,7 @@ const closedSquare = () => {
   return closePolygon(p).state;
 };
 beforeEach(() => {
-  scroll.mockClear();
+  scroller.scrollTop = 40;
   toolChanged.mockClear();
   store.set({ ...createAppStore().get(), session: sessionFixture(), tool: "none" });
 });
@@ -62,16 +61,17 @@ test("UI-666 the Draw polygon button is highlighted until a polygon exists; the 
   expect(section().text()).toMatch(/pencil/);
 });
 
-test("UI-666 choosing the Polygon tool scrolls its section to the top once, not on every state change", () => {
+test("UI-666 choosing the Polygon tool scrolls the panel to the top once per choice, not on every state change (the UI-891 behaviour)", () => {
   store.set({ tool: "polygon" });
-  expect(scroll).toHaveBeenCalledTimes(1);
-  expect(scroll.mock.calls[0][0]).toMatchObject({ block: "start" });
+  expect(scroller.scrollTop).toBe(0);
+  scroller.scrollTop = 40;
   store.update((s) => ({ ...s, tools: { ...s.tools, polygon: closedSquare() } }));
   store.set({ scope: "active" });
-  expect(scroll).toHaveBeenCalledTimes(1);
+  expect(scroller.scrollTop).toBe(40);
   store.set({ tool: "box" });
+  scroller.scrollTop = 40;
   store.set({ tool: "polygon" });
-  expect(scroll).toHaveBeenCalledTimes(2);
+  expect(scroller.scrollTop).toBe(0);
 });
 
 test("UI-665 in edit mode each vertex row has a remove button that removes that vertex and nothing below three", () => {

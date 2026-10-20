@@ -28,7 +28,7 @@ import { commitNumber } from "./numfield";
 import { TOOLTIPS } from "./tooltips";
 import { h } from "./dom";
 import { foldSyncer, foldable } from "./fold";
-import type { SectionId } from "./sections";
+import { type SectionId, isSectionOpen, setSectionOpen } from "./sections";
 
 /** What the panels need from the rest of the app. */
 /** The Box tool hint under the Gizmo fields. */
@@ -289,7 +289,16 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
   sync(store.get());
 }
 
-export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: PanelActions): void {
+/** Where `buildEditPanels` puts the four tool sections and what it scrolls to the top when a tool is armed. */
+export interface EditPanelSlots {
+  /** The fixed slot above File: the armed tool's section is its only visible child. Defaults to `root`. */
+  toolRoot?: HTMLElement;
+  /** The scrolling panel (the inspector); its `scrollTop` is set to 0 once per arming. */
+  scroller?: { scrollTop: number };
+}
+
+export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: PanelActions, slots: EditPanelSlots = {}): void {
+  const toolRoot = slots.toolRoot ?? root;
   const syncs: Sync[] = [];
   const errors = h("div", { id: "edit-error", class: "notice error", hidden: true });
   const showErr = (m: string | null | undefined) => {
@@ -577,14 +586,15 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     h("p", { class: "note", text: POLYGON_DEPTH_NOTE }),
   );
 
-  // choosing the Polygon tool brings its section to the top of the panel (once per choice, gently unless motion is reduced)
+  // arming a tool opens its section if it was folded (through the store, like a click on its summary) and scrolls the panel to the
+  // top, once per arming: the armed tool's section is the first one (the fixed tool slot above File)
   let prevTool = store.get().tool;
   syncs.push((s) => {
-    if (s.tool === "polygon" && prevTool !== "polygon") {
-      const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-      (polyPanel as { scrollIntoView?: (o: ScrollIntoViewOptions) => void }).scrollIntoView?.({ block: "start", behavior: reduced ? "auto" : "smooth" });
-    }
+    if (s.tool === prevTool) return;
     prevTool = s.tool;
+    if (s.tool === "none") return;
+    if (!isSectionOpen(s.sectionsOpen, s.tool)) store.update((st) => ({ ...st, sectionsOpen: setSectionOpen(st.sectionsOpen, s.tool as SectionId, true) }));
+    if (slots.scroller) slots.scroller.scrollTop = 0;
   });
 
   // ---- cluster
@@ -866,7 +876,9 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
   });
   const histPanel = section("history", "History", (s) => s.session !== null, histList, text((s) => (s.session && s.session.history.entries.length === 0 ? "No edits yet" : "")));
 
-  root.append(errors, boxPanel, polyPanel, clusterPanelEl, sparsePanel, filterPanel, protPanel, layersPanel, histPanel);
+  root.append(errors);
+  toolRoot.append(boxPanel, polyPanel, clusterPanelEl, sparsePanel);
+  root.append(filterPanel, protPanel, layersPanel, histPanel);
   const syncAll = (s: AppState) => {
     for (const f of syncs) f(s);
   };

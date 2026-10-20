@@ -207,7 +207,7 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
     await setNum("prot-max", 0.1);
     await exact("Candidates", String(GHOST), );
     await exact("Protected", String(FLOOR));
-    await expect(page.locator("#editpanels")).toContainText("retained by protection");
+    await expect(page.locator("#inspector")).toContainText("retained by protection");
   });
 
   await test.step("E2E-06 a filter change makes the preview stale until a fresh one completes", async () => {
@@ -471,19 +471,19 @@ test("E2E-13 7a cluster: partial result, no limit, and re-run when protection ch
   await pickPivotAt(page, [4, 4, 0]);
   await ctl("tool-cluster").click(); // arming Cluster waits for the seed click
   await page.locator("#viewport").click(); // top view: the point under the pivot with the greatest Z, a ghost point
-  await expect(page.locator("#editpanels")).toContainText("Seed: point");
+  await expect(page.locator("#inspector")).toContainText("Seed: point");
   await setNum("cluster-radius", 1.2); // links the ghost blob to the floor below it
 
   await ctl("cluster-max-points").fill("5");
   await ctl("cluster-max-points").press("Tab");
-  await expect(page.locator("#editpanels")).toContainText("Stopped at limit 5", { timeout: 15000 });
+  await expect(page.locator("#inspector")).toContainText("Stopped at limit 5", { timeout: 15000 });
   await exact("Candidates", "5"); // the cap is exact
   await expect(ctl("apply")).toBeEnabled(); // a partial cluster can be deleted (R17-1)
 
   await ctl("cluster-max-points").fill("");
   await ctl("cluster-max-points").press("Tab");
   await exact("Candidates", String(FLOOR + GHOST));
-  await expect(page.locator("#editpanels")).not.toContainText("Stopped at");
+  await expect(page.locator("#inspector")).not.toContainText("Stopped at");
   await expect(ctl("apply")).toBeEnabled();
 
   // protection after the seed: the cluster shrinks to what is not protected, with no checkbox toggling
@@ -821,7 +821,7 @@ test("E2E-20 7b2 the ? key and the ? button open a help overlay listing every ke
   await expect(help).not.toBeVisible();
 });
 
-const OVERFLOW_SELECTORS = ["#toolbar", "#viewbar", "#tools", "#inspector", "#fileinfo", "#editpanels", "#statusbar", "#modebar"];
+const OVERFLOW_SELECTORS = ["#toolbar", "#viewbar", "#tools", "#inspector", "#toolpanels", "#fileinfo", "#editpanels", "#statusbar", "#modebar"];
 
 async function checkLayout(page: import("@playwright/test").Page, w: number, h: number) {
   const scan = () =>
@@ -968,10 +968,10 @@ test("E2E-25 7c1 cluster r=2 on a 300k-point room finishes, Apply deletes the co
   await ctl("cluster-max-points").fill(""); // 17: the default limit is 500 and this 80,000-point component must be complete (empty means no limit)
   await ctl("cluster-max-points").press("Tab");
   await page.locator("#viewport").click(); // top view: the greatest Z under the pivot is a ghost point
-  await expect(page.locator("#editpanels")).toContainText("Seed: point");
+  await expect(page.locator("#inspector")).toContainText("Seed: point");
   await setNum("cluster-radius", 2);
   await exact("Candidates", "80,000");
-  await expect(page.locator("#editpanels")).not.toContainText("Stopped at");
+  await expect(page.locator("#inspector")).not.toContainText("Stopped at");
   await ctl("apply").click();
   await exact("Displayed", "220,000");
   await exact("Original", "300,000");
@@ -1270,6 +1270,36 @@ test("E2E-156 17 the six filter boxes open collapsed as chips with no plane draw
   await expect(ctl("filter-x-min")).toBeVisible();
   for (const key of ["x-max", "y-min", "y-max", "z-min", "z-max"]) await expect(page.locator(`.fbox[data-box="${key}"]`)).toHaveClass(/collapsed/);
 });
+
+for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-157 17 the armed tool's section is the first section of the right panel at ${w}x${hgt}; File, Counts and View keep their order and fold state`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: hgt });
+    const t = helpers(page);
+    await openRoom(page, t.exact);
+    const first = () => page.evaluate(() => [...document.querySelectorAll<HTMLDetailsElement>("#inspector details[data-section]")].filter((d) => !d.hidden && d.getClientRects().length > 0).map((d) => `${d.dataset.section}:${d.open}`)[0]);
+    const order = () => page.evaluate(() => [...document.querySelectorAll<HTMLDetailsElement>("#inspector details[data-section]")].filter((d) => !d.hidden && d.getClientRects().length > 0).map((d) => d.dataset.section));
+    const open = (id: string) => page.locator(`details[data-section="${id}"]`).evaluate((d) => (d as HTMLDetailsElement).open);
+    const fold = (id: string) => page.locator(`details[data-section="${id}"] > summary`);
+    const idle = await order();
+    expect(idle.slice(0, 3)).toEqual(["file", "counts", "view"]);
+    await t.ctl("tool-cluster").click();
+    expect(await first()).toBe("cluster:true");
+    await fold("cluster").click(); // fold it while armed: respected
+    expect(await open("cluster")).toBe(false);
+    await t.ctl("tool-cluster").click(); // disarm: the section is gone
+    expect(await order()).toEqual(idle);
+    await t.ctl("tool-cluster").click(); // arm again: opens again, first again
+    expect(await first()).toBe("cluster:true");
+    expect((await order()).slice(1, 4)).toEqual(["file", "counts", "view"]);
+    await t.ctl("tool-box").click();
+    expect(await first()).toBe("box:true");
+    await t.ctl("tool-box").click();
+    expect(await first()).toBe("file:true");
+    expect(await open("file")).toBe(true);
+    expect(await open("counts")).toBe(true);
+    expect(await open("view")).toBe(true);
+  });
+}
 
 test("E2E-37 10 box placement follows the view: end-on axes dock at the bottom of the left edge", async ({ page }) => {
   const { exact, ctl } = helpers(page);
@@ -1704,7 +1734,9 @@ test("E2E-46 10-8 each inspector section folds by click and keyboard, the fold s
   await expect.poll(async () => Object.keys(await SECTIONS_OPEN(page)).sort()).toEqual(["box", "counts", "display", "file", "history", "view"]);
   for (const id of Object.keys(probes)) await expect(probes[id]()).toBeHidden();
   await ctl("tool-box").click();
-  await expect(ctl("box-size-x")).toBeHidden();
+  // 17: arming a tool opens its folded section (it is the first section of the panel); the other folds are untouched
+  await expect(ctl("box-size-x")).toBeVisible();
+  await expect.poll(async () => Object.keys(await SECTIONS_OPEN(page)).sort()).toEqual(["counts", "display", "file", "history", "view"]);
   // reopen all: nothing was lost and the counts read the same. The all-open state is also saved to the server (the next
   // test's page restores it), so this test leaves no folded section behind.
   const savedOpen = page.waitForRequest((r) => {
@@ -1712,7 +1744,7 @@ test("E2E-46 10-8 each inspector section folds by click and keyboard, the fold s
     const folded = JSON.parse(r.postData() ?? "{}")?.ui?.sectionsOpen;
     return folded === undefined || Object.keys(folded).length === 0;
   });
-  for (const id of ["file", "counts", "view", "display", "history", "box"]) await sum(id).click();
+  for (const id of ["file", "counts", "view", "display", "history"]) await sum(id).click();
   for (const id of Object.keys(probes)) await expect(probes[id]()).toBeVisible();
   await expect(ctl("box-size-x")).toBeVisible();
   expect(await page.locator("#counts-panel").innerText()).toBe(before);
@@ -1805,7 +1837,7 @@ function tl(page: Pg) {
     await base.ctl("tool-cluster").click();
     await unfold();
     await page.locator("#viewport").click(); // the armed Cluster tool waits for the seed click
-    await expect(page.locator("#editpanels")).toContainText("Seed: point");
+    await expect(page.locator("#inspector")).toContainText("Seed: point");
     await base.setNum("cluster-radius", 1.1);
     await base.exact("Candidates", String(ROOM.wall));
     await base.ctl("apply").click();
@@ -2233,7 +2265,7 @@ function clusterHelpers(page: import("@playwright/test").Page) {
     const px = await page.evaluate((p) => (window as unknown as { __editor: EditorHook }).__editor.projectWorld(p as [number, number, number]), [...at]);
     expect(px).not.toBeNull();
     await page.mouse.click(px!.x, px!.y);
-    await expect(page.locator("#editpanels")).toContainText("Seed: point");
+    await expect(page.locator("#inspector")).toContainText("Seed: point");
   };
   /** Export the active points through the dialog and compare with the room minus `deleted`. */
   const expectActive = async (testInfo: import("@playwright/test").TestInfo, deleted: (r: number[]) => boolean) => {
@@ -2571,7 +2603,7 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     expect((await page.locator("#toolbar").boundingBox())!.height).toBeLessThan(60); // one row
     await expect(ctl("help")).toHaveAttribute("aria-label", "Controls help");
     await expect(ctl("help")).toHaveText("");
-    await expect(page.locator("#editpanels")).not.toContainText("Navigation:");
+    await expect(page.locator("#inspector")).not.toContainText("Navigation:");
     // keyboard: the first Tab stop is Open, with a visible focus ring
     await page.locator("body").click({ position: { x: 1, y: 1 } });
     await page.keyboard.press("Tab");
@@ -3701,11 +3733,11 @@ test("E2E-113 13 Cluster: pressing the tool waits for a seed, one click selects 
   };
   await at(CL.wall);
   await expect(pick).toHaveAttribute("data-state", "set");
-  await expect(page.locator("#editpanels")).toContainText("Seed: point");
+  await expect(page.locator("#inspector")).toContainText("Seed: point");
   await t.exact("Selected", String(clusterTruth(rows, [...CL.wall], 1).size));
   await pick.click();
   await expect(pick).toHaveAttribute("data-state", "waiting");
-  await expect(page.locator("#editpanels")).not.toContainText("Seed: point");
+  await expect(page.locator("#inspector")).not.toContainText("Seed: point");
   await expect(t.ctl("tool-cluster")).toHaveClass(/active/); // the tool stays armed
   await at(CL.blob);
   await expect(pick).toHaveAttribute("data-state", "set");
@@ -3727,13 +3759,13 @@ test("E2E-114 13 Clear selection disarms the tool: no tool pressed, no seed, no 
   await t.setNum("cluster-radius", 1);
   const p = await settledScreen(page, [...CL.wall]);
   await page.mouse.click(p.x, p.y);
-  await expect(page.locator("#editpanels")).toContainText("Seed: point");
+  await expect(page.locator("#inspector")).toContainText("Seed: point");
   await t.exact("Selected", String(ROOM.wall));
   await t.ctl("sel-clear").click();
   await t.exact("Selected", "0");
   await expect(page.locator("#modebar")).toContainText("Tool: None");
   for (const id of ["tool-box", "tool-polygon", "tool-cluster", "tool-sparse"]) await expect(t.ctl(id)).not.toHaveClass(/active/);
-  await expect(page.locator("#editpanels")).not.toContainText("Seed: point");
+  await expect(page.locator("#inspector")).not.toContainText("Seed: point");
   await appIdle(page);
   const before = await cameraOf(page);
   const free = await freeCanvasPoint(page);
@@ -3759,7 +3791,7 @@ test("E2E-115 13 Polygon with the real mouse: draw, close, drag a vertex, then t
   await t.ctl("tool-polygon").click();
   await t.ctl("cube-top").click();
   await expect(t.ctl("poly-draw")).toHaveClass(/hint/); // the first step is highlighted until a polygon exists
-  await expect(page.locator("#editpanels")).toContainText("1 Press Draw polygon");
+  await expect(page.locator("#inspector")).toContainText("1 Press Draw polygon");
   await t.ctl("poly-draw").click();
   await expect(t.ctl("poly-draw")).not.toHaveClass(/hint/);
   for (const [x, y] of [[1.5, 11.5], [4.5, 11.5], [4.5, 14.8], [1.5, 14.8]]) {
@@ -4023,7 +4055,7 @@ test("E2E-121 13 Sparse points selects only the floating artifacts of a dense fl
   await expect(t.ctl("tool-sparse")).toHaveText("Sparse points");
   await t.ctl("tool-sparse").click();
   await expect(t.ctl("tool-sparse")).toHaveClass(/active/);
-  await expect(page.locator("#editpanels")).toContainText("fewer than 8 points");
+  await expect(page.locator("#inspector")).toContainText("fewer than 8 points");
   await t.setNum("sparse-radius", 0.5);
   await t.exact("Selected", String(SPARSE.artifacts));
   await t.exact("Candidates", String(SPARSE.artifacts));

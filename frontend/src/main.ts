@@ -328,7 +328,7 @@ buildFilterBoxes($("fbox-layer"), canvas, store, {
   editSide: (axis, side, value, o) => filters.editSide(axis, side, value, o),
   resetSide: (axis, side) => filters.resetSide(axis, side),
 });
-buildEditPanels($("editpanels"), store, panelActions);
+buildEditPanels($("editpanels"), store, panelActions, { toolRoot: $("toolpanels"), scroller: $("inspector") });
 
 window.addEventListener("keyup", (e) => {
   if (e.key.toLowerCase() === "r") rectHeld = false;
