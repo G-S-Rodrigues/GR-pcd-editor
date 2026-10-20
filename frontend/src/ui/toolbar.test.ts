@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { createAppStore } from "../state/app";
-import { sessionFixture } from "../testing/fixtures";
+import { candidateFixture, sessionFixture } from "../testing/fixtures";
 import { type FakeEl, installFakeDom } from "../testing/fakedom";
 import { describeControls } from "./describe";
 import { buildToolbar } from "./toolbar";

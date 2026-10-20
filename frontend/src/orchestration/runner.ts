@@ -59,6 +59,18 @@ export function applyBlockedText(s: AppState): string {
   return s.candidate ? "the preview is out of date or empty; preview again" : "preview a selection first";
 }
 
+/**
+ * The visible reason in the Selection block while Delete is off. Null when Delete works, when the reason is
+ * transient (a non-preview job is running: the progress bar says so) or when nothing is selected.
+ */
+export function deleteBlockedNote(s: AppState): string | null {
+  if (!s.session) return null;
+  if (canApply(s) && s.compare === "edited") return null;
+  if (s.job.busy && !s.job.preview) return null;
+  if (s.session.selection.count === 0 && !s.candidate) return null;
+  return `Delete is off: ${applyBlockedText(s)}`;
+}
+
 /** What the Delete key does: run Apply, or say why it cannot (the notice text). */
 export function deleteKeyOutcome(s: AppState): { run: true } | { run: false; notice: string } {
   if (canApply(s) && s.compare === "edited") return { run: true };

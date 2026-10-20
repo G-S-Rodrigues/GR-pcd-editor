@@ -159,3 +159,17 @@ test("UI-871 a Selection-block note names the Max points limit from the pending 
   store.update((s) => ({ ...s, candidate: candidateFixture({ cluster: cl(true) }) }));
   expect(note.hidden).toBe(true);
 });
+
+test("UI-876 a #delete-blocked note under the Select/Clear/Hide stack carries the reason Delete is off, hidden otherwise", () => {
+  const { store } = build();
+  const note = dom.root.all().find((e) => e.getAttribute("id") === "delete-blocked") as FakeEl;
+  expect(note.className).toBe("note warn");
+  store.update((s) => ({ ...s, session: sessionFixture({ selection: { count: 50, ops: [] } }), candidate: candidateFixture() }));
+  expect(note.hidden).toBe(true);
+  store.update((s) => ({ ...s, tools: { ...s.tools, protection: { ...s.tools.protection, mode: "override", ack: false } } }));
+  expect(note.hidden).toBe(false);
+  expect(note.text()).toMatch(/^Delete is off: /);
+  store.update((s) => ({ ...s, tools: { ...s.tools, protection: { ...s.tools.protection, ack: true, local: { min: 0, max: 1 } } } }));
+  expect(note.hidden).toBe(true);
+  expect(note.text()).toBe("");
+});

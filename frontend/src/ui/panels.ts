@@ -2,6 +2,7 @@ import { PROTECTION_COPY, effectiveText, retainedText } from "../inspector/prote
 import * as P from "../inspector/protection";
 import { FILTER_COPY, filterSummary } from "../inspector/filters";
 import { type AppState, addNotice } from "../state/app";
+import { deleteBlockedNote } from "../orchestration/runner";
 import type { Store } from "../state/store";
 import type { Vec3 } from "../state/types";
 import * as B from "../tools/box/model";
@@ -180,6 +181,7 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
   const commit = control("button", { id: "sel-commit", onclick: a.commitDraft }, "Commit draft");
   const discard = control("button", { id: "sel-discard", onclick: a.discardDraft }, "Discard draft");
   const note = h("p", { id: "scope-note", class: "note" });
+  const deleteBlocked = h("p", { id: "delete-blocked", class: "note warn", hidden: true });
   const clusterLimit = h("p", { id: "cluster-limit", class: "note warn", hidden: true });
   const invalid = control("button", { id: "remove-invalid", onclick: a.removeInvalid }, "Remove invalid");
   const draftNote = h("p", { id: "draft-note", class: "note warn", hidden: true });
@@ -210,6 +212,7 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
       control("button", { id: "sel-clear", onclick: a.clearSelection }, "Clear selection"),
       hideBtn,
     ),
+    deleteBlocked,
     note,
     clusterLimit,
     draftNote,
@@ -266,6 +269,9 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     draftNote.textContent = dn ?? "";
     const n = scopeNotice(s);
     note.textContent = n ?? "";
+    const db = deleteBlockedNote(s);
+    deleteBlocked.hidden = db === null;
+    deleteBlocked.textContent = db ?? "";
     const lim = clusterLimitText(previewClusterOf(s));
     clusterLimit.hidden = lim === null;
     clusterLimit.textContent = lim ?? "";

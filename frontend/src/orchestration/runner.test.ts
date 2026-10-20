@@ -4,7 +4,7 @@ import { createAppStore } from "../state/app";
 import { candidateFixture, sessionFixture } from "../testing/fixtures";
 import { setCenter } from "../tools/box/model";
 import { setSeed } from "../tools/cluster/model";
-import { applyBlockedText, canApply, createRunner, deleteKeyOutcome } from "./runner";
+import { applyBlockedText, canApply, createRunner, deleteBlockedNote, deleteKeyOutcome } from "./runner";
 import { shouldPreview } from "./selection";
 
 interface Deferred {
@@ -331,6 +331,23 @@ describe("cluster reacts to parameter changes and partial results (F-04, F-07)",
     const partial = { seed_id: 1, radius: 0.5, size: 40, complete: false, limit: 40, bounds: { min: [0, 0, 0], max: [1, 1, 1] } };
     t.store.set({ candidate: candidateFixture({ cluster: partial }) });
     expect(deleteKeyOutcome(t.store.get())).toEqual({ run: true });
+  });
+
+  it("UI-875 deleteBlockedNote says why Delete is off, and stays null when Delete works or the reason is transient or nothing is selected", () => {
+    const base = createAppStore().get();
+    const sess = (count: number) => sessionFixture({ selection: { count, ops: [] } });
+    const ok = { ...base, session: sess(50), candidate: candidateFixture() };
+    expect(deleteBlockedNote(ok)).toBeNull(); // Delete works
+    expect(deleteBlockedNote(base)).toBeNull(); // no session
+    expect(deleteBlockedNote({ ...base, session: sess(0) })).toBeNull(); // nothing selected, no candidate
+    expect(deleteBlockedNote({ ...ok, job: { busy: true, progress: null, message: null } })).toBeNull(); // the progress bar says it
+    const prot = (p: Partial<typeof base.tools.protection>) => ({ ...ok, tools: { ...ok.tools, protection: { ...ok.tools.protection, ...p } } });
+    expect(deleteBlockedNote(prot({ mode: "override", ack: false }))).toBe(`Delete is off: ${applyBlockedText(prot({ mode: "override", ack: false }))}`);
+    expect(deleteBlockedNote(prot({ mode: "override", ack: false }))).toMatch(/^Delete is off: .+/);
+    expect(deleteBlockedNote(prot({ mode: "add_local", local: null }))).toMatch(/^Delete is off: .+/);
+    expect(deleteBlockedNote(prot({ mode: "override", ack: true, local: { min: 0, max: 1 } }))).toBeNull();
+    expect(deleteBlockedNote({ ...ok, compare: "original" })).toBe("Delete is off: return to the edited view");
+    expect(deleteBlockedNote({ ...ok, candidate: candidateFixture({ cloud_revision: 2 }) })).toBe("Delete is off: the preview is out of date or empty; preview again");
   });
 
   it("UI-151 pagehide beacons a cancel for the in-flight job only", async () => {

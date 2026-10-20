@@ -2290,6 +2290,32 @@ test("E2E-151 17 the Cluster block shows the pending preview's seed and size, th
   await expect(result).toContainText("Candidates");
 });
 
+test("E2E-152 17 a blocked Delete says why in the Selection block, in the words of the Delete tooltip", async ({ page }) => {
+  const t = helpers(page);
+  await openRoom(page, t.exact);
+  await t.ctl("tool-box").click();
+  for (const [id, v] of [["box-center-x", -1], ["box-center-y", 4.5], ["box-center-z", 2.5], ["box-size-x", 1], ["box-size-y", 10], ["box-size-z", 5]] as const) await t.setNum(id, v);
+  await t.exact("Selected", String(ROOM.wall));
+  const note = page.locator("#delete-blocked");
+  await expect(note).toBeHidden();
+  await expect(t.ctl("apply")).toBeEnabled();
+  await t.ctl("prot-mode").selectOption("override"); // no acknowledgement yet
+  await expect(t.ctl("apply")).toBeDisabled();
+  await expect(note).toBeVisible();
+  const text = (await note.innerText()).trim();
+  expect(text).toMatch(/^Delete is off: .+/);
+  const reason = text.slice("Delete is off: ".length);
+  expect(await t.ctl("apply").getAttribute("title")).toContain(`(${reason})`);
+  if (/local protection interval/.test(reason)) {
+    await t.setNum("prot-local-min", 50);
+    await t.setNum("prot-local-max", 51);
+  }
+  await expect(note).toContainText("acknowledge");
+  await t.ctl("prot-ack").check();
+  await expect(note).toBeHidden();
+  await expect(t.ctl("apply")).toBeEnabled();
+});
+
 test("E2E-62 a single Cluster keeps Apply enabled across scope, protection and display filter; a protected seed says why", async ({ page }) => {
   const t = clusterHelpers(page);
   await openRoom(page, t.exact);
