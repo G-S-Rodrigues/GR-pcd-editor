@@ -2,14 +2,15 @@ import * as THREE from "three";
 import type { AppState } from "../state/app";
 import type { Vec3 } from "../state/types";
 import { boxCorners } from "../tools/box/model";
-import { HANDLE_CROSS_PX, boxHandles } from "../tools/box/handles";
+import { HANDLE_CROSS_PX } from "../tools/box/handles";
+import { boxOverlaySpec } from "../tools/box/overlay";
 import { DRAFT_OUTLINE, draftOutline } from "../tools/draft";
 import { ARROW_PX } from "../filterboxes/plane";
 import { rightVector } from "../view/camera";
 import { pxPerUnit } from "../view/pointsize";
 import { tiltRings } from "../inspector/rings";
 import { planeAnchors } from "./interact";
-import { clearGroup, drawHeavy, drawLines } from "./lines3d";
+import { clearGroup, drawHeavy, drawLines, drawThick } from "./lines3d";
 
 const BAND_OPACITY = 0.12;
 const HEAD_PX = 9;
@@ -40,24 +41,13 @@ export function createToolsOverlay(scene: THREE.Scene) {
         const pairs: [number, number][] = [];
         for (let i = 0; i < 8; i++) for (const bit of [1, 2, 4]) if (!(i & bit)) pairs.push([i, i | bit]);
         heavy(c, pairs, outline, origin, s, viewH);
-        for (const hd of boxHandles(t.box, s.camera, s.gizmo.local, viewH, viewW)) {
-          if (hd.ring) {
-            const r = hd.ring;
-            lines(r, r.map((_, i): [number, number] => [i, (i + 1) % r.length]), COL.ring, origin);
-          } else {
-            const tip: Vec3 = hd.anchor;
-            const base: Vec3 = hd.base ?? hd.anchor;
-            const k = 0.5;
-            heavy([base, tip], [[0, 1]], COL.handle, origin, s, viewH);
-            // a small cross marks the handle's hit point
-            const d = (HANDLE_CROSS_PX / pxPerUnit(s.camera, Math.max(viewH, 1))) * (1 + k);
-            lines(
-              [[tip[0] - d, tip[1], tip[2]], [tip[0] + d, tip[1], tip[2]], [tip[0], tip[1] - d, tip[2]], [tip[0], tip[1] + d, tip[2]], [tip[0], tip[1], tip[2] - d], [tip[0], tip[1], tip[2] + d]],
-              [[0, 1], [2, 3], [4, 5]],
-              COL.handle,
-              origin,
-            );
-          }
+        const spec = boxOverlaySpec(t.box, s.camera, s.gizmo.local, s.boxHover, viewH, viewW);
+        for (const a of spec.arrows) {
+          const pts: Vec3[] = [a.base, a.tip, a.barbs[0], a.barbs[1]];
+          drawThick(group, pts, [[0, 1], [1, 2], [1, 3]], a.colour, origin, s, viewH, a.width);
+        }
+        for (const r of spec.rings) {
+          drawThick(group, r.pts, r.pts.map((_, i): [number, number] => [i, (i + 1) % r.pts.length]), r.colour, origin, s, viewH, r.width);
         }
       }
 

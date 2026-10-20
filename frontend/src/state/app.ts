@@ -75,6 +75,8 @@ export interface AppState {
   candidate: Candidate | null;
   tools: ToolsState;
   gizmo: { snap: boolean; step: number; angleStep: number; local: boolean };
+  /** Id of the box arrow or ring under the pointer (drawn heavier); view-only, never saved. */
+  boxHover: string | null;
   /** A tool edit exists that has not been committed (Add/Subtract/Intersect drafts). */
   draft: boolean;
   /** The server-side pending result of the drafted shape, drawn but not committed; null when none. */
@@ -127,6 +129,7 @@ export function initialState(): AppState {
       protection: emptyProtection(),
     },
     gizmo: { snap: false, step: 0.1, angleStep: 5, local: true },
+    boxHover: null,
     draft: false,
     preview: null,
     job: { busy: false, progress: null, message: null },

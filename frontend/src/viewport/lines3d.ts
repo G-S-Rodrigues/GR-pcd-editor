@@ -35,6 +35,24 @@ export function drawHeavy(group: THREE.Group, pts: Vec3[], pairs: [number, numbe
   }
 }
 
+/** A line of the given pixel width: the shape is repeated every 0.75 px across the view (right, then up), so any width reads solid. */
+export function drawThick(group: THREE.Group, pts: Vec3[], pairs: [number, number][], colour: number, origin: Vec3, s: AppState, viewH: number, widthPx: number, renderOrder = 9): void {
+  if (widthPx <= 1.05) {
+    drawLines(group, pts, pairs, colour, origin, renderOrder);
+    return;
+  }
+  const u = 0.75 / pxPerUnit(s.camera, Math.max(viewH, 1));
+  const r = rightVector(s.camera);
+  const up = upVector(s.camera);
+  const n = Math.ceil((widthPx - 1) / 0.75);
+  const offsets: [number, number][] = [[0, 0]];
+  for (let i = 1; i <= n; i++) offsets.push([i, 0], [0, i]);
+  for (const [dx, dy] of offsets) {
+    const o: Vec3 = [origin[0] - u * (r[0] * dx + up[0] * dy), origin[1] - u * (r[1] * dx + up[1] * dy), origin[2] - u * (r[2] * dx + up[2] * dy)];
+    drawLines(group, pts, pairs, colour, o, renderOrder);
+  }
+}
+
 /** Removes and disposes every child of `group`. */
 export function clearGroup(group: THREE.Group): void {
   for (const c of [...group.children]) {

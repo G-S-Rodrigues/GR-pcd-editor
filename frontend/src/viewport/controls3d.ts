@@ -41,6 +41,7 @@ export function attachControls(
     if (!drag) {
       const h = tools?.hover(e) ?? null;
       canvas.style.cursor = h?.cursor ?? "";
+      if ((h?.id ?? null) !== store.get().boxHover) store.update((st) => ({ ...st, boxHover: h?.id ?? null }));
       return;
     }
     if (drag.tool) return;
