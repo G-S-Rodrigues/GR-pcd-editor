@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { BIG, FLOOR, GHOST, NORMAL_ROOM_TOTAL, ROOM, ROOM_TOTAL, SPARSE, SPARSE_TOTAL, TILTED, TOTAL, bigRoomPcd, bigRoomXyz, countInTiltedSlab, clusterNearestTruth, countInXyz, normalRoomPcd, parsePcd, roomPcd, rowKey, sparseRoomPcd, syntheticPcd, tiltedFloorAngles, tiltedFloorPcd, truthKeys } from "./synthetic";
 
 test("open a cloud, navigate, pick a pivot, colour, read counts", async ({ page }) => {
@@ -5542,6 +5542,243 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
     await t.ctl("cube-top").click();
     await page.waitForTimeout(600);
     await page.screenshot({ path: `/out/part18-${w}x${h}-floor.png` });
+    expect(errors).toEqual([]);
+  });
+}
+
+// ---- Part 19: layer edits are timeline steps, export each layer to its own file (E2E-177..185)
+const LAYER_CARDS = "#timeline .step[data-step]";
+const layerCards = (page: Pg) => page.locator(LAYER_CARDS);
+const FLOOR_TRUTH = () => finiteRows().filter(inBand).length;
+const WALL_TRUTH = () => finiteRows().filter((r) => inBox(r, WALL18.c, WALL18.d)).length;
+
+test("E2E-177 19 New layer from the floor is a Layer edit card with the moved count and the tooltip; Ctrl+Z removes the layer, Ctrl+Y brings it back with its name", async ({ page }) => {
+  const t = layerMenu(page);
+  await t.floorFromBand();
+  const truth = FLOOR_TRUTH();
+  const card = layerCards(page).last();
+  await expect(layerCards(page)).toHaveCount(1);
+  await expect(card).toHaveAttribute("data-icon", "layer");
+  await expect(card).toContainText("Layer edit 1");
+  await expect(card).toContainText(String(truth));
+  await expect(card).toHaveAttribute("title", new RegExp(`${truth.toLocaleString("en-US")} points`));
+  await page.mouse.move(5, 5);
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await t.flags()).length, { timeout: 15000 }).toBe(0);
+  await expect(page.locator("#layer-list [data-layer-row]:not(.main)")).toHaveCount(0);
+  await t.exact("Active", String(ROOM_TOTAL));
+  await page.keyboard.press("Control+y");
+  await expect.poll(async () => (await t.byName("Floor"))?.count, { timeout: 15000 }).toBe(truth);
+  await t.exact("Active", String(ROOM_TOTAL));
+});
+
+test("E2E-178 19 dragging the marker across a layer step and a deletion step gives the counts and layer counts of fixture truth at every slot", async ({ page }) => {
+  const t = layerHelpers(page);
+  const { n } = await t.floorLayer();
+  const k = tl(page);
+  await k.boxAt(3, 13, 2, 4, 4, 3);
+  await k.exact("Candidates", String(ROOM.ghost));
+  await k.ctl("apply").click();
+  await k.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
+  await expect(k.cards).toHaveCount(2);
+  await expect(k.card(0)).toHaveAttribute("data-icon", "layer");
+  await k.dragMarkerTo(0);
+  await k.exact("Active", String(ROOM_TOTAL));
+  expect(await t.layers()).toEqual([]);
+  await k.dragMarkerTo(1);
+  await k.exact("Active", String(ROOM_TOTAL));
+  await expect.poll(async () => (await t.layers()).map((l) => [l.name, l.count]), { timeout: 15000 }).toEqual([["Floor", n]]);
+  await k.dragMarkerTo(2);
+  await k.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
+  expect((await t.layers()).map((l) => [l.name, l.count])).toEqual([["Floor", n]]);
+});
+
+test("E2E-179 19 deleting an independent layer step asks the exact text; a step a later one builds on has its delete disabled with the reason", async ({ page }) => {
+  const t = layerMenu(page);
+  const k = tl(page);
+  await k.open();
+  await t.ctl("prot-enabled").check();
+  await t.setNum("prot-min", BAND.min);
+  await t.setNum("prot-max", BAND.max);
+  await t.ctl("layer-from-band").click();
+  await expect.poll(async () => (await t.byName("Floor"))?.count, { timeout: 15000 }).toBe(FLOOR_TRUTH());
+  await t.wallLayer();
+  await expect(k.cards).toHaveCount(2);
+  const seen: string[] = [];
+  page.removeAllListeners("dialog");
+  page.on("dialog", (d) => {
+    seen.push(d.message());
+    void d.accept();
+  });
+  await k.card(0).hover();
+  await k.card(0).locator('[data-act="delete"]').click();
+  await expect.poll(() => seen.length, { timeout: 15000 }).toBe(1);
+  expect(seen[0]).toBe(`Remove step "Layer edit 1"? Its ${FLOOR_TRUTH().toLocaleString("en-US")} points go back to their earlier layer; later steps are kept. This cannot be undone. Continue?`);
+  await expect.poll(async () => (await t.flags()).map((l) => l.name), { timeout: 15000 }).toEqual(["Wall"]);
+  await expect(k.cards).toHaveCount(1);
+  // a Release of the wall builds on the Wall step: that step cannot be removed first
+  await t.ctl("sel-clear").click();
+  await t.ctl("tool-box").click();
+  await t.setBox(WALL18.c, WALL18.d);
+  await t.exact("Selected", String(ROOM.wall));
+  await t.ctl("layer-release").click();
+  await expect(k.cards).toHaveCount(2);
+  const del = k.card(0).locator('[data-act="delete"]');
+  await k.card(0).hover();
+  await expect(del).toBeDisabled();
+  await expect(del).toHaveAttribute("title", "A later layer edit builds on this one; remove that one first");
+  await del.click({ force: true });
+  expect(seen).toHaveLength(1);
+  await expect(k.cards).toHaveCount(2);
+});
+
+test("E2E-180 19 with steps rolled back, New layer asks the discard text; No changes nothing, Yes discards the greyed cards", async ({ page }) => {
+  const t = layerHelpers(page);
+  await t.floorLayer();
+  const k = tl(page);
+  await k.boxAt(3, 13, 2, 4, 4, 3);
+  await k.ctl("apply").click();
+  await k.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
+  await expect(k.cards).toHaveCount(2);
+  await k.dragMarkerTo(1);
+  await k.exact("Active", String(ROOM_TOTAL));
+  const asked: string[] = [];
+  let answer: "accept" | "dismiss" = "dismiss";
+  page.removeAllListeners("dialog");
+  page.on("dialog", (d) => {
+    asked.push(d.message());
+    void (answer === "accept" ? d.accept() : d.dismiss());
+  });
+  await k.ctl("sel-clear").click();
+  await k.ctl("tool-box").click();
+  await t.setBox(WALL18.c, WALL18.d);
+  await k.exact("Selected", String(ROOM.wall));
+  await page.locator('[data-control="layer-name"]').fill("Wall");
+  await k.ctl("layer-new").click();
+  await expect.poll(() => asked.length, { timeout: 15000 }).toBe(1);
+  expect(asked[0]).toBe("This layer edit discards the 1 rolled-back step(s) after the marker (they cannot be redone). Continue?");
+  await k.idle();
+  expect((await t.layers()).map((l) => l.name)).toEqual(["Floor"]);
+  await expect(k.cards).toHaveCount(2);
+  answer = "accept";
+  await page.locator('[data-control="layer-name"]').fill("Wall");
+  await k.ctl("layer-new").click();
+  await expect.poll(async () => (await t.layers()).map((l) => l.name), { timeout: 15000 }).toEqual(["Floor", "Wall"]);
+  await expect(k.cards).toHaveCount(2);
+  await expect(k.card(1)).toHaveAttribute("data-icon", "layer");
+  await k.exact("Active", String(ROOM_TOTAL));
+});
+
+test("E2E-181 19 Save and reopen keep the layer steps; Undo after the reopen reverts the last layer edit", async ({ page }, testInfo) => {
+  const t = layerMenu(page);
+  await t.floorFromBand();
+  await t.wallLayer();
+  await expect(layerCards(page)).toHaveCount(2);
+  const [dl] = await Promise.all([page.waitForEvent("download"), t.ctl("save-session").click()]);
+  const path = testInfo.outputPath("steps.pcdsession");
+  await dl.saveAs(path);
+  await page.locator("#file-input").setInputFiles({ name: "other.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
+  await t.exact("Active", String(TOTAL));
+  await page.locator("#file-input").setInputFiles({ name: "steps.pcdsession", mimeType: "application/octet-stream", buffer: readFileSync(path) });
+  await t.exact("Original", String(ROOM_TOTAL));
+  await expect(layerCards(page)).toHaveCount(2);
+  await expect(layerCards(page).nth(1)).toHaveAttribute("data-icon", "layer");
+  expect((await t.flags()).map((l) => l.name)).toEqual(["Floor", "Wall"]);
+  await t.ctl("undo").click();
+  await expect.poll(async () => (await t.flags()).map((l) => l.name), { timeout: 15000 }).toEqual(["Floor"]);
+  expect((await t.byName("Floor"))!.count).toBe(FLOOR_TRUTH());
+});
+
+test("E2E-182 19 One file per layer: one download per layer, each equal to fixture truth for its layer; the link list and the notice carry names and counts", async ({ page }, testInfo) => {
+  const t = layerMenu(page);
+  await t.floorFromBand();
+  await t.wallLayer();
+  const got: { name: string; path: string }[] = [];
+  page.on("download", (d) => {
+    const path = testInfo.outputPath(`pl-${got.length}-${d.suggestedFilename()}`);
+    got.push({ name: d.suggestedFilename(), path });
+    void d.saveAs(path);
+  });
+  await t.ctl("export").click();
+  await page.locator("#export-per-layer").check();
+  await expect(page.locator("#export-summary")).toContainText("Exports 3 files, one per chosen layer");
+  await t.ctl("export-go").click();
+  await expect.poll(() => got.length, { timeout: 30000 }).toBe(3);
+  expect(got.map((g) => g.name)).toEqual(["room_main_cleaned.pcd", "room_Floor_cleaned.pcd", "room_Wall_cleaned.pcd"]);
+  const all = parsePcd(roomPcd()).rows;
+  const floor = all.filter((r) => r.every(Number.isFinite) && inBand(r));
+  const wall = all.filter((r) => r.every(Number.isFinite) && inBox(r, WALL18.c, WALL18.d) && !inBand(r));
+  const inLayer = new Set([...floor, ...wall].map(rowId));
+  const main = all.filter((r) => !inLayer.has(rowId(r)));
+  const keys = (rows: number[][]) => rows.map(rowId).sort();
+  await expect.poll(() => got.every((g) => existsSync(g.path)), { timeout: 15000 }).toBe(true);
+  expect(keys(parsePcd(readFileSync(got[0].path)).rows)).toEqual(keys(main));
+  expect(keys(parsePcd(readFileSync(got[1].path)).rows)).toEqual(keys(floor));
+  expect(keys(parsePcd(readFileSync(got[2].path)).rows)).toEqual(keys(wall));
+  await expect(page.locator("#export-dialog")).toBeVisible();
+  await expect(page.locator("[data-export-file]")).toHaveCount(3);
+  await expect(page.locator("[data-export-file]").nth(1)).toHaveText(`room_Floor_cleaned.pcd (${floor.length})`);
+  await expect(page.locator("#notices")).toContainText(`room_Wall_cleaned.pcd (${wall.length} points)`);
+  await page.locator("#export-close").click();
+  await expect(page.locator("#export-dialog")).toBeHidden();
+});
+
+test("E2E-183 19 Hide selected then Undo: the points are drawn and selectable again", async ({ page }) => {
+  const t = hideHelpers(page);
+  const n = await t.floorSelected();
+  const drawn0 = await t.drawn();
+  await t.hideBtn.click();
+  await expect.poll(t.drawn, { timeout: 15000 }).toBe(drawn0 - n);
+  await t.ctl("undo").click();
+  await expect.poll(t.drawn, { timeout: 15000 }).toBe(drawn0);
+  await expect(t.hideBtn).toHaveText("Hide selected");
+  await t.ctl("tool-box").click(); // disarm: Select displayed is refused while a tool is armed
+  await t.ctl("sel-select-displayed").click();
+  await t.exact("Selected", String(finiteRows().length));
+});
+
+test("E2E-184 19 Merge then Undo: both layers and their order come back", async ({ page }) => {
+  const t = layerMenu(page);
+  const floor = await t.floorFromBand();
+  const wallId = await t.wallLayer();
+  const before = await t.flags();
+  await t.openMore(wallId);
+  await t.m("merge-target", wallId).selectOption({ label: "Floor" });
+  await t.m("merge", wallId).click();
+  await expect.poll(async () => (await t.byName("Wall")) === undefined, { timeout: 15000 }).toBe(true);
+  await expect.poll(async () => (await t.byName("Floor"))?.count, { timeout: 15000 }).toBe(floor.count + ROOM.wall);
+  await t.ctl("undo").click();
+  await expect.poll(async () => t.flags(), { timeout: 15000 }).toEqual(before);
+});
+
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-185 19 owner screenshots at ${w}x${h}: the strip with a layer and a deletion card, and the per-layer export dialog with its file list`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => {
+      if (m.type() === "error" && !/404/.test(m.text())) errors.push(m.text());
+    });
+    const t = layerMenu(page);
+    await t.floorFromBand();
+    await t.wallLayer();
+    await t.ctl("sel-clear").click();
+    await t.ctl("tool-box").click();
+    await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+    await t.exact("Selected", String(ROOM.ghost));
+    await t.ctl("apply").click();
+    await expect(layerCards(page)).toHaveCount(3);
+    await expect(layerCards(page).first()).toBeVisible();
+    await t.ctl("colour-mode").selectOption("layers");
+    await page.mouse.move(5, 5);
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: `/out/part19-${w}x${h}-strip.png` });
+    await t.ctl("export").click();
+    await page.locator("#export-per-layer").check();
+    await t.ctl("export-go").click();
+    await expect(page.locator("[data-export-file]")).toHaveCount(3);
+    await expect(page.locator("#export-files")).toBeVisible();
+    await page.screenshot({ path: `/out/part19-${w}x${h}-export.png` });
     expect(errors).toEqual([]);
   });
 }

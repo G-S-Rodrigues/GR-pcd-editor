@@ -56,8 +56,14 @@
 - **Tilted slab:** The protected interval measured along a normal turned by
   rx and ry (each within 60 degrees) about a pivot at the active-bounds XY centre,
   instead of along Z. Level (both angles 0) is the plain Z slab.
-- **Step:** One applied deletion in the history, with a stable id, the tool that made it, an optional name and the
+- **Step:** One applied deletion or layer edit in the history, with a stable id, the tool that made it, an optional name and the
   count of points it removed; shown as a card in the timeline.
+- **Layer step:** A step made by a layer edit (create, assign, set to selection, merge, To main). Its card reads Layer
+  edit N and Undo, Redo and the marker move it like a deletion.
+- **Dependent step:** A layer step that a later layer step builds on (it moves some of the same points); its delete is
+  refused until the later one is removed.
+- **Per-layer export:** The Export option One file per layer: one PCD per chosen layer named
+  `<original>_<layer>_cleaned.pcd`, Main as `main`; layers with no points in scope are skipped and listed.
 - **Timeline:** The strip under the view with one card per step and a marker; it is saved in the session archive.
 - **Marker:** The cursor between steps; steps before it are applied, steps after it are rolled back (greyed). Undo and
   Redo move it one slot.

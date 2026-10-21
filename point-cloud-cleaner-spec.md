@@ -493,3 +493,13 @@ Initial targets, to be benchmarked on a documented desktop Linux reference PC wi
 - The archive stays version 2: layer items carry optional `protected` and `locked` keys written only when true; an
   older build opens such a file and drops them silently.
 
+## Part 19 addendum (layer edits in Undo, per-layer export)
+
+- Reverses the Part 15b ruling (2): layer edits are timeline steps. Section 14 Undo covers layer membership edits
+  (create, assign, set to selection, merge, To main). The Part 14 amendment's "Ctrl+Z stays deletions only" becomes
+  "Ctrl+Z undoes timeline steps (deletions and layer edits); there is still no box undo stack".
+- A layer edit while steps are rolled back asks to discard them first; No sends nothing. A layer step that a later layer
+  step builds on cannot be deleted (422 `step_has_dependents`; the card's delete is disabled with the reason).
+- Export gains One file per layer (`per_layer`): one PCD per chosen layer, Main first, empty layers skipped and listed.
+- This supersedes the Part 18 addendum line "The archive stays version 2": the archive is version 3 only when a layer
+  step exists (older builds refuse it), otherwise version 2; v1 and v2 files still open. AC-12 and AC-17 stand.

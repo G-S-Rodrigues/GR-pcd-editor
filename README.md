@@ -95,9 +95,8 @@ Concepts worth knowing:
   back; each row has an eye (a hidden layer is not drawn, picked or selected, but stays in the cloud, the counts and
   the export), **Select**, **Edit** and **To main**. **Edit** clears the selection, opens a Box at the layer's bounds as
   a live selection; resize it and press **Set layer to selection** to make the layer hold exactly those points (points
-  taken from another layer are confirmed first; the selection stays). Layers are saved in the session (version 2, only
-  when layers exist), restored on reopen, and the Export dialog can export a subset of layers. Layer edits are not
-  steps in the timeline. **New layer from protected points** snapshots the height band into a protected layer called
+  taken from another layer are confirmed first; the selection stays). Layers are saved in the session (version 2, version 3 when a layer step exists), restored on reopen, and the Export dialog can export a subset of layers. Layer edits are steps in the timeline: Ctrl+Z
+  undoes them and the Export dialog can write one file per layer. **New layer from protected points** snapshots the height band into a protected layer called
   Floor. The chevron on a row opens its menu: rename, 16 colours, Visible, **Protected** (its points are never deleted
   by any Delete; Override protection frees only the band), **Lock** (no points move into or out of it), Select, Add,
   Subtract and Intersect with the layer, Up and Down, Merge into another layer and **Delete points**. The colour

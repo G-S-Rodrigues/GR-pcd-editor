@@ -451,3 +451,30 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
   `/out/part18-<w>x<h>-menu.png` and `-floor.png`; keep them with `SMOKE_SHOTS_DIR=<dir> bash scripts/smoke.sh ...`,
   never commit them.
 - Changed existing smoke tests: none.
+
+## Part 19 additions (layer edits in Undo, export each layer to its own file)
+
+- Backend: `HST-23..31` (the layer step in `History`, `replace`, dependents, and `HST-31`, a 300-sequence property test of
+  deletion and layer steps against the plain-set oracle `tests/fixtures/step_oracle.py`), `SES-77..86` (archive
+  version 3), `LAY-100..112` (engine steps, ordered flips, delete-step refusal), `API-103..108` and `LAY-120..127`
+  (routes and per-layer export). pytest 643 to 697 (`test_pcd_61`, the 1M read, is a known load flake).
+- Soundness replay compares membership (per-point layer and row id), never row order: re-inserting a deleted row at its
+  stored index drifts the order by design, so the stop rule does not fire on order.
+- Frontend unit: `UI-928..953` (layer cards, delete state and confirm text, `step_has_dependents` notice, undo texts,
+  the rolled-back gate in `layers.ts`, the One file per layer dialog and `startExportPerLayer`). vitest 736 to 763.
+- Smoke `E2E-177..185`. `E2E-182` re-parses each of the three downloads with the independent reader in
+  `e2e/synthetic.ts` against fixture truth. Headless Chromium delivers one `download` event per programmatic anchor click
+  (spike at 19-0), so no zip fallback exists; the dialog keeps a link list as the fallback for a browser that blocks
+  several downloads (the real prompt is a manual QA item). `E2E-185` writes `/out/part19-<w>x<h>-strip.png` and
+  `-export.png`; keep them with `SMOKE_SHOTS_DIR`, never commit them. Smoke 161 to 171.
+- Dialog-listener rule (E2E-90): register `page.on("dialog")` after the helper that opens the room, or answer by message
+  text; each test leaves an unsaved session and the next open asks to discard it. `E2E-179` and `E2E-180` replace the
+  listeners after the open and answer the Remove step and discard texts by content. Hover a card before clicking its
+  delete button.
+- Archive rule: version 3 is written only when a layer step exists; v1 and v2 still open; a pre-19 build refuses v3
+  (read from the code, not executed).
+- Changed existing tests, by id, nothing loosened: `LAY-10`, `LAY-11`, `LAY-40`, `LAY-94b`, `LAY-96`, `LAY-30` (version
+  3), `LAY-38` (version 3, no layers block), `LAY-33` (last leg uses version 4), `HST-20`, `HST-20b`, `LAY-20`,
+  `LAY-20b` (rewritten on the shared oracle, thresholds unchanged; `LAY-20` op mix gains merge), `UI-265` (empty
+  strip text "No steps yet"), `UI-837` (the layers note and title wording). `HST-21` and `LAY-21` go green through the
+  oracle unchanged.
