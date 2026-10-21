@@ -23,6 +23,8 @@ export interface LayersApi {
 }
 
 export interface LayersDeps {
+  /** Sends a protection edit still waiting in its debounce and waits for the server (the band the server uses must be the one on screen). */
+  flushProtection?(): Promise<void>;
   /** Re-runs the live tool and redraws, as for a filter change. */
   paramsHook(kind: ParamsKind): void;
   confirm(message: string): boolean;
@@ -209,6 +211,7 @@ export function createLayers(store: Store<AppState>, api: LayersApi, deps: Layer
       if (refuse(layerButtons(store.get()).fromBand)) return Promise.resolve();
       if (!stepGate()) return Promise.resolve();
       return guarded(async () => {
+        await deps.flushProtection?.();
         if (!(await confirmed(api.layerFromProtection(rev(), { dry_run: true }), "Floor"))) return;
         const before = new Set(layersOf(store.get().session).map((l) => l.id));
         const reply = await api.layerFromProtection(rev());

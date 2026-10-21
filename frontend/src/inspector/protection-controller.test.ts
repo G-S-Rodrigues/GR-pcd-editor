@@ -62,4 +62,39 @@ describe("protection controller", () => {
     await vi.advanceTimersByTimeAsync(400);
     expect((put.mock.calls.at(-1)![0] as { global: { max: number } }).global.max).toBe(20);
   });
+
+  it("UI-986 flush sends a waiting edit at once and resolves after the answer; with nothing waiting it resolves without a call", async () => {
+    const store = createAppStore();
+    store.set({ session: sessionFixture() });
+    const put = vi.fn(async (_b: unknown) => sessionFixture({ revision: { cloud: 3, params: 5 } }));
+    const changed = vi.fn();
+    const c = createProtectionController(store, { putProtection: put, onParamsChanged: changed });
+    await c.flush();
+    expect(put).not.toHaveBeenCalled();
+    c.edit((m) => setGlobal(m, { enabled: true, min: -0.05, max: 0.05 }));
+    expect(put).not.toHaveBeenCalled();
+    await c.flush(); // no timer advance: the 150 ms debounce is skipped
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(changed).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(put).toHaveBeenCalledTimes(1); // the cancelled timer does not send again
+  });
+
+  it("UI-987 flush waits for a request that is already on its way", async () => {
+    const store = createAppStore();
+    store.set({ session: sessionFixture() });
+    let release: (s: ReturnType<typeof sessionFixture>) => void = () => undefined;
+    const put = vi.fn(() => new Promise<ReturnType<typeof sessionFixture>>((r) => (release = r)));
+    const c = createProtectionController(store, { putProtection: put, onParamsChanged: () => undefined });
+    c.edit((m) => setGlobal(m, { enabled: true, min: -0.05, max: 0.05 }));
+    await vi.advanceTimersByTimeAsync(150);
+    expect(put).toHaveBeenCalledTimes(1);
+    let done = false;
+    void c.flush().then(() => (done = true));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(done).toBe(false);
+    release(sessionFixture());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(done).toBe(true);
+  });
 });

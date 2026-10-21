@@ -114,7 +114,7 @@ test("UI-818 any other failure is an error notice with the server text and the s
 });
 
 // ---- the layers panel calls (15b-8)
-function panel(over: { confirm?: boolean; op?: LayerOp; layers?: Layer[]; active?: number | null; compare?: string } = {}) {
+function panel(over: { flush?: () => Promise<void>; confirm?: boolean; op?: LayerOp; layers?: Layer[]; active?: number | null; compare?: string } = {}) {
   const layers = over.layers ?? [layer({ id: 1, name: "Floor", visible: true }), layer({ id: 2, name: "Wall", visible: false })];
   const store = createAppStore();
   store.set({
@@ -140,7 +140,7 @@ function panel(over: { confirm?: boolean; op?: LayerOp; layers?: Layer[]; active
   const paramsHook = vi.fn();
   const selectLayerOp = vi.fn(async () => true);
   const apply = vi.fn(async () => undefined);
-  const layersCtl = createLayers(store, api as never, { paramsHook, confirm, selectLayer, selectLayerAdd: async () => true, discardDraft: () => undefined, openShape: async () => ({ ok: true }), selectLayerOp, apply });
+  const layersCtl = createLayers(store, api as never, { paramsHook, confirm, selectLayer, selectLayerAdd: async () => true, discardDraft: () => undefined, openShape: async () => ({ ok: true }), selectLayerOp, apply, flushProtection: over.flush });
   return { store, api, confirm, selectLayer, paramsHook, selectLayerOp, apply, layers: layersCtl };
 }
 
@@ -247,6 +247,15 @@ test("UI-914 fromBand: dry run, steal confirm when needed, the real call, the ne
   expect(yes.confirm).not.toHaveBeenCalled();
   expect(yes.paramsHook.mock.calls).toEqual([["layers"]]);
   expect(yes.store.get().layerUi.active).toBe(3);
+});
+
+test("UI-985 fromBand first sends the band edit still waiting in the debounce, then asks the server for the layer", async () => {
+  const order: string[] = [];
+  const t = panel({ flush: async () => void order.push("flush") });
+  bandOn(t);
+  t.api.layerFromProtection.mockImplementation(async (..._a: unknown[]) => (order.push("call"), { session: t.store.get().session!, op: OP } as LayerReply));
+  await t.layers.fromBand();
+  expect(order.slice(0, 2)).toEqual(["flush", "call"]);
 });
 
 test("UI-915 merge confirms always, adds the lose-protection sentence, sends nothing on No and chooses the target", async () => {
