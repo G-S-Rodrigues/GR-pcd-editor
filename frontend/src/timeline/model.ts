@@ -221,6 +221,9 @@ export const discardCount = (session: SessionState | null): number =>
   session ? Math.max(0, session.history.entries.length - session.history.cursor) : 0;
 export const discardText = (n: number): string =>
   `Applying a new deletion discards the ${n} rolled-back step(s) after the marker (they cannot be redone). Continue?`;
+/** Asked before a layer edit that would throw the rolled-back steps away. */
+export const layerDiscardText = (n: number): string =>
+  `This layer edit discards the ${n} rolled-back step(s) after the marker (they cannot be redone). Continue?`;
 export const deleteStepText = (label: string, count: number): string =>
   `Remove step "${label}"? Its ${fmt(count)} points come back (or stay active if rolled back); later steps are kept. This cannot be undone. Continue?`;
 

@@ -99,14 +99,16 @@ test("UI-836 the layer buttons give the reason in their title and aria-disabled:
   expect(ctl("layer-new").getAttribute("aria-disabled")).toBe("false");
 });
 
-test("UI-837 every layer control is described and has a tooltip; the section note says edits are not in the timeline", () => {
+test("UI-837 every layer control is described and has a tooltip; the section note says edits are timeline steps", () => {
   for (const id of ["layer-new", "layer-name", "layer-assign", "layer-release", "layer-set"]) {
     expect(describeControls().find((d) => d.id === id)?.label).toBeTruthy();
     expect(TOOLTIPS[id]).toBeTruthy();
   }
-  expect(section().text()).toMatch(/not in the timeline/);
-  const note = section().all().find((e) => e.getAttribute("title")?.includes("re-assigning")); // 17: the long advice is the note's tooltip
-  expect(note?.text()).toBe("Layer edits are not in the timeline.");
+  expect(section().text()).toMatch(/timeline steps/);
+  const note = section().all().find((e) => e.getAttribute("title")?.includes("Undo reverts them")); // 17: the long advice is the note's tooltip
+  expect(note?.text()).toBe("Layer edits are timeline steps; Undo reverts them.");
+  expect(note?.getAttribute("title")).not.toContain("re-assigning");
+  expect(TOOLTIPS["layer-new"]).toContain("it is a timeline step"); // UI-944
 });
 
 test("UI-838 a layer-less session shows only Main-less empty state: no rows and a hint to select points first", () => {

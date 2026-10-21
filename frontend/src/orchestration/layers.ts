@@ -4,6 +4,7 @@ import type { Store } from "../state/store";
 import type { Scope, StepBox, Vec3 } from "../state/types";
 import type { EditShapeResult } from "./editshape";
 import { HIDDEN_LAYER_NAME, SHOW_FIRST, deletePointsText, findLayer, hiddenLayer, layerBoxShape, layerButtons, layerRows, layersOf, mergeConfirmText, stealConfirmText, toMainProtectedText } from "../layers/model";
+import { discardCount, layerDiscardText } from "../timeline/model";
 import { makeGuard } from "./edit";
 import type { ParamsKind } from "./runner";
 import type { SelectionRequest } from "./selection";
@@ -57,8 +58,9 @@ export const layerOpBody = (rev: number, id: number, op: LayerSelectOp): Selecti
 export const layerAddBody = (rev: number, id: number): SelectionRequest => layerOpBody(rev, id, "add");
 
 /**
- * Layer calls. A layer edit is not a timeline step, so the reply replaces the session and goes through the params hook;
- * it does NOT go through the editor's afterChange, which would reset the draft and the preview.
+ * Layer calls. A reply carries the new history (membership edits and layer add/remove are timeline steps), so it replaces
+ * the session and goes through the params hook; it does NOT go through the editor's afterChange, which would reset the
+ * draft and the preview. Step-making calls ask `stepGate` first.
  */
 export function createLayers(store: Store<AppState>, api: LayersApi, deps: LayersDeps) {
   const guarded = makeGuard(store, () => api.refreshState());
@@ -79,6 +81,12 @@ export function createLayers(store: Store<AppState>, api: LayersApi, deps: Layer
     return text === null || deps.confirm(text);
   }
 
+  /** A layer edit that makes a step throws the rolled-back steps away: ask once, before anything is sent. */
+  const stepGate = (): boolean => {
+    const n = discardCount(store.get().session);
+    return n === 0 || deps.confirm(layerDiscardText(n));
+  };
+
   const patch = (id: number, o: Parameters<LayersApi["patchLayer"]>[1]): Promise<void> =>
     guarded(async () => {
       adopt(await api.patchLayer(id, o));
@@ -86,14 +94,16 @@ export function createLayers(store: Store<AppState>, api: LayersApi, deps: Layer
 
   return {
     /** Hide selected: one atomic call that fills (or makes) the layer named exactly "Hidden" and hides it. */
-    hideSelected: (): Promise<void> =>
-      guarded(async () => {
+    hideSelected: (): Promise<void> => {
+      if (!stepGate()) return Promise.resolve();
+      return guarded(async () => {
         const existing = hiddenLayer(store.get().session);
         const reply = existing
           ? await api.assignLayer(rev(), existing.id, { visible: false })
           : await api.createLayer(rev(), { name: HIDDEN_LAYER_NAME, visible: false });
         adopt(reply);
-      }),
+      });
+    },
     /**
      * Show hidden: every hidden layer is visible again and the members of the layer named Hidden (the one Hide selected
      * fills) join the selection, so Delete works on them at once. A user layer hidden by its eye comes back visible, not
@@ -113,6 +123,7 @@ export function createLayers(store: Store<AppState>, api: LayersApi, deps: Layer
       if (refuse(layerButtons(store.get()).create)) return Promise.resolve();
       const name = rawName.trim();
       const o = name ? { name } : {};
+      if (!stepGate()) return Promise.resolve();
       return guarded(async () => {
         if (!(await confirmed(api.createLayer(rev(), { ...o, dry_run: true }), name || "the new layer"))) return;
         const before = new Set(layersOf(store.get().session).map((l) => l.id));
@@ -127,6 +138,7 @@ export function createLayers(store: Store<AppState>, api: LayersApi, deps: Layer
       const b = layerButtons(store.get());
       if (refuse(b.assign) || !b.active) return Promise.resolve();
       const target = b.active;
+      if (!stepGate()) return Promise.resolve();
       return guarded(async () => {
         if (!(await confirmed(api.assignLayer(rev(), target.id, { dry_run: true }), target.name))) return;
         adopt(await api.assignLayer(rev(), target.id));
@@ -135,6 +147,7 @@ export function createLayers(store: Store<AppState>, api: LayersApi, deps: Layer
     /** Selected points back to main (layer 0). */
     release: (): Promise<void> => {
       if (refuse(layerButtons(store.get()).release)) return Promise.resolve();
+      if (!stepGate()) return Promise.resolve();
       return guarded(async () => {
         adopt(await api.assignLayer(rev(), 0));
       });
@@ -149,6 +162,7 @@ export function createLayers(store: Store<AppState>, api: LayersApi, deps: Layer
     /** Every member goes back to main and the layer is removed. */
     toMain: (id: number): Promise<void> => {
       const l = findLayer(store.get().session, id);
+      if (!stepGate()) return Promise.resolve();
       if (l?.protected && !deps.confirm(toMainProtectedText(l))) return Promise.resolve();
       return guarded(async () => {
         adopt(await api.deleteLayer(rev(), id));
@@ -181,6 +195,7 @@ export function createLayers(store: Store<AppState>, api: LayersApi, deps: Layer
       const id = st.layerUi.editing;
       const l = id === null ? null : findLayer(st.session, id);
       if (!l || refuse(layerButtons(st).set)) return Promise.resolve();
+      if (!stepGate()) return Promise.resolve();
       return guarded(async () => {
         if (!(await confirmed(api.setMembers(rev(), l.id, { dry_run: true }), l.name))) return;
         adopt(await api.setMembers(rev(), l.id));
@@ -192,6 +207,7 @@ export function createLayers(store: Store<AppState>, api: LayersApi, deps: Layer
     /** New layer from protected points: the points inside the global height band become a protected layer. */
     fromBand: (): Promise<void> => {
       if (refuse(layerButtons(store.get()).fromBand)) return Promise.resolve();
+      if (!stepGate()) return Promise.resolve();
       return guarded(async () => {
         if (!(await confirmed(api.layerFromProtection(rev(), { dry_run: true }), "Floor"))) return;
         const before = new Set(layersOf(store.get().session).map((l) => l.id));
@@ -207,6 +223,7 @@ export function createLayers(store: Store<AppState>, api: LayersApi, deps: Layer
       const b = findLayer(store.get().session, into);
       const row = layerRows(store.get().session).find((r) => r.id === from);
       if (!a || !b || refuse(row?.mergeDisabled ?? null)) return Promise.resolve();
+      if (!stepGate()) return Promise.resolve();
       if (!deps.confirm(mergeConfirmText(a, b))) return Promise.resolve();
       return guarded(async () => {
         adopt(await api.mergeLayer(rev(), from, { into }));

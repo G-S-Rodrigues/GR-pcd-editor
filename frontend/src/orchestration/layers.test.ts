@@ -4,6 +4,8 @@ import type { LayerReply } from "../api/layers";
 import { createAppStore } from "../state/app";
 import type { Layer, LayerOp } from "../state/types";
 import { sessionFixture } from "../testing/fixtures";
+import { layerButtons } from "../layers/model";
+import { layerDiscardText, stepsOf } from "../timeline/model";
 import { createLayers, layerAddBody, layerOpBody, layerSelectBody } from "./layers";
 
 const layer = (over: Partial<Layer> = {}): Layer => ({ id: 1, name: "Hidden", colour: 0, visible: true, count: 5, bounds: null, ...over });
@@ -341,4 +343,124 @@ test("UI-920 rename trims and refuses empty; colour, flags and visibility send t
   expect(t.api.patchLayer.mock.calls).toEqual([[1, { name: "Ground" }], [1, { colour: 4 }], [1, { protected: true }], [1, { locked: false }], [1, { visible: false }]]);
   expect(t.store.get().notices.some((n) => n.code === "layer_disabled")).toBe(true);
   expect(t.paramsHook).toHaveBeenCalledTimes(5);
+});
+
+// ---- Part 19: layer edits are steps; the discard gate (UI-938..945)
+const lay = (over: Partial<Layer> = {}): Layer => ({ id: 1, name: "Floor", colour: 0, visible: true, count: 5, bounds: null, protected: false, locked: false, ...over } as Layer);
+const hist = (n: number, cursor: number) => ({
+  entries: Array.from({ length: n }, (_, i) => ({ index: i, sid: i + 1, kind: "delete", tool: "box", name: null, description: "d", count: 3 })),
+  cursor,
+  can_undo: cursor > 0,
+  can_redo: cursor < n,
+});
+
+function gated(cursor: number, confirmAnswers: boolean[] = [true]) {
+  const store = createAppStore();
+  store.set({
+    session: sessionFixture({
+      revision: { cloud: 7, params: 4 },
+      selection: { count: 5, ops: [] },
+      layers: [lay(), lay({ id: 2, name: "Wall" })],
+      protection: { global: { enabled: true, min: 0, max: 1 }, operation: { mode: "inherit", local: null, acknowledge_override: false } },
+      history: hist(3, cursor),
+    }),
+    layerUi: { active: 1, editing: 1 },
+    draft: false,
+    preview: null,
+  } as never);
+  const reply = (): LayerReply => ({ session: store.get().session!, op: OP });
+  const api = {
+    createLayer: vi.fn(async () => reply()),
+    assignLayer: vi.fn(async () => reply()),
+    deleteLayer: vi.fn(async () => reply()),
+    setMembers: vi.fn(async () => reply()),
+    patchLayer: vi.fn(async () => reply()),
+    mergeLayer: vi.fn(async () => reply()),
+    setOrder: vi.fn(async () => reply()),
+    layerFromProtection: vi.fn(async () => reply()),
+    setVisibility: vi.fn(async () => reply()),
+    refreshState: vi.fn(async () => undefined),
+  };
+  const answers = [...confirmAnswers];
+  const confirm = vi.fn((_m: string) => (answers.length > 1 ? answers.shift()! : answers[0]));
+  const deps = { paramsHook: vi.fn(), confirm, selectLayer: vi.fn(), selectLayerAdd: async () => true, discardDraft: vi.fn(), openShape: async () => ({ ok: true as const }), selectLayerOp: async () => true, apply: async () => undefined };
+  return { store, api, confirm, layers: createLayers(store, api as never, deps) };
+}
+
+const DISCARD = "This layer edit discards the 2 rolled-back step(s) after the marker (they cannot be redone). Continue?";
+
+test("UI-938 layerDiscardText is exact", () => {
+  expect(layerDiscardText(2)).toBe(DISCARD);
+});
+
+test("UI-939 rolled back, every step-making call asks the gate once and No sends nothing, not even the dry run", async () => {
+  const calls: [string, (t: ReturnType<typeof gated>) => Promise<void>][] = [
+    ["create", (t) => t.layers.create("x")],
+    ["assign", (t) => t.layers.assign()],
+    ["release", (t) => t.layers.release()],
+    ["toMain", (t) => t.layers.toMain(1)],
+    ["setMembers", (t) => t.layers.setMembers()],
+    ["fromBand", (t) => t.layers.fromBand()],
+    ["merge", (t) => t.layers.merge(1, 2)],
+    ["hideSelected", (t) => t.layers.hideSelected()],
+  ];
+  for (const [name, run] of calls) {
+    const t = gated(1, [false]);
+    await run(t);
+    expect(t.confirm, name).toHaveBeenCalledTimes(1);
+    expect(t.confirm, name).toHaveBeenCalledWith(DISCARD);
+    for (const fn of Object.values(t.api)) expect(fn, name).not.toHaveBeenCalled();
+    const y = gated(1, [true]);
+    await run(y);
+    expect(y.confirm.mock.calls.filter((c) => c[0] === DISCARD), name).toHaveLength(1);
+    expect(Object.values(y.api).some((fn) => fn.mock.calls.length > 0), name).toBe(true);
+  }
+});
+
+test("UI-940 at the end of the strip there is no gate confirm", async () => {
+  const t = gated(3);
+  await t.layers.create("x");
+  await t.layers.merge(1, 2);
+  expect(t.confirm.mock.calls.some((c) => c[0].includes("rolled-back"))).toBe(false);
+  expect(t.api.createLayer).toHaveBeenCalled();
+});
+
+test("UI-941 settings are not gated", async () => {
+  const t = gated(1);
+  await t.layers.rename(1, "New");
+  await t.layers.setColour(1, 3);
+  await t.layers.setFlag(1, "protected", true);
+  await t.layers.setFlag(1, "locked", true);
+  await t.layers.setVisible(1, false);
+  await t.layers.toggle(1);
+  await t.layers.move(1, 1);
+  await t.layers.showHidden();
+  t.layers.select(1);
+  await t.layers.layerOp(1, "add");
+  expect(t.confirm).not.toHaveBeenCalled();
+});
+
+test("UI-942 the gate asks first, then the steal confirm; No at the steal sends only the dry run", async () => {
+  const t = gated(1, [true, false]);
+  t.api.createLayer.mockResolvedValueOnce({ session: t.store.get().session!, op: { moved: 5, from_other_layers: 2, released: 0 } });
+  await t.layers.create("x");
+  expect(t.confirm.mock.calls[0][0]).toBe(DISCARD);
+  expect(t.confirm.mock.calls[1][0]).not.toBe(DISCARD);
+  expect(t.api.createLayer).toHaveBeenCalledTimes(1);
+  expect(t.api.createLayer.mock.calls[0]).toEqual([7, { name: "x", dry_run: true }]);
+});
+
+test("UI-943 a layer that Undo removed reads as none for the active layer", () => {
+  const t = gated(3);
+  t.store.update((s) => ({ ...s, layerUi: { active: 9, editing: null }, session: sessionFixture({ layers: [lay()], selection: { count: 5, ops: [] } }) }));
+  expect(layerButtons(t.store.get()).active).toBeNull();
+});
+
+test("UI-945 a layer reply's history appears in the strip without the editor's afterChange; the draft flag is kept", async () => {
+  const t = gated(3);
+  t.api.assignLayer.mockResolvedValue({ session: sessionFixture({ revision: { cloud: 7, params: 5 }, layers: [lay()], history: hist(4, 4) }), op: OP });
+  t.store.set({ draft: false });
+  await t.layers.assign();
+  expect(stepsOf(t.store.get().session)).toHaveLength(4);
+  expect(t.store.get().draft).toBe(false);
 });

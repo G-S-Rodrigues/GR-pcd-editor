@@ -9,8 +9,8 @@ import { TOOLTIPS } from "./tooltips";
 import type { PanelActions } from "./panels";
 
 /** The short note under the Layers heading; the long advice is its tooltip (part 17-10). */
-export const LAYERS_NOTE = "Layer edits are not in the timeline.";
-export const LAYERS_NOTE_TITLE = "Named groups of points. Layer edits are not in the timeline; undo one by re-assigning the points. Hidden layers are not drawn or selectable but are still exported.";
+export const LAYERS_NOTE = "Layer edits are timeline steps; Undo reverts them.";
+export const LAYERS_NOTE_TITLE = "Named groups of points. Layer edits are timeline steps; Undo reverts them (names, colours, the eye and the flags are settings, not steps). Hidden layers are not drawn or selectable but are still exported.";
 
 /**
  * The Layers section of the left panel (moved out of the right panel in part 17-10). A layer row is one line: colour chip, name,
