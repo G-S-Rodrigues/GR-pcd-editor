@@ -21,6 +21,8 @@ log = logging.getLogger(__name__)
 
 MAX_JOBS = 200
 SUPERSEDED = ("select", "candidate", "preview")
+# kinds the orphan sweeper cancels when the client stops polling; a detect is swept but a new select does not cancel it
+ORPHAN_SWEPT = (*SUPERSEDED, "planes")
 # what a new job of a kind cancels: a preview only replaces an older preview
 # (it must not cancel a commit or a candidate evaluation in flight)
 CANCELS = {
@@ -104,11 +106,11 @@ class JobManager:
             self.sweep()
 
     def sweep(self) -> None:
-        """Cancel select/candidate jobs whose client stopped polling."""
+        """Cancel select/candidate/preview/planes jobs whose client stopped polling."""
         now = self._clock()
         for job in list(self._jobs.values()):
             if (
-                job.kind in SUPERSEDED
+                job.kind in ORPHAN_SWEPT
                 and job.status in ("queued", "running")
                 and now - job.last_seen > self._orphan_s
             ):

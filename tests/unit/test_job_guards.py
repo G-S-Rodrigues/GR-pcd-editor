@@ -150,3 +150,27 @@ def test_ses_43_orphan_sweeper_cancels_unpolled_select_jobs():
     assert sel.status == "cancelled"
     gate.set()
     jobs.shutdown()
+
+
+def test_ses_91_sweep_cancels_orphaned_planes_job():
+    now = {"t": 0.0}
+    jobs = JobManager(orphan_s=20.0, clock=lambda: now["t"], sweep=False)
+    gate = threading.Event()
+
+    def loop(ctx):
+        while not gate.is_set():
+            ctx.token.check()
+            time.sleep(0.005)
+        return {}
+
+    job = jobs.submit("planes", loop)
+    try:
+        time.sleep(0.1)
+        now["t"] = 21.0
+        jobs.sweep()
+        assert job.token.cancelled
+        _wait(job)
+        assert job.status == "cancelled"
+    finally:
+        gate.set()
+        jobs.shutdown()
