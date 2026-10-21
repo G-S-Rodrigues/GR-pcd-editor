@@ -1,18 +1,41 @@
-"""Deletion history with undo/redo and revision tickets."""
+"""Timeline history (deletions and layer edits) with undo/redo and revision tickets."""
 
 import threading
 from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from gr_pcd.editing.errors import EditError
+
+if TYPE_CHECKING:  # layers imports this module
+    from gr_pcd.editing.layers import Layer
 
 BYTES_PER_ID = 4
 MAX_STEPS = 500
 # step ids stay below this (the archive loader and the JS client rely on it)
 MAX_SID = 2**31
 MAX_NAME = 80
-TOOLS = ("box", "polygon", "cluster", "filter", "selection", "invalid")
+TOOLS = (
+    "box",
+    "polygon",
+    "cluster",
+    "filter",
+    "selection",
+    "invalid",
+    "layer",
+)
+LAYER = "layer"  # both the kind and the tool of a layer step
+
+
+@dataclass(frozen=True)
+class LayerRowChange:
+    """A layer row a layer step added (created) or removed, with the row's
+    position in the stored order (re-inserted there, clamped)."""
+
+    index: int
+    layer: "Layer"
+    created: bool
 
 
 @dataclass(frozen=True)
@@ -26,6 +49,29 @@ class HistoryEntry:
     shape: dict | None = (
         None  # the editable tool shape (session.codec.shape_of); None when unknown
     )
+    # layer steps only: the layer id of every id before (frm) and after (to),
+    # aligned with `ids`, and the rows the step created or removed
+    frm: np.ndarray | None = None
+    to: np.ndarray | None = None
+    rows: tuple = ()
+
+    @property
+    def nbytes(self) -> int:
+        n = int(self.ids.nbytes)
+        for a in (self.frm, self.to):
+            if a is not None:
+                n += int(a.nbytes)
+        return n
+
+    def made(self) -> set:
+        return {r.layer.id for r in self.rows}
+
+    def uses(self) -> set:
+        used: set = set()
+        for a in (self.frm, self.to):
+            if a is not None:
+                used |= set(np.unique(a).tolist())
+        return (used | self.made()) - {0}
 
 
 def clean_name(
@@ -48,10 +94,12 @@ def clean_name(
 
 
 class History:
-    """Deletion steps. Each step is exactly its id set; the sets are pairwise
-    disjoint (every push is a subset of the points active at that moment and
-    the redo tail is discarded), so rollback and step deletion are plain set
-    arithmetic and no selection is ever recomputed."""
+    """Timeline steps. A deletion step is exactly its id set; the deletion
+    sets are pairwise disjoint (every push is a subset of the points active at
+    that moment and the redo tail is discarded), so rollback and step deletion
+    are plain set arithmetic and no selection is ever recomputed. Layer steps
+    (kind and tool "layer") carry a from/to diff; they may overlap each other
+    and are flipped in order."""
 
     def __init__(self, budget_bytes: int | None = None) -> None:
         self.entries: list[HistoryEntry] = []
@@ -68,7 +116,7 @@ class History:
         return self.cursor < len(self.entries)
 
     def _bytes(self, entries) -> int:
-        return sum(int(e.ids.nbytes) for e in entries)
+        return sum(e.nbytes for e in entries)
 
     def push(
         self,
@@ -77,8 +125,21 @@ class History:
         ids: np.ndarray,
         tool: str = "selection",
         shape: dict | None = None,
+        frm: np.ndarray | None = None,
+        to: np.ndarray | None = None,
+        rows: tuple = (),
     ) -> None:
+        if (kind == LAYER) != (tool == LAYER):
+            raise EditError(
+                "invalid_tool", "a layer step has kind and tool layer"
+            )
         ids = np.asarray(ids, dtype=np.uint32)
+        if kind == LAYER:
+            frm = np.asarray(frm, dtype=np.uint8)
+            to = np.asarray(to, dtype=np.uint8)
+            if not len(ids) == len(frm) == len(to):
+                raise EditError("invalid_step", "a layer step needs from/to")
+        cost = len(ids) * (BYTES_PER_ID + (2 if kind == LAYER else 0))
         kept = self.entries[: self.cursor]
         if len(kept) >= MAX_STEPS:
             raise EditError(
@@ -88,13 +149,22 @@ class History:
             raise EditError("too_many_steps", "step ids are used up")
         if (
             self.budget_bytes is not None
-            and self._bytes(kept) + len(ids) * BYTES_PER_ID > self.budget_bytes
+            and self._bytes(kept) + cost > self.budget_bytes
         ):
             raise EditError(
                 "history_budget_exceeded", "history would exceed its budget"
             )
         entry = HistoryEntry(
-            kind, description, ids, self.next_sid, tool, None, shape
+            kind,
+            description,
+            ids,
+            self.next_sid,
+            tool,
+            None,
+            shape,
+            frm,
+            to,
+            tuple(rows),
         )
         self.next_sid += 1
         self.entries = kept + [entry]
@@ -143,12 +213,36 @@ class History:
             self.cursor -= 1
         return entry, applied
 
-    def rename_step(self, sid: int, name: str | None) -> HistoryEntry:
+    def replace(self, sid: int, entry: HistoryEntry) -> HistoryEntry:
+        """Swap one entry in place (index and marker stay)."""
         i = self._index(sid)
-        cleaned = clean_name(name)
-        entry = replace(self.entries[i], name=cleaned)
         self.entries = self.entries[:i] + [entry] + self.entries[i + 1 :]
         return entry
+
+    def rename_step(self, sid: int, name: str | None) -> HistoryEntry:
+        cleaned = clean_name(name)
+        return self.replace(sid, replace(self.entry(sid), name=cleaned))
+
+    def dependents(self, sid: int) -> list[int]:
+        """The later layer steps (applied or greyed) that block deleting this
+        one: they share ids with it, or one made a row the other uses. A
+        deletion step is never blocked (it writes another array)."""
+        i = self._index(sid)
+        e = self.entries[i]
+        if e.kind != LAYER:
+            return []
+        made, uses = e.made(), e.uses()
+        out = []
+        for later in self.entries[i + 1 :]:
+            if later.kind != LAYER:
+                continue
+            if (
+                np.intersect1d(e.ids, later.ids, assume_unique=True).size
+                or (later.made() & uses)
+                or (made & later.uses())
+            ):
+                out.append(later.sid)
+        return out
 
 
 class RevisionClock:
