@@ -16,6 +16,7 @@ import { type DragState, beginDrag, dragBox } from "../tools/box/drag";
 import type { BoxModel } from "../tools/box/model";
 import { pxPerUnit } from "../view/pointsize";
 import { lookDirection } from "../view/camera";
+import { segDist } from "../math/seg2d";
 import { ringAngle, rotationDelta, translateDelta } from "../tools/box/gizmo-math";
 import { moveOnPlane, rayBoxHit } from "../tools/box/body";
 import { type Handle, boxHandles, hitHandle } from "../tools/box/handles";
@@ -58,15 +59,6 @@ export const BODY_HINT = "Dragging the box moves it. Ctrl+drag, or start outside
 const PICK_PX = 10;
 /** Two presses on the same polygon vertex within this many ms (edit mode) remove it. */
 const DOUBLE_TAP_MS = 400;
-
-/** Screen distance from point p to the segment a-b. */
-function segDist(p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }): number {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const l2 = dx * dx + dy * dy;
-  const t = l2 === 0 ? 0 : Math.min(1, Math.max(0, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
-  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
-}
 
 export interface PlaneAnchor {
   key: PlaneKey;
@@ -319,7 +311,7 @@ export function createToolInteraction(
       }
       const ringHit = tiltRingHit(s, vp, p);
       if (ringHit) {
-        const a0 = ringAngle(ray, ringHit.centre, ringHit.axis);
+        const a0 = ringAngle(ray, ringHit.centre, ringHit.axis, s.camera.ortho);
         const pv = pivotXY(s);
         if (a0 !== null && pv) {
           drag = { kind: "ring", which: ringHit.id, model0: s.tools.protection, centre: ringHit.centre, axis: ringHit.axis, a0, pivot: pv };
@@ -397,7 +389,7 @@ export function createToolInteraction(
         deps.protectionEdit(() => ({ ok: true, model: dragPlane(d.model0, d.key.which, d.key.edge, delta) }));
       } else if (drag.kind === "ring") {
         const d = drag;
-        const a = ringAngle(ray, d.centre, d.axis);
+        const a = ringAngle(ray, d.centre, d.axis, s.camera.ortho);
         if (a === null) return true;
         const deg = (rotationDelta(d.a0, a) * 180) / Math.PI;
         deps.protectionEdit(() => ({ ok: true, model: rotateSlab(d.model0, d.which, deg, d.pivot) }));

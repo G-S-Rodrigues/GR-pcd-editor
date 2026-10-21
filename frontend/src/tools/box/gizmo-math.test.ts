@@ -4,9 +4,11 @@ import type { Vec3 } from "../../state/types";
 import {
   HANDLE_STYLES,
   type Ray,
+  advanceTurn,
   applyPrecision,
   axisParam,
   ringAngle,
+  ringPlaneHit,
   resizeFace,
   rotateBox,
   rotationDelta,
@@ -89,5 +91,28 @@ describe("gizmo math", () => {
     expect(new Set(s.map((x) => x.colour)).size).toBe(2);
     expect(HANDLE_STYLES.resize.shape).toBe("arrow");
     expect(HANDLE_STYLES.rotate.shape).toBe("ring");
+  });
+
+  it("UI-900 ringAngle: a plane behind the eye holds in perspective, an ortho ray is a line", () => {
+    const behind = ray([0, 0, -5], [0, 0, -1]); // the plane z = 0 lies behind the ray origin
+    expect(ringAngle(behind, [0, 0, 0], [0, 0, 1])).toBeNull();
+    expect(ringAngle(behind, [0, 0, 0], [0, 0, 1], false)).toBeNull();
+    expect(typeof ringAngle(ray([1, 1, -5], [0, 0, -1]), [0, 0, 0], [0, 0, 1], true)).toBe("number");
+    close(ringAngle(ray([1, 1, -5], [0, 0, -1]), [0, 0, 0], [0, 0, 1], true)!, ringAngle(ray([1, 1, 5], [0, 0, -1]), [0, 0, 0], [0, 0, 1])!);
+    expect(ringPlaneHit(behind, [0, 0, 0], [0, 0, 1], false)).toBeNull();
+    expect(ringPlaneHit(ray([0, 0, 5], [0, 0, -1]), [0, 0, 0], [0, 0, 1], false)!.t).toBeCloseTo(5, 12);
+  });
+
+  it("UI-899 advanceTurn accumulates past 180 degrees; null angles hold", () => {
+    let st = { prev: 0, total: 0 };
+    const step = (10 * Math.PI) / 180;
+    for (let i = 1; i <= 27; i++) {
+      let a = i * step;
+      if (a > Math.PI) a -= 2 * Math.PI; // the raw angle wraps; the total must not
+      st = advanceTurn(st, a);
+    }
+    close(st.total, (3 * Math.PI) / 2, 1e-12);
+    const held = advanceTurn(st, null);
+    expect(held).toEqual(st);
   });
 });
