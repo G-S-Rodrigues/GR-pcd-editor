@@ -4,7 +4,7 @@ import { colourize } from "../colour/modes";
 import { lodIndex } from "../render/lod";
 import { initialState } from "../state/app";
 import { legendEntries } from "../ui/legend";
-import { FLAG_PREVIEW_ADD, FLAG_PREVIEW_REMOVE, commitEnabled, commitLabel, discardEnabled, previewClusterOf, previewText } from "./preview";
+import { FLAG_PREVIEW_ADD, FLAG_PREVIEW_REMOVE, commitEnabled, commitLabel, discardEnabled, previewClusterOf, previewParts, previewText } from "./preview";
 import type { PreviewState } from "../state/types";
 
 const P: PreviewState = { id: "p1", op: "add", selected_after: 120, base_selected: 100, added: 20, removed: 0 };
@@ -14,7 +14,7 @@ describe("preview model (12b-3)", () => {
   test("UI-400 text per op names the counts and the base, never invents one while the job runs", () => {
     const add = previewText({ ...base, preview: P })!;
     expect(add).toMatch(/would select 120 points \(20 new\)/);
-    expect(add).toMatch(/still 100 points/);
+    expect(previewParts({ ...base, preview: P })!.title).toMatch(/still 100 points/); // 17-10: the rest of the sentence is the note's tooltip
     expect(add).toMatch(/Apply uses only those 100 committed points/);
     const sub = previewText({ ...base, op: "subtract", preview: { ...P, op: "subtract", selected_after: 70, added: 0, removed: 30 } })!;
     expect(sub).toMatch(/would leave 70 selected \(30 removed\)/);

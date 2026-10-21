@@ -48,6 +48,8 @@ export const ICONS = {
   arrow: [p("M12 19V5M6 11l6-6 6 6")],
   /** Not in the sheet: a plain pencil for the polygon edit mode (part 13-7). */
   pencil: [p("M4 20l1-4L16 5l3 3L8 19z"), p("M14 7l3 3")],
+  /** Not in the sheet: a dotted box with a point, for "select this layer's points" (part 17-10). */
+  pick: [r(4, 4, 16, 16, 2), c(12, 12, 2)],
 } as const satisfies Record<string, readonly IconNode[]>;
 
 export type IconName = keyof typeof ICONS;

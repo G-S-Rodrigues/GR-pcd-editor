@@ -22,7 +22,7 @@ test("UI-890 the four tool sections live in the toolRoot slot and the other sect
   const rest = ids(dom.root).filter((x) => x !== null);
   expect(rest).not.toContain("box");
   expect(rest).not.toContain("cluster");
-  expect(rest).toContain("layers");
+  expect(rest).not.toContain("layers"); // 17-10: Layers moved to the left panel
   expect(rest).toContain("history");
 });
 

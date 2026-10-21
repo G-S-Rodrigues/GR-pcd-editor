@@ -8,22 +8,27 @@ const n = (v: number) => v.toLocaleString("en-US");
 
 /**
  * Text under the selection controls while an Add/Subtract/Intersect shape is drafted. A count is only
- * ever the server's; while a job runs there is none.
+ * ever the server's; while a job runs there is none. The visible `text` is short; `title` carries the rest.
  */
-export function previewText(s: AppState): string | null {
+export function previewParts(s: AppState): { text: string; title: string } | null {
   const p = s.preview;
   if (!s.draft && !p) return null;
-  if (s.job.busy) return "Computing preview...";
+  if (s.job.busy) return { text: "Computing preview...", title: "" };
   if (!p) {
-    return s.previewLive
+    const text = s.previewLive
       ? "Preview not ready; edit the shape or press Commit draft to preview it."
       : "Live preview is off: the outline shows the shape. Press Commit draft to compute and apply it in one step.";
+    return { text, title: text };
   }
-  const keep = `The selection is still ${n(p.base_selected)} points. Apply uses only those ${n(p.base_selected)} committed points. Press Commit draft to make the preview the selection; Esc discards.`;
-  if (p.op === "add") {
-    return `Preview, not applied: adding this shape would select ${n(p.selected_after)} points (${n(p.added)} new). ${keep}`;
-  }
-  return `Preview, not applied: this ${p.op} would leave ${n(p.selected_after)} selected (${n(p.removed)} removed). ${keep}`;
+  const apply = `Apply uses only those ${n(p.base_selected)} committed points.`;
+  const title = `The selection is still ${n(p.base_selected)} points. ${apply} Press Commit draft to make the preview the selection; Esc discards.`;
+  if (p.op === "add") return { text: `Preview, not applied: adding this shape would select ${n(p.selected_after)} points (${n(p.added)} new). ${apply}`, title };
+  return { text: `Preview, not applied: this ${p.op} would leave ${n(p.selected_after)} selected (${n(p.removed)} removed). ${apply}`, title };
+}
+
+/** The visible draft note alone (see `previewParts`). */
+export function previewText(s: AppState): string | null {
+  return previewParts(s)?.text ?? null;
 }
 
 /** The cluster summary the Cluster panel shows: the pending preview's while one exists, else the candidate's. */

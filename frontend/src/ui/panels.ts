@@ -14,11 +14,10 @@ import { CLUSTER_LIMIT_TEXT, type RegionKind, clusterLimitText, clusterPanel, re
 import { type SparseModel, setMinNeighbours, setSparseRadius, sparseSummary } from "../tools/sparse/model";
 import { clusterPickState, pickText, pressPick } from "../tools/cluster/pick";
 import { headline } from "../status/headline";
-import { commitEnabled, commitLabel, discardEnabled, previewClusterOf, previewText } from "../tools/preview";
+import { commitEnabled, commitLabel, discardEnabled, previewClusterOf, previewParts } from "../tools/preview";
 import { scopeNotice, selectionDisabledReason } from "../orchestration/selection";
 import { hideState } from "../orchestration/hide";
 import { historyRows } from "../inspector/history";
-import { MAIN_COLOUR, MAIN_LABEL, editingText, findLayer, layerButtons, layerRows } from "../layers/model";
 import { control } from "./controls";
 import { SELECTED_COLOURS, type SelectedColourId } from "../colour/selectcolour";
 import { cssColour } from "./legend";
@@ -29,6 +28,10 @@ import { TOOLTIPS } from "./tooltips";
 import { h } from "./dom";
 import { foldSyncer, foldable } from "./fold";
 import { type SectionId, isSectionOpen, setSectionOpen } from "./sections";
+
+/** The first-selection note: the short line is visible, the advice is its tooltip (part 17-10). */
+export const LIVE_NOTE = "First selection: edits are live.";
+export const LIVE_NOTE_TITLE = "First selection: edits are live. Choose Add, Subtract or Intersect to preview changes instead.";
 
 /** What the panels need from the rest of the app. */
 /** The Box tool hint under the Gizmo fields. */
@@ -209,9 +212,8 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
       { class: "stack" },
       guarded(control("button", { id: "sel-select-displayed", onclick: () => refuse() || a.selectDisplayed() }, "Select displayed")),
       guarded(control("button", { id: "sel-invert", onclick: () => refuse() || a.invert() }, "Invert")),
-      control("button", { id: "sel-clear", onclick: a.clearSelection }, "Clear selection"),
-      hideBtn,
     ),
+    h("div", { class: "stack" }, control("button", { id: "sel-clear", onclick: a.clearSelection }, "Clear selection"), hideBtn),
     deleteBlocked,
     note,
     clusterLimit,
@@ -219,6 +221,7 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     keptWarn,
     keptDelete,
     keptToggle,
+    h("div", { id: "layers-slot" }),
     h("h2", { text: "Cloud" }),
     invalid,
   );
@@ -240,7 +243,8 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     previewLive.setAttribute("aria-pressed", String(s.previewLive));
     previewLive.replaceChildren(iconSvg(s.previewLive ? "eye" : "eyeoff", 16), " Live preview");
     liveNote.hidden = !(s.liveFirst && s.tool !== "none");
-    liveNote.textContent = liveNote.hidden ? "" : "First selection: edits are live. Choose Add, Subtract or Intersect to preview changes instead.";
+    liveNote.textContent = liveNote.hidden ? "" : LIVE_NOTE;
+    liveNote.title = liveNote.hidden ? "" : LIVE_NOTE_TITLE;
     scope.value = s.scope;
     SELECTED_COLOURS.forEach((p, i) => {
       const on = s.selectedColour === p.id;
@@ -264,9 +268,10 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     commit.disabled = !commitEnabled(s);
     commit.textContent = commitLabel(s);
     discard.disabled = !discardEnabled(s);
-    const dn = previewText(s);
+    const dn = previewParts(s);
     draftNote.hidden = dn === null;
-    draftNote.textContent = dn ?? "";
+    draftNote.textContent = dn?.text ?? "";
+    draftNote.title = dn?.title ?? "";
     const n = scopeNotice(s);
     note.textContent = n ?? "";
     const db = deleteBlockedNote(s);
@@ -792,79 +797,6 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     text((s) => effectiveText(s.candidate)),
   );
 
-  // ---- layers
-  const layerList = h("ul", { id: "layer-list", class: "layer-list" });
-  const layerName = control("input", { id: "layer-name", type: "text", maxlength: "40", placeholder: "Layer name" });
-  const layerBtn = (id: string, label: string, onclick: () => void) => control("button", { id, "aria-disabled": "false", onclick }, label);
-  const newBtn = layerBtn("layer-new", "New layer", () => {
-    a.layerCreate(layerName.value);
-    layerName.value = "";
-  });
-  const assignBtn = layerBtn("layer-assign", "Assign selection", () => a.layerAssign());
-  const releaseBtn = layerBtn("layer-release", "Release to main", () => a.layerRelease());
-  const setBtn = layerBtn("layer-set", "Set layer to selection", () => a.layerSet());
-  setBtn.hidden = true;
-  const editingLine = h("p", { id: "layer-editing", class: "note", hidden: true });
-  const reasonOn = (b: HTMLElement, tipId: string, why: string | null) => {
-    b.setAttribute("aria-disabled", String(why !== null));
-    b.classList.toggle("inactive", why !== null);
-    b.title = why ? `${TOOLTIPS[tipId]} (${why})` : TOOLTIPS[tipId];
-  };
-  const chipOf = (colour: string) => {
-    const c = h("span", { class: "chip" });
-    c.style.background = colour;
-    return c;
-  };
-  let layerKey = "";
-  syncs.push((s) => {
-    const rows = layerRows(s.session);
-    const b = layerButtons(s);
-    reasonOn(newBtn, "layer-new", b.create);
-    reasonOn(assignBtn, "layer-assign", b.assign);
-    reasonOn(releaseBtn, "layer-release", b.release);
-    const editing = findLayer(s.session, s.layerUi.editing ?? -1);
-    setBtn.hidden = !editing;
-    editingLine.hidden = !editing;
-    editingLine.textContent = editing ? editingText(editing.name, editing.count, s.session?.selection.count ?? 0) : "";
-    reasonOn(setBtn, "layer-set", b.set);
-    // rebuild the rows only when they change: a store update between mousedown and mouseup must not swallow a click
-    const key = JSON.stringify([rows, s.layerUi.active, s.session?.counts.main]);
-    if (key === layerKey) return;
-    layerKey = key;
-    const out: Node[] = [];
-    if (rows.length > 0) out.push(h("li", { class: "layer-row main", "data-layer-row": "0" }, chipOf(MAIN_COLOUR), h("span", { class: "layer-name", text: MAIN_LABEL(s.session?.counts.main ?? 0) })));
-    for (const r of rows) {
-      const eye = h("button", { type: "button", class: "layer-eye", "data-layer-eye": r.id, "aria-pressed": String(r.visible), "aria-label": r.eyeLabel, title: r.eyeLabel, onclick: (e: Event) => (e.stopPropagation?.(), a.layerToggle(r.id)) }, iconSvg(r.visible ? "eye" : "eyeoff", 14));
-      const sel = h("button", { type: "button", "data-layer-select": r.id, "aria-disabled": String(r.selectDisabled !== null), class: r.selectDisabled ? "inactive" : "", title: r.selectDisabled ?? `Select the ${r.count.toLocaleString("en-US")} points of ${r.name}`, onclick: (e: Event) => (e.stopPropagation?.(), a.layerSelect(r.id)) }, "Select");
-      const edit = h("button", { type: "button", "data-layer-edit": r.id, "aria-disabled": String(r.editDisabled !== null), class: r.editDisabled ? "inactive" : "", title: r.editDisabled ?? `Edit ${r.name}: select the layer's points again with a box, then press Set layer to selection`, onclick: (e: Event) => (e.stopPropagation?.(), a.layerEdit(r.id)) }, "Edit");
-      const tomain = h("button", { type: "button", "data-layer-tomain": r.id, title: `Move every point of ${r.name} back to main and remove the layer`, onclick: (e: Event) => (e.stopPropagation?.(), a.layerToMain(r.id)) }, "To main");
-      out.push(
-        h(
-          "li",
-          { class: `layer-row${s.layerUi.active === r.id ? " active" : ""}`, "data-layer-row": r.id, "aria-selected": String(s.layerUi.active === r.id), onclick: () => a.layerChoose(r.id) },
-          chipOf(r.colour),
-          h("span", { class: "layer-name", text: r.label }),
-          eye,
-          sel,
-          edit,
-          tomain,
-        ),
-      );
-    }
-    layerList.replaceChildren(...out);
-  });
-  const layersPanel = section(
-    "layers",
-    "Layers",
-    (s) => s.session !== null,
-    h("p", { class: "note", text: "Named groups of points. Layer edits are not in the timeline; undo one by re-assigning the points. Hidden layers are not drawn or selectable but are still exported." }),
-    text((s) => (s.session && s.session.layers.length === 0 ? "No layers yet: select points, type a name, then press New layer" : "")),
-    layerList,
-    editingLine,
-    h("label", { class: "f" }, "Name ", layerName),
-    h("div", { class: "stack" }, newBtn, assignBtn, releaseBtn, setBtn),
-  );
-
   // ---- history
   const histList = h("ol", { id: "history-list" });
   syncs.push((s) => {
@@ -878,7 +810,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
 
   root.append(errors);
   toolRoot.append(boxPanel, polyPanel, clusterPanelEl, sparsePanel);
-  root.append(filterPanel, protPanel, layersPanel, histPanel);
+  root.append(filterPanel, protPanel, histPanel);
   const syncAll = (s: AppState) => {
     for (const f of syncs) f(s);
   };

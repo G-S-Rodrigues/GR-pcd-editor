@@ -28,6 +28,7 @@ import { polygonKeyAction } from "./tools/polygon/edit";
 import { boxForOpen } from "./tools/box/model";
 import { applyPreset } from "./view/presets";
 import { buildEditPanels, buildToolPalette } from "./ui/panels";
+import { buildLayersPanel } from "./ui/layerspanel";
 import { createToolInteraction } from "./viewport/interact";
 import { attachDropZone } from "./files/dragdrop";
 import { dropNotice, openSource } from "./orchestration/open";
@@ -307,6 +308,7 @@ const panelActions = {
 };
 buildInspector($("fileinfo"), store);
 buildToolPalette($("tools"), store, panelActions);
+buildLayersPanel($("layers-slot"), store, panelActions);
 const legend = buildLegend($("legend"), store, $("modebar"), () => void hide.show(), (id) => void layers.toggle(id));
 store.subscribe((s) => legend.update(s.timeline.highlight !== null, s.preview?.op ?? null));
 const stepEdit = createEditShape(store, {

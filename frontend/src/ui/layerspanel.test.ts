@@ -3,7 +3,8 @@ import { createAppStore } from "../state/app";
 import { sessionFixture } from "../testing/fixtures";
 import { type FakeEl, installFakeDom } from "../testing/fakedom";
 import type { Layer } from "../state/types";
-import { type PanelActions, buildEditPanels } from "./panels";
+import type { PanelActions } from "./panels";
+import { buildLayersPanel } from "./layerspanel";
 import { describeControls } from "./describe";
 import { SECTION_IDS } from "./sections";
 import { TOOLTIPS } from "./tooltips";
@@ -17,7 +18,7 @@ const actions = new Proxy(
   { layerCreate: calls.create, layerAssign: calls.assign, layerRelease: calls.release, layerSelect: calls.select, layerToggle: calls.toggle, layerToMain: calls.toMain, layerChoose: calls.choose, layerEdit: calls.edit, layerSet: calls.set } as Record<string, unknown>,
   { get: (t, k: string) => t[k] ?? (() => undefined) },
 ) as unknown as PanelActions;
-buildEditPanels(dom.root as unknown as HTMLElement, store, actions);
+buildLayersPanel(dom.root as unknown as HTMLElement, store, actions);
 const ctl = (id: string) => dom.root.control(id) as FakeEl;
 const byId = (id: string) => dom.root.all().find((e) => e.getAttribute("id") === id) as FakeEl;
 const section = () => dom.root.all().find((e) => e.getAttribute("data-section") === "layers") as FakeEl;
@@ -104,7 +105,8 @@ test("UI-837 every layer control is described and has a tooltip; the section not
     expect(TOOLTIPS[id]).toBeTruthy();
   }
   expect(section().text()).toMatch(/not in the timeline/);
-  expect(section().text()).toMatch(/re-assigning/);
+  const note = section().all().find((e) => e.getAttribute("title")?.includes("re-assigning")); // 17: the long advice is the note's tooltip
+  expect(note?.text()).toBe("Layer edits are not in the timeline.");
 });
 
 test("UI-838 a layer-less session shows only Main-less empty state: no rows and a hint to select points first", () => {
@@ -137,4 +139,26 @@ test("UI-864 while a layer is being edited the panel says how many members it ha
   expect(set().title).toContain("Select some points first");
   store.set({ layerUi: { editing: null, active: 1 } });
   expect(set().hidden).toBe(true);
+});
+
+test("UI-892 a layer row is one line (chip, name, count, eye, Select, chevron) with its details area hidden; the chevron toggles it with aria-expanded and the row keeps its click", () => {
+  const floor = rows().find((r) => r.getAttribute("data-layer-row") === "1") as FakeEl;
+  expect(floor.children).toHaveLength(6);
+  expect(floor.children.slice(3).map((c) => c.tag)).toEqual(["button", "button", "button"]);
+  expect([3, 4, 5].map((i) => ["data-layer-eye", "data-layer-select", "data-layer-more"].map((k) => floor.children[i].getAttribute(k)).findIndex((v) => v === "1"))).toEqual([0, 1, 2]);
+  expect(floor.text()).toBe("Floor (30)");
+  const details = () => section().all().find((e) => e.getAttribute("data-layer-details") === "1") as FakeEl;
+  expect(details().getAttribute("hidden")).not.toBeNull();
+  expect(rowBtn(1, "more").getAttribute("aria-expanded")).toBe("false");
+  expect(rowBtn(1, "edit").text()).toBe("Edit layer");
+  expect(rowBtn(1, "tomain").text()).toBe("To main");
+  rowBtn(1, "more").fire("click");
+  expect(details().getAttribute("hidden")).toBeNull();
+  expect(rowBtn(1, "more").getAttribute("aria-expanded")).toBe("true");
+  expect(calls.choose).not.toHaveBeenCalled(); // the chevron does not choose the row
+  store.set({ layerUi: { editing: null, active: 2 } }); // a rebuild keeps the row open
+  expect(details().getAttribute("hidden")).toBeNull();
+  rowBtn(1, "more").fire("click");
+  expect(details().getAttribute("hidden")).not.toBeNull();
+  expect(rowBtn(1, "more").getAttribute("aria-expanded")).toBe("false");
 });

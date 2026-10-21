@@ -4722,6 +4722,11 @@ const layerHelpers = (page: Pg) => {
   const layers = () => hook(page, (e) => e.state().session!.layers.map((l: { id: number; name: string; visible: boolean; count: number }) => ({ id: l.id, name: l.name, visible: l.visible, count: l.count })));
   const eye = (id: number) => page.locator(`[data-layer-eye="${id}"]`);
   const edit = (id: number) => page.locator(`[data-layer-edit="${id}"]`);
+  const more = (id: number) => page.locator(`[data-layer-more="${id}"]`);
+  /** 17: Edit layer and To main sit in the row's details area; open it first. */
+  const openMore = async (id: number) => {
+    if ((await more(id).getAttribute("aria-expanded")) !== "true") await more(id).click();
+  };
   const pick = (id: number) => page.locator(`[data-layer-row="${id}"]`);
   const newLayer = async (name: string) => {
     await page.locator('[data-control="layer-name"]').fill(name);
@@ -4736,7 +4741,7 @@ const layerHelpers = (page: Pg) => {
     await expect.poll(async () => (await layers()).find((l) => l.id === id)?.count, { timeout: 15000 }).toBe(n);
     return { id, n };
   };
-  return { ...t, layers, eye, edit, pick, newLayer, floorLayer };
+  return { ...t, layers, eye, edit, more, openMore, pick, newLayer, floorLayer };
 };
 const wallSet = () => finiteRows().filter((r) => inBox(r, [0, 7.25, 2.5], [2, 5.5, 5]));
 
@@ -4801,6 +4806,7 @@ test("E2E-143 15b Edit layer: the box starts at the member bounds, a resized box
   const { id, n } = await t.floorLayer();
   page.on("dialog", (d) => asked.push(d.message())); // after the open: the "unsaved edits" ask of a file left by an earlier test is not under test
   const main0 = await hook(page, (e) => e.state().session!.counts.main);
+  await t.openMore(id);
   await expect(t.edit(id)).toHaveAttribute("aria-disabled", "false");
   await t.edit(id).click();
   await expect(t.ctl("layer-set")).toBeVisible();
@@ -4823,6 +4829,7 @@ test("E2E-143 15b Edit layer: the box starts at the member bounds, a resized box
   await t.setBox([-1, 4.5, 2.5], [1, 10, 5]);
   await t.exact("Selected", String(ROOM.wall));
   const wallId = await t.newLayer("Wall");
+  await t.openMore(id);
   await t.edit(id).click();
   await t.setBox([-1, 4.5, 2.5], [1, 10, 5]);
   await t.exact("Selected", String(ROOM.wall));
@@ -4878,6 +4885,54 @@ test("E2E-145 15b undoing a deletion puts the points back into their layer", asy
   await expect.poll(async () => (await t.layers()).find((l) => l.id === id)?.count, { timeout: 15000 }).toBe(n);
 });
 
+// 17-10: the step-0 height of the Tools + Selection + Cloud content at HEAD 73870ad (room open, no tool, no layers)
+const STEP0_TOOLS_CONTENT = 385.7;
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-158 17 the left panel is compact at ${w}x${h}: Layers sits in it, rows are one line, nothing is covered`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const t = layerHelpers(page);
+    await t.floorSelected();
+    await t.newLayer("L1");
+    for (let i = 2; i <= 3; i++) {
+      await t.ctl("sel-clear").click();
+      await t.ctl("tool-box").click();
+      await t.setBox([2 * i, 9.5, 0], [1.5, 22, 0.5]);
+      await t.newLayer(`L${i}`);
+    }
+    await t.ctl("sel-clear").click();
+    await t.exact("Selected", "0");
+    await expect(page.locator("#layers-slot [data-section=layers]")).toBeVisible();
+    const m = await page.evaluate(() => {
+      const tools = document.getElementById("tools")!;
+      const slot = document.getElementById("layers-slot")!;
+      const kids = ([...tools.children] as HTMLElement[]).filter((k) => k.getBoundingClientRect().height > 0);
+      const top = kids[0].getBoundingClientRect().top;
+      const bottom = kids[kids.length - 1].getBoundingClientRect().bottom;
+      const rows = [...document.querySelectorAll<HTMLElement>("#layer-list [data-layer-row]")].map((r) => r.getBoundingClientRect().height);
+      return { kids: kids.map((k) => `${k.tagName}#${k.id}.${k.className}:${Math.round(k.getBoundingClientRect().top)}+${Math.round(k.getBoundingClientRect().height)}`), content: bottom - top - slot.getBoundingClientRect().height, scroll: [tools.scrollHeight, tools.clientHeight], rows };
+    });
+    expect(m.rows.length).toBe(4); // Main and three layers
+    for (const rh of m.rows) expect(rh).toBeLessThanOrEqual(24);
+    // height target pending owner ruling: the measured content height is logged, not asserted
+    console.log(`LEFT-PANEL-CONTENT ${w}x${h} ${m.content.toFixed(1)} (step 0: ${STEP0_TOOLS_CONTENT})`);
+    if (h >= 1080) expect(m.scroll[0]).toBeLessThanOrEqual(m.scroll[1]);
+    // every control of the panel can be scrolled into view and is not covered
+    const ids = await page.evaluate(() => [...document.querySelectorAll("#tools [data-control]")].map((e) => e.getAttribute("data-control")!));
+    expect(ids.length).toBeGreaterThan(20);
+    for (const id of ids) {
+      const el = page.locator(`#tools [data-control="${id}"]`);
+      if (!(await el.isVisible())) continue;
+      await el.scrollIntoViewIfNeeded();
+      const covered = await el.evaluate((e) => {
+        const r = e.getBoundingClientRect();
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return !(hit === e || e.contains(hit));
+      });
+      expect(covered, `${id} is not covered`).toBe(false);
+    }
+  });
+}
+
 for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
   test(`E2E-146 15b eight layers at ${w}x${h}: the panel, the legend rows and the chip do not overlap the ViewCube, the camera cluster or the timeline`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: h });
@@ -4903,7 +4958,7 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
       return {
         legend: box(q("#legend")),
         chip: box(q('[data-control="hidden-chip"]')),
-        tools: box(q("#inspector")),
+        tools: box(q("#tools")),
         list: box(q("#layer-list")),
         others: ["#viewcube", "#camera-cluster", "#timeline"].map((s) => ({ s, ...box(q(s)) })),
       };
@@ -4913,7 +4968,7 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
       expect(hit(r.legend, o), `legend x ${o.s}`).toBe(false);
       expect(hit(r.chip, o), `chip x ${o.s}`).toBe(false);
     }
-    expect(r.list.l >= r.tools.l - 1 && r.list.r <= r.tools.r + 1, `layer list inside the inspector ${JSON.stringify([r.list, r.tools])}`).toBe(true);
+    expect(r.list.l >= r.tools.l - 1 && r.list.r <= r.tools.r + 1, `layer list inside the left panel ${JSON.stringify([r.list, r.tools])}`).toBe(true);
     await checkLayout(page, w, h);
   });
 }
