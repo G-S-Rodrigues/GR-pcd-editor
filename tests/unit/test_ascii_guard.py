@@ -60,7 +60,9 @@ head = p.read_bytes()[:4096]
 est = budget.estimate_bytes(parse_header(head)) + budget.ASCII_EXPANSION * p.stat().st_size
 base = rss()
 cloud = read_pcd(p)
-peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
+# VmHWM of this fresh process: ru_maxrss survives exec and would include the pytest parent's peak
+with open('/proc/self/status') as f:
+    peak = next(int(l.split()[1]) for l in f if l.startswith('VmHWM:')) * 1024
 print(json.dumps({'peak_over_base': peak - base, 'estimate': est, 'n': cloud.n}))
 """
 
