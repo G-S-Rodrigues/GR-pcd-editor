@@ -97,4 +97,26 @@ describe("protection controller", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(done).toBe(true);
   });
+
+  it("UI-990 flush reports false for a rejected PUT (error reported once) and for an invalid setting, true otherwise", async () => {
+    const store = createAppStore();
+    store.set({ session: sessionFixture() });
+    const put = vi.fn(async (_b: unknown): Promise<ReturnType<typeof sessionFixture>> => {
+      throw new Error("The session changed");
+    });
+    const onError = vi.fn();
+    const c = createProtectionController(store, { putProtection: put, onParamsChanged: () => undefined, onError });
+    expect(await c.flush()).toBe(true); // nothing waiting, nothing in flight
+    c.edit((m) => setGlobal(m, { enabled: true, min: -0.05, max: 0.05 }));
+    expect(await c.flush()).toBe(false);
+    expect(onError).toHaveBeenCalledTimes(1);
+    put.mockImplementation(async () => sessionFixture());
+    c.edit((m) => setGlobal(m, { enabled: true, min: -0.05, max: 0.06 }));
+    expect(await c.flush()).toBe(true);
+    c.edit((m) => setLocal(setOperationMode(m, "override"), { min: 1, max: 2 })); // override without the acknowledgement
+    const calls = put.mock.calls.length;
+    expect(await c.flush()).toBe(false);
+    expect(put.mock.calls.length).toBe(calls);
+    expect(onError).toHaveBeenLastCalledWith(expect.objectContaining({ message: expect.stringContaining("acknowledge") }));
+  });
 });

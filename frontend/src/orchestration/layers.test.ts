@@ -1,12 +1,14 @@
 import { expect, test, vi } from "vitest";
 import { ApiError } from "../files/errors";
 import type { LayerReply } from "../api/layers";
-import { createAppStore } from "../state/app";
+import { addNotice, createAppStore } from "../state/app";
 import type { Layer, LayerOp } from "../state/types";
 import { sessionFixture } from "../testing/fixtures";
 import { layerButtons } from "../layers/model";
 import { layerDiscardText, stepsOf } from "../timeline/model";
 import { createLayers, layerAddBody, layerOpBody, layerSelectBody } from "./layers";
+import { createProtectionController } from "../inspector/protection-controller";
+import { setGlobal } from "../inspector/protection";
 
 const layer = (over: Partial<Layer> = {}): Layer => ({ id: 1, name: "Hidden", colour: 0, visible: true, count: 5, bounds: null, ...over });
 const OP: LayerOp = { moved: 5, from_other_layers: 0, released: 0 };
@@ -114,7 +116,7 @@ test("UI-818 any other failure is an error notice with the server text and the s
 });
 
 // ---- the layers panel calls (15b-8)
-function panel(over: { flush?: () => Promise<void>; confirm?: boolean; op?: LayerOp; layers?: Layer[]; active?: number | null; compare?: string } = {}) {
+function panel(over: { flush?: () => Promise<boolean>; confirm?: boolean; op?: LayerOp; layers?: Layer[]; active?: number | null; compare?: string } = {}) {
   const layers = over.layers ?? [layer({ id: 1, name: "Floor", visible: true }), layer({ id: 2, name: "Wall", visible: false })];
   const store = createAppStore();
   store.set({
@@ -251,11 +253,46 @@ test("UI-914 fromBand: dry run, steal confirm when needed, the real call, the ne
 
 test("UI-985 fromBand first sends the band edit still waiting in the debounce, then asks the server for the layer", async () => {
   const order: string[] = [];
-  const t = panel({ flush: async () => void order.push("flush") });
+  const t = panel({ flush: async () => (order.push("flush"), true) });
   bandOn(t);
   t.api.layerFromProtection.mockImplementation(async (..._a: unknown[]) => (order.push("call"), { session: t.store.get().session!, op: OP } as LayerReply));
   await t.layers.fromBand();
   expect(order.slice(0, 2)).toEqual(["flush", "call"]);
+});
+
+test("UI-988 fromBand with a rejected protection PUT makes no layer: the flush reports the failure, the error notice shows, nothing is sent", async () => {
+  vi.useFakeTimers();
+  try {
+    const put = vi.fn(async () => {
+      throw new ApiError(409, "session_changed", "The session changed");
+    });
+    const ctl: { current?: ReturnType<typeof createProtectionController> } = {};
+    const t = panel({ flush: () => ctl.current!.flush() });
+    ctl.current = createProtectionController(t.store, {
+      putProtection: put,
+      onParamsChanged: () => undefined,
+      onError: (e) => addNotice(t.store, "error", "protection_failed", e instanceof Error ? e.message : "Protection could not be set"),
+    });
+    bandOn(t);
+    const before = t.store.get().session;
+    ctl.current.edit((m) => setGlobal(m, { enabled: true, min: -0.2, max: 0.2 }));
+    await t.layers.fromBand(); // inside the 150 ms debounce: the flush sends the edit, the server refuses
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(t.api.layerFromProtection).not.toHaveBeenCalled();
+    expect(t.store.get().notices.find((n) => n.code === "protection_failed")?.text).toBe("The session changed");
+    expect(t.store.get().session).toBe(before);
+    expect(t.paramsHook).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("UI-989 fromBand stops when the flush resolves false", async () => {
+  const t = panel({ flush: async () => false });
+  bandOn(t);
+  await t.layers.fromBand();
+  expect(t.api.layerFromProtection).not.toHaveBeenCalled();
+  expect(t.store.get().layerUi.active).toBeNull();
 });
 
 test("UI-915 merge confirms always, adds the lose-protection sentence, sends nothing on No and chooses the target", async () => {
