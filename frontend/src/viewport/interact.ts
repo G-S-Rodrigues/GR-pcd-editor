@@ -19,7 +19,7 @@ import { lookDirection } from "../view/camera";
 import { segDist } from "../math/seg2d";
 import { ringAngle, rotationDelta, translateDelta } from "../tools/box/gizmo-math";
 import { moveOnPlane, rayBoxHit } from "../tools/box/body";
-import { type Handle, boxHandles, hitHandle } from "../tools/box/handles";
+import { type Handle, RING_DEADZONE_PX, boxHandles, hitHandle } from "../tools/box/handles";
 import { addVertex, insertVertex, moveVertex, removeVertex } from "../tools/polygon/model";
 import type { Vec2 } from "../tools/polygon/validate";
 
@@ -219,8 +219,8 @@ export function createToolInteraction(
     return best;
   };
   /** The box handle (arrow tip or ring) under p with the Box tool armed, or null. */
-  const boxHandleAt = (s: AppState, vp: { w: number; h: number }, p: { x: number; y: number }): Handle | null =>
-    s.tool === "box" ? hitHandle(boxHandles(s.tools.box, s.camera, s.gizmo.local, vp.h, vp.w), s.camera, vp, p.x, p.y) : null;
+  const boxHandleAt = (s: AppState, vp: { w: number; h: number }, p: { x: number; y: number }, e: { ctrlKey?: boolean; metaKey?: boolean }): Handle | null =>
+    s.tool === "box" && !e.ctrlKey && !e.metaKey ? hitHandle(boxHandles(s.tools.box, s.camera, vp.h), s.camera, vp, p.x, p.y) : null; // Ctrl/Meta over a handle orbits
   /** Where the pointer ray enters the box body, when a plain left press there should move the box; null otherwise. */
   const bodyHit = (s: AppState, ray: ReturnType<typeof screenRay>, e: { shiftKey: boolean; ctrlKey?: boolean; metaKey?: boolean }) => {
     if (s.tool !== "box" || s.interaction !== "orbit" || e.shiftKey || e.ctrlKey || e.metaKey) return null; // Shift pans, Ctrl always orbits
@@ -229,7 +229,7 @@ export function createToolInteraction(
   /** The cursor class for the box gizmo at a pointer position, from the same hit tests a press uses; null when nothing there. */
   const hoverAt = (s: AppState, vp: { w: number; h: number }, p: { x: number; y: number }, e: PointerEvent): BoxHover | null => {
     if (s.tool !== "box" || !s.session || s.compare !== "edited" || s.rect || deps.rectHeld?.()) return null;
-    const hit = boxHandleAt(s, vp, p);
+    const hit = boxHandleAt(s, vp, p, e);
     if (hit) {
       if (hit.cls === "rotate") return { cursor: "grab", id: hit.id };
       const a = project(s.camera, hit.base ?? s.tools.box.center, zero, vp);
@@ -286,9 +286,9 @@ export function createToolInteraction(
         deps.notify("Rectangle select needs an orthographic face view: click a ViewCube face first");
         return false;
       }
-      const hit = boxHandleAt(s, vp, p);
+      const hit = boxHandleAt(s, vp, p, e);
       if (hit) {
-        drag = { kind: "box", state: beginDrag(hit, s.tools.box, ray) };
+        drag = { kind: "box", state: beginDrag(hit, s.tools.box, ray, RING_DEADZONE_PX / pxPerUnit(s.camera, Math.max(vp.h, 1)), s.camera.ortho) };
         return true;
       }
       if (s.tool === "polygon" && s.tools.polygon.phase === "closed") {

@@ -35,12 +35,12 @@ export interface RingSpec {
 }
 
 /** What the box gizmo draws: six arrows with heads and three rings, the hovered one heavier. Pure; the three.js group only draws it. */
-export function boxOverlaySpec(box: BoxModel, cam: Camera, local: boolean, hover: string | null, viewH: number, viewW: number): { arrows: ArrowSpec[]; rings: RingSpec[] } {
+export function boxOverlaySpec(box: BoxModel, cam: Camera, hover: string | null, viewH: number): { arrows: ArrowSpec[]; rings: RingSpec[] } {
   const head = ARROW_HEAD_PX / pxPerUnit(cam, Math.max(viewH, 1));
   const look = lookDirection(cam);
   const arrows: ArrowSpec[] = [];
   const rings: RingSpec[] = [];
-  for (const h of boxHandles(box, cam, local, viewH, viewW)) {
+  for (const h of boxHandles(box, cam, viewH)) {
     if (h.cls === "rotate") {
       rings.push({ id: h.id, pts: h.ring ?? [], colour: BOX_RING_COLOUR, width: hover === h.id ? RING_WIDTH_HOVER_PX : RING_WIDTH_PX });
       continue;

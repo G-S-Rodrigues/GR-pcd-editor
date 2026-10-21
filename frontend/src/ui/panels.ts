@@ -36,7 +36,7 @@ export const LIVE_NOTE_TITLE = "First selection: edits are live. Choose Add, Sub
 /** What the panels need from the rest of the app. */
 /** The Box tool hint under the Gizmo fields. */
 export const BOX_NOTE =
-  "Drag an arrow to resize that face (Alt: both sides), drag the box to move it, drag a ring to rotate. Shift is fine, Ctrl+drag orbits. Arrow keys nudge.";
+  "Drag an arrow to resize that face (Alt: both sides), drag the box to move it, drag the small ring on an arrow to rotate about that axis. Shift is fine, Ctrl+drag orbits. Arrow keys nudge.";
 
 export interface PanelActions {
   toolChanged: () => void;
@@ -487,9 +487,6 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
         store.update((s) => ({ ...s, gizmo: { ...s.gizmo, angleStep: v } }));
         return null;
       }),
-    ),
-    select("gizmo-frame", "Axes", [["local", "Box axes"], ["world", "World axes"]], (s) => (s.gizmo.local ? "local" : "world"), (v) =>
-      store.update((s) => ({ ...s, gizmo: { ...s.gizmo, local: v === "local" } })),
     ),
     h("p", { class: "note", text: BOX_NOTE }),
   );

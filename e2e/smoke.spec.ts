@@ -524,6 +524,7 @@ type EditorHook = {
   projectWorld: (p: number[]) => { x: number; y: number } | null;
   handlePositions: () => { id: string; x: number; y: number }[];
   boxBodyPoint: () => { x: number; y: number } | null;
+  boxRings: () => { id: string; centreWorld: number[]; centre: { x: number; y: number } | null; pts: { x: number; y: number }[] }[];
   drawnCount: () => number;
   previewLayer: () => { id: string | null; add: number; remove: number };
 };
@@ -4498,12 +4499,14 @@ test("E2E-103 14 three real ring drags (X, Y, then Z) give a box with roll, pitc
   const ringDrag = async (i: number, preset: string) => {
     await lookFrom(page, preset);
     await appIdle(page);
-    const a = await stableHandle(page, `rotate-${i}`);
-    const b = await boxState(page);
-    const c = await settledScreen(page, b.c);
+    const a = await stableHandle(page, `rotate-${i}+`);
+    const c = (await hook(page, (e) => e.boxRings())).find((r) => r.id === `rotate-${i}+`)!.centre!;
     const [vx, vy] = [a.x - c.x, a.y - c.y];
     const n = Math.hypot(vx, vy) || 1;
-    await dragBetween(page, a, { x: a.x - (vy / n) * 45, y: a.y + (vx / n) * 45 });
+    // a 30 degree arc out to 5 ring radii from the ring centre (the ring is 8 px in radius)
+    const [ux, uy] = [vx / n, vy / n];
+    const [cs, sn] = [Math.cos(Math.PI / 6), Math.sin(Math.PI / 6)];
+    await dragBetween(page, a, { x: c.x + (ux * cs - uy * sn) * 40, y: c.y + (ux * sn + uy * cs) * 40 });
   };
   await ringDrag(0, "right");
   const afterX = rpyOf((await boxState(page)).q);

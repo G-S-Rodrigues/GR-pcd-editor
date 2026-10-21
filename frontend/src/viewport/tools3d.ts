@@ -41,7 +41,7 @@ export function createToolsOverlay(scene: THREE.Scene) {
         const pairs: [number, number][] = [];
         for (let i = 0; i < 8; i++) for (const bit of [1, 2, 4]) if (!(i & bit)) pairs.push([i, i | bit]);
         heavy(c, pairs, outline, origin, s, viewH);
-        const spec = boxOverlaySpec(t.box, s.camera, s.gizmo.local, s.boxHover, viewH, viewW);
+        const spec = boxOverlaySpec(t.box, s.camera, s.boxHover, viewH);
         for (const a of spec.arrows) {
           const pts: Vec3[] = [a.base, a.tip, a.barbs[0], a.barbs[1]];
           drawThick(group, pts, [[0, 1], [1, 2], [1, 3]], a.colour, origin, s, viewH, a.width);

@@ -1,6 +1,4 @@
 export type FieldGroup = "tool" | "box" | "polygon" | "cluster" | "sparse" | "filter" | "protection" | "history" | "layer";
-/** Tooltip of the Gizmo Axes select. */
-export const GIZMO_FRAME_TIP = "Rotation rings turn about the box axes or the world axes";
 
 export interface FieldSpec {
   id: string;
@@ -63,7 +61,6 @@ export const FIELD_SPECS: FieldSpec[] = [
   f("gizmo-snap", "Snap", "box", "Snap handle drags to the step sizes below; hold Shift for fine (x0.1) drags"),
   f("gizmo-step", "Snap step", "box", "Translation snap step in the file unit"),
   f("gizmo-angle-step", "Angle step", "box", "Rotation snap step in degrees"),
-  f("gizmo-frame", "Axes", "box", GIZMO_FRAME_TIP),
   f("poly-edit", "Edit polygon vertices", "polygon", "Edit mode: drag a vertex, click an edge to add a vertex, press Backspace over a vertex or double click it to remove it; Enter or Esc leaves edit mode"),
   f("poly-draw", "Draw polygon", "polygon", "Start drawing: click in the top view to add vertices"),
   f("poly-finish", "Close polygon", "polygon", "Close the polygon and preview (Enter)"),

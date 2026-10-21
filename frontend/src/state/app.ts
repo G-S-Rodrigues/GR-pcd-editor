@@ -75,7 +75,7 @@ export interface AppState {
   rendering: boolean;
   candidate: Candidate | null;
   tools: ToolsState;
-  gizmo: { snap: boolean; step: number; angleStep: number; local: boolean };
+  gizmo: { snap: boolean; step: number; angleStep: number };
   /** Id of the box arrow or ring under the pointer (drawn heavier); view-only, never saved. */
   boxHover: string | null;
   /** A tool edit exists that has not been committed (Add/Subtract/Intersect drafts). */
@@ -131,7 +131,7 @@ export function initialState(): AppState {
       filters: emptyFilter(),
       protection: emptyProtection(),
     },
-    gizmo: { snap: false, step: 0.1, angleStep: 5, local: true },
+    gizmo: { snap: false, step: 0.1, angleStep: 5 },
     boxHover: null,
     draft: false,
     preview: null,

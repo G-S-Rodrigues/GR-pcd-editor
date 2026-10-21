@@ -12,6 +12,7 @@ import { applyPreset } from "../view/presets";
 import { filterPlanes } from "../filterboxes/plane";
 import type { ProtectionModel } from "../inspector/protection";
 import { tiltRings } from "../inspector/rings";
+import { quatToRpy } from "../tools/box/model";
 import { normalOf } from "../inspector/tilt";
 import { createToolInteraction, planeAnchors } from "./interact";
 
@@ -26,7 +27,7 @@ function setup() {
   store.update((s) => ({ ...s, tools: { ...s.tools, box } }));
   const changed = vi.fn();
   const tools = createToolInteraction(canvas, store, () => vp, { onToolChanged: changed, protectionEdit: (() => undefined) as never, notify: () => undefined });
-  const arrow = boxHandles(box, camera, true).find((h) => h.id === "resize-0+")!;
+  const arrow = boxHandles(box, camera).find((h) => h.id === "resize-0+")!;
   const at = project(camera, arrow.anchor, [0, 0, 0], vp)!;
   const ev = (x: number, y: number, shiftKey: boolean) => ({ button: 0, clientX: x, clientY: y, shiftKey, altKey: false }) as unknown as PointerEvent;
   return { store, tools, at, ev, changed };
@@ -425,7 +426,7 @@ describe("box gizmo routing (Part 14)", () => {
     });
     const at = (p: Vec3) => project(store.get().camera, p, [0, 0, 0], vp)!;
     const handle = (id: string) => {
-      const h = boxHandles(store.get().tools.box, store.get().camera, true, vp.h, vp.w).find((x) => x.id === id)!;
+      const h = boxHandles(store.get().tools.box, store.get().camera, vp.h).find((x) => x.id === id)!;
       return { h, px: project(store.get().camera, h.anchor, [0, 0, 0], vp)! };
     };
     return { store, tools, at, changed, hints, protEdits, handle, box: () => store.get().tools.box };
@@ -443,14 +444,15 @@ describe("box gizmo routing (Part 14)", () => {
     t.tools.pointerUp();
     // a ring over the body wins: the press rotates the box instead of moving it
     const big = bodySetup([8, 8, 2]);
-    const ring = big.handle("rotate-2");
-    const rp = project(big.store.get().camera, ring.h.ring![12], [0, 0, 0], vp)!;
+    const ring = big.handle("rotate-2+");
+    const rp = project(big.store.get().camera, ring.h.ring![8], [0, 0, 0], vp)!;
     expect(big.tools.pointerDown(evm(rp.x, rp.y))).toBe(true);
     big.tools.pointerMove(evm(rp.x - 40, rp.y + 40));
     expect(big.box().center).toEqual([0, 0, 0]);
     expect(big.box().quat).not.toEqual(defaultBox([0, 0, 0]).quat);
     big.tools.pointerUp();
-    // an arrow over the body wins: the press resizes
+    // an arrow over the body wins: the press resizes (the box is turned back first: the ring drag above rotated it)
+    big.store.update((st) => ({ ...st, tools: { ...st.tools, box: { ...st.tools.box, quat: defaultBox([0, 0, 0]).quat } } }));
     const arrow = big.handle("resize-0+");
     expect(big.tools.pointerDown(evm(arrow.px.x, arrow.px.y))).toBe(true);
     big.tools.pointerMove(evm(arrow.px.x + 30, arrow.px.y));
@@ -532,9 +534,9 @@ describe("box gizmo routing (Part 14)", () => {
     expect(t.tools.dragging()).toBe(false);
     expect(t.tools.pointerUp()).toBe(false);
     expect(t.tools.takeClick()).toBe(false);
-    for (const id of ["resize-1+", "rotate-2"]) {
+    for (const id of ["resize-1+", "rotate-2+"]) {
       const h = t.handle(id);
-      const q = id.startsWith("rotate") ? project(t.store.get().camera, h.h.ring![12], [0, 0, 0], vp)! : h.px;
+      const q = id.startsWith("rotate") ? project(t.store.get().camera, h.h.ring![8], [0, 0, 0], vp)! : h.px;
       t.tools.pointerDown(evm(q.x, q.y));
       t.tools.pointerMove(evm(q.x + 40, q.y + 25));
       expect(t.box()).not.toEqual(start);
@@ -552,8 +554,8 @@ describe("box gizmo routing (Part 14)", () => {
     expect(t.tools.hover(evm(ax.x, ax.y))).toEqual({ cursor: "ew-resize", id: "resize-0+" });
     const ay = t.handle("resize-1-").px;
     expect(t.tools.hover(evm(ay.x, ay.y))).toEqual({ cursor: "ns-resize", id: "resize-1-" });
-    const rp = project(t.store.get().camera, t.handle("rotate-2").h.ring![12], [0, 0, 0], vp)!;
-    expect(t.tools.hover(evm(rp.x, rp.y))).toEqual({ cursor: "grab", id: "rotate-2" });
+    const rp = project(t.store.get().camera, t.handle("rotate-2+").h.ring![8], [0, 0, 0], vp)!;
+    expect(t.tools.hover(evm(rp.x, rp.y))).toEqual({ cursor: "grab", id: "rotate-2+" });
     expect(t.tools.hover(evm(5, 5))).toBeNull();
     expect(t.tools.hover(evm(body.x, body.y, { shift: true }))).toBeNull(); // Shift pans there
     expect(t.tools.hover(evm(body.x, body.y, { ctrl: true }))).toBeNull(); // Ctrl orbits there
@@ -583,5 +585,40 @@ describe("box gizmo routing (Part 14)", () => {
     }
     expect(t.hints).toHaveLength(1);
     expect(t.hints[0]).toMatch(/Ctrl/);
+  });
+});
+
+describe("box gizmo modifiers (Part 14b)", () => {
+  const mkSetup = () => {
+    const store = createAppStore();
+    const camera = applyPreset({ ...defaultCamera(), distance: 10 }, "top");
+    const box = { ...defaultBox([0, 0, 0]), dimensions: [8, 8, 2] as Vec3 };
+    store.set({ session: sessionFixture(), tool: "box", camera });
+    store.update((s) => ({ ...s, tools: { ...s.tools, box } }));
+    const tools = createToolInteraction(canvas, store, () => vp, { onToolChanged: vi.fn(), protectionEdit: (() => undefined) as never, notify: () => undefined });
+    const h = boxHandles(box, camera, vp.h);
+    const ring = h.find((x) => x.id === "rotate-2+")!;
+    const arrow = h.find((x) => x.id === "resize-0+")!;
+    return { store, tools, camera, ring: project(camera, ring.ring![8], [0, 0, 0], vp)!, arrow: project(camera, arrow.anchor, [0, 0, 0], vp)! };
+  };
+  const evm = (x: number, y: number, m: { shift?: boolean; ctrl?: boolean; meta?: boolean } = {}) =>
+    ({ button: 0, clientX: x, clientY: y, shiftKey: !!m.shift, ctrlKey: !!m.ctrl, metaKey: !!m.meta, altKey: false }) as unknown as PointerEvent;
+
+  it("UI-902 Ctrl or Meta on an arrow or a ring falls through to the orbit and shows no handle hover; Shift on a ring is a fine drag", () => {
+    const t = mkSetup();
+    for (const m of [{ ctrl: true }, { meta: true }]) {
+      for (const p of [t.arrow, t.ring]) {
+        expect(t.tools.pointerDown(evm(p.x, p.y, m))).toBe(false);
+        expect(t.tools.dragging()).toBe(false);
+        expect(t.tools.hover(evm(p.x, p.y, m))).toBeNull();
+      }
+    }
+    expect(t.tools.hover(evm(t.ring.x, t.ring.y))).toEqual({ cursor: "grab", id: "rotate-2+" });
+    expect(t.tools.pointerDown(evm(t.ring.x, t.ring.y, { shift: true }))).toBe(true);
+    expect(t.tools.dragging()).toBe(true);
+    const c = project(t.camera, [0, 0, 1 + 24 / (vp.h / (2 * 10 * Math.tan((25 * Math.PI) / 180)))], [0, 0, 0], vp)!;
+    t.tools.pointerMove(evm(c.x, c.y - 40, { shift: true })); // a quarter turn at x0.1
+    const z = quatToRpy(t.store.get().tools.box.quat)[2];
+    expect(Math.abs(Math.abs(z) - 9)).toBeLessThan(1);
   });
 });

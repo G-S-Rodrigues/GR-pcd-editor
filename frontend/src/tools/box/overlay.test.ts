@@ -14,10 +14,10 @@ const cam = applyPreset({ ...defaultCamera(), distance: 10 }, "top");
 const box: BoxModel = { ...defaultBox([1, 2, 3]), dimensions: [2, 3, 4], quat: rpyToQuat([10, 20, 30]) };
 
 describe("box overlay (Part 14)", () => {
-  it("UI-569 six arrows from the face centre to a tip 72 px out with a head, three rings, the documented colours, and no centre-to-tip line", () => {
-    const spec = boxOverlaySpec(box, cam, true, null, vp.h, vp.w);
+  it("UI-569 six arrows from the face centre to a tip 72 px out with a head, six rings, the documented colours, and no centre-to-tip line", () => {
+    const spec = boxOverlaySpec(box, cam, null, vp.h);
     expect(spec.arrows.map((a) => a.id).sort()).toEqual(["resize-0+", "resize-0-", "resize-1+", "resize-1-", "resize-2+", "resize-2-"]);
-    expect(spec.rings.map((r) => r.id).sort()).toEqual(["rotate-0", "rotate-1", "rotate-2"]);
+    expect(spec.rings.map((r) => r.id).sort()).toEqual(["rotate-0+", "rotate-0-", "rotate-1+", "rotate-1-", "rotate-2+", "rotate-2-"]);
     for (const a of spec.arrows) {
       expect(a.colour).toBe(BOX_ARROW_COLOUR);
       const axis = Number(a.id[7]);
@@ -40,13 +40,13 @@ describe("box overlay (Part 14)", () => {
   });
 
   it("UI-570 the hovered arrow or ring is drawn heavier; the rest keep the normal width", () => {
-    const base = boxOverlaySpec(box, cam, true, null, vp.h, vp.w);
-    const hot = boxOverlaySpec(box, cam, true, "resize-1-", vp.h, vp.w);
+    const base = boxOverlaySpec(box, cam, null, vp.h);
+    const hot = boxOverlaySpec(box, cam, "resize-1-", vp.h);
     const w0 = base.arrows.find((a) => a.id === "resize-1-")!.width;
     expect(hot.arrows.find((a) => a.id === "resize-1-")!.width).toBeGreaterThan(w0);
     for (const a of hot.arrows.filter((x) => x.id !== "resize-1-")) expect(a.width).toBe(base.arrows.find((x) => x.id === a.id)!.width);
-    const ring = boxOverlaySpec(box, cam, true, "rotate-0", vp.h, vp.w);
-    expect(ring.rings.find((r) => r.id === "rotate-0")!.width).toBeGreaterThan(base.rings[0].width);
-    expect(ring.rings.filter((r) => r.id !== "rotate-0").every((r) => r.width === base.rings[0].width)).toBe(true);
+    const ring = boxOverlaySpec(box, cam, "rotate-0+", vp.h);
+    expect(ring.rings.find((r) => r.id === "rotate-0+")!.width).toBeGreaterThan(base.rings[0].width);
+    expect(ring.rings.filter((r) => r.id !== "rotate-0+").every((r) => r.width === base.rings[0].width)).toBe(true);
   });
 });

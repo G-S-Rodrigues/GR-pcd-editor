@@ -33,10 +33,23 @@ export function installDebugHook(canvas: HTMLCanvasElement, store: Store<AppStat
       const s = store.get();
       const r = canvas.getBoundingClientRect();
       const zero: Vec3 = [0, 0, 0];
-      return boxHandles(s.tools.box, s.camera, s.gizmo.local, size().h, size().w).flatMap((h) => {
+      return boxHandles(s.tools.box, s.camera, size().h).flatMap((h) => {
         const p = project(s.camera, h.anchor, zero, size());
         return p ? [{ id: h.id, x: r.left + p.x, y: r.top + p.y }] : [];
       });
+    },
+    /** Read-only: each box rotation ring's centre (world and page px) and its projected outline samples (page px). */
+    boxRings: (): { id: string; centreWorld: Vec3; centre: { x: number; y: number } | null; pts: { x: number; y: number }[] }[] => {
+      const s = store.get();
+      const r = canvas.getBoundingClientRect();
+      const vp = size();
+      const page = (p: Vec3) => {
+        const q = project(s.camera, p, [0, 0, 0], vp);
+        return q ? { x: r.left + q.x, y: r.top + q.y } : null;
+      };
+      return boxHandles(s.tools.box, s.camera, vp.h)
+        .filter((h) => h.cls === "rotate" && h.centre)
+        .map((h) => ({ id: h.id, centreWorld: h.centre as Vec3, centre: page(h.centre as Vec3), pts: (h.ring ?? []).flatMap((p) => page(p) ?? []) }));
     },
     /**
      * Page position (px) of a spot on the box body that a plain press would grab: the ray enters the box there, no arrow
@@ -46,7 +59,7 @@ export function installDebugHook(canvas: HTMLCanvasElement, store: Store<AppStat
       const s = store.get();
       const r = canvas.getBoundingClientRect();
       const vp = size();
-      const hs = boxHandles(s.tools.box, s.camera, s.gizmo.local, vp.h, vp.w);
+      const hs = boxHandles(s.tools.box, s.camera, vp.h);
       let best: { x: number; y: number; d: number } | null = null;
       for (let i = 1; i < 40; i++) {
         for (let j = 1; j < 40; j++) {

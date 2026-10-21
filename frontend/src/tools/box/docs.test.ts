@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { FIELD_SPECS } from "../../ui/fields";
 import { BOX_NOTE } from "../../ui/panels";
-import { GIZMO_FRAME_TIP } from "../../ui/fields";
 import { boxFromShape, quatToRpy, rpyToQuat, toBoxTool } from "./model";
 
 describe("box text and shape contract (Part 14)", () => {
@@ -11,8 +11,12 @@ describe("box text and shape contract (Part 14)", () => {
     expect(BOX_NOTE).toMatch(/ring[^.]*rotate/i);
     expect(BOX_NOTE).toMatch(/Ctrl/);
     expect(BOX_NOTE).toMatch(/Arrow keys/i);
-    expect(GIZMO_FRAME_TIP).toMatch(/rotation rings/i);
-    expect(GIZMO_FRAME_TIP).not.toMatch(/^Translate/);
+  });
+
+  it("UI-904 the Axes select is gone and the note names the small ring on an arrow", () => {
+    expect(FIELD_SPECS.some((f) => f.id === "gizmo-frame")).toBe(false);
+    expect(BOX_NOTE).toMatch(/small ring on an arrow/i);
+    expect(BOX_NOTE).not.toMatch(/world axes/i);
   });
 
   it("UI-577 boxFromShape(toBoxTool(b)) round-trips random three-axis boxes within 1e-12 (the stored-shape contract of the history steps)", () => {
