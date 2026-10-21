@@ -48,3 +48,14 @@ test("UI-161 the 'also delete' offer is hidden when nothing is kept, stale or ab
   expect(headline(st({ protected_retained: 5 }, { cloud: 9, params: 4 })).deleteKeptLabel).toBeNull();
   expect(headline(st(null)).deleteKeptLabel).toBeNull();
 });
+
+test("UI-910 points kept by protected layers are named, and only band-kept points can be deleted anyway", () => {
+  expect(headline(st({ candidates: 40, protected_retained: 9 })).warning).toBe("9 selected points lie inside the protected interval and will be kept (ghosts in the floor slab?)");
+  const h = headline(st({ candidates: 40, protected_retained: 109, protected_by_layers: 100 }));
+  expect(h.kept).toBe("Kept by protection 109");
+  expect(h.warning).toBe("109 selected points will be kept by protection (100 in protected layers)");
+  expect(h.deleteKeptLabel).toBe("Also delete the 9 kept points (this operation only)");
+  const all = headline(st({ candidates: 40, protected_retained: 100, protected_by_layers: 100 }));
+  expect(all.deleteKeptLabel).toBeNull();
+  expect(all.warning).toBe("100 selected points will be kept by protection (100 in protected layers)");
+});

@@ -35,6 +35,10 @@ export interface Layer {
   /** Index 0..15 into LAYER_COLOURS. */
   colour: number;
   visible: boolean;
+  /** Never deleted by any Apply; counts in Kept by protection. Absent means false. */
+  protected?: boolean;
+  /** Membership fixed (points can still be deleted). Absent means false. */
+  locked?: boolean;
   count: number;
   bounds: Bounds | null;
 }
@@ -154,6 +158,8 @@ export interface Candidate {
   bounds: Bounds | null;
   effective_protection: unknown;
   cluster: unknown;
+  /** Selected points kept because they sit in a protected layer (absent means 0). */
+  protected_by_layers?: number;
 }
 
 /** Result of a pending Add/Subtract/Intersect preview (view state, never saved). */

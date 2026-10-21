@@ -45,7 +45,7 @@ import { buildStatusbar } from "./ui/statusbar";
 import { buildLegend } from "./ui/legend";
 import { createHide } from "./orchestration/hide";
 import { editEnded, layerModeFix } from "./layers/model";
-import { createLayers, layerAddBody, layerSelectBody } from "./orchestration/layers";
+import { createLayers, layerAddBody, layerOpBody, layerSelectBody } from "./orchestration/layers";
 import { discardEnabled } from "./tools/preview";
 import { buildTimeline } from "./timeline/strip";
 import { createStepCentre } from "./timeline/centre";
@@ -124,12 +124,14 @@ const editor = createEditor(
 const paramsHook = createParamsHook(runner, () => refresher.refresh());
 const layers = createLayers(
   store,
-  { createLayer: layerApi.createLayer, assignLayer: layerApi.assignLayer, deleteLayer: layerApi.deleteLayer, setMembers: layerApi.setMembers, patchLayer: layerApi.patchLayer, setVisibility: layerApi.setVisibility, refreshState },
+  { createLayer: layerApi.createLayer, assignLayer: layerApi.assignLayer, deleteLayer: layerApi.deleteLayer, setMembers: layerApi.setMembers, patchLayer: layerApi.patchLayer, setVisibility: layerApi.setVisibility, mergeLayer: layerApi.mergeLayer, setOrder: layerApi.setOrder, layerFromProtection: layerApi.layerFromProtection, refreshState },
   {
     paramsHook,
     confirm: (m) => window.confirm(m),
     selectLayer: (id) => void runner.oneShot((rev) => layerSelectBody(rev, id, store.get().scope)),
     selectLayerAdd: (id) => runner.oneShot((rev) => layerAddBody(rev, id)),
+    selectLayerOp: (id, op) => runner.oneShot((rev) => layerOpBody(rev, id, op)),
+    apply: () => editor.apply(),
     discardDraft: () => runner.discardDraft(),
     openShape: (shape, centre) => stepEdit.openShape(shape, centre),
   },

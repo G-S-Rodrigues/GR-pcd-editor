@@ -155,7 +155,9 @@ export function effectiveText(c: Candidate | null): string {
   const ep = c?.effective_protection as { mode?: string; intervals?: [number, number][] } | null | undefined;
   if (!ep) return "";
   const iv = (ep.intervals ?? []).map(([a, b]) => `[${a}, ${b}]`).join(" and ") || "none";
-  return `Effective protection (${ep.mode ?? "inherit"}): Z ${iv}`;
+  const layers = c?.protected_by_layers ?? 0;
+  const plus = layers > 0 ? `, plus protected layers (${layers.toLocaleString("en-US")} ${layers === 1 ? "point" : "points"})` : "";
+  return `Effective protection (${ep.mode ?? "inherit"}): Z ${iv}${plus}`;
 }
 
 /** Drag a slab plane by a distance along the slab normal (world Z at level); min never passes max. */

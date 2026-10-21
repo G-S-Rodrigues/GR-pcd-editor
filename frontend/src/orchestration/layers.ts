@@ -3,7 +3,7 @@ import { type AppState, addNotice } from "../state/app";
 import type { Store } from "../state/store";
 import type { Scope, StepBox, Vec3 } from "../state/types";
 import type { EditShapeResult } from "./editshape";
-import { HIDDEN_LAYER_NAME, SHOW_FIRST, findLayer, hiddenLayer, layerBoxShape, layerButtons, layerRows, layersOf, stealConfirmText } from "../layers/model";
+import { HIDDEN_LAYER_NAME, SHOW_FIRST, deletePointsText, findLayer, hiddenLayer, layerBoxShape, layerButtons, layerRows, layersOf, mergeConfirmText, stealConfirmText, toMainProtectedText } from "../layers/model";
 import { makeGuard } from "./edit";
 import type { ParamsKind } from "./runner";
 import type { SelectionRequest } from "./selection";
@@ -13,7 +13,10 @@ export interface LayersApi {
   assignLayer(rev: number, id: number, o?: { visible?: boolean; dry_run?: boolean }): Promise<LayerReply>;
   deleteLayer(rev: number, id: number): Promise<LayerReply>;
   setMembers(rev: number, id: number, o?: { dry_run?: boolean }): Promise<LayerReply>;
-  patchLayer(id: number, o: { name?: string; colour?: number; visible?: boolean }): Promise<LayerReply>;
+  patchLayer(id: number, o: { name?: string; colour?: number; visible?: boolean; protected?: boolean; locked?: boolean }): Promise<LayerReply>;
+  mergeLayer(rev: number, id: number, o: { into: number; dry_run?: boolean }): Promise<LayerReply>;
+  setOrder(ids: number[]): Promise<LayerReply>;
+  layerFromProtection(rev: number, o?: { name?: string; dry_run?: boolean }): Promise<LayerReply>;
   setVisibility(ids: number[] | null, visible: boolean): Promise<LayerReply>;
   refreshState(): Promise<unknown>;
 }
@@ -26,6 +29,10 @@ export interface LayersDeps {
   selectLayer(id: number): void;
   /** Adds one layer's members (scope Active) to the selection; true when it landed, false when something superseded it or it failed. */
   selectLayerAdd(id: number): Promise<boolean>;
+  /** One-shot selection of a layer's members with the given operation (scope Active); true when it landed. */
+  selectLayerOp(id: number, op: LayerSelectOp): Promise<boolean>;
+  /** Applies the evaluated candidate (the Delete path). */
+  apply(): Promise<void>;
   /** Forgets the drafted preview (client and server); the committed selection stays. */
   discardDraft(): void;
   /** Arms the Box seeded from a shape as a live first selection (clearing the selection first). */
@@ -41,8 +48,13 @@ export const layerSelectBody = (rev: number, id: number, scope: Scope): Selectio
   evaluate_candidate: true,
 });
 
+export type LayerSelectOp = "replace" | "add" | "subtract" | "intersect";
+
+/** A one-shot selection of a layer's members with any operation, regardless of the display filter. */
+export const layerOpBody = (rev: number, id: number, op: LayerSelectOp): SelectionRequest => ({ ...layerSelectBody(rev, id, "active"), op });
+
 /** Adds a layer's members to the selection regardless of the display filter (R17-8). */
-export const layerAddBody = (rev: number, id: number): SelectionRequest => ({ ...layerSelectBody(rev, id, "active"), op: "add" });
+export const layerAddBody = (rev: number, id: number): SelectionRequest => layerOpBody(rev, id, "add");
 
 /**
  * Layer calls. A layer edit is not a timeline step, so the reply replaces the session and goes through the params hook;
@@ -66,6 +78,11 @@ export function createLayers(store: Store<AppState>, api: LayersApi, deps: Layer
     const text = stealConfirmText((await dry).op, name);
     return text === null || deps.confirm(text);
   }
+
+  const patch = (id: number, o: Parameters<LayersApi["patchLayer"]>[1]): Promise<void> =>
+    guarded(async () => {
+      adopt(await api.patchLayer(id, o));
+    });
 
   return {
     /** Hide selected: one atomic call that fills (or makes) the layer named exactly "Hidden" and hides it. */
@@ -130,11 +147,14 @@ export function createLayers(store: Store<AppState>, api: LayersApi, deps: Layer
       });
     },
     /** Every member goes back to main and the layer is removed. */
-    toMain: (id: number): Promise<void> =>
-      guarded(async () => {
+    toMain: (id: number): Promise<void> => {
+      const l = findLayer(store.get().session, id);
+      if (l?.protected && !deps.confirm(toMainProtectedText(l))) return Promise.resolve();
+      return guarded(async () => {
         adopt(await api.deleteLayer(rev(), id));
         store.update((s) => (s.layerUi.active === id ? { ...s, layerUi: { ...s.layerUi, active: null } } : s));
-      }),
+      });
+    },
     select(id: number): void {
       const l = findLayer(store.get().session, id);
       if (!l) return;
@@ -169,6 +189,81 @@ export function createLayers(store: Store<AppState>, api: LayersApi, deps: Layer
     },
     /** Esc, Clear selection or a stale layer: edit mode ends with no change to the layer. */
     leaveEdit: (): void => store.update((s) => (s.layerUi.editing === null ? s : { ...s, layerUi: { ...s.layerUi, editing: null } })),
+    /** New layer from protected points: the points inside the global height band become a protected layer. */
+    fromBand: (): Promise<void> => {
+      if (refuse(layerButtons(store.get()).fromBand)) return Promise.resolve();
+      return guarded(async () => {
+        if (!(await confirmed(api.layerFromProtection(rev(), { dry_run: true }), "Floor"))) return;
+        const before = new Set(layersOf(store.get().session).map((l) => l.id));
+        const reply = await api.layerFromProtection(rev());
+        adopt(reply);
+        const fresh = reply.session.layers.find((l) => !before.has(l.id));
+        if (fresh) store.update((s) => ({ ...s, layerUi: { ...s.layerUi, active: fresh.id } }));
+      });
+    },
+    /** Layer `from` joins layer `into` (confirmed first) and goes away. */
+    merge: (from: number, into: number): Promise<void> => {
+      const a = findLayer(store.get().session, from);
+      const b = findLayer(store.get().session, into);
+      const row = layerRows(store.get().session).find((r) => r.id === from);
+      if (!a || !b || refuse(row?.mergeDisabled ?? null)) return Promise.resolve();
+      if (!deps.confirm(mergeConfirmText(a, b))) return Promise.resolve();
+      return guarded(async () => {
+        adopt(await api.mergeLayer(rev(), from, { into }));
+        store.update((s) => ({ ...s, layerUi: { ...s.layerUi, active: into } }));
+      });
+    },
+    /** Moves a layer one place in the stored order. */
+    move: (id: number, dir: -1 | 1): Promise<void> => {
+      const ids = layersOf(store.get().session).map((l) => l.id);
+      const i = ids.indexOf(id);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= ids.length) return Promise.resolve();
+      [ids[i], ids[j]] = [ids[j], ids[i]];
+      return guarded(async () => {
+        adopt(await api.setOrder(ids));
+      });
+    },
+    /** Add / Subtract / Intersect (or Select) aimed at one layer: one shot, scope Active, no live preview. */
+    async layerOp(id: number, op: LayerSelectOp): Promise<void> {
+      const st = store.get();
+      const l = findLayer(st.session, id);
+      if (!l) return;
+      const why = st.draft || st.preview
+        ? "Commit or discard the draft first"
+        : !l.visible
+          ? SHOW_FIRST
+          : l.count === 0
+            ? "The layer has no points"
+            : (op === "subtract" || op === "intersect") && (st.session?.selection.count ?? 0) === 0
+              ? "Select some points first"
+              : null;
+      if (refuse(why)) return;
+      store.update((s) => ({ ...s, layerUi: { ...s.layerUi, active: id } }));
+      await deps.selectLayerOp(id, op);
+    },
+    /** Delete the layer's points as a normal timeline step (confirmed; a protected layer is refused). */
+    async deletePoints(id: number): Promise<void> {
+      const st = store.get();
+      const l = findLayer(st.session, id);
+      const row = layerRows(st.session).find((r) => r.id === id);
+      if (!l || !row) return;
+      const why = row.deletePointsDisabled ?? (st.draft || st.preview ? "Commit or discard the draft first" : null);
+      if (refuse(why)) return;
+      if (!deps.confirm(deletePointsText(l))) return;
+      if (await deps.selectLayerOp(id, "replace")) await deps.apply();
+    },
+    rename: (id: number, raw: string): Promise<void> => {
+      const name = raw.trim();
+      if (!name) {
+        addNotice(store, "info", "layer_disabled", "A layer needs a name");
+        return Promise.resolve();
+      }
+      return patch(id, { name });
+    },
+    setColour: (id: number, colour: number): Promise<void> => patch(id, { colour }),
+    setFlag: (id: number, flag: "protected" | "locked", value: boolean): Promise<void> => patch(id, { [flag]: value }),
+    setVisible: (id: number, visible: boolean): Promise<void> => patch(id, { visible }),
     setActive: (id: number | null): void => store.update((s) => ({ ...s, layerUi: { ...s.layerUi, active: id } })),
   };
 }

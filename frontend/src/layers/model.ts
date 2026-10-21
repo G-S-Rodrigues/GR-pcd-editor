@@ -38,6 +38,13 @@ export interface LayerRow {
   selectDisabled: string | null;
   /** Null when Edit works (a shown layer with points); else the reason. */
   editDisabled: string | null;
+  protected: boolean;
+  locked: boolean;
+  /** The row tooltip: the label plus Protected / Locked. */
+  title: string;
+  toMainDisabled: string | null;
+  mergeDisabled: string | null;
+  deletePointsDisabled: string | null;
 }
 
 export const HIDE_LABEL = "Hide selected";
@@ -46,8 +53,22 @@ export const HIDDEN_CHIP_TEXT = (n: number): string => `${fmt(n)} hidden - Show`
 export const SHOW_FIRST = "Show the layer first";
 export const NO_POINTS = "The layer has no points";
 
+export const LOCKED_REASON = "The layer is locked";
+export const PROTECTED_REASON = "The layer is protected";
+export const NO_BAND = "Turn on height protection first";
+export const NO_MERGE_TARGET = "No other layer to merge into";
+
+/** The confirm before Merge; the second sentence only when the source loses its protection. */
+export const mergeConfirmText = (from: Layer, into: Layer): string =>
+  `Merge ${from.name} (${countText(from.count)}) into ${into.name}?${from.protected && !into.protected ? ` ${from.name}'s points lose protection.` : ""}`;
+export const toMainProtectedText = (l: Layer): string =>
+  `${l.name} is protected: its ${countText(l.count)} go back to main and lose protection. Continue?`;
+export const deletePointsText = (l: Layer): string =>
+  `Delete the ${countText(l.count)} of ${l.name}? It is a timeline step; Undo brings them back.`;
+
 export function layerRows(s: SessionState | null): LayerRow[] {
-  return layersOf(s).map((l) => ({
+  const all = layersOf(s);
+  return all.map((l) => ({
     id: l.id,
     name: l.name,
     colour: layerColour(l.colour),
@@ -56,7 +77,13 @@ export function layerRows(s: SessionState | null): LayerRow[] {
     label: `${l.name} (${fmt(l.count)})`,
     eyeLabel: `${l.visible ? "Hide" : "Show"} layer ${l.name}`,
     selectDisabled: !l.visible ? SHOW_FIRST : l.count === 0 ? "The layer has no points" : null,
-    editDisabled: !l.visible ? SHOW_FIRST : l.count === 0 || !l.bounds ? NO_POINTS : null,
+    editDisabled: l.locked ? LOCKED_REASON : !l.visible ? SHOW_FIRST : l.count === 0 || !l.bounds ? NO_POINTS : null,
+    protected: l.protected === true,
+    locked: l.locked === true,
+    title: `${l.name} (${fmt(l.count)})${l.protected ? ", Protected" : ""}${l.locked ? ", Locked" : ""}`,
+    toMainDisabled: l.locked ? LOCKED_REASON : null,
+    mergeDisabled: l.locked ? LOCKED_REASON : all.length < 2 ? NO_MERGE_TARGET : null,
+    deletePointsDisabled: l.protected ? PROTECTED_REASON : !l.visible ? SHOW_FIRST : l.count === 0 ? NO_POINTS : null,
   }));
 }
 
@@ -94,6 +121,8 @@ export interface LayerButtons {
   release: string | null;
   /** Set layer to selection (edit mode). */
   set: string | null;
+  /** New layer from protected points. */
+  fromBand: string | null;
   /** The layer the Assign button targets, if it still exists. */
   active: Layer | null;
 }
@@ -110,11 +139,13 @@ export function layerButtons(s: PanelState): LayerButtons {
         : s.session.selection.count === 0
           ? NO_SELECTION
           : null;
+  const bandBase = !s.session ? "No file is open" : s.compare !== "edited" ? "Return to the edited view first" : s.draft || s.preview ? "Commit or discard the draft first" : null;
   return {
     create: base ?? (layersOf(s.session).length >= MAX_LAYERS ? AT_LIMIT : null),
-    assign: base ?? (active ? null : PICK_LAYER),
+    assign: base ?? (active ? (active.locked ? `${active.name} is locked` : null) : PICK_LAYER),
     release: base ?? (layersOf(s.session).length === 0 ? "There are no layers yet" : null),
     set: base,
+    fromBand: bandBase ?? (!s.session?.protection.global.enabled ? NO_BAND : layersOf(s.session).length >= MAX_LAYERS ? AT_LIMIT : null),
     active,
   };
 }

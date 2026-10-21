@@ -4,9 +4,13 @@ import { initialState } from "../state/app";
 import { sessionFixture } from "../testing/fixtures";
 import {
   AT_LIMIT,
+  LOCKED_REASON,
+  PROTECTED_REASON,
+  NO_BAND,
   HIDDEN_LAYER_NAME,
   LAYER_COLOURS,
   MAIN_COLOUR,
+  NO_POINTS,
   NO_SELECTION,
   PICK_LAYER,
   SHOW_FIRST,
@@ -155,5 +159,55 @@ describe("colour by layer fallback", () => {
     expect(layerModeFix({ ...on, session: null })?.mode).toBe("turbo");
     expect(layerModeFix({ ...on, session: sessionFixture({ layers: [layer()] }) })).toBeNull();
     expect(layerModeFix({ ...s, session: sessionFixture() })).toBeNull();
+  });
+});
+
+describe("Part 18 layer flags in the model", () => {
+  const state = (layers: Layer[], over: Record<string, unknown> = {}) => ({
+    ...initialState(),
+    session: sessionFixture({ selection: { count: 4, ops: [] }, layers }),
+    ...over,
+  });
+
+  it("UI-911 rows carry the flags, the lock reasons, the protected delete reason and a title that names them", () => {
+    const [plain, prot, locked] = layerRows(
+      sessionFixture({ layers: [layer({ id: 1 }), layer({ id: 2, protected: true, bounds: { min: [0, 0, 0], max: [1, 1, 1] } }), layer({ id: 3, locked: true, bounds: { min: [0, 0, 0], max: [1, 1, 1] } })] }),
+    );
+    expect(plain.protected).toBe(false);
+    expect(plain.locked).toBe(false);
+    expect(plain.deletePointsDisabled).toBeNull();
+    expect(plain.toMainDisabled).toBeNull();
+    expect(plain.mergeDisabled).toBeNull();
+    expect(prot.protected).toBe(true);
+    expect(prot.deletePointsDisabled).toBe(PROTECTED_REASON);
+    expect(prot.title).toContain("Protected");
+    expect(locked.locked).toBe(true);
+    for (const r of [locked.editDisabled, locked.toMainDisabled, locked.mergeDisabled]) expect(r).toBe(LOCKED_REASON);
+    expect(locked.title).toContain("Locked");
+    const [hidden, empty, only] = [
+      layerRows(sessionFixture({ layers: [layer({ id: 1, visible: false, protected: true }), layer({ id: 2 })] }))[0],
+      layerRows(sessionFixture({ layers: [layer({ id: 1, count: 0 }), layer({ id: 2 })] }))[0],
+      layerRows(sessionFixture({ layers: [layer({ id: 1 })] }))[0],
+    ];
+    expect(hidden.deletePointsDisabled).toBe(PROTECTED_REASON);
+    expect(layerRows(sessionFixture({ layers: [layer({ id: 1, visible: false }), layer({ id: 2 })] }))[0].deletePointsDisabled).toBe(SHOW_FIRST);
+    expect(empty.deletePointsDisabled).toBe(NO_POINTS);
+    expect(only.mergeDisabled).toBe("No other layer to merge into");
+    expect(plain.title).not.toMatch(/Protected|Locked/);
+  });
+
+  it("UI-912 assign is locked-aware and fromBand names its first reason", () => {
+    const floor = layer({ id: 1, name: "Floor", locked: true });
+    expect(layerButtons(state([floor], { layerUi: { editing: null, active: 1 } })).assign).toBe("Floor is locked");
+    const band = { protection: { ...sessionFixture().protection, global: { enabled: true, min: -1, max: 1 } } };
+    const on = (extra: Record<string, unknown> = {}) => state([layer()], { session: sessionFixture({ layers: [layer()], ...band }), ...extra });
+    expect(layerButtons({ ...initialState(), session: null }).fromBand).toBe("No file is open");
+    expect(layerButtons(on({ compare: "original" })).fromBand).toBe("Return to the edited view first");
+    expect(layerButtons(on({ draft: true })).fromBand).toBe("Commit or discard the draft first");
+    expect(layerButtons(state([layer()])).fromBand).toBe(NO_BAND);
+    expect(NO_BAND).toBe("Turn on height protection first");
+    expect(layerButtons(on()).fromBand).toBeNull();
+    const full = sessionFixture({ layers: Array.from({ length: 32 }, (_, i) => layer({ id: i + 1 })), ...band });
+    expect(layerButtons({ ...initialState(), session: full }).fromBand).toBe(AT_LIMIT);
   });
 });

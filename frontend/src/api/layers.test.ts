@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { setSessionId } from "../files/http";
 import { stubFetch } from "../files/testing/fetch";
-import { assignLayer, createLayer, deleteLayer, patchLayer, setMembers, setVisibility } from "./layers";
+import { assignLayer, createLayer, deleteLayer, layerFromProtection, mergeLayer, patchLayer, setMembers, setOrder, setVisibility } from "./layers";
 import { normaliseState } from "./session";
 
 afterEach(() => {
@@ -55,4 +55,22 @@ test("UI-810 a 409 stale_revision and a 422 layer_hidden keep their code", async
   await expect(createLayer(1)).rejects.toMatchObject({ status: 409, code: "stale_revision" });
   stubFetch(() => ({ status: 422, body: { error: { code: "layer_hidden", message: "hidden" } } }));
   await expect(setMembers(1, 2)).rejects.toMatchObject({ status: 422, code: "layer_hidden" });
+});
+
+test("UI-913 flags, order, merge and Floor-from-band calls build the exact method, URL and body", async () => {
+  setSessionId("s1");
+  const calls = stubFetch(() => ({ body: { ...RAW, layer_op: { moved: 3, from_other_layers: 0, released: 0 } } }));
+  await patchLayer(1, { protected: true, locked: false });
+  await setOrder([2, 1]);
+  await mergeLayer(7, 2, { into: 1, dry_run: true });
+  await layerFromProtection(7, { dry_run: true });
+  await layerFromProtection(7, { name: "Ground" });
+  const L = "/api/session/layers";
+  expect(calls.map((c) => [c.method, c.url, c.body])).toEqual([
+    ["PATCH", `${L}/1`, { protected: true, locked: false }],
+    ["PUT", `${L}/order`, { ids: [2, 1] }],
+    ["POST", `${L}/2/merge`, { cloud_revision: 7, into: 1, dry_run: true }],
+    ["POST", `${L}/from-protection`, { cloud_revision: 7, dry_run: true }],
+    ["POST", `${L}/from-protection`, { cloud_revision: 7, name: "Ground" }],
+  ]);
 });

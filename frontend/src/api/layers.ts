@@ -24,9 +24,17 @@ export const assignLayer = (rev: number, id: number, o: { visible?: boolean; dry
 /** The layer's members become exactly the current selection. */
 export const setMembers = (rev: number, id: number, o: { dry_run?: boolean } = {}) =>
   call("POST", `${BASE}/${id}/set-members`, { cloud_revision: rev, ...o });
-export const patchLayer = (id: number, o: { name?: string; colour?: number; visible?: boolean }) =>
+export const patchLayer = (id: number, o: { name?: string; colour?: number; visible?: boolean; protected?: boolean; locked?: boolean }) =>
   call("PATCH", `${BASE}/${id}`, o);
 export const deleteLayer = (rev: number, id: number) => call("DELETE", `${BASE}/${id}`, { cloud_revision: rev });
 /** `ids: null` means every layer (the Show-all call of the legend chip). */
 export const setVisibility = (ids: number[] | null, visible: boolean) =>
   call("PUT", `${BASE}/visibility`, { ids, visible });
+/** The stored layer order: every id once. */
+export const setOrder = (ids: number[]) => call("PUT", `${BASE}/order`, { ids });
+/** Layer `id` joins `into` and goes away (`dry_run` counts only). */
+export const mergeLayer = (rev: number, id: number, o: { into: number; dry_run?: boolean }) =>
+  call("POST", `${BASE}/${id}/merge`, { cloud_revision: rev, ...o });
+/** A protected layer of the points inside the height band (default name Floor). */
+export const layerFromProtection = (rev: number, o: { name?: string; dry_run?: boolean } = {}) =>
+  call("POST", `${BASE}/from-protection`, { cloud_revision: rev, ...o });
