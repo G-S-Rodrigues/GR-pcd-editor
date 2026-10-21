@@ -53,14 +53,18 @@ export interface StepView {
 
 const fmt = (n: number) => n.toLocaleString("en-US");
 
-export function stepTooltip(s: { tool: string; name: string | null; count: number; greyed: boolean; description?: string }): string {
+/** A selection step made by the Planes or Thin tool says so in its tooltip (the glyph stays "other"). */
+export const shapeTitle = (shape: { type?: string } | null | undefined): string | null =>
+  shape?.type === "plane" ? "Plane" : shape?.type === "thin" ? "Thin" : null;
+
+export function stepTooltip(s: { tool: string; name: string | null; count: number; greyed: boolean; description?: string; shapeTitle?: string | null }): string {
   const pts = `${fmt(s.count)} point${s.count === 1 ? "" : "s"}`;
   if (s.tool === "layer") {
     // the server's description often carries the count already: do not say it twice
     const head = s.name ?? s.description ?? toolTitle(s.tool);
     return `${head.includes(pts) ? head : `${head}, ${pts}`}${s.greyed ? " - rolled back" : ""}. Click to highlight; double-click the name to rename`;
   }
-  const head = s.name ?? toolTitle(s.tool);
+  const head = s.name ?? s.shapeTitle ?? toolTitle(s.tool);
   const verb = s.tool === "invalid" && !s.name ? head : `${head} delete`;
   return `${verb}, ${pts}${s.greyed ? " - rolled back" : ""}. Click to highlight; double-click the name to rename`;
 }
@@ -81,7 +85,7 @@ export function stepsOf(session: SessionState | null): StepView[] {
       count: e.count,
       greyed,
       icon: iconFor(tool),
-      tooltip: stepTooltip({ tool, name, count: e.count, greyed, description: e.description }),
+      tooltip: stepTooltip({ tool, name, count: e.count, greyed, description: e.description, shapeTitle: shapeTitle(e.shape) }),
       deletable: e.deletable !== false,
     };
   });

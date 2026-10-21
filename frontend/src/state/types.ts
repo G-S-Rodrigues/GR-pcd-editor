@@ -117,7 +117,23 @@ export interface StepSparse {
   exclude_protected: boolean;
   region: StepBox | StepPrism | null;
 }
-export type StepShape = StepBox | StepPrism | StepCluster | StepSparse;
+export interface StepPlane {
+  type: "plane";
+  normal: Vec3;
+  d: number;
+  thickness: number;
+  exclude_protected: boolean;
+  region: StepBox | StepPrism | null;
+}
+export interface StepThin {
+  type: "thin";
+  method: "duplicates" | "voxel";
+  distance: number;
+  edge: number;
+  exclude_protected: boolean;
+  region: StepBox | StepPrism | null;
+}
+export type StepShape = StepBox | StepPrism | StepCluster | StepSparse | StepPlane | StepThin;
 export interface SessionState {
   session_id: string;
   filename: string;
@@ -147,7 +163,7 @@ export type UiOp = "add" | "subtract" | "intersect";
 export type SelectionOp = "replace" | "add" | "subtract" | "intersect" | "invert";
 export type Scope = "displayed" | "active";
 export type RenderMode = "edited" | "original" | "deleted";
-export type ToolKind = "none" | "box" | "polygon" | "cluster" | "sparse";
+export type ToolKind = "none" | "box" | "polygon" | "cluster" | "sparse" | "plane" | "thin";
 
 export interface Candidate {
   candidate_id: string;

@@ -72,6 +72,17 @@ export const submitCommit = (b: { cloud_revision: number; preview_id: string }) 
   postJson<{ id: string }>("/api/session/selection/commit", b);
 export const discardPreview = (cloud_revision: number) =>
   postJson("/api/session/selection/preview/discard", { cloud_revision });
+export interface DetectPlanesBody {
+  cloud_revision: number;
+  scope: Scope;
+  distance: number;
+  max_tilt_deg: number;
+  max_planes: number;
+  region: Json | null;
+  exclude_protected: boolean;
+}
+/** Starts the read-only plane detection job (the result carries `planes`, `eligible` and `cloud_revision`). */
+export const detectPlanes = (b: DetectPlanesBody) => postJson<{ id: string }>("/api/session/planes/detect", b);
 export const submitCandidate = (cloud_revision: number) =>
   postJson<{ id: string }>("/api/session/candidate", { cloud_revision });
 

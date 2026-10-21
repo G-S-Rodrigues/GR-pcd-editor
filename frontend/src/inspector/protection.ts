@@ -1,6 +1,6 @@
 import type { Bounds, Candidate, Protection } from "../state/types";
 import { type CompareMode, editAllowed } from "../compare/model";
-import { MAX_TILT_DEG, type Tilt, isLevel, levelTilt } from "./tilt";
+import { MAX_TILT_DEG, type Tilt, isLevel, levelTilt, normalOf } from "./tilt";
 
 export type OpMode = "inherit" | "add_local" | "override";
 export interface Interval {
@@ -51,6 +51,39 @@ export function setTilt(m: ProtectionModel, patch: { rx?: number; ry?: number },
   if (rx === 0 && ry === 0) return { ok: true, model: { ...m, tilt: levelTilt() } };
   const pivot: [number, number] = isLevel(m.tilt) ? [centre[0], centre[1]] : m.tilt.pivot;
   return { ok: true, model: { ...m, tilt: { rx, ry, pivot } } };
+}
+
+const DEG = 180 / Math.PI;
+const r1 = (v: number) => Math.round(v * 10) / 10;
+
+/**
+ * Use as protection band: the global band becomes the slab about a detected plane. The angles come from the plane normal
+ * (rx = -asin(ny), ry = atan2(nx, nz), the `normalOf` convention), the pivot is the given active-bounds XY centre, and
+ * the interval is [s0 - t, s0 + t] with s0 the slab coordinate of the plane. It is refused when either angle is beyond 60 degrees.
+ */
+export function bandFromPlane(m: ProtectionModel, plane: { normal: [number, number, number]; d: number; thickness: number }, centre: [number, number]): ProtectionEdit {
+  const [nx, ny, nz] = plane.normal;
+  if (![nx, ny, nz, plane.d, plane.thickness, ...centre].every(Number.isFinite) || !(plane.thickness > 0)) {
+    return { ok: false, model: m, error: "This plane has no usable numbers" };
+  }
+  const rx = -Math.asin(Math.max(-1, Math.min(1, ny))) * DEG;
+  const ry = Math.atan2(nx, nz) * DEG;
+  if (Math.abs(rx) > MAX_TILT_DEG || Math.abs(ry) > MAX_TILT_DEG) {
+    return { ok: false, model: m, error: `This plane needs a tilt of rx ${r1(rx)}, ry ${r1(ry)} degrees; the protection band allows at most ${MAX_TILT_DEG} on each` };
+  }
+  const level = rx === 0 && ry === 0;
+  const tilt: Tilt = level ? levelTilt() : { rx, ry, pivot: [centre[0], centre[1]] };
+  const n = normalOf(tilt);
+  const s0 = level ? plane.d : plane.d - n[0] * centre[0] - n[1] * centre[1];
+  const t = plane.thickness;
+  return { ok: true, model: { ...m, tilt, global: { enabled: true, min: s0 - t, max: s0 + t } } };
+}
+
+/** O11: the confirm text when a band is already enabled (it is replaced; protection is not a timeline step), else null. */
+export function bandReplaceText(m: ProtectionModel): string | null {
+  if (!m.global.enabled) return null;
+  const t = isLevel(m.tilt) ? "level" : `tilt rx ${r1(m.tilt.rx)}, ry ${r1(m.tilt.ry)} degrees`;
+  return `Replace the protection band ${m.global.min} to ${m.global.max} (${t}) with this Detected plane?`;
 }
 
 /** Level button: angles 0 and the pivot cleared; the intervals are untouched. */

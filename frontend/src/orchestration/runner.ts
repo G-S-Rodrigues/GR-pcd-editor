@@ -436,7 +436,7 @@ export function createRunner(store: Store<AppState>, api: RunnerApi) {
         return;
       }
       const live = s.liveFirst && s.tool !== "none" && buildSelection(s).ok;
-      const reselect = live && (kind !== "protection" || s.tool === "cluster" || s.tool === "sparse");
+      const reselect = live && (kind !== "protection" || s.tool === "cluster" || s.tool === "sparse" || s.tool === "plane" || s.tool === "thin");
       if (reselect) {
         store.set({ draft: false });
         paramsDebounce.call(selectionNow);

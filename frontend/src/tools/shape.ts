@@ -21,7 +21,7 @@ export function editShapeState(entry: HistoryEntry, n: number): { enabled: boole
   return { enabled: true, label, title: `${label}: clears the selection and reopens this step's shape as a live selection; applying it adds a new step` };
 }
 
-export type ShapePatch = Pick<AppState, "tool" | "tools" | "interaction" | "liveFirst" | "draft" | "preview" | "candidate">;
+export type ShapePatch = Pick<AppState, "tool" | "tools" | "interaction" | "liveFirst" | "draft" | "preview" | "candidate"> & { planes?: AppState["planes"] };
 export type ShapeResult = { ok: true; patch: ShapePatch } | { ok: false; reason: string };
 
 function closedPolygon(shape: StepPrism, editing: boolean): { ok: true; polygon: PolygonState } | { ok: false; reason: string } {
@@ -45,7 +45,7 @@ export function shapeToPatch(shape: StepShape, st: AppState, centre: Vec3 | null
     if (!p.ok) return p;
     return { ok: true, patch: { ...base, tool: "polygon", tools: { ...st.tools, polygon: p.polygon } } };
   }
-  // cluster and sparse carry an optional region: a box or a polygon the search was limited to
+  // cluster, sparse, plane and thin carry an optional region: a box or a polygon the search was limited to
   let tools = st.tools;
   let region: RegionKind = "none";
   if (shape.region) {
@@ -69,6 +69,15 @@ export function shapeToPatch(shape: StepShape, st: AppState, centre: Vec3 | null
       region,
     };
     return { ok: true, patch: { ...base, tool: "cluster", tools: { ...tools, cluster } } };
+  }
+  if (shape.type === "plane") {
+    const plane = { ...tools.plane, distance: shape.thickness, excludeProtected: shape.exclude_protected, region };
+    const planes = { ...st.planes, chosen: { normal: [...shape.normal] as Vec3, d: shape.d, thickness: shape.thickness }, chosenRow: null, rowNote: null };
+    return { ok: true, patch: { ...base, tool: "plane", tools: { ...tools, plane }, planes } };
+  }
+  if (shape.type === "thin") {
+    const thin = { ...tools.thin, method: shape.method, distance: shape.distance, edge: shape.edge, excludeProtected: shape.exclude_protected, region };
+    return { ok: true, patch: { ...base, tool: "thin", tools: { ...tools, thin } } };
   }
   const sparse = { radius: shape.radius, minNeighbours: shape.min_neighbours, excludeProtected: shape.exclude_protected, region };
   return { ok: true, patch: { ...base, tool: "sparse", tools: { ...tools, sparse } } };

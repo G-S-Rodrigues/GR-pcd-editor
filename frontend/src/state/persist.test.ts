@@ -233,3 +233,39 @@ test("UI-886 a fresh session starts Link distance 0.3 and Max points 500; a save
   expect(out.tools.cluster.radius).toBe(0.5);
   expect(out.tools.cluster.maxPoints).toBe(500);
 });
+
+test("UI-967 a restored page does not restore the plane list, the chosen plane or the Planes and Thin tools", () => {
+  const a = createAppStore();
+  a.update((s) => ({
+    ...s,
+    tool: "plane",
+    planes: { ...s.planes, list: [], chosen: { normal: [0, 0, 1], d: 1, thickness: 0.03 }, chosenRow: 0 },
+    tools: { ...s.tools, plane: { ...s.tools.plane, distance: 0.5 }, thin: { ...s.tools.thin, method: "voxel" } },
+  }));
+  const saved = JSON.parse(JSON.stringify(serialiseClientState(a.get())));
+  const patch = restoreClientState(saved)!;
+  expect(patch.tools).not.toHaveProperty("plane");
+  expect(patch.tools).not.toHaveProperty("thin");
+  expect(patch).not.toHaveProperty("planes");
+  const b = createAppStore();
+  b.update((s) => applyClientPatch(s, patch));
+  expect(b.get().tool).toBe("none");
+  expect(b.get().planes.list).toBeNull();
+  expect(b.get().planes.chosen).toBeNull();
+  expect(b.get().tools.plane.distance).toBe(0.03);
+  expect(b.get().tools.thin.method).toBe("duplicates");
+});
+
+test("UI-968 the saved client state holds only the existing keys: no plane or thin model, no plane numbers", () => {
+  const a = createAppStore();
+  a.update((s) => ({
+    ...s,
+    planes: { ...s.planes, list: [], chosen: { normal: [0, 0, 1], d: 1.2345678, thickness: 0.03 } },
+    tools: { ...s.tools, plane: { ...s.tools.plane, distance: 0.4321 }, thin: { ...s.tools.thin, edge: 0.7654321 } },
+  }));
+  const c = serialiseClientState(a.get());
+  expect(Object.keys(c).sort()).toEqual(["camera", "colour", "comparison", "pivot", "pointSize", "tools", "ui", "unit", "v"].sort());
+  expect(Object.keys(c.tools as object).sort()).toEqual(["box", "cluster", "polygon"]);
+  const text = JSON.stringify(c);
+  for (const needle of ["1.2345678", "0.4321", "0.7654321", "planes", "thin"]) expect(text).not.toContain(needle);
+});

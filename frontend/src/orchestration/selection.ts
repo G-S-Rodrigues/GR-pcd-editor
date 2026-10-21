@@ -2,6 +2,8 @@ import type { AppState } from "../state/app";
 import type { Scope, SelectionOp } from "../state/types";
 import { toBoxTool } from "../tools/box/model";
 import { toClusterTool } from "../tools/cluster/model";
+import { NO_PLANE_REASON, toPlaneTool } from "../tools/plane/model";
+import { toThinTool } from "../tools/thin/model";
 import { toSparseTool } from "../tools/sparse/model";
 import { toPrismTool } from "../tools/polygon/model";
 import type { ToolBody } from "./tooltypes";
@@ -46,6 +48,8 @@ export function currentTool(s: AppState): ToolBody | null {
     return c && { ...c, on_limit: "partial" as const };
   }
   if (s.tool === "sparse") return toSparseTool(t.sparse, box, prism);
+  if (s.tool === "plane") return toPlaneTool(t.plane, s.planes.chosen, box, prism);
+  if (s.tool === "thin") return toThinTool(t.thin, box, prism);
   return null;
 }
 
@@ -62,7 +66,11 @@ export function buildSelection(s: AppState): BuildResult {
           ? "Pick a seed point and a valid radius first"
           : s.tool === "sparse"
             ? "Sparse points needs a radius above 0 (or empty) and at least 1 neighbour"
-            : "The box is not valid";
+            : s.tool === "plane"
+              ? NO_PLANE_REASON
+              : s.tool === "thin"
+                ? "Thin needs a distance of 0 or more (duplicates) or an edge above 0 (voxel grid)"
+                : "The box is not valid";
     return { ok: false, reason: why };
   }
   return { ok: true, body: { ...base, tool } };

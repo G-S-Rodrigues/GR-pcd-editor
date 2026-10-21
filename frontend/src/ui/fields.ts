@@ -1,4 +1,4 @@
-export type FieldGroup = "tool" | "box" | "polygon" | "cluster" | "sparse" | "filter" | "protection" | "history" | "layer";
+export type FieldGroup = "tool" | "box" | "polygon" | "cluster" | "sparse" | "plane" | "thin" | "filter" | "protection" | "history" | "layer";
 
 export interface FieldSpec {
   id: string;
@@ -78,9 +78,24 @@ export const FIELD_SPECS: FieldSpec[] = [
   f("cluster-exclude-protected", "Exclude protected", "cluster", "Do not let the cluster grow through height-protected points"),
   f("cluster-max-points", "Max points", "cluster", "Stop and report if the cluster grows past this many points"),
   f("cluster-cancel", "Cancel", "cluster", "Cancel the running cluster computation"),
+  f("tool-plane", "Planes", "tool", "Detect floor and ceiling planes (seeded RANSAC on a sample), choose one and select the points within its distance; Delete removes them"),
+  f("tool-thin", "Thin", "tool", "Select duplicate points or the surplus points of a voxel grid (the lowest index of each group is kept); Delete then removes them"),
   f("sparse-radius", "Radius", "sparse", "Cube edge in the file unit used to count neighbours; empty derives it from the point spacing"),
   f("sparse-min", "Min neighbours", "sparse", "A point with fewer than this many points around it (itself included) is selected"),
   f("sparse-region", "Region", "sparse", "Limit the search to the current box or polygon"),
+  f("plane-distance", "Distance", "plane", "Points within this distance of a plane count for it, and the selected slab is this thick on each side; in the file unit"),
+  f("plane-max-tilt", "Max tilt (deg)", "plane", "Only planes tilted at most this far from level are searched, so walls are not chosen"),
+  f("plane-max", "Max planes", "plane", "How many planes to look for, from 1 to 8"),
+  f("plane-region", "Region", "plane", "Limit the detection and the selection to the current box or polygon"),
+  f("plane-exclude-protected", "Exclude protected", "plane", "Never detect on or select height-protected points"),
+  f("plane-detect", "Detect planes", "plane", "Find planes in the displayed or active points (see Scope). It changes nothing by itself; choose a row to select its points"),
+  f("plane-cancel", "Cancel", "plane", "Stop the plane detection"),
+  f("plane-list", "Detected planes", "plane", "The planes found, lowest first; the lowest may be a floor and the highest a ceiling"),
+  f("thin-method", "Method", "thin", "Duplicates: points at the same place; Voxel grid: all but one point per cube"),
+  f("thin-distance", "Distance", "thin", "0 selects exact duplicates; above 0 selects a point with an earlier point within this distance (chains collapse to their first point)"),
+  f("thin-edge", "Voxel edge", "thin", "Cube edge in the file unit; one point (the lowest index) is kept in each cube"),
+  f("thin-region", "Region", "thin", "Limit the thinning to the current box or polygon; points outside it are neither selected nor counted as copies"),
+  f("thin-exclude-protected", "Exclude protected", "thin", "Never select height-protected points; protected points do not count as copies either"),
   f("sparse-exclude-protected", "Exclude protected", "sparse", "Never select height-protected points"),
   ...AX.flatMap((a) =>
     (["min", "max"] as const).flatMap((s) => {

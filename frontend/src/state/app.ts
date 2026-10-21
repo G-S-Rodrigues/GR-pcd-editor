@@ -7,6 +7,8 @@ import type { CompareMode } from "../compare/model";
 import { type BoxModel, defaultBox } from "../tools/box/model";
 import { type ClusterModel, defaultCluster } from "../tools/cluster/model";
 import { type SparseModel, defaultSparse } from "../tools/sparse/model";
+import { type PlaneModel, type PlanesState, defaultPlane, emptyPlanes } from "../tools/plane/model";
+import { type ThinModel, defaultThin } from "../tools/thin/model";
 import { type PolygonState, emptyPolygon } from "../tools/polygon/model";
 import type { RenderData } from "../render/parse";
 import { type TimelineState, emptyTimeline } from "../timeline/model";
@@ -29,6 +31,8 @@ export interface ToolsState {
   polygon: PolygonState;
   cluster: ClusterModel;
   sparse: SparseModel;
+  plane: PlaneModel;
+  thin: ThinModel;
   filters: FilterModel;
   protection: ProtectionModel;
 }
@@ -97,6 +101,8 @@ export interface AppState {
   timeline: TimelineState;
   /** Layer panel view state: the layer being edited and the one a legend row last acted on. Never saved. */
   layerUi: LayerUi;
+  /** Detected planes (client only, never saved) and the plane the Planes tool has chosen. */
+  planes: PlanesState;
 }
 
 export function initialState(): AppState {
@@ -128,6 +134,8 @@ export function initialState(): AppState {
       polygon: emptyPolygon(),
       cluster: defaultCluster(),
       sparse: defaultSparse(),
+      plane: defaultPlane(),
+      thin: defaultThin(),
       filters: emptyFilter(),
       protection: emptyProtection(),
     },
@@ -144,6 +152,7 @@ export function initialState(): AppState {
     legendOpen: true,
     timeline: emptyTimeline(),
     layerUi: { editing: null, active: null },
+    planes: emptyPlanes(),
   };
 }
 
