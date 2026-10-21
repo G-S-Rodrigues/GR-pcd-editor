@@ -478,3 +478,38 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
   `LAY-20b` (rewritten on the shared oracle, thresholds unchanged; `LAY-20` op mix gains merge), `UI-265` (empty
   strip text "No steps yet"), `UI-837` (the layers note and title wording). `HST-21` and `LAY-21` go green through the
   oracle unchanged.
+
+## Part 20 additions (Planes: floor and ceiling detection; Thin: duplicates and voxel subsample)
+
+- Backend: `THN-01..14` (`geometry/voxel.py` key extraction shared with Sparse, the Thin tool: eps 0, eps > 0 with a
+  dyadic boundary, lowest-index keeper, voxel, eligible-only keepers, budget refusal), `PLN-01..15` (RANSAC detection,
+  plane membership, determinism, the batch bound), `STS-15..18` (step shapes), `SES-87..89` (archive), `API-109..116`
+  (the read-only detect job and the select route; `tests/unit/test_planes_api.py`). pytest 697 to 741. The 1M bounds
+  `PLN-14/15` and `THN-13/14` run one call in a fresh process under `RLIMIT_AS` (`tests/fixtures/plane_rss.py`) and are
+  the worst of 3 runs of the committed code x1.5 (detect 1.50 s / 96 MiB, plane mask 0.03 s, duplicates at 1e-3
+  2.96 s / 171 MiB, voxel 0.81 s / 133 MiB). The voxel number is slower than the Step 0 spike (0.25 s); reported, not tuned.
+- Frontend unit: `UI-954..983` (models, `bandFromPlane`, the detect flow in `orchestration/planes.ts`, panels, step cards).
+  vitest 763 to 797. Changed existing test: `UI-890` (the tool order is box, polygon, cluster, sparse, plane, thin).
+- Smoke `E2E-186..194`: `E2E-186` Detect, held progress and Cancel; `E2E-187` ceiling Delete, Undo, Redo; `E2E-188` the
+  tilted floor as the protection band (angles within 0.01 degrees of the plane equation, Protected equals the slab
+  oracle, the O11 replace confirm answered by its text); `E2E-189` a plane as a protected layer and the band route;
+  `E2E-190` duplicates at 0, export re-parsed with no duplicate row; `E2E-191` 1e-3, voxel and a box Subtract/Add;
+  `E2E-192` Save, reopen, Edit shape, no list after a reload; `E2E-193` layout (logs `TOOL-ROW <w>x<h>`);
+  `E2E-194` writes `/out/part20-<w>x<h>-planes.png` and `-thin.png` (keep with `SMOKE_SHOTS_DIR`, never commit).
+  Oracles `countPlane`, `dupTruth`, `voxelTruth` are in `e2e/synthetic.ts` and import nothing from the app.
+- Fixture lesson: the detection needs 1% of the points to form a plane, so regular rows of wall points (equal z) become
+  planes of their own. `planeRoomPcd()` scatters the wall heights; `planeRoomPcd(true)` keeps the rows to give the layout
+  test 4 list rows. A Box armed over an existing selection is a draft (needs Commit draft): `sel-clear` first.
+  The status bar groups thousands (`2,921`).
+- Step 0 (checks image, `-m 6g`, throwaway spike): RANSAC on 360k points, floor normal error 1e-5 rad, d 5e-4, 0.89 s,
+  +76 MiB; a tilted floor 1e-4 rad; 1.2M 1.08 s; 9.6M (manual) 3.19 s with the 2 planes right. Thin 1M with 50 %
+  duplicates: eps 0 0.38 s, eps 1e-3 2.4 s, voxel 0.05 0.25 s. Thin 10M (manual): eps 0 7.3 s (+926 MiB), eps 1e-3
+  32.8 s, voxel 4.4 s (+124 MiB), `count_neighbors` 7.1 s; all completed under 6 GiB.
+- Determinism scope: the seed is fixed (0), so two runs in one build give identical planes (checked in one process and in
+  two fresh processes). Across machines or BLAS builds the planes agree to 1e-3 only (LAPACK `eigh` bits may differ).
+- Lowest-index rule: for duplicates and voxels the point with the lowest index is kept and later ones are selected;
+  only points the tool may select (scope, region, Exclude protected) count as copies (O10). Chain caveat: with eps > 0 a
+  chain of points spaced eps apart keeps only its first point.
+- One job worker: a select queues behind a running detect, so the panel shows "Detecting planes..." as busy (`API-110`).
+- A pre-20 build refuses an archive holding a `plane` or `thin` step (`bad_archive`); documented, not tested.
+- Known load flakes unchanged: `test_pcd_61`, `E2E-57`, `test_nrm_07` timing.

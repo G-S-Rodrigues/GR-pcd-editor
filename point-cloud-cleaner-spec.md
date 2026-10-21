@@ -503,3 +503,19 @@ Initial targets, to be benchmarked on a documented desktop Linux reference PC wi
 - Export gains One file per layer (`per_layer`): one PCD per chosen layer, Main first, empty layers skipped and listed.
 - This supersedes the Part 18 addendum line "The archive stays version 2": the archive is version 3 only when a layer
   step exists (older builds refuse it), otherwise version 2; v1 and v2 files still open. AC-12 and AC-17 stand.
+
+## Part 20 addendum (Planes, Thin)
+
+- Section 12 (selection tools): two new tools. **Planes** detects near-horizontal Detected planes (read only) and selects
+  the points within a distance of a chosen one; **Thin** selects duplicates (distance 0 exact, above 0 within the
+  distance, inclusive) or a voxel subsample, keeping the lowest-index point. Both compose with Add, Subtract and Intersect
+  and take a region and Exclude protected like Sparse points.
+- Section 10 (protection): a Detected plane can become the protection band (Use as protection band). The 60 degree tilt
+  limit applies per axis and protection stays a slab about the plane. Protection is not a timeline step, so replacing an
+  enabled band asks first.
+- Section 16 (deletion): subsampling is an explicit selection and a Delete, never silent; it is one timeline step.
+- Section 14 (archive): a session with a `plane` or `thin` step keeps the existing archive version (2 or 3); a build
+  older than Part 20 refuses it. The detected list is not saved.
+- Owner decisions built as defaults: O10 keepers are eligible points only; O11 an enabled band is replaced after a confirm.
+- Licence: the algorithms are published ones (RANSAC plane fitting, voxel grid downsampling, fixed-radius neighbour
+  search); no CloudCompare code is used.

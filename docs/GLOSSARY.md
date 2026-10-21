@@ -93,3 +93,16 @@
   nearest to the seed, ordered by (hop count, distance, point index). Empty means no limit.
 - **Show hidden:** Makes every hidden layer visible again and selects the members of the layer named Hidden, so Delete
   works at once; a user layer hidden by its eye comes back visible and is not selected.
+- **Detected plane:** A plane found by the Planes tool's Detect (RANSAC on a sample of the eligible points, near-horizontal
+  by default): normal, offset, point count and tilt, listed lowest first. Detection is read only and the list is not saved.
+  Not the same as the protection band's plane handles or a cut plane.
+- **Planes tool:** Detect lists up to 4 Detected planes; choosing a row selects the points within the Distance of it
+  (default 0.03 file units) so Delete removes them. The row labels "Lowest (floor?)" and "Highest (ceiling?)" are hints.
+- **Use as protection band:** A list row action that makes the height protection band follow a Detected plane (tilted
+  when the plane is tilted; each tilt angle at most 60 degrees). An enabled band is replaced only after a confirm.
+- **Thin tool:** Selects duplicate points or a voxel subsample, always as a selection that Delete then removes (Undo
+  brings them back); the lowest-index point of each group stays.
+- **Duplicate (eps rule):** With distance 0, a point whose coordinates equal an earlier point's; with distance above 0, a
+  point with an earlier point within that distance (inclusive, so chains collapse to their first point).
+- **Voxel subsample:** Keeps the lowest-index point in each cube of the given edge (cubes start at the minimum of the
+  eligible points) and selects the rest.

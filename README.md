@@ -17,7 +17,7 @@ view, global height protection (the purple slab) and the live counts in the stat
 2. Navigate: the ViewCube or keys `1`..`6` (top, bottom, front, back, left,
    right), `P` toggles perspective/orthographic, `F` fits the cloud. The orbit
    pivot can be reset, or picked by clicking a point (Pick pivot; Esc cancels).
-3. Pick a tool (**Box**, **Polygon**, **Cluster**, **Sparse points**), shape it with
+3. Pick a tool (**Box**, **Polygon**, **Cluster**, **Sparse points**, **Planes**, **Thin**), shape it with
    numbers or its 3D handles, and read the **exact** counts in the status bar (Selected,
    Protected, Candidates). The red **Delete** button (the `Delete` key) removes the selected
    points that are not protected; it is enabled only for an up-to-date selection.
@@ -111,6 +111,12 @@ Concepts worth knowing:
   cloud, box or polygon) and Exclude protected are set in its panel; it is an ordinary
   selection tool and composes with Add, Subtract and Intersect. The neighbour count is an
   upper-bound proxy for a true radius count, and its quality on a real scan is for you to judge.
+- **Planes** finds floor and ceiling candidates: Detect lists up to 4 near-horizontal planes (lowest first, with their
+  point counts); choose a row to select the points within the Distance of that plane, or **Use as protection band** to
+  protect a tilted floor. Detection changes nothing by itself.
+- **Thin** selects duplicate points (distance 0 for exact copies, above 0 for near copies) or a voxel subsample; Delete
+  then removes them and Undo brings them back. The point with the lowest index in each group stays. Both tools follow
+  published algorithms (RANSAC plane fitting, voxel grid downsampling) and contain no CloudCompare code.
 - The unit is a label only (metres, assumed); the file frame is used as stored, Z up.
 - Counts in the status bar are exact; "Rendered" is the sampled number of points
   drawn and is never a cloud total.
