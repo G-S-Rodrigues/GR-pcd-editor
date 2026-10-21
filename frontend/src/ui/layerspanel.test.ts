@@ -270,3 +270,10 @@ test("UI-926 a locked layer's Edit, To main and Merge are inactive with the reas
   attrBtn("data-layer-edit", 1).fire("click");
   expect(calls.edit).not.toHaveBeenCalled();
 });
+
+test("UI-984 a different session forgets the open fold-outs: layer 1 of the next file starts closed", () => {
+  rowBtn(1, "more").fire("click");
+  expect(rowBtn(1, "more").getAttribute("aria-expanded")).toBe("true");
+  store.set({ session: { ...(store.get().session as NonNullable<ReturnType<typeof sessionFixture>>), session_id: "s2" } });
+  expect(rowBtn(1, "more").getAttribute("aria-expanded")).toBe("false");
+});

@@ -191,6 +191,7 @@ function onOpened(state: SessionState) {
     scope: "displayed",
     candidate: null,
     planes: emptyPlanes(),
+    layerUi: { editing: null, active: null }, // layer ids repeat from file to file: a new file has no chosen layer
     tools: {
       ...st.tools,
       box: boxForOpen(st.tools.box, fitted.target),

@@ -50,7 +50,14 @@ export function buildLayersPanel(root: HTMLElement, store: Store<AppState>, a: P
   ];
   const opened = new Set<number>();
   let layerKey = "";
+  let sessionId: string | null = null;
   const sync = (s: AppState) => {
+    // a different file starts with every fold-out closed: layer ids repeat from file to file
+    const sid = s.session?.session_id ?? null;
+    if (sid !== sessionId) {
+      sessionId = sid;
+      opened.clear();
+    }
     const rows = layerRows(s.session);
     const b = layerButtons(s);
     reasonOn(newBtn, "layer-new", b.create);

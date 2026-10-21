@@ -6109,3 +6109,18 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     await page.screenshot({ path: `/out/part20-${w}x${hgt}-thin.png` });
   });
 }
+
+// ---- final fixes (part 21)
+test("E2E-195 21 a newly opened file forgets the chosen layer and the open fold-outs of the previous one", async ({ page }) => {
+  page.on("dialog", (d) => void d.accept());
+  const t = layerHelpers(page);
+  const { id } = await t.floorLayer();
+  await t.pick(id).click();
+  await t.openMore(id);
+  await expect(t.pick(id)).toHaveClass(/active/);
+  const ui = () => hook(page, (e) => ({ active: e.state().layerUi.active, editing: e.state().layerUi.editing }));
+  expect(await ui()).toEqual({ active: id, editing: null });
+  await page.locator("#file-input").setInputFiles({ name: "other.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
+  await expect.poll(() => hook(page, (e) => e.state().session?.filename), { timeout: 15000 }).toBe("other.pcd");
+  expect(await ui()).toEqual({ active: null, editing: null });
+});
