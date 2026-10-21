@@ -423,7 +423,11 @@ def build_router(manager: SessionManager, settings: Settings) -> APIRouter:
     @router.post("/session/export")
     def export(body: ExportBody):
         sweep_runtime(manager)
-        return _job(manager.submit_export(body.format, body.scope, body.layers))
+        return _job(
+            manager.submit_export(
+                body.format, body.scope, body.layers, body.per_layer
+            )
+        )
 
     @router.get("/exports/{export_id}")
     def download_export(export_id: str):

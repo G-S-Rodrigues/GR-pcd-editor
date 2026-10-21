@@ -291,6 +291,8 @@ class ExportBody(Model):
     scope: Literal["active", "selected", "displayed"] = "active"
     # layer ids to export (0 = main); None = every layer
     layers: list[int] | None = None
+    # one file per layer (Main first) instead of one file holding the union
+    per_layer: bool = False
 
 
 class MarkSavedBody(Model):

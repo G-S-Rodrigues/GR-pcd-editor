@@ -19,7 +19,7 @@ from gr_pcd.session.errors import (
     NotFoundError,
     ReplaceConflict,
 )
-from gr_pcd.session.exporter import export_session
+from gr_pcd.session.exporter import export_per_layer, export_session
 from gr_pcd.session.jobs import CANCELS, JobManager
 from gr_pcd.settings import Settings
 
@@ -171,9 +171,23 @@ class SessionManager:
         )
 
     def submit_export(
-        self, fmt: str, scope: str, layers: list[int] | None = None
+        self,
+        fmt: str,
+        scope: str,
+        layers: list[int] | None = None,
+        per_layer: bool = False,
     ):
         export_id = uuid.uuid4().hex
+
+        def per_layer_body(session, ctx, _ticket):
+            summary = export_per_layer(
+                session, self._dir("exports"), fmt, scope, ctx.token, layers
+            )
+            for f in summary["files"]:
+                self.downloads[f["export_id"]] = Download(
+                    f.pop("path"), f["filename"], kind="exports"
+                )
+            return summary
 
         def body(session, ctx, _ticket):
             dest = self._dir("exports") / f"{export_id}.pcd"
@@ -185,7 +199,7 @@ class SessionManager:
             )
             return {"export_id": export_id, **summary}
 
-        return self._submit("export", body)
+        return self._submit("export", per_layer_body if per_layer else body)
 
     def submit_save(self):
         archive_id = uuid.uuid4().hex

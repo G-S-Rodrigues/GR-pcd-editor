@@ -1559,14 +1559,13 @@ class EditingSession:
             return col.astype("<i4"), "i32"
         return col.astype("<f4"), "f32"
 
-    def export_mask(
-        self, scope: str, layers: list[int] | None = None
-    ) -> np.ndarray:
-        """The points an export holds. `layers` limits it to the chosen layer
-        ids (0 = main); visibility is ignored. None means every layer."""
+    def _export_base(self, scope: str):
+        """The scope's mask plus the layer array and rows it was taken with:
+        the arrays are copy-on-write and read-only, so holding the references
+        is a snapshot that later layer edits cannot change."""
         with self.lock:
             active, selection = self.active, self.selection
-            layer, known = self.layer, {x.id for x in self.layers}
+            layer, rows = self.layer, list(self.layers)
         if scope == "active":
             mask = active
         elif scope == "selected":
@@ -1575,8 +1574,17 @@ class EditingSession:
             mask = active & self.valid & self._display()
         else:
             raise EditError("invalid_scope", f"unknown export scope {scope}")
+        return mask, layer, rows
+
+    def export_mask(
+        self, scope: str, layers: list[int] | None = None
+    ) -> np.ndarray:
+        """The points an export holds. `layers` limits it to the chosen layer
+        ids (0 = main); visibility is ignored. None means every layer."""
+        mask, layer, rows = self._export_base(scope)
         if layers is None:
             return mask
+        known = {x.id for x in rows}
         chosen = set(layers)
         if not chosen:
             raise EditError("no_layers_chosen", "choose at least one layer")
@@ -1590,6 +1598,35 @@ class EditingSession:
         if layer is None:
             return mask  # only main exists and it is chosen
         return mask & lut[layer]
+
+    def export_layer_plan(self, scope: str, layers: list[int] | None = None):
+        """One file per layer: ([(layer id, name)], mask_of). Main (id 0,
+        named "main") comes first, then the layers in row order. `mask_of`
+        builds one layer's mask from the snapshot taken here, so memory never
+        holds all the masks at once and a layer edit made meanwhile changes
+        nothing."""
+        mask, layer, rows = self._export_base(scope)
+        if not rows:
+            raise EditError("no_layers", "this session has no layers")
+        known = {x.id for x in rows}
+        if layers is not None:
+            chosen = set(layers)
+            if not chosen:
+                raise EditError("no_layers_chosen", "choose at least one layer")
+            unknown = chosen - known - {0}
+            if unknown:
+                raise EditError(
+                    "unknown_layer", f"no such layer: {min(unknown)}"
+                )
+        else:
+            chosen = known | {0}
+        plan = [(0, "main")] if 0 in chosen else []
+        plan += [(x.id, x.name) for x in rows if x.id in chosen]
+
+        def mask_of(layer_id: int) -> np.ndarray:
+            return mask & (layer == layer_id)
+
+        return plan, mask_of
 
 
 def _step_tool(tool_text: str) -> str:
