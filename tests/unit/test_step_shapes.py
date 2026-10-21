@@ -353,3 +353,75 @@ def test_sts_14_a_sparse_step_is_a_selection_step_with_a_sparse_shape(
         assert r.history.entries[0].tool == "selection"
     finally:
         fresh.jobs.shutdown()
+
+
+def _plane():
+    from gr_pcd.editing.planes import PlaneSpec
+
+    return PlaneSpec((0.0, 0.0, 1.0), 0.0, 0.5, exclude_protected=False)
+
+
+def _thin():
+    from gr_pcd.editing.thin import ThinSpec
+
+    return ThinSpec("voxel", 0.0, 2.0, CORNER_BOX, False)
+
+
+def _thin_all():
+    from gr_pcd.editing.thin import ThinSpec
+
+    # one huge voxel: after the plane step took the floor, the 27 ghosts leave 26 selected
+    return ThinSpec("voxel", 0.0, 100.0, None, False)
+
+
+def test_sts_15_plane_shape_and_summary():
+    p = _plane()
+    assert shape_of(p) == {
+        "type": "plane",
+        "normal": [0.0, 0.0, 1.0],
+        "d": 0.0,
+        "thickness": 0.5,
+        "exclude_protected": False,
+        "region": None,
+    }
+    assert tool_summary(p) == {"type": "plane"}
+
+
+def test_sts_16_thin_shape_and_summary():
+    t = _thin()
+    sh = shape_of(t)
+    assert sh["type"] == "thin" and sh["method"] == "voxel"
+    assert sh["distance"] == 0.0 and sh["edge"] == 2.0
+    assert sh["exclude_protected"] is False
+    assert sh["region"] == shape_of(CORNER_BOX)
+    assert tool_summary(t) == {"type": "thin", "method": "voxel"}
+
+
+def test_sts_17_plane_and_thin_steps_are_selection_steps_that_keep_their_shape(
+    mgr,
+):
+    s = apply_spec(mgr, SelectSpec("replace", "active", _plane()))
+    apply_spec(mgr, SelectSpec("replace", "active", _thin_all()))
+    want = {e.sid: e.shape for e in s.history.entries}
+    assert [e.tool for e in s.history.entries] == ["selection", "selection"]
+    assert want[0]["type"] == "plane" and want[1]["type"] == "thin"
+    s.undo(s.clock.cloud)
+    s.redo(s.clock.cloud)
+    s.rename_step(0, "floor")
+    s.rollback(s.clock.cloud, 1)
+    s.rollback(s.clock.cloud, 2)
+    assert {e.sid: e.shape for e in s.history.entries} == want
+    s.delete_step(s.clock.cloud, 0)
+    assert {e.sid: e.shape for e in s.history.entries} == {1: want[1]}
+
+
+def test_sts_18_archive_round_trip_keeps_plane_and_thin_shapes(mgr, tmp_path):
+    s = apply_spec(mgr, SelectSpec("replace", "active", _plane()))
+    apply_spec(mgr, SelectSpec("replace", "active", _thin_all()))
+    before = [e.shape for e in s.history.entries]
+    fresh, r = reopen(tmp_path, save(mgr))
+    try:
+        assert [e.shape for e in r.history.entries] == before
+        assert [e.tool for e in r.history.entries] == ["selection", "selection"]
+    finally:
+        fresh.jobs.shutdown()

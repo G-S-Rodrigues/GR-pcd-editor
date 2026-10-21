@@ -32,6 +32,15 @@ from gr_pcd.editing.layers import (
     next_colour,
     protected_points,
 )
+from gr_pcd.editing.planes import (
+    PLANE_BYTES_PER_POINT,
+    PlaneDetectSpec,
+    PlaneSpec,
+    detect_planes,
+    plane_mask,
+    validate_plane_spec,
+    validate_planes,
+)
 from gr_pcd.editing.protection import (
     OperationProtection,
     ProtectionState,
@@ -51,6 +60,13 @@ from gr_pcd.editing.sparse import (
     auto_radius,
     sparse_mask,
     validate_sparse,
+)
+from gr_pcd.editing.thin import (
+    THIN_BYTES_PER_POINT,
+    ThinSpec,
+    duplicate_mask,
+    validate_thin,
+    voxel_mask,
 )
 from gr_pcd.geometry.box import BoxSpec, box_contains
 from gr_pcd.geometry.filters import (
@@ -911,7 +927,7 @@ class EditingSession:
 
     # ---- selection and candidate (job bodies) -------------------------
     def _tool_eligible(self, tool, snap: dict, token) -> np.ndarray:
-        """Scope, region and (when asked) protection of a cluster or sparse tool."""
+        """Scope, region and (when asked) protection of a cluster, sparse, plane or thin tool."""
         valid = self.valid
         region = None
         if tool.region is not None:
@@ -971,6 +987,44 @@ class EditingSession:
                 )
                 & eligible
             )
+        if isinstance(tool, PlaneSpec):
+            validate_plane_spec(tool)
+            eligible = self._tool_eligible(tool, snap, token)
+            check_budget(
+                PLANE_BYTES_PER_POINT * self.cloud.n,
+                self.budget,
+                "plane selection",
+                "Try a smaller cloud or region.",
+            )
+            out = plane_mask(self.xyz, tool, token) & eligible
+            snap["plane"] = {
+                "normal": [float(c) for c in tool.normal],
+                "d": float(tool.d),
+                "thickness": float(tool.thickness),
+                "count": int(out.sum()),
+            }
+            return out
+        if isinstance(tool, ThinSpec):
+            validate_thin(tool)
+            eligible = self._tool_eligible(tool, snap, token)
+            check_budget(
+                THIN_BYTES_PER_POINT * int(eligible.sum()),
+                self.budget,
+                "thin selection",
+                "Try a smaller cloud or region.",
+            )
+            if tool.method == "voxel":
+                return voxel_mask(self.xyz, eligible, tool.edge, token)
+            return duplicate_mask(
+                self.xyz,
+                eligible,
+                float(tool.distance),
+                token,
+                self.budget,
+                None
+                if on_progress is None
+                else lambda f: on_progress(int(f * 1000), 1000),
+            )
         if isinstance(tool, ClusterTool):
             eligible = self._tool_eligible(tool, snap, token)
             res = connected_component(
@@ -1019,11 +1073,17 @@ class EditingSession:
         snap["scope"] = scope_mask(
             spec.scope, snap["active"], self.valid, snap["display"]
         )
+        what = (
+            "searching duplicates"
+            if isinstance(spec.tool, ThinSpec)
+            else "growing cluster"
+        )
         on_progress = (
             (
                 lambda visited, eligible: progress(
                     min(0.95, visited / max(eligible, 1)),
-                    f"growing cluster: {visited:,} of {eligible:,} eligible",
+                    f"{what}: {visited:,} of {eligible:,}"
+                    + ("" if what == "searching duplicates" else " eligible"),
                 )
             )
             if progress
@@ -1036,6 +1096,79 @@ class EditingSession:
         )
         token.check()
         return snap, operand, current, new_sel
+
+    def check_detect_planes(self, spec: PlaneDetectSpec) -> None:
+        """Synchronous refusals (422 / 413) before a detect job is queued."""
+        validate_planes(spec)
+        check_budget(
+            PLANE_BYTES_PER_POINT * self.cloud.n,
+            self.budget,
+            "plane detection",
+            "Try a smaller cloud or region.",
+        )
+
+    def run_detect_planes(
+        self,
+        spec: PlaneDetectSpec,
+        scope: str,
+        ticket,
+        token: CancelToken,
+        progress=None,
+    ) -> dict:
+        """Read-only seeded RANSAC over the eligible points: no selection, candidate or history change."""
+        self.check_detect_planes(spec)
+        with self.lock:
+            if not self.clock.is_current(ticket):
+                raise Stale()
+            snap = {
+                "active": self._selectable(),
+                "protection": self.protection,
+                "layer": self.layer,
+                "layers": list(self.layers),
+            }
+        snap["display"] = self._display(token)
+        snap["scope"] = scope_mask(
+            scope, snap["active"], self.valid, snap["display"]
+        )
+        eligible = self._tool_eligible(spec, snap, token)
+        centre = None
+        if self.bounds is not None:
+            lo, hi = self.bounds["min"], self.bounds["max"]
+            centre = ((lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0)
+        found = detect_planes(
+            self.xyz,
+            eligible,
+            spec,
+            token,
+            None
+            if progress is None
+            else lambda f: progress(f, "testing planes"),
+            centre,
+        )
+        token.check()
+        with self.lock:
+            if not self.clock.is_current(ticket):
+                raise Stale()
+        return {
+            "cloud_revision": ticket[0],
+            "scope": scope,
+            "eligible": int(eligible.sum()),
+            "planes": [
+                {
+                    "normal": list(p.normal),
+                    "d": p.d,
+                    "count": p.count,
+                    "rms": p.rms,
+                    "tilt_deg": p.tilt_deg,
+                    "z_centre": p.z_centre,
+                    "bounds": {
+                        "min": list(p.bounds_min),
+                        "max": list(p.bounds_max),
+                    },
+                }
+                for p in found
+            ],
+        }
 
     def _install_selection(
         self, spec: SelectSpec, snap: dict, new_sel, ticket, token
@@ -1078,6 +1211,8 @@ class EditingSession:
         )
         new_ticket = self._install_selection(spec, snap, new_sel, ticket, token)
         out = {"selected": int(new_sel.sum()), "operand": int(operand.sum())}
+        if snap.get("plane") is not None:
+            out["plane"] = snap["plane"]
         if spec.evaluate_candidate:
             out["candidate"] = self.run_candidate(new_ticket, token)
         return out
@@ -1121,6 +1256,8 @@ class EditingSession:
         }
         if pending.cluster is not None:
             out["cluster"] = pending.cluster
+        if snap.get("plane") is not None:
+            out["plane"] = snap["plane"]
         return out
 
     def check_preview(self, preview_id: str) -> None:
@@ -1630,8 +1767,8 @@ class EditingSession:
 
 
 def _step_tool(tool_text: str) -> str:
-    # an older build knows no "sparse" or "layer" step tool: it loads such a step as a plain selection
-    if tool_text in ("sparse", "layer"):
+    # an older build knows no "sparse", "layer", "plane" or "thin" step tool: it loads such a step as a plain selection
+    if tool_text in ("sparse", "layer", "plane", "thin"):
         return "selection"
     return "polygon" if tool_text == "prism" else tool_text
 

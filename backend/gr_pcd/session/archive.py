@@ -343,8 +343,25 @@ def _valid_shape(sh, nested: bool = False) -> None:
             and _fin(sh.get("z_min"))
             and _fin(sh.get("z_max"))
         )
-    elif kind in ("cluster", "sparse") and not nested:
-        if kind == "cluster":
+    elif kind in ("cluster", "sparse", "plane", "thin") and not nested:
+        if kind == "plane":
+            n = sh.get("normal")
+            own = (
+                _vec(n, 3)
+                and abs(sum(c * c for c in n) - 1.0) <= 2e-6
+                and _fin(sh.get("d"))
+                and _fin(sh.get("thickness"))
+                and sh["thickness"] > 0
+            )
+        elif kind == "thin":
+            own = (
+                sh.get("method") in ("duplicates", "voxel")
+                and _fin(sh.get("distance"))
+                and sh["distance"] >= 0
+                and _fin(sh.get("edge"))
+                and sh["edge"] > 0
+            )
+        elif kind == "cluster":
             mp = sh.get("max_points")
             own = (
                 type(sh.get("seed_id")) is int

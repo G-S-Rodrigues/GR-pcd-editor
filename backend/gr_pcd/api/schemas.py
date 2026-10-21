@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
+from gr_pcd.editing.planes import PlaneDetectSpec, PlaneSpec
 from gr_pcd.editing.protection import (
     Interval,
     OperationProtection,
@@ -11,6 +12,7 @@ from gr_pcd.editing.protection import (
     Tilt,
 )
 from gr_pcd.editing.sparse import DEFAULT_MIN_NEIGHBOURS, SparseSpec
+from gr_pcd.editing.thin import ThinSpec
 from gr_pcd.geometry.box import BoxSpec
 from gr_pcd.geometry.filters import AxisRange, DisplayFilter
 from gr_pcd.geometry.prism import PrismSpec
@@ -102,6 +104,65 @@ class SparseToolBody(Model):
         )
 
 
+class PlaneToolBody(Model):
+    type: Literal["plane"]
+    normal: list[float] = Field(min_length=3, max_length=3)
+    d: float
+    thickness: float
+    region: Region | None = None
+    exclude_protected: bool = True
+
+    def to_spec(self) -> PlaneSpec:
+        return PlaneSpec(
+            (self.normal[0], self.normal[1], self.normal[2]),
+            self.d,
+            self.thickness,
+            None if self.region is None else self.region.to_spec(),
+            self.exclude_protected,
+        )
+
+
+class ThinToolBody(Model):
+    type: Literal["thin"]
+    method: Literal["duplicates", "voxel"] = "duplicates"
+    distance: float = 0.0
+    edge: float = 0.05
+    region: Region | None = None
+    exclude_protected: bool = True
+
+    def to_spec(self) -> ThinSpec:
+        return ThinSpec(
+            self.method,
+            self.distance,
+            self.edge,
+            None if self.region is None else self.region.to_spec(),
+            self.exclude_protected,
+        )
+
+
+class PlaneDetectBody(Model):
+    cloud_revision: int
+    scope: Literal["displayed", "active"] = "displayed"
+    distance: float = 0.03
+    max_tilt_deg: float = 30.0
+    max_planes: int = 4
+    iterations: int = 400
+    seed: int = 0
+    region: Region | None = None
+    exclude_protected: bool = True
+
+    def to_spec(self) -> PlaneDetectSpec:
+        return PlaneDetectSpec(
+            self.distance,
+            self.max_tilt_deg,
+            self.max_planes,
+            self.iterations,
+            self.seed,
+            None if self.region is None else self.region.to_spec(),
+            self.exclude_protected,
+        )
+
+
 class LayerToolBody(Model):
     type: Literal["layer"]
     layer_id: int = Field(ge=1, le=255)
@@ -116,6 +177,8 @@ Tool = Annotated[
     | FilterToolBody
     | ClusterToolBody
     | SparseToolBody
+    | PlaneToolBody
+    | ThinToolBody
     | LayerToolBody,
     Field(discriminator="type"),
 ]

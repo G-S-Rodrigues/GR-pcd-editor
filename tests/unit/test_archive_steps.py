@@ -331,3 +331,101 @@ def test_ses_69_old_format_huge_next_sid_is_clamped(mgr, tmp_path):
 
     rewrite_manifest(save(mgr), old, strip)
     assert load(tmp_path, old).next_sid == 3
+
+
+def _with_shape(tmp_path, shape, name="shape.pcdsession"):
+    dst = tmp_path / name
+    src = _first_step_archive.src
+
+    def put(m):
+        m["history"]["entries"][0]["shape"] = shape
+
+    rewrite_manifest(src, dst, put)
+    return dst
+
+
+def _first_step_archive(mgr):
+    del_box(mgr, CORNER_BOX)
+    _first_step_archive.src = save(mgr)
+
+
+PLANE_OK = {
+    "type": "plane",
+    "normal": [0.0, 0.0, 1.0],
+    "d": 0.0,
+    "thickness": 0.5,
+    "exclude_protected": True,
+    "region": None,
+}
+THIN_OK = {
+    "type": "thin",
+    "method": "duplicates",
+    "distance": 0.0,
+    "edge": 0.05,
+    "exclude_protected": True,
+    "region": None,
+}
+
+
+def test_ses_87_valid_plane_and_thin_shapes_load(mgr, tmp_path):
+    _first_step_archive(mgr)
+    for i, sh in enumerate((PLANE_OK, THIN_OK, dict(THIN_OK, method="voxel"))):
+        loaded = load(tmp_path, _with_shape(tmp_path, sh, f"ok{i}.pcdsession"))
+        assert loaded.entries[0].shape == sh
+
+
+def test_ses_88_hostile_plane_and_thin_shapes_are_bad_archive(mgr, tmp_path):
+    _first_step_archive(mgr)
+    box = {
+        "type": "box",
+        "center": [0.0, 0.0, 0.0],
+        "dimensions": [1.0, 1.0, 1.0],
+        "rpy_deg": [0.0, 0.0, 0.0],
+        "mode": "inside",
+    }
+    bads = [
+        dict(PLANE_OK, normal=[0.0, 1.0]),
+        dict(PLANE_OK, normal=[0.0, 0.0, float("nan")]),
+        dict(PLANE_OK, normal=[0.0, 0.0, 2.0]),
+        dict(PLANE_OK, d=float("inf")),
+        dict(PLANE_OK, thickness=0.0),
+        dict(PLANE_OK, thickness=-1.0),
+        dict(PLANE_OK, exclude_protected="yes"),
+        dict(PLANE_OK, region=PLANE_OK),
+        dict(THIN_OK, method="grid"),
+        dict(THIN_OK, edge=0.0),
+        dict(THIN_OK, distance=-1.0),
+        dict(THIN_OK, distance=float("nan")),
+        dict(THIN_OK, region=THIN_OK),
+        # a plane or thin shape is top level only: never a region
+        dict(PLANE_OK, region=dict(box, type="plane")),
+    ]
+    for i, sh in enumerate(bads):
+        with pytest.raises(PcdError) as ei:
+            load(tmp_path, _with_shape(tmp_path, sh, f"bad{i}.pcdsession"))
+        assert ei.value.code == "bad_archive", (i, sh)
+
+
+def test_ses_89_archive_version_rule_is_unchanged_with_plane_steps(
+    mgr, tmp_path
+):
+    from gr_pcd.editing.planes import PlaneSpec
+
+    s = del_box(mgr, CORNER_BOX)
+    with zipfile.ZipFile(save(mgr)) as z:
+        before = json.loads(z.read("manifest.json"))["version"]
+    s = mgr.require()
+    job = wait(
+        mgr.submit_select(
+            SelectSpec(
+                "replace", "active", PlaneSpec((0.0, 0.0, 1.0), 0.0, 0.5)
+            )
+        )
+    )
+    assert job.status == "complete", job.error
+    s.apply(job.result["candidate"]["candidate_id"], s.clock.cloud, None)
+    with zipfile.ZipFile(save(mgr)) as z:
+        m = json.loads(z.read("manifest.json"))
+    assert (
+        m["version"] == before
+    )  # the existing rule: plane and thin steps do not bump it

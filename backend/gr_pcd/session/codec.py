@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 
+from gr_pcd.editing.planes import PlaneSpec
 from gr_pcd.editing.protection import (
     Interval,
     OperationProtection,
@@ -9,6 +10,7 @@ from gr_pcd.editing.protection import (
     Tilt,
 )
 from gr_pcd.editing.sparse import SparseSpec
+from gr_pcd.editing.thin import ThinSpec
 from gr_pcd.geometry.box import BoxSpec
 from gr_pcd.geometry.errors import GeometryError
 from gr_pcd.geometry.filters import AxisRange, DisplayFilter
@@ -134,6 +136,10 @@ def tool_summary(tool) -> dict | None:
         return {"type": "filter"}
     if isinstance(tool, SparseSpec):
         return {"type": "sparse"}
+    if isinstance(tool, PlaneSpec):
+        return {"type": "plane"}
+    if isinstance(tool, ThinSpec):
+        return {"type": "thin", "method": tool.method}
     if isinstance(tool, LayerTool):
         return {"type": "layer", "layer_id": tool.layer_id}
     return {
@@ -219,6 +225,24 @@ def shape_of(
             "type": "sparse",
             "radius": None if tool.radius is None else float(tool.radius),
             "min_neighbours": int(tool.min_neighbours),
+            "exclude_protected": bool(tool.exclude_protected),
+            "region": _region_shape(tool.region),
+        }
+    if isinstance(tool, PlaneSpec):
+        return {
+            "type": "plane",
+            "normal": [float(c) for c in tool.normal],
+            "d": float(tool.d),
+            "thickness": float(tool.thickness),
+            "exclude_protected": bool(tool.exclude_protected),
+            "region": _region_shape(tool.region),
+        }
+    if isinstance(tool, ThinSpec):
+        return {
+            "type": "thin",
+            "method": tool.method,
+            "distance": float(tool.distance),
+            "edge": float(tool.edge),
             "exclude_protected": bool(tool.exclude_protected),
             "region": _region_shape(tool.region),
         }

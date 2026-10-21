@@ -28,6 +28,7 @@ from gr_pcd.api.schemas import (
     LayerVisibilityBody,
     MarkSavedBody,
     NearestBody,
+    PlaneDetectBody,
     PreviewBody,
     ProtectionBody,
     RenameBody,
@@ -237,6 +238,14 @@ def build_router(manager: SessionManager, settings: Settings) -> APIRouter:
         tool = None if body.tool is None else body.tool.to_spec()
         spec = SelectSpec(body.op, body.scope, tool, body.evaluate_candidate)
         return _job(manager.submit_select(spec))
+
+    @router.post("/session/planes/detect")
+    def post_detect_planes(body: PlaneDetectBody):
+        s = manager.require()
+        s.require_cloud(body.cloud_revision)
+        spec = body.to_spec()
+        s.check_detect_planes(spec)
+        return _job(manager.submit_detect_planes(spec, body.scope))
 
     @router.post("/session/selection/preview")
     def post_preview(body: PreviewBody):

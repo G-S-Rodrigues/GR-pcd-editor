@@ -150,6 +150,14 @@ class SessionManager:
             lambda s, ctx, t: s.run_select(spec, t, ctx.token, ctx.progress),
         )
 
+    def submit_detect_planes(self, spec, scope: str):
+        return self._submit(
+            "planes",
+            lambda s, ctx, t: s.run_detect_planes(
+                spec, scope, t, ctx.token, ctx.progress
+            ),
+        )
+
     def submit_preview(self, spec: SelectSpec):
         return self._submit(
             "preview",

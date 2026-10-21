@@ -27,6 +27,9 @@ CANCELS = {
     "select": SUPERSEDED,
     "candidate": SUPERSEDED,
     "preview": ("preview",),
+    "planes": (
+        "planes",
+    ),  # a new detect supersedes the old one; select/candidate keep running
 }
 JOB_ORPHAN_S = 20.0
 SWEEP_TICK_S = 1.0
