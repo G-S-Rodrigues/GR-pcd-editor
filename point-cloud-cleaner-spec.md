@@ -468,3 +468,11 @@ Initial targets, to be benchmarked on a documented desktop Linux reference PC wi
   and Shift+drag pans, even over the box. Esc during a drag restores the box from before the drag; there is no box undo
   stack and Ctrl+Z stays deletions only. Keyboard: arrows nudge, Alt+arrows resize, `,` and `.` rotate (owner rulings
   2026-10-18 and 2026-10-20).
+
+## Part 14b amendment
+
+- Rotation rings sit on the face arrows: six rings, one per arrow, each turning the box about that arrow's box-local
+  axis. The arrows are thicker, axis-coloured and have filled heads. Pick priority is ring (within 6 px of its outline)
+  before arrow before body; end-on arrows and edge-on rings are not picked. The angle is measured in the ring plane
+  about the ring centre. Ctrl/Meta+drag over a handle orbits. The Axes select is removed (owner rulings 2026-10-20 and
+  2026-10-21).

@@ -195,7 +195,7 @@ export, save, persist, unsaved, tooltips), under `frontend/src/**`; backend rend
   drawn; the full draw returns 250 ms after the last change. `UI-162/163`, `E2E-28` (reads
   `window.__editor.drawnCount()`).
 - Notices: timers are per id, successful opens clear stale open/drop notices, an empty cloud warns
-  (`UI-166..168`); rotation rings are clamped to 90 px / 30% of the view (`UI-169`); the floor-pick hint
+  (`UI-166..168`); rotation rings are 8 px in radius (`UI-169`, retired in Part 14b); the floor-pick hint
   (`UI-170`), the Protection slab legend entry (`UI-171`, `UI-128` extended with the `slab` id/label) and the
   10 s slow-job hint (`UI-173`, `orchestration/jobhint.ts`); smoke `E2E-31`.
 - Not done: label dedup (`UI-172`) would change existing asserts outside the ruling; needs a ruling.
@@ -367,9 +367,25 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
   note text and the stored-shape round trip), `UI-578` (an edge-on ring is never picked).
 - Smoke `E2E-100..105`: `E2E-100` is the layout sweep at 1280x720 and 1920x1080 (a fitted box covers 5 to 50 percent of
   the canvas so a plain drag can start outside it; Fit to view covers it all, so only Ctrl+drag orbits there), `E2E-101`
-  arrow drag, `E2E-102` body drag with Shift pan and Ctrl orbit, `E2E-103` three real ring drags against an independent
+  arrow drag, `E2E-102` body drag with Shift pan and Ctrl orbit, `E2E-103` three real ring drags (on the arrow rings since Part 14b) against an independent
   rotation oracle, `E2E-104` keyboard sequence, `E2E-105` Esc mid-drag. Face views are reached by their keys (1, 3, 6),
   not by clicking the ViewCube, because a face turned away is not clickable. No browser test covers hover cursors.
+
+## Part 14b additions (rings on the arrows, thicker arrows)
+
+- Frontend unit: `UI-894..904` (ring geometry and gap in the ring plane, pick priority ring before arrow, inside of a ring
+  and end-on arrows fall through to the body, `RING_PICK_EDGE_ON` 0.25 pinned, `ringPlaneHit` and `ringAngle` with a
+  perspective-only behind-the-eye guard and an ortho case, `advanceTurn`, Ctrl over a handle orbits, `boxRings()` hook),
+  `UI-903` (arrow and ring geometry, colours, widths), `UI-906` (WCAG contrast against 0x15181d: rings >= 3, arrows
+  >= 4.5). `UI-905` is unused (retired).
+- Smoke `E2E-163..167`. The oracle maps the ring plane to the screen with the app's `projectWorld`, drags in that plane
+  and computes the expected angle independently of the app maths; Step 0 measured the app against it at 3e-14 rad, and
+  `E2E-163` asserts 1e-6 rad for axis and signed angle on all six rings in the ViewCube corner view. `E2E-167` writes
+  `/out/part14b-<w>x<h>-<state>.png` (top, corner, corner-hover-ring, corner-dragging, rotated) for owner review: keep
+  them with `SMOKE_SHOTS_DIR=<dir> bash scripts/smoke.sh ...`, never commit them.
+- Changed tests (ids and geometry only, assertions kept): UI-40, UI-550, UI-551, UI-557, UI-558, UI-559 (priority now
+  ring before arrow), UI-563, UI-566, UI-567, UI-569, UI-570, UI-576, UI-578, the unnamed rotate-drag test, E2E-103.
+  Removed: both `UI-169` tests (replaced by UI-894..896).
 
 ## Part 15a additions (Hide selected)
 

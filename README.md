@@ -30,7 +30,7 @@ view, global height protection (the purple slab) and the live counts in the stat
 | Input | Action |
 |---|---|
 | Left-drag | Orbit about the pivot (drags a tool handle or the rectangle when one is active; with the Box tool a drag that starts on the box moves it) |
-| Box tool: drag a face arrow / the box body / a ring | Resize that face (Alt: both sides) / move the box in the plane facing the camera / rotate about that box axis (rings for all three axes); Shift is fine, Ctrl+drag always orbits, Esc during a drag restores the box, Reset box and Reset rotation sit in the panel |
+| Box tool: drag a face arrow / a small ring on an arrow / the box body | Resize that face (Alt: both sides) / rotate the box about that arrow's axis (six rings, one per arrow) / move the box in the plane facing the camera; Ctrl+drag always orbits, also when it starts over a handle; Esc during a drag restores the box; Reset box and Reset rotation sit in the panel (there is no Axes select) |
 | Box tool keys | Arrows nudge by Step (PageUp/PageDown along the view), Alt+arrows grow or shrink both faces, `,` and `.` turn by Angle step (Shift: the axis nearest screen-right; Ctrl+Shift: the view axis); Shift is a tenth |
 | Middle/right-drag, Shift+left-drag | Pan |
 | Wheel | Zoom |
