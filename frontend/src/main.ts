@@ -1,59 +1,77 @@
 import * as api from "./api/session";
+import * as layerApi from "./api/layers";
 import { getState } from "./api/session";
 import { postJson, setSessionChangedHandler, setSessionId } from "./files/http";
-import { startExport, startSave, markSaved } from "./files/downloads";
-import { createHold, setCompare } from "./compare/model";
+import { startExport, startExportPerLayer, startSave, markSaved } from "./files/downloads";
+import { setCompare } from "./compare/model";
 import { runExport } from "./orchestration/export";
 import { runSave } from "./orchestration/session-save";
 import { beforeUnloadHandler } from "./orchestration/unsaved";
 import { applyClientPatch, createPersister, restoreClientState } from "./state/persist";
 import { buildExportDialog } from "./ui/export-dialog";
 import { pollJob } from "./files/jobs";
-import { createFilterController, enableDefaults, filterFromState, selectDisplayedBody } from "./inspector/filters";
+import { createFilterController, filterFromState, selectDisplayedBody } from "./inspector/filters";
+import { slabCoordinate } from "./inspector/tilt";
 import { type ProtectionModel, floorFromPick, protectionFromState, setGlobal } from "./inspector/protection";
 import { createProtectionController } from "./inspector/protection-controller";
 import { createEditor } from "./orchestration/edit";
-import { canApply, createRunner } from "./orchestration/runner";
+import { createRunner, deleteKeyOutcome } from "./orchestration/runner";
+import { createPlanesController } from "./orchestration/planes";
+import { emptyPlanes } from "./tools/plane/model";
+import { armTool, disarmed } from "./orchestration/toolstate";
 import { createUploadCanceller } from "./orchestration/upload-cancel";
 import { type UploadOptions, uploadFile } from "./files/upload";
 import { startBanner } from "./status/startbanner";
 import { defaultCluster } from "./tools/cluster/model";
 import { createParamsHook } from "./orchestration/params";
 import { createClearPolygon } from "./orchestration/polygonclear";
-import { startDrawing, cancelDrawing, closePolygon, emptyPolygon, enterTool } from "./tools/polygon/model";
+import { startDrawing, cancelDrawing, closePolygon, emptyPolygon, enterTool, setEditing } from "./tools/polygon/model";
+import { polygonKeyAction } from "./tools/polygon/edit";
 import { boxForOpen } from "./tools/box/model";
 import { applyPreset } from "./view/presets";
 import { buildEditPanels, buildToolPalette } from "./ui/panels";
+import { buildLayersPanel } from "./ui/layerspanel";
 import { createToolInteraction } from "./viewport/interact";
 import { attachDropZone } from "./files/dragdrop";
 import { dropNotice, openSource } from "./orchestration/open";
 import { createRefresher } from "./orchestration/refresh";
+import { createStepView } from "./orchestration/stepview";
 import { createSessionSync } from "./orchestration/session-sync";
 import { createAppStore, addNotice, dismissNotice } from "./state/app";
 import { createJobHint } from "./orchestration/jobhint";
-import type { SessionState } from "./state/types";
+import type { SessionState, ToolKind } from "./state/types";
 import { h } from "./ui/dom";
 import { control } from "./ui/controls";
 import { buildInspector } from "./ui/inspector-shell";
 import { buildStatusbar } from "./ui/statusbar";
 import { buildLegend } from "./ui/legend";
+import { createHide } from "./orchestration/hide";
+import { editEnded, layerModeFix } from "./layers/model";
+import { createLayers, layerAddBody, layerOpBody, layerSelectBody } from "./orchestration/layers";
+import { discardEnabled } from "./tools/preview";
+import { buildTimeline } from "./timeline/strip";
+import { createStepCentre } from "./timeline/centre";
+import { createEditShape } from "./orchestration/editshape";
 import { buildHelp } from "./ui/help";
 import { classifyKey } from "./ui/keys";
 import { buildViewCube } from "./ui/viewcube";
+import { buildTriad } from "./ui/triad";
+import { buildFilterBoxes } from "./ui/filterboxes";
 import { buildToolbar } from "./ui/toolbar";
+import { buildCameraCluster } from "./ui/camera-cluster";
 import { buildViewbar } from "./ui/viewbar";
 import { attachControls } from "./viewport/controls3d";
 import { installDebugHook } from "./viewport/debug";
 import { createViewport } from "./viewport/scene";
 import { fitBounds } from "./view/fit";
 import { resetPivot } from "./view/pivot";
-import { AXIS_INDEX, defaultSlice, sliceFromPick } from "./view/slice";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 const store = createAppStore();
 createJobHint(store);
 const refresher = createRefresher(store);
+const stepView = createStepView(store);
 const canvas = $<HTMLCanvasElement>("viewport");
 
 const viewport = createViewport(canvas, store, (reason) => {
@@ -78,6 +96,9 @@ document.addEventListener("visibilitychange", () => {
 const runner = createRunner(store, {
   submitSelection: (b) => api.submitSelection(b as api.SelectionBody),
   submitCandidate: (rev) => api.submitCandidate(rev),
+  submitPreview: (b) => api.submitPreview(b as api.PreviewBody),
+  submitCommit: (b) => api.submitCommit(b),
+  discardPreview: (rev) => api.discardPreview(rev),
   cancelJob: (id) => postJson(`/api/jobs/${id}/cancel`),
   beaconCancel: (id) => void navigator.sendBeacon(`/api/jobs/${id}/cancel`),
   poll: (id, opts) => pollJob(id, opts),
@@ -91,14 +112,34 @@ const editor = createEditor(
     undo: api.undo,
     redo: api.redo,
     removeInvalid: api.removeInvalid,
+    rollback: api.rollback,
+    deleteStep: api.deleteStep,
+    renameStep: api.renameStep,
     clearSelection: api.clearSelection,
     refreshState,
     refreshRender: () => refresher.refresh(),
     checkSession: () => sessionSync.check(),
+    supersedePreview: () => runner.supersedePreview(),
   },
   (m) => window.confirm(m),
 );
 const paramsHook = createParamsHook(runner, () => refresher.refresh());
+const layers = createLayers(
+  store,
+  { createLayer: layerApi.createLayer, assignLayer: layerApi.assignLayer, deleteLayer: layerApi.deleteLayer, setMembers: layerApi.setMembers, patchLayer: layerApi.patchLayer, setVisibility: layerApi.setVisibility, mergeLayer: layerApi.mergeLayer, setOrder: layerApi.setOrder, layerFromProtection: layerApi.layerFromProtection, refreshState },
+  {
+    paramsHook,
+    flushProtection: () => protection.flush(),
+    confirm: (m) => window.confirm(m),
+    selectLayer: (id) => void runner.oneShot((rev) => layerSelectBody(rev, id, store.get().scope)),
+    selectLayerAdd: (id) => runner.oneShot((rev) => layerAddBody(rev, id)),
+    selectLayerOp: (id, op) => runner.oneShot((rev) => layerOpBody(rev, id, op)),
+    apply: () => editor.apply(),
+    discardDraft: () => runner.discardDraft(),
+    openShape: (shape, centre) => stepEdit.openShape(shape, centre),
+  },
+);
+const hide = createHide(store, { hideSelected: () => layers.hideSelected(), showHidden: () => layers.showHidden() });
 const filters = createFilterController(store, {
   putFilter: api.putFilter,
   onParamsChanged: () => paramsHook("filter"),
@@ -116,16 +157,18 @@ const tools = createToolInteraction(canvas, store, size, {
   onToolChanged: () => runner.onToolChanged(),
   protectionEdit: (fn) => protection.edit(fn),
   notify: note,
+  hint: (text) => addNotice(store, "info", "box_body_hint", text),
+  filterEdit: (axis, side, value, o) => filters.editSide(axis, side, value, o),
 });
-installDebugHook(canvas, store, size, () => viewport?.drawnCount() ?? 0);
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") tools.cancel(); // an arrow drag in progress goes back to its start value
+});
+installDebugHook(canvas, store, size, () => viewport?.drawnCount() ?? 0, () => viewport?.stepLayer() ?? { visible: false }, () => viewport?.previewLayer() ?? { id: null, add: 0, remove: 0 });
 if (viewport) {
   attachControls(canvas, store, size, tools, () => runner.onToolChanged(), (kind, point) => {
     const st = store.get();
-    if (kind === "slice") {
-      store.set({ slice: sliceFromPick(st.slice.axis, point[AXIS_INDEX[st.slice.axis]], st.slice.thickness) });
-      return;
-    }
-    const r = floorFromPick(st.compare, point[2], st.floorT);
+    // on a tilted slab the picked point's slab coordinate is what the interval is measured in (level: its z)
+    const r = floorFromPick(st.compare, slabCoordinate(point, st.tools.protection.tilt), st.floorT);
     if (!r.ok) return note(r.reason);
     protection.edit((m) => setGlobal(m, { enabled: true, min: r.min, max: r.max }));
   });
@@ -137,16 +180,19 @@ function onOpened(state: SessionState) {
   const fitted = state.active_bounds
     ? fitBounds(resetPivot(cam, state.active_bounds), state.active_bounds, w / Math.max(ph, 1))
     : cam;
+  planesCtl.cancel();
   runner.reset();
   const restored = restoreClientState(state.client_state);
   store.update((st) => ({
     ...st,
     camera: fitted,
     tool: "none",
-    op: "replace",
+    op: "add",
+    liveFirst: state.selection.count === 0,
     scope: "displayed",
-    slice: defaultSlice(),
     candidate: null,
+    planes: emptyPlanes(),
+    layerUi: { editing: null, active: null }, // layer ids repeat from file to file: a new file has no chosen layer
     tools: {
       ...st.tools,
       box: boxForOpen(st.tools.box, fitted.target),
@@ -160,6 +206,13 @@ function onOpened(state: SessionState) {
   if (restored) store.update((st) => applyClientPatch(st, restored));
 }
 
+// colouring by layer needs layers: when the last one is gone (deleted, or a session without any opens) the mode is Turbo again
+store.subscribe((st) => {
+  const fix = layerModeFix(st);
+  if (fix) store.update((x) => ({ ...x, colour: fix }));
+  if (editEnded(st)) layers.leaveEdit();
+});
+
 const canceller = createUploadCanceller(store);
 const deps = {
   store,
@@ -170,22 +223,20 @@ const deps = {
   },
   confirm: (m: string) => window.confirm(m),
   refresh: () => refresher.refresh(),
-  clearCache: () => refresher.clear(),
+  clearCache: () => {
+    refresher.clear();
+    stepView.clear();
+  },
   onOpened,
 };
 
-const hold = createHold(store, () => void refresher.refresh());
-const exportDialog = buildExportDialog(store, (o) => runExport(store, o, { startExport: (f, s) => startExport(f, s) }));
-createPersister(store, api.putClientState, { dragging: () => tools.dragging() });
+const exportDialog = buildExportDialog(store, (o) => runExport(store, o, { startExport: (f, s, l) => startExport(f, s, {}, l), startExportPerLayer: (f, s, l) => startExportPerLayer(f, s, {}, l) }));
+const persister = createPersister(store, api.putClientState, { dragging: () => tools.dragging() });
 window.addEventListener("beforeunload", beforeUnloadHandler(() => store.get()));
-window.addEventListener("blur", () => hold.blur());
-window.addEventListener("keyup", (e) => {
-  if (e.key.toLowerCase() === "o") hold.release();
-});
 
 buildToolbar($("toolbar"), store, {
   saveSession: () =>
-    void runSave(store, { startSave: () => startSave(), markSaved: async (id) => api.normaliseState(await markSaved(id)) }),
+    void runSave(store, { flushClientState: () => persister.flush(), startSave: () => startSave(), markSaved: async (id) => api.normaliseState(await markSaved(id)) }),
   openExport: () => exportDialog.open(),
   pickFile: (file) => void openSource({ kind: "picker", file }, deps),
   preview: () => runner.previewNow(),
@@ -193,6 +244,7 @@ buildToolbar($("toolbar"), store, {
   undo: () => void editor.undo(),
   redo: () => void editor.redo(),
 });
+buildCameraCluster($("camera-cluster"), store, { size });
 buildViewbar($("viewbar"), store, {
   size,
   refresh: () => void refresher.refresh(),
@@ -201,20 +253,24 @@ buildViewbar($("viewbar"), store, {
     setCompare(store, m);
     void refresher.refresh();
   },
-  holdPress: () => hold.press(),
-  holdRelease: () => hold.release(),
-  notify: (text) => addNotice(store, "warn", "pivot_invalid", text),
 });
 buildStatusbar($("statusbar"), $("modebar"), store);
+const planesCtl = createPlanesController(
+  store,
+  { detect: (b) => api.detectPlanes(b as api.DetectPlanesBody), poll: (id, opts) => pollJob(id, opts), cancelJob: (id) => postJson(`/api/jobs/${id}/cancel`) },
+  { protectionEdit: (fn) => protection.edit(fn), confirm: (m) => window.confirm(m), toolChanged: () => runner.onToolChanged() },
+);
 const panelActions = {
+  planeDetect: () => void planesCtl.detect(),
+  planeCancel: () => planesCtl.cancel(),
+  planeSelect: (i: number) => planesCtl.select(i),
+  planeBand: (i: number) => planesCtl.band(i),
   toolChanged: () => runner.onToolChanged(),
   scopeChanged: () => runner.paramsChanged("scope"),
-  filterEdit: (axis: "x" | "y" | "z", patch: Partial<{ enabled: boolean; min: number; max: number }>) => filters.edit(axis, enableDefaults(store.get().tools.filters, axis, patch, store.get().session?.bounds ?? null)),
-  filterResetBounds: () => filters.resetToCloud(),
-  filterResetAll: () => filters.resetAll(),
+  filterResetAll: () => filters.resetToCloud(),
   protectionEdit: (fn: Parameters<typeof protection.edit>[0]) => protection.edit(fn),
-  setTool: (t: "none" | "box" | "polygon" | "cluster") => {
-    store.update((st) => ({ ...st, tool: t, interaction: "orbit" }));
+  setTool: (t: ToolKind) => {
+    store.update((st) => armTool(st, t));
     if (t === "polygon") {
       enterTool();
       store.set({ camera: applyPreset(store.get().camera, "top") });
@@ -223,13 +279,34 @@ const panelActions = {
     else runner.reset();
   },
   commitDraft: () => runner.commitDraft(),
+  discardDraft: () => runner.discardDraft(),
   selectDisplayed: () => runner.oneShot((rev) => selectDisplayedBody(rev)),
   invert: () =>
     runner.oneShot((rev) => ({ cloud_revision: rev, op: "invert", scope: store.get().scope, tool: null, evaluate_candidate: true })),
+  // Clear selection also disarms the tool: no armed button, no seed, no polygon, orbit works again
   clearSelection: () => {
     runner.reset();
+    store.update(disarmed);
     void editor.clearSelection();
   },
+  toggleHide: () => void hide.toggle(),
+  layerCreate: (name: string) => void layers.create(name),
+  layerAssign: () => void layers.assign(),
+  layerRelease: () => void layers.release(),
+  layerSelect: (id: number) => layers.select(id),
+  layerToggle: (id: number) => void layers.toggle(id),
+  layerToMain: (id: number) => void layers.toMain(id),
+  layerChoose: (id: number) => layers.setActive(id),
+  layerEdit: (id: number) => void layers.editLayer(id),
+  layerSet: () => void layers.setMembers(),
+  layerFromBand: () => void layers.fromBand(),
+  layerRename: (id: number, name: string) => void layers.rename(id, name),
+  layerColour: (id: number, colour: number) => void layers.setColour(id, colour),
+  layerFlag: (id: number, flag: "protected" | "locked", value: boolean) => void layers.setFlag(id, flag, value),
+  layerOp: (id: number, op: "replace" | "add" | "subtract" | "intersect") => void layers.layerOp(id, op),
+  layerMove: (id: number, dir: -1 | 1) => void layers.move(id, dir),
+  layerMerge: (from: number, into: number) => void layers.merge(from, into),
+  layerDeletePoints: (id: number) => void layers.deletePoints(id),
   removeInvalid: () => void editor.removeInvalid(),
   removeInvalidVisible: () => editor.removeInvalidVisible(),
   removeInvalidLabel: () => editor.removeInvalidLabel(),
@@ -248,7 +325,7 @@ const panelActions = {
     emptyPolygon: () => store.update((st) => ({ ...st, tools: { ...st.tools, polygon: emptyPolygon() } })),
     polygonSelected: () => {
       const st = store.get();
-      return st.tool === "polygon" && st.tools.polygon.phase === "closed" && st.op === "replace" && (st.session?.selection.count ?? 0) > 0;
+      return st.tool === "polygon" && st.tools.polygon.phase === "closed" && st.liveFirst && (st.session?.selection.count ?? 0) > 0;
     },
     resetRunner: () => runner.reset(),
     clearSelection: () => void editor.clearSelection(),
@@ -256,9 +333,29 @@ const panelActions = {
 };
 buildInspector($("fileinfo"), store);
 buildToolPalette($("tools"), store, panelActions);
-buildLegend($("legend"));
+buildLayersPanel($("layers-slot"), store, panelActions);
+const legend = buildLegend($("legend"), store, $("modebar"), () => void hide.show(), (id) => void layers.toggle(id));
+store.subscribe((s) => legend.update(s.timeline.highlight !== null, s.preview?.op ?? null));
+const stepEdit = createEditShape(store, {
+  resetRunner: () => runner.reset(),
+  clearSelection: () => editor.clearSelection(),
+  toolChanged: () => runner.onToolChanged(),
+});
+createStepCentre(store, size);
+buildTimeline($("timeline"), store, {
+  editShape: (sid) => void stepEdit.edit(sid),
+  rollback: (c) => void editor.rollback(c),
+  deleteStep: (sid) => void editor.deleteStep(sid),
+  renameStep: (sid, name) => void editor.renameStep(sid, name),
+  pendingCursor: () => editor.pendingCursor(),
+});
 buildViewCube($("viewcube"), store);
-buildEditPanels($("editpanels"), store, panelActions);
+buildTriad($("triad"), store);
+buildFilterBoxes($("fbox-layer"), canvas, store, {
+  editSide: (axis, side, value, o) => filters.editSide(axis, side, value, o),
+  resetSide: (axis, side) => filters.resetSide(axis, side),
+});
+buildEditPanels($("editpanels"), store, panelActions, { toolRoot: $("toolpanels"), scroller: $("inspector") });
 
 window.addEventListener("keyup", (e) => {
   if (e.key.toLowerCase() === "r") rectHeld = false;
@@ -271,23 +368,34 @@ window.addEventListener("keydown", (e) => {
   const t = e.target as HTMLElement | null;
   const id = classifyKey({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey, shiftKey: e.shiftKey, target: t?.tagName ?? "" });
   help.apply(id);
-  if (id === "rect") rectHeld = true;
-  else if (id === "hold-original") {
-    if (store.get().session) hold.press();
-  } else if (id === "undo") {
+  const pact = polygonKeyAction(store.get().tools.polygon, id, t?.tagName ?? "");
+  if (pact === "leave-edit") {
+    store.update((st) => ({ ...st, tools: { ...st.tools, polygon: setEditing(st.tools.polygon, false) } }));
+  } else if (pact === "remove-vertex") {
+    if (t?.tagName !== "BUTTON") {
+      e.preventDefault();
+      tools.removeHovered();
+    }
+  } else if (id === "rect") rectHeld = true;
+  else if (id === "undo") {
     e.preventDefault();
     void editor.undo();
   } else if (id === "redo") {
     e.preventDefault();
     void editor.redo();
   } else if (id === "apply") {
-    const s = store.get();
-    if (canApply(s) && s.compare === "edited") void editor.apply();
+    const out = deleteKeyOutcome(store.get());
+    if (out.run) void editor.apply();
+    else addNotice(store, "info", "delete_blocked", out.notice);
   } else if (id === "polygon-close" && store.get().tool === "polygon" && store.get().tools.polygon.phase === "drawing") {
     const msg = panelActions.finishPolygon();
     if (msg) note(msg);
+  } else if (id === "cancel" && store.get().layerUi.editing !== null) {
+    layers.leaveEdit();
   } else if (id === "cancel" && store.get().tools.polygon.phase === "drawing") {
     panelActions.cancelDrawing();
+  } else if (id === "cancel" && store.get().interaction === "orbit" && discardEnabled(store.get())) {
+    runner.discardDraft();
   }
 });
 

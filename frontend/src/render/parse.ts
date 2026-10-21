@@ -11,12 +11,16 @@ export interface RenderData {
   attr?: AttrArray;
   attrField?: string;
   attrKind?: "f32" | "u32" | "i32";
+  /** Layer id per drawn point (0 = main); present only when the session has layers (X-Layers: 1). */
+  layer?: Uint8Array;
   origin: Vec3;
   count: number;
   eligible: number;
   cloudRevision: number;
   paramsRevision: number;
   sessionId?: string;
+  /** The pending preview this render drew (X-Preview-Id); absent when none was applied. */
+  previewId?: string;
 }
 
 export interface HeaderLike {
@@ -35,7 +39,8 @@ export function parseRender(buf: ArrayBuffer, headers: HeaderLike): RenderData {
   const origin = (headers.get("X-Origin") ?? "").split(",").map(Number);
   if (origin.length !== 3 || origin.some((v) => !Number.isFinite(v))) throw bad("bad X-Origin");
   const attrKind = (headers.get("X-Attr-Kind") ?? undefined) as RenderData["attrKind"];
-  const expected = count * 17 + (attrKind ? count * 4 : 0);
+  const hasLayer = headers.get("X-Layers") === "1";
+  const expected = count * 17 + (attrKind ? count * 4 : 0) + (hasLayer ? count : 0);
   if (buf.byteLength !== expected) {
     throw bad(`render body is ${buf.byteLength} bytes, expected ${expected}`);
   }
@@ -49,6 +54,8 @@ export function parseRender(buf: ArrayBuffer, headers: HeaderLike): RenderData {
     cloudRevision: num("X-Cloud-Revision"),
     paramsRevision: num("X-Params-Revision"),
   };
+  const pid = headers.get("X-Preview-Id");
+  if (pid) out.previewId = pid;
   const sid = headers.get("X-Session-Id");
   if (sid) out.sessionId = sid;
   if (attrKind) {
@@ -58,25 +65,30 @@ export function parseRender(buf: ArrayBuffer, headers: HeaderLike): RenderData {
     out.attr =
       attrKind === "u32" ? new Uint32Array(block) : attrKind === "i32" ? new Int32Array(block) : new Float32Array(block);
   }
+  if (hasLayer) out.layer = new Uint8Array(buf, count * 17 + (attrKind ? count * 4 : 0), count);
   return out;
 }
 
 export const MAX_BUDGET = 2_000_000;
 
-export function renderQuery(mode: RenderMode, budget: number, attr?: string): string {
+export function renderQuery(mode: RenderMode | "step", budget: number, attr?: string, step?: number, preview?: string): string {
   const b = Math.min(MAX_BUDGET, Math.max(1, Math.floor(budget)));
-  return `mode=${mode}&budget=${b}${attr ? `&attr=${encodeURIComponent(attr)}` : ""}`;
+  const st = mode === "step" && step !== undefined ? `&step=${Math.floor(step)}` : "";
+  const pv = preview ? `&preview=${encodeURIComponent(preview)}` : "";
+  return `mode=${mode}${st}&budget=${b}${attr ? `&attr=${encodeURIComponent(attr)}` : ""}${pv}`;
 }
 
 export async function fetchRender(
-  mode: RenderMode,
+  mode: RenderMode | "step",
   budget: number,
   attr?: string,
   signal?: AbortSignal,
+  step?: number,
+  preview?: string,
 ): Promise<RenderData> {
   let res: Response;
   try {
-    res = await fetch(`/api/session/render?${renderQuery(mode, budget, attr)}`, { signal, headers: sessionHeaders() });
+    res = await fetch(`/api/session/render?${renderQuery(mode, budget, attr, step, preview)}`, { signal, headers: sessionHeaders() });
   } catch (cause) {
     if (signal?.aborted) throw new ApiError(0, "cancelled", "render request superseded");
     throw new ApiError(0, "network", `could not reach the app: ${String(cause)}`);

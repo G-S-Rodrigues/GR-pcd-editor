@@ -1,4 +1,3 @@
-import { isFinite3 } from "../math/vec";
 import type { Bounds, Vec3 } from "../state/types";
 import type { Camera } from "./camera";
 
@@ -14,16 +13,6 @@ export function resetPivot(c: Camera, activeBounds: Bounds | null): Camera {
 
 /** Selection centre from the candidate bounds; null (control disabled) when there is none. */
 export const selectionPivot = (b: Bounds | null): Vec3 | null => (b ? boundsCentre(b) : null);
-
-export type PivotParse = { ok: true; point: Vec3 } | { ok: false; reason: string };
-
-export function parsePivot(fields: readonly string[]): PivotParse {
-  const nums = fields.map((f) => (f.trim() === "" ? Number.NaN : Number(f)));
-  if (nums.length !== 3 || !isFinite3(nums)) {
-    return { ok: false, reason: "Pivot X, Y and Z must be finite numbers" };
-  }
-  return { ok: true, point: nums as Vec3 };
-}
 
 export function pickPivot(
   c: Camera,

@@ -2,7 +2,7 @@
 
 import threading
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -12,8 +12,36 @@ from gr_pcd.editing.cancel import Cancelled, CancelToken
 from gr_pcd.editing.candidate import CandidateResult, candidate_deletion
 from gr_pcd.editing.cluster import build_eligible, connected_component
 from gr_pcd.editing.errors import EditError
-from gr_pcd.editing.history import History, RevisionClock, with_ids
+from gr_pcd.editing.history import (
+    History,
+    LayerRowChange,
+    RevisionClock,
+    dependents_in,
+    with_ids,
+)
 from gr_pcd.editing.invalid import remove_invalid
+from gr_pcd.editing.layers import (
+    COLOURS,
+    Layer,
+    assign,
+    clean_layer_name,
+    counts_by_layer,
+    delete_layer,
+    from_other_layers,
+    hidden_points,
+    lowest_free_id,
+    next_colour,
+    protected_points,
+)
+from gr_pcd.editing.planes import (
+    PLANE_BYTES_PER_POINT,
+    PlaneDetectSpec,
+    PlaneSpec,
+    detect_planes,
+    plane_mask,
+    validate_plane_spec,
+    validate_planes,
+)
 from gr_pcd.editing.protection import (
     OperationProtection,
     ProtectionState,
@@ -27,27 +55,48 @@ from gr_pcd.editing.selection import (
     read_selection,
     scope_mask,
 )
+from gr_pcd.editing.sparse import (
+    SPARSE_BYTES_PER_POINT,
+    SparseSpec,
+    auto_radius,
+    sparse_mask,
+    validate_sparse,
+)
+from gr_pcd.editing.thin import (
+    THIN_BYTES_PER_POINT,
+    ThinSpec,
+    duplicate_mask,
+    validate_thin,
+    voxel_mask,
+)
 from gr_pcd.geometry.box import BoxSpec, box_contains
 from gr_pcd.geometry.filters import (
     DisplayFilter,
     filter_contains,
     validate_filter,
 )
+from gr_pcd.geometry.normals import NORMAL_ATTR, normals_u32
 from gr_pcd.geometry.prism import PrismSpec, prism_contains
 from gr_pcd.pcd.model import PcdCloud, valid_mask, xyz64
-from gr_pcd.session.budget import HISTORY_FRACTION
+from gr_pcd.session.budget import HISTORY_FRACTION, check_budget
 from gr_pcd.session.codec import (
     ClusterTool,
     FilterTool,
+    LayerTool,
     filter_to_dict,
     protection_to_dict,
+    shape_of,
+    tilt_to_dict,
     tool_summary,
 )
-from gr_pcd.session.errors import NotFoundError, StaleRevision
+from gr_pcd.session.errors import NoSuchLayer, NotFoundError, StaleRevision
 from gr_pcd.session.jobs import Stale
 
-RENDER_MODES = ("edited", "original", "deleted")
+RENDER_MODES = ("edited", "original", "deleted", "step")
 FLAG_SELECTED, FLAG_PROTECTED, FLAG_DELETED = 1, 2, 4
+# preview of a pending Add / Subtract / Intersect (bits unused by any other mode)
+FLAG_PREVIEW_ADD, FLAG_PREVIEW_REMOVE = 8, 16
+PREVIEW_OPS = ("add", "subtract", "intersect")
 
 
 @dataclass(frozen=True)
@@ -68,6 +117,22 @@ class Candidate:
     intervals: list
     cluster: dict | None
     tool_text: str
+    tilt: dict | None = None
+    tool_shape: dict | None = None
+    protected_by_layers: int = 0
+
+
+@dataclass(frozen=True)
+class PendingSelection:
+    """A computed, not yet committed `S OP shape` (one slot per session)."""
+
+    id: str
+    ticket: tuple[int, int]
+    spec: SelectSpec
+    new_sel: np.ndarray  # read-only bool (n,)
+    filter: DisplayFilter
+    protection: ProtectionState
+    cluster: dict | None
 
 
 @dataclass(frozen=True)
@@ -80,6 +145,9 @@ class RenderArrays:
     attr: np.ndarray | None = None  # 4-byte values of the requested field
     attr_kind: str | None = None  # f32 | u32 | i32
     attr_field: str | None = None
+    preview_id: str | None = None  # set only when a pending preview was drawn
+    # uint8 layer id per drawn point; set only when the session has layers
+    layer: np.ndarray | None = None
 
 
 def _ro(a: np.ndarray) -> np.ndarray:
@@ -118,6 +186,14 @@ class EditingSession:
         self.selection_ops: list[dict] = []
         self.display_filter = DisplayFilter()
         self.protection = ProtectionState()
+        # named sub layers: one uint8 id per point (0 = main), absent until
+        # the first layer exists; layers_rev keys every layer-derived cache
+        self.layer: np.ndarray | None = None
+        self.layers: list[Layer] = []
+        self.layers_rev = 0
+        self._selectable_cache: tuple | None = None
+        self._layer_stats_cache: tuple | None = None
+        self._deletable_cache: tuple | None = None
         self.history = History(int(budget * HISTORY_FRACTION))
         self.clock = RevisionClock()
         self.client_state: dict = {}
@@ -125,15 +201,18 @@ class EditingSession:
         self.unsaved = False
         self.edit_counter = 0
         self.candidate: Candidate | None = None
+        self.pending: PendingSelection | None = None
         self._last_cluster: dict | None = None
         # the stored selection was made in scope `displayed` and the display
         # filter changed since: it still holds points the filter now hides
         self._selection_scope: str | None = None
         self.scope_stale = False
         self._last_tool_text = "selection"
+        self._last_tool_shape: dict | None = None
+        self._step_bounds: dict[int, dict | None] = {}
         self.lock = threading.RLock()
         self._display_cache: tuple[DisplayFilter, np.ndarray] | None = None
-        self._tree_cache: tuple[int, cKDTree, np.ndarray] | None = None
+        self._tree_cache: tuple[tuple, cKDTree, np.ndarray] | None = None
         self._active_bounds_cache: tuple[int, dict | None] | None = None
         self.bounds = _bounds(self.xyz, self.valid)
 
@@ -156,8 +235,19 @@ class EditingSession:
         self.protection = loaded.protection
         self.history.entries = list(loaded.entries)
         self.history.cursor = loaded.cursor
+        self.history.next_sid = max(
+            loaded.next_sid,
+            max((e.sid for e in loaded.entries), default=-1) + 1,
+        )
         self.client_state = loaded.client_state
         self.unit = loaded.unit
+        self.layer = getattr(loaded, "layer", None)
+        self.layers = list(getattr(loaded, "layers", None) or [])
+        self.layers_rev = 0
+        self._selectable_cache = None
+        self._layer_stats_cache = None
+        self._strip_hidden_from_selection()
+        self.pending = None
         self.unsaved = False
 
     # ---- helpers -------------------------------------------------------
@@ -172,10 +262,18 @@ class EditingSession:
             self._display_cache = (filt, mask)
         return mask
 
-    def _protected(self, protection: ProtectionState) -> np.ndarray:
-        return protected_mask(
-            self.xyz, self.valid, effective_intervals(protection)
+    def _protected(
+        self, protection: ProtectionState, layer=None, layers=()
+    ) -> np.ndarray:
+        """P: the height band plus every protected layer (one set)."""
+        band = protected_mask(
+            self.xyz,
+            self.valid,
+            effective_intervals(protection),
+            protection.tilt,
         )
+        by_layer = protected_points(layer, list(layers))
+        return band if by_layer is None else band | by_layer
 
     def require_cloud(self, cloud_revision: int) -> None:
         if cloud_revision != self.clock.cloud:
@@ -187,16 +285,36 @@ class EditingSession:
 
     def _reset_operation_protection(self) -> None:
         self.protection = ProtectionState(
-            self.protection.global_, OperationProtection()
+            self.protection.global_, OperationProtection(), self.protection.tilt
         )
 
     def _changed(self) -> None:
         self.edit_counter += 1
         self.unsaved = True
         self.candidate = None
+        self.pending = None
         self.scope_stale = False
         self._reset_operation_protection()
         self.clock.bump_cloud()
+
+    def _bounds_of_step(self, entry) -> dict | None:
+        """Exact min/max of the points a step deleted; computed on first use
+        and kept per step id (the coordinates never change)."""
+        cached = self._step_bounds.get(entry.sid, False)
+        if cached is not False:
+            return cached
+        # a remove-invalid step holds NaN/inf points: only finite ones have bounds
+        pts = self.xyz[entry.ids]
+        pts = pts[np.isfinite(pts).all(axis=1)]
+        if len(pts) == 0:
+            out = None
+        else:
+            out = {
+                "min": pts.min(axis=0).tolist(),
+                "max": pts.max(axis=0).tolist(),
+            }
+        self._step_bounds[entry.sid] = out
+        return out
 
     # ---- state ---------------------------------------------------------
     def state(self) -> dict:
@@ -210,6 +328,8 @@ class EditingSession:
             entries = list(self.history.entries)
             cursor = self.history.cursor
             cache = self._active_bounds_cache
+            layers = list(self.layers)
+            layer, layers_rev = self.layer, self.layers_rev
         display = self._display()
         base = active & self.valid
         if cache is not None and cache[0] == ticket[0]:
@@ -220,7 +340,19 @@ class EditingSession:
                 self._active_bounds_cache = (ticket[0], active_bounds)
         n = self.cloud.n
         n_active = int(active.sum())
-        return {
+        counts = {
+            "original": n,
+            "active": n_active,
+            "deleted": n - n_active,
+            "invalid_total": int((~self.valid).sum()),
+            "invalid_active": int((active & ~self.valid).sum()),
+            "displayed": int((base & display).sum()),
+            "selected": int((selection & base).sum()),
+            "protected": int(
+                (self._protected(protection, layer, layers) & base).sum()
+            ),
+        }
+        out = {
             "session_id": self.id,
             "filename": self.filename,
             "encoding": self.cloud.encoding,
@@ -236,16 +368,7 @@ class EditingSession:
             "width": self.cloud.width,
             "height": self.cloud.height,
             "viewpoint": list(self.cloud.viewpoint),
-            "counts": {
-                "original": n,
-                "active": n_active,
-                "deleted": n - n_active,
-                "invalid_total": int((~self.valid).sum()),
-                "invalid_active": int((active & ~self.valid).sum()),
-                "displayed": int((base & display).sum()),
-                "selected": int((selection & base).sum()),
-                "protected": int((self._protected(protection) & base).sum()),
-            },
+            "counts": counts,
             "bounds": self.bounds,
             "active_bounds": active_bounds,
             "revision": {"cloud": ticket[0], "params": ticket[1]},
@@ -260,9 +383,19 @@ class EditingSession:
                 "entries": [
                     {
                         "index": i,
+                        "sid": e.sid,
                         "kind": e.kind,
+                        "tool": e.tool,
+                        "name": e.name,
                         "description": e.description,
                         "count": len(e.ids),
+                        "shape": e.shape,
+                        "bounds": self._bounds_of_step(e),
+                        **(
+                            {"deletable": self._deletable(entries, e)}
+                            if e.kind == "layer"
+                            else {}
+                        ),
                     }
                     for i, e in enumerate(entries)
                 ],
@@ -274,6 +407,498 @@ class EditingSession:
             "unsaved": self.unsaved,
             "client_state": self.client_state,
         }
+        if layers:
+            # a layer-less session sends exactly the keys it always sent
+            rows, n_main, n_hidden = self._layer_rows(
+                base, layer, layers, (ticket[0], layers_rev)
+            )
+            out["layers"] = rows
+            counts["main"], counts["hidden"] = n_main, n_hidden
+        return out
+
+    def _deletable(self, entries, e) -> bool:
+        """No later layer step builds on this one (cached per step list; computed
+        on the snapshot the state was built from, not the live history)."""
+        key = tuple(x.sid for x in entries)
+        with self.lock:
+            cache = self._deletable_cache
+            if cache is None or cache[0] != key:
+                cache = (key, {})
+                self._deletable_cache = cache
+            if e.sid not in cache[1]:
+                cache[1][e.sid] = not dependents_in(entries, e.sid)
+            return cache[1][e.sid]
+
+    # ---- layers: reads --------------------------------------------------
+    def _layer_rows(self, base, layer, layers, key):
+        """Per-layer rows plus the main and hidden counts, cached per
+        (cloud revision, layers_rev): only active valid members count."""
+        cache = self._layer_stats_cache
+        if cache is not None and cache[0] == key:
+            return cache[1]
+        counts = counts_by_layer(layer, base)
+        bounds = self._layer_bounds(base, layer)
+        rows = [
+            {
+                "id": lay.id,
+                "name": lay.name,
+                "colour": lay.colour,
+                "visible": lay.visible,
+                "protected": lay.protected,
+                "locked": lay.locked,
+                "count": int(counts[lay.id]),
+                "bounds": bounds.get(lay.id),
+            }
+            for lay in layers
+        ]
+        n_hidden = int(sum(counts[lay.id] for lay in layers if not lay.visible))
+        out = (rows, int(counts[0]), n_hidden)
+        self._layer_stats_cache = (key, out)
+        return out
+
+    def _layer_bounds(self, base, layer) -> dict:
+        """Exact min/max per layer id over its active valid members."""
+        if layer is None:
+            return {}
+        idx = np.flatnonzero(base & (layer != 0))
+        if len(idx) == 0:
+            return {}
+        ids = layer[idx]
+        order = np.argsort(ids, kind="stable")
+        idx, ids = idx[order], ids[order]
+        pts = self.xyz[idx]
+        starts = np.flatnonzero(np.r_[True, ids[1:] != ids[:-1]])
+        lo = np.minimum.reduceat(pts, starts, axis=0)
+        hi = np.maximum.reduceat(pts, starts, axis=0)
+        return {
+            int(ids[st]): {"min": lo[i].tolist(), "max": hi[i].tolist()}
+            for i, st in enumerate(starts)
+        }
+
+    def _hidden(self) -> np.ndarray | None:
+        """Mask of points in a hidden layer; None when nothing is hidden."""
+        with self.lock:
+            return hidden_points(self.layer, self.layers)
+
+    def _selectable(self) -> np.ndarray:
+        """Active points that are not in a hidden layer. The very same array
+        as `active` when nothing is hidden, so layer-less sessions pay nothing.
+        Cached per (active array, layers_rev)."""
+        with self.lock:
+            active, rev = self.active, self.layers_rev
+            hidden = hidden_points(self.layer, self.layers)
+            if hidden is None:
+                return active
+            cache = self._selectable_cache
+            if cache is not None and cache[0] is active and cache[1] == rev:
+                return cache[2]
+            out = _ro(active & ~hidden)
+            self._selectable_cache = (active, rev, out)
+            return out
+
+    def check_layer_tool(self, layer_id: int) -> Layer:
+        """The layer a layer tool names, or the error a select job would give."""
+        with self.lock:
+            lay = self._find_layer(layer_id)
+        if not lay.visible:
+            raise EditError(
+                "layer_hidden", f"layer {lay.name} is hidden; show it first"
+            )
+        return lay
+
+    def _find_layer(self, layer_id) -> Layer:
+        for lay in self.layers:
+            if lay.id == layer_id:
+                return lay
+        raise NoSuchLayer(layer_id)
+
+    # ---- layers: edits (membership moves and layer add/remove are
+    # timeline steps; rename, colour, eye, flags and order are not) -------
+    def _movable(self) -> np.ndarray:
+        """The selected points a layer edit may move."""
+        return self.selection & self._selectable() & self.valid
+
+    def _strip_hidden_from_selection(self) -> None:
+        """The stored selection never holds a point of a hidden layer."""
+        hidden = hidden_points(self.layer, self.layers)
+        if hidden is None or not (self.selection & hidden).any():
+            return
+        self.selection = _ro(self.selection & ~hidden)
+        if not (self.selection & self.active & self.valid).any():
+            self.selection_ops = []
+            self._last_cluster = None
+            self._selection_scope = None
+            self.scope_stale = False
+
+    def _layers_changed(self, cosmetic: bool = False) -> None:
+        self.layers_rev += 1
+        self.unsaved = True
+        self.edit_counter += 1
+        if cosmetic:
+            return
+        self.candidate = None
+        self.pending = None
+        self._strip_hidden_from_selection()
+        self.clock.bump_params()
+
+    def _layer_op(self, moved, layer_id, released=0) -> dict:
+        return {
+            "moved": int(moved.sum()) if layer_id else 0,
+            "from_other_layers": from_other_layers(self.layer, moved, layer_id),
+            "released": released,
+        }
+
+    def _check_unlocked(self, mask: np.ndarray, target: int = 0) -> None:
+        """Refuse a move into a locked layer or out of one (lock = membership)."""
+        if target and self._find_layer(target).locked:
+            raise EditError(
+                "layer_locked",
+                f"layer {self._find_layer(target).name} is locked; "
+                "unlock it first",
+            )
+        for lay in self.layers:
+            if not lay.locked or lay.id == target:
+                continue
+            n = int(((self.layer == lay.id) & mask).sum())
+            if n:
+                raise EditError(
+                    "layer_locked",
+                    f"{n} of these points are in locked layer {lay.name}; "
+                    "unlock it first",
+                )
+
+    def _commit_layers(
+        self,
+        new_layer: np.ndarray | None,
+        new_layers: list,
+        description,
+        visible: tuple | None = None,
+    ) -> None:
+        """Push one layer step for the diff against the current arrays (none
+        when nothing changes), then install the new state. The push comes
+        first, so a refusal (too many steps, budget) changes nothing.
+        `description` maps the number of points whose layer changed to text;
+        `visible` is (ids, flag): a visibility change that is not a step."""
+        zeros = None
+        old, new = self.layer, new_layer
+        if old is None or new is None:
+            zeros = np.zeros(self.cloud.n, dtype=np.uint8)
+        old = zeros if old is None else old
+        new = zeros if new is None else new
+        ids = np.flatnonzero(old != new).astype(np.uint32)
+        before = {x.id: i for i, x in enumerate(self.layers)}
+        after = {x.id: i for i, x in enumerate(new_layers)}
+        rows = tuple(
+            [
+                LayerRowChange(i, x, False)
+                for i, x in enumerate(self.layers)
+                if x.id not in after
+            ]
+            + [
+                LayerRowChange(i, x, True)
+                for i, x in enumerate(new_layers)
+                if x.id not in before
+            ]
+        )
+        if len(ids) or rows:
+            self.history.push(
+                "layer",
+                description(f"{len(ids):,}"),
+                ids,
+                "layer",
+                None,
+                old[ids],
+                new[ids],
+                rows,
+            )
+        self.layer = new_layer
+        self.layers = list(new_layers)
+        if visible is not None and visible[0]:
+            self._set_visible(visible[0], visible[1])
+        self._layers_changed()
+
+    def _create_from_mask(
+        self,
+        mask: np.ndarray,
+        name: str | None,
+        visible: bool,
+        protected: bool = False,
+        dry_run: bool = False,
+    ) -> dict:
+        self._check_unlocked(mask)
+        lid = lowest_free_id(self.layers)
+        clean = clean_layer_name(f"Layer {lid}" if name is None else name)
+        op = self._layer_op(mask, lid)
+        if dry_run:
+            return op
+        what = "New protected layer" if protected else "New layer"
+        self._commit_layers(
+            assign(self.layer, mask, lid, self.cloud.n),
+            [
+                *self.layers,
+                Layer(
+                    lid,
+                    clean,
+                    next_colour(self.layers),
+                    bool(visible),
+                    protected,
+                ),
+            ],
+            lambda n: f"{what} {clean}, {n} points",
+        )
+        return op
+
+    def create_layer(
+        self,
+        cloud_revision: int,
+        name: str | None = None,
+        visible: bool = True,
+        dry_run: bool = False,
+    ) -> dict:
+        """Move the selectable selected points into a new layer."""
+        with self.lock:
+            self.require_cloud(cloud_revision)
+            moved = self._movable()
+            if not moved.any():
+                raise EditError(
+                    "empty_selection", "select some visible points first"
+                )
+            return self._create_from_mask(moved, name, visible, False, dry_run)
+
+    def layer_from_protection(
+        self,
+        cloud_revision: int,
+        name: str | None = None,
+        dry_run: bool = False,
+    ) -> dict:
+        """A protected layer (default name Floor) of the points inside the
+        global height band; the selection, band and history are untouched."""
+        with self.lock:
+            self.require_cloud(cloud_revision)
+            g = self.protection.global_
+            if not g.enabled:
+                raise EditError(
+                    "no_protection_band", "turn on height protection first"
+                )
+            mask = (
+                protected_mask(
+                    self.xyz, self.valid, [(g.min, g.max)], self.protection.tilt
+                )
+                & self._selectable()
+                & self.valid
+            )
+            if not mask.any():
+                raise EditError(
+                    "empty_band", "no visible point is inside the band"
+                )
+            return self._create_from_mask(
+                mask, "Floor" if name is None else name, True, True, dry_run
+            )
+
+    def merge_layer(
+        self,
+        cloud_revision: int,
+        layer_id: int,
+        into: int,
+        dry_run: bool = False,
+    ) -> dict:
+        """Every point of `layer_id` (deleted ones too) joins `into`; the
+        source layer goes away and the target keeps its name and flags."""
+        with self.lock:
+            self.require_cloud(cloud_revision)
+            if into == layer_id:
+                raise EditError(
+                    "invalid_merge", "a layer cannot merge into itself"
+                )
+            src, dst = self._find_layer(layer_id), self._find_layer(into)
+            for lay in (src, dst):
+                if lay.locked:
+                    raise EditError(
+                        "layer_locked",
+                        f"layer {lay.name} is locked; unlock it first",
+                    )
+            op = {
+                "moved": int(
+                    ((self.layer == layer_id) & self.active & self.valid).sum()
+                ),
+                "from_other_layers": 0,
+                "released": 0,
+            }
+            if dry_run:
+                return op
+            self._commit_layers(
+                assign(self.layer, self.layer == layer_id, into, self.cloud.n),
+                [x for x in self.layers if x.id != layer_id],
+                lambda n: f"Merged {src.name} into {dst.name}, {n} points",
+            )
+            return op
+
+    def set_layer_order(self, ids: list[int]) -> None:
+        with self.lock:
+            current = {x.id: x for x in self.layers}
+            if len(ids) != len(set(ids)) or set(ids) != set(current):
+                raise EditError(
+                    "invalid_order", "the order must list every layer once"
+                )
+            self.layers = [current[i] for i in ids]
+            self._layers_changed(cosmetic=True)
+
+    def assign_layer(
+        self,
+        cloud_revision: int,
+        layer_id: int,
+        visible: bool | None = None,
+        dry_run: bool = False,
+    ) -> dict:
+        """Move the selectable selected points into a layer (0 = main)."""
+        with self.lock:
+            self.require_cloud(cloud_revision)
+            if layer_id:
+                self._find_layer(layer_id)
+            moved = self._movable()
+            if not moved.any():
+                raise EditError(
+                    "empty_selection", "select some visible points first"
+                )
+            self._check_unlocked(moved, layer_id)
+            if layer_id == 0:
+                op = {
+                    "moved": 0,
+                    "from_other_layers": 0,
+                    "released": int(moved.sum()),
+                }
+            else:
+                op = self._layer_op(moved, layer_id)
+            if dry_run:
+                return op
+            target = self._find_layer(layer_id).name if layer_id else "main"
+            self._commit_layers(
+                assign(self.layer, moved, layer_id, self.cloud.n),
+                self.layers,
+                lambda n: f"{n} points to {target}",
+                visible=(
+                    [layer_id] if visible is not None and layer_id else None,
+                    bool(visible),
+                ),
+            )
+            return op
+
+    def set_layer_members(
+        self, cloud_revision: int, layer_id: int, dry_run: bool = False
+    ) -> dict:
+        """The selectable selected points become the members of a shown
+        layer; its other active members go back to main."""
+        with self.lock:
+            self.require_cloud(cloud_revision)
+            lay = self._find_layer(layer_id)
+            if not lay.visible:
+                raise EditError(
+                    "layer_hidden", f"layer {lay.name} is hidden; show it first"
+                )
+            moved = self._movable()
+            if not moved.any():
+                raise EditError(
+                    "empty_selection", "select some visible points first"
+                )
+            self._check_unlocked(moved, layer_id)
+            old = (self.layer == layer_id) & self.active & self.valid
+            released = old & ~moved
+            op = self._layer_op(moved, layer_id, int(released.sum()))
+            if dry_run:
+                return op
+            out = assign(self.layer, released, 0, self.cloud.n)
+            self._commit_layers(
+                assign(out, moved, layer_id, self.cloud.n),
+                self.layers,
+                lambda n: (
+                    f"{lay.name} set to the selection: "
+                    f"{op['moved']:,} in, {op['released']:,} out"
+                ),
+            )
+            return op
+
+    def delete_layer(self, cloud_revision: int, layer_id: int) -> None:
+        """Remove a layer; every point it held (deleted ones too) is main."""
+        with self.lock:
+            self.require_cloud(cloud_revision)
+            lay = self._find_layer(layer_id)
+            if lay.locked:
+                raise EditError(
+                    "layer_locked",
+                    f"layer {lay.name} is locked; unlock it first",
+                )
+            rest = [x for x in self.layers if x.id != layer_id]
+            self._commit_layers(
+                delete_layer(self.layer, layer_id) if rest else None,
+                rest,
+                lambda n: f"Removed layer {lay.name}, {n} points to main",
+            )
+
+    def _set_visible(self, ids: list[int], visible: bool) -> bool:
+        changed = False
+        out = []
+        for lay in self.layers:
+            if lay.id in ids and lay.visible != visible:
+                lay = replace(lay, visible=visible)
+                changed = True
+            out.append(lay)
+        self.layers = out
+        return changed
+
+    def patch_layer(
+        self,
+        layer_id: int,
+        name: str | None = None,
+        colour: int | None = None,
+        visible: bool | None = None,
+        protected: bool | None = None,
+        locked: bool | None = None,
+    ) -> None:
+        for flag in (protected, locked):
+            if flag is not None and not isinstance(flag, bool):
+                raise EditError("invalid_flag", "a flag is true or false")
+        with self.lock:
+            lay = self._find_layer(layer_id)
+            new_name = lay.name if name is None else clean_layer_name(name)
+            if colour is None:
+                new_colour = lay.colour
+            elif (
+                isinstance(colour, bool)
+                or not isinstance(colour, int)
+                or not 0 <= colour < COLOURS
+            ):
+                raise EditError(
+                    "invalid_colour", f"a colour is a number 0..{COLOURS - 1}"
+                )
+            else:
+                new_colour = colour
+            new_visible = lay.visible if visible is None else bool(visible)
+            new = replace(
+                lay,
+                name=new_name,
+                colour=new_colour,
+                visible=new_visible,
+                protected=lay.protected if protected is None else protected,
+                locked=lay.locked if locked is None else locked,
+            )
+            if new == lay:
+                return
+            self.layers = [new if x.id == lay.id else x for x in self.layers]
+            self._layers_changed(
+                cosmetic=new_visible == lay.visible
+                and new.protected == lay.protected
+            )
+
+    def set_layers_visibility(
+        self, ids: list[int] | None, visible: bool
+    ) -> None:
+        """Show or hide some layers, or every layer when `ids` is None."""
+        with self.lock:
+            chosen = [x.id for x in self.layers] if ids is None else list(ids)
+            for k in chosen:
+                self._find_layer(k)
+            if self._set_visible(chosen, bool(visible)):
+                self._layers_changed()
 
     # ---- parameters ----------------------------------------------------
     def set_display_filter(self, filt: DisplayFilter) -> None:
@@ -287,6 +912,7 @@ class EditingSession:
                 self.scope_stale = True
             self.display_filter = filt
             self.candidate = None
+            self.pending = None
             self.clock.bump_params()
 
     def set_protection(self, protection: ProtectionState) -> None:
@@ -294,6 +920,7 @@ class EditingSession:
         with self.lock:
             self.protection = protection
             self.candidate = None
+            self.pending = None
             self.clock.bump_params()
 
     def set_client_state(self, state: dict) -> None:
@@ -301,9 +928,37 @@ class EditingSession:
             self.client_state = state
 
     # ---- selection and candidate (job bodies) -------------------------
+    def _tool_eligible(self, tool, snap: dict, token) -> np.ndarray:
+        """Scope, region and (when asked) protection of a cluster, sparse, plane or thin tool."""
+        valid = self.valid
+        region = None
+        if tool.region is not None:
+            fn = (
+                box_contains
+                if isinstance(tool.region, BoxSpec)
+                else prism_contains
+            )
+            region = fn(self.xyz, valid, tool.region, token)
+        protected = (
+            self._protected(
+                snap["protection"], snap.get("layer"), snap.get("layers", ())
+            )
+            if tool.exclude_protected
+            else None
+        )
+        return build_eligible(
+            snap["scope"], region, protected, tool.exclude_protected
+        )
+
     def _operand(self, spec: SelectSpec, snap: dict, token, on_progress):
         tool = spec.tool
         active, valid = snap["active"], self.valid
+        if isinstance(tool, LayerTool):
+            try:
+                self.check_layer_tool(tool.layer_id)
+            except NoSuchLayer as exc:
+                raise EditError(exc.code, exc.message) from exc
+            return (self.layer == tool.layer_id) & active
         if tool is None:
             if spec.op != "invert":
                 raise EditError("tool_required", "this operation needs a tool")
@@ -314,25 +969,66 @@ class EditingSession:
             return prism_contains(self.xyz, valid, tool, token) & active
         if isinstance(tool, FilterTool):
             return filter_operand(active, valid, snap["display"])
+        if isinstance(tool, SparseSpec):
+            validate_sparse(tool)
+            eligible = self._tool_eligible(tool, snap, token)
+            counted = active & valid
+            check_budget(
+                SPARSE_BYTES_PER_POINT * int(counted.sum()),
+                self.budget,
+                "sparse point search",
+                "Try a smaller cloud or region.",
+            )
+            radius = tool.radius
+            if radius is None:
+                radius = auto_radius(self.xyz[counted])
+            token.check()
+            return (
+                sparse_mask(
+                    self.xyz, counted, radius, tool.min_neighbours, token
+                )
+                & eligible
+            )
+        if isinstance(tool, PlaneSpec):
+            validate_plane_spec(tool)
+            eligible = self._tool_eligible(tool, snap, token)
+            check_budget(
+                PLANE_BYTES_PER_POINT * self.cloud.n,
+                self.budget,
+                "plane selection",
+                "Try a smaller cloud or region.",
+            )
+            out = plane_mask(self.xyz, tool, token) & eligible
+            snap["plane"] = {
+                "normal": [float(c) for c in tool.normal],
+                "d": float(tool.d),
+                "thickness": float(tool.thickness),
+                "count": int(out.sum()),
+            }
+            return out
+        if isinstance(tool, ThinSpec):
+            validate_thin(tool)
+            eligible = self._tool_eligible(tool, snap, token)
+            check_budget(
+                THIN_BYTES_PER_POINT * int(eligible.sum()),
+                self.budget,
+                "thin selection",
+                "Try a smaller cloud or region.",
+            )
+            if tool.method == "voxel":
+                return voxel_mask(self.xyz, eligible, tool.edge, token)
+            return duplicate_mask(
+                self.xyz,
+                eligible,
+                float(tool.distance),
+                token,
+                self.budget,
+                None
+                if on_progress is None
+                else lambda f: on_progress(int(f * 1000), 1000),
+            )
         if isinstance(tool, ClusterTool):
-            region = None
-            if tool.region is not None:
-                fn = (
-                    box_contains
-                    if isinstance(tool.region, BoxSpec)
-                    else prism_contains
-                )
-                region = fn(self.xyz, valid, tool.region, token)
-            protected = (
-                protected_mask(
-                    self.xyz, valid, effective_intervals(snap["protection"])
-                )
-                if tool.exclude_protected
-                else None
-            )
-            eligible = build_eligible(
-                snap["scope"], region, protected, tool.exclude_protected
-            )
+            eligible = self._tool_eligible(tool, snap, token)
             res = connected_component(
                 self.xyz,
                 eligible,
@@ -360,27 +1056,36 @@ class EditingSession:
             return out
         raise EditError("invalid_tool", "unknown tool")
 
-    def run_select(
+    def _selection_result(
         self, spec: SelectSpec, ticket, token: CancelToken, progress=None
-    ) -> dict:
+    ):
+        """The shared head of select and preview: no state is changed."""
         with self.lock:
             if not self.clock.is_current(ticket):
                 raise Stale()
             snap = {
-                "active": self.active,
+                "active": self._selectable(),
                 "selection": self.selection,
                 "protection": self.protection,
                 "filter": self.display_filter,
+                "layer": self.layer,
+                "layers": list(self.layers),
             }
         snap["display"] = self._display(token)
         snap["scope"] = scope_mask(
             spec.scope, snap["active"], self.valid, snap["display"]
         )
+        what = (
+            "searching duplicates"
+            if isinstance(spec.tool, ThinSpec)
+            else "growing cluster"
+        )
         on_progress = (
             (
                 lambda visited, eligible: progress(
                     min(0.95, visited / max(eligible, 1)),
-                    f"growing cluster: {visited:,} of {eligible:,} eligible",
+                    f"{what}: {visited:,} of {eligible:,}"
+                    + ("" if what == "searching duplicates" else " eligible"),
                 )
             )
             if progress
@@ -392,6 +1097,85 @@ class EditingSession:
             combine_selection(current, operand, spec.op, snap["scope"])
         )
         token.check()
+        return snap, operand, current, new_sel
+
+    def check_detect_planes(self, spec: PlaneDetectSpec) -> None:
+        """Synchronous refusals (422 / 413) before a detect job is queued."""
+        validate_planes(spec)
+        check_budget(
+            PLANE_BYTES_PER_POINT * self.cloud.n,
+            self.budget,
+            "plane detection",
+            "Try a smaller cloud or region.",
+        )
+
+    def run_detect_planes(
+        self,
+        spec: PlaneDetectSpec,
+        scope: str,
+        ticket,
+        token: CancelToken,
+        progress=None,
+    ) -> dict:
+        """Read-only seeded RANSAC over the eligible points: no selection, candidate or history change."""
+        self.check_detect_planes(spec)
+        with self.lock:
+            if not self.clock.is_current(ticket):
+                raise Stale()
+            snap = {
+                "active": self._selectable(),
+                "protection": self.protection,
+                "layer": self.layer,
+                "layers": list(self.layers),
+            }
+        snap["display"] = self._display(token)
+        snap["scope"] = scope_mask(
+            scope, snap["active"], self.valid, snap["display"]
+        )
+        eligible = self._tool_eligible(spec, snap, token)
+        centre = None
+        if self.bounds is not None:
+            lo, hi = self.bounds["min"], self.bounds["max"]
+            centre = ((lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0)
+        found = detect_planes(
+            self.xyz,
+            eligible,
+            spec,
+            token,
+            None
+            if progress is None
+            else lambda f: progress(f, "testing planes"),
+            centre,
+        )
+        token.check()
+        with self.lock:
+            if not self.clock.is_current(ticket):
+                raise Stale()
+        return {
+            "cloud_revision": ticket[0],
+            "scope": scope,
+            "eligible": int(eligible.sum()),
+            "planes": [
+                {
+                    "normal": list(p.normal),
+                    "d": p.d,
+                    "count": p.count,
+                    "rms": p.rms,
+                    "tilt_deg": p.tilt_deg,
+                    "z_centre": p.z_centre,
+                    "bounds": {
+                        "min": list(p.bounds_min),
+                        "max": list(p.bounds_max),
+                    },
+                }
+                for p in found
+            ],
+        }
+
+    def _install_selection(
+        self, spec: SelectSpec, snap: dict, new_sel, ticket, token
+    ):
+        """The shared tail of select and commit: assign, log, bump once."""
         with self.lock:
             if token.cancelled:
                 raise Cancelled()
@@ -413,22 +1197,124 @@ class EditingSession:
             self._selection_scope = spec.scope
             self.scope_stale = False
             self._last_tool_text = _tool_text(spec.tool)
+            self._last_tool_shape = shape_of(
+                spec.tool, snap["filter"], self.bounds
+            )
             self.candidate = None
+            self.pending = None
             self.clock.bump_params()
-            new_ticket = self.clock.ticket()
+            return self.clock.ticket()
+
+    def run_select(
+        self, spec: SelectSpec, ticket, token: CancelToken, progress=None
+    ) -> dict:
+        snap, operand, _cur, new_sel = self._selection_result(
+            spec, ticket, token, progress
+        )
+        new_ticket = self._install_selection(spec, snap, new_sel, ticket, token)
         out = {"selected": int(new_sel.sum()), "operand": int(operand.sum())}
+        if snap.get("plane") is not None:
+            out["plane"] = snap["plane"]
         if spec.evaluate_candidate:
             out["candidate"] = self.run_candidate(new_ticket, token)
         return out
+
+    def run_preview(
+        self, spec: SelectSpec, ticket, token: CancelToken, progress=None
+    ) -> dict:
+        """Compute `S OP shape` and keep it as the one pending preview.
+
+        Never assigns the selection, the candidate or the revision clock.
+        """
+        if spec.op not in PREVIEW_OPS:
+            raise EditError(
+                "invalid_op", "a preview is only for add, subtract, intersect"
+            )
+        snap, operand, current, new_sel = self._selection_result(
+            spec, ticket, token, progress
+        )
+        pending = PendingSelection(
+            uuid.uuid4().hex,
+            ticket,
+            spec,
+            new_sel,
+            snap["filter"],
+            snap["protection"],
+            snap.get("cluster"),
+        )
+        with self.lock:
+            if token.cancelled:
+                raise Cancelled()
+            if not self.clock.is_current(ticket):
+                raise Stale()
+            self.pending = pending
+        out = {
+            "preview_id": pending.id,
+            "selected_after": int(new_sel.sum()),
+            "base_selected": int(current.sum()),
+            "added": int((new_sel & ~current).sum()),
+            "removed": int((current & ~new_sel).sum()),
+            "operand": int(operand.sum()),
+        }
+        if pending.cluster is not None:
+            out["cluster"] = pending.cluster
+        if snap.get("plane") is not None:
+            out["plane"] = snap["plane"]
+        return out
+
+    def check_preview(self, preview_id: str) -> None:
+        """409 unless `preview_id` is the live, current pending preview."""
+        with self.lock:
+            p = self.pending
+            if (
+                p is None
+                or p.id != preview_id
+                or p.ticket != self.clock.ticket()
+            ):
+                raise StaleRevision(
+                    "the preview is obsolete; preview again", self.revision()
+                )
+
+    def commit_pending(
+        self,
+        preview_id: str,
+        ticket,
+        token: CancelToken,
+        evaluate_candidate: bool = True,
+    ) -> dict:
+        """Install exactly the previewed mask (no recompute, no drift)."""
+        with self.lock:
+            if not self.clock.is_current(ticket):
+                raise Stale()
+            self.check_preview(preview_id)
+            p = self.pending
+        snap = {
+            "filter": p.filter,
+            "protection": p.protection,
+            "cluster": p.cluster,
+        }
+        new_ticket = self._install_selection(
+            p.spec, snap, p.new_sel, ticket, token
+        )
+        out = {"selected": int(p.new_sel.sum())}
+        if evaluate_candidate:
+            out["candidate"] = self.run_candidate(new_ticket, token)
+        return out
+
+    def discard_preview(self) -> None:
+        with self.lock:
+            self.pending = None
 
     def run_candidate(self, ticket, token: CancelToken, progress=None) -> dict:
         with self.lock:
             if not self.clock.is_current(ticket):
                 raise Stale()
-            active, selection = self.active, self.selection
+            active, selection = self._selectable(), self.selection
             protection = self.protection
+            layer, layers = self.layer, list(self.layers)
             cluster = self._last_cluster
             tool_text = self._last_tool_text
+            tool_shape = self._last_tool_shape
             if self.scope_stale:
                 raise EditError(
                     "selection_outdated",
@@ -437,10 +1323,16 @@ class EditingSession:
                 )
         display = self._display(token)
         intervals = effective_intervals(protection)
-        protected = protected_mask(self.xyz, self.valid, intervals)
+        protected = self._protected(protection, layer, layers)
+        by_layer = protected_points(layer, layers)
         token.check()
         res = candidate_deletion(
             self.xyz, active, self.valid, selection, protected, display
+        )
+        kept_by_layers = (
+            0
+            if by_layer is None
+            else int((selection & active & self.valid & by_layer).sum())
         )
         token.check()
         cand = Candidate(
@@ -450,8 +1342,13 @@ class EditingSession:
             result=res,
             mode=protection.operation.mode,
             intervals=[list(i) for i in intervals],
+            tilt=None
+            if protection.tilt.level
+            else tilt_to_dict(protection.tilt),
             cluster=cluster,
             tool_text=tool_text,
+            tool_shape=tool_shape,
+            protected_by_layers=kept_by_layers,
         )
         with self.lock:
             if token.cancelled:
@@ -483,6 +1380,7 @@ class EditingSession:
             self._selection_scope = None
             self.scope_stale = False
             self.candidate = None
+            self.pending = None
             self.clock.bump_params()
 
     # ---- edits ---------------------------------------------------------
@@ -507,26 +1405,118 @@ class EditingSession:
             text = description or (
                 f"Deleted {len(ids)} points ({cand.tool_text})"
             )
-            self.history.push("delete", text, ids)
+            self.history.push(
+                "delete",
+                text,
+                ids,
+                _step_tool(cand.tool_text),
+                cand.tool_shape,
+            )
             self.active = with_ids(self.active, ids, False)
             self.selection = _ro(np.zeros(self.cloud.n, dtype=bool))
             self.selection_ops = []
             self._last_cluster = None
             self._changed()
 
+    def _flip(self, entries, back: bool) -> None:
+        # one copy of the mask for the whole move (the deletion sets are
+        # disjoint, so the order does not matter), not one per step under the
+        # session lock; layer steps are flipped in order
+        deletions = [e for e in entries if e.kind != "layer"]
+        if deletions:
+            out = self.active.copy()
+            for e in deletions:
+                out[e.ids] = back
+            out.flags.writeable = False
+            self.active = out
+        self._flip_layers([e for e in entries if e.kind == "layer"], back)
+        self._changed()
+
+    def _flip_layers(self, entries, back: bool) -> None:
+        """Undo (back) or redo layer steps, newest first when going back.
+        A row a flip removes is written back into its step with the
+        attributes it has now, so the flip that returns it restores them."""
+        if not entries:
+            return
+        arr = (
+            np.zeros(self.cloud.n, dtype=np.uint8)
+            if self.layer is None
+            else self.layer.copy()
+        )
+        rows = list(self.layers)
+        for e in reversed(entries) if back else entries:
+            arr[e.ids] = e.frm if back else e.to
+            changed = []
+            for r in reversed(e.rows) if back else e.rows:
+                if r.created == back:  # the row leaves
+                    cur = next((x for x in rows if x.id == r.layer.id), None)
+                    if cur is not None:
+                        rows.remove(cur)
+                        r = replace(r, layer=cur)
+                else:
+                    rows.insert(min(r.index, len(rows)), r.layer)
+                changed.append(r)
+            if e.rows:
+                kept = list(reversed(changed)) if back else changed
+                self.history.replace(e.sid, replace(e, rows=tuple(kept)))
+        self.layers = rows
+        if rows:
+            arr.flags.writeable = False
+            self.layer = arr
+        else:
+            self.layer = None
+        self.layers_rev += 1
+        self._strip_hidden_from_selection()
+
+    def rollback(self, cloud_revision: int, cursor: int) -> None:
+        """Move the marker: later steps' points return, or are deleted again."""
+        with self.lock:
+            self.require_cloud(cloud_revision)
+            entries, back = self.history.rollback(cursor)
+            self._flip(entries, back)
+
     def undo(self, cloud_revision: int) -> None:
         with self.lock:
             self.require_cloud(cloud_revision)
-            entry = self.history.undo()
-            self.active = with_ids(self.active, entry.ids, True)
-            self._changed()
+            if not self.history.can_undo:
+                raise EditError("nothing_to_undo", "nothing to undo")
+            self.rollback(cloud_revision, self.history.cursor - 1)
 
     def redo(self, cloud_revision: int) -> None:
         with self.lock:
             self.require_cloud(cloud_revision)
-            entry = self.history.redo()
-            self.active = with_ids(self.active, entry.ids, False)
-            self._changed()
+            if not self.history.can_redo:
+                raise EditError("nothing_to_redo", "nothing to redo")
+            self.rollback(cloud_revision, self.history.cursor + 1)
+
+    def delete_step(self, cloud_revision: int, sid: int) -> None:
+        """Remove one step only: its points come back (if it was applied),
+        every other step keeps deleting exactly its own set."""
+        with self.lock:
+            self.require_cloud(cloud_revision)
+            entry = self.history.entry(sid)
+            if entry.kind == "layer":
+                if self.history.dependents(sid):
+                    raise EditError(
+                        "step_has_dependents",
+                        "a later step changes the same points or layer; "
+                        "remove that step first",
+                    )
+                if any(
+                    e.sid == sid
+                    for e in self.history.entries[: self.history.cursor]
+                ):
+                    self._flip_layers([entry], True)
+            entry, applied = self.history.delete_step(sid)
+            self._flip(
+                [entry] if applied and entry.kind != "layer" else [], True
+            )
+
+    def rename_step(self, sid: int, name: str | None) -> None:
+        with self.lock:
+            self.history.rename_step(sid, name)
+            self.edit_counter += 1
+            self.unsaved = True
 
     def remove_invalid(self, cloud_revision: int) -> None:
         with self.lock:
@@ -542,8 +1532,8 @@ class EditingSession:
     # ---- queries -------------------------------------------------------
     def nearest(self, point, radius: float) -> dict:
         with self.lock:
-            rev = self.clock.cloud
-            active = self.active
+            rev = (self.clock.cloud, self.layers_rev)
+            active = self._selectable()
             cache = self._tree_cache
         if cache is None or cache[0] != rev:
             idx = np.flatnonzero(active & self.valid)
@@ -565,21 +1555,57 @@ class EditingSession:
         }
 
     def render(
-        self, budget: int, mode: str, attr: str | None = None
+        self,
+        budget: int,
+        mode: str,
+        attr: str | None = None,
+        step: int | None = None,
+        preview: str | None = None,
     ) -> tuple[RenderArrays, dict]:
         if mode not in RENDER_MODES:
             raise EditError("invalid_mode", f"unknown render mode {mode}")
+        if mode == "step" and step is None:
+            raise EditError("invalid_step", "mode step needs a step id")
+        if preview is not None and mode != "edited":
+            raise EditError(
+                "invalid_mode", "a preview is drawn only in mode edited"
+            )
         with self.lock:
             active, selection = self.active, self.selection
             protection = self.protection
             rev = self.revision()
+            pend = self.pending
+            if (
+                pend is None
+                or pend.id != preview
+                or pend.ticket != self.clock.ticket()
+            ):
+                pend = None
+            step_ids = self.history.entry(step).ids if mode == "step" else None
+            hidden = hidden_points(self.layer, self.layers)
+            layer = self.layer if self.layers else None
+            layers = list(self.layers)
         display = self._display()
         valid = self.valid
-        base = {
-            "edited": active & valid,
-            "original": valid.copy(),
-            "deleted": ~active & valid,
-        }[mode]
+        if mode == "step":
+            # the step's stored id set, never a recomputation
+            in_step = np.zeros(self.cloud.n, dtype=bool)
+            in_step[step_ids] = True
+            base = in_step & valid
+            selection = np.zeros(self.cloud.n, dtype=bool)
+        else:
+            if hidden is None:
+                edited, original = active & valid, valid.copy()
+            else:
+                # a hidden layer is not drawn, in the edited view and in the
+                # original view (where its deleted points still are)
+                edited = active & valid & ~hidden
+                original = valid & ~(active & hidden)
+            base = {
+                "edited": edited,
+                "original": original,
+                "deleted": ~active & valid,
+            }[mode]
         eligible = np.flatnonzero(base & display)
         m = len(eligible)
         sampled = (
@@ -591,23 +1617,35 @@ class EditingSession:
                 )
             ]
         )
-        protected = protected_mask(
-            self.xyz, valid, effective_intervals(protection)
-        )
+        protected = self._protected(protection, layer, layers)
         sel = selection & active & valid
+        shown = sel
+        if pend is not None:
+            new = pend.new_sel & active & valid
+            shown = sel | new
         if m > budget:
-            # flagged points (selected / candidate / protected) are always drawn, up to budget // 2 extra
-            flagged = np.setdiff1d(
-                eligible[sel[eligible]], sampled, assume_unique=True
-            )
+            # flagged points (selected / candidate / protected / the preview
+            # delta) are always drawn, up to budget // 2 extra; the preview
+            # delta goes first so it is never crowded out by the old selection
             cap = budget // 2
-            if len(flagged) > cap:
-                flagged = flagged[
-                    np.floor(
-                        np.linspace(0, len(flagged), cap, endpoint=False)
-                    ).astype(np.int64)
-                ]
-            sampled = np.union1d(sampled, flagged)
+            groups = [shown]
+            if pend is not None:
+                groups = [(new & ~sel) | (sel & ~new), shown]
+            extra = np.empty(0, dtype=eligible.dtype)
+            for g in groups:
+                flagged = np.setdiff1d(
+                    eligible[g[eligible]], sampled, assume_unique=True
+                )
+                flagged = np.setdiff1d(flagged, extra, assume_unique=True)
+                room = cap - len(extra)
+                if len(flagged) > room:
+                    flagged = flagged[
+                        np.floor(
+                            np.linspace(0, len(flagged), room, endpoint=False)
+                        ).astype(np.int64)
+                    ]
+                extra = np.union1d(extra, flagged)
+            sampled = np.union1d(sampled, extra)
         ids = sampled.astype(np.uint32)
         if self.bounds is None:
             origin = (0.0, 0.0, 0.0)
@@ -616,15 +1654,36 @@ class EditingSession:
             origin = tuple(((lo + hi) / 2.0).tolist())
         coords = (self.xyz[ids] - np.array(origin)).astype(np.float32)
         flags = np.zeros(len(ids), dtype=np.uint8)
-        flags[sel[ids] & ~protected[ids]] |= FLAG_SELECTED
-        flags[sel[ids] & protected[ids]] |= FLAG_PROTECTED
-        flags[~active[ids]] |= FLAG_DELETED
+        if pend is None:
+            flags[sel[ids] & ~protected[ids]] |= FLAG_SELECTED
+            flags[sel[ids] & protected[ids]] |= FLAG_PROTECTED
+        else:
+            # selected = the previewed result; the delta against the committed
+            # selection is "will be added" / "will be removed" (still drawn)
+            flags[new[ids] & ~protected[ids]] |= FLAG_SELECTED
+            flags[shown[ids] & protected[ids]] |= FLAG_PROTECTED
+            flags[(new & ~sel)[ids]] |= FLAG_PREVIEW_ADD
+            flags[(sel & ~new)[ids]] |= FLAG_PREVIEW_REMOVE
+        if mode != "step":
+            flags[~active[ids]] |= FLAG_DELETED
         values, kind = self._attr_values(attr, ids) if attr else (None, None)
         return RenderArrays(
-            coords, ids, flags, origin, m, values, kind, attr
+            coords,
+            ids,
+            flags,
+            origin,
+            m,
+            values,
+            kind,
+            attr,
+            None if pend is None else pend.id,
+            None if layer is None else layer[ids],
         ), rev
 
     def _attr_values(self, name: str, ids: np.ndarray):
+        if name == NORMAL_ATTR:
+            # computed from the points this render returns (display aid, not a file field)
+            return normals_u32(self.xyz[ids]), "u32"
         idx = [i for i, s in enumerate(self.cloud.schema) if s.name == name]
         if not idx:
             raise EditError("unknown_field", f"no field named {name}")
@@ -639,16 +1698,81 @@ class EditingSession:
             return col.astype("<i4"), "i32"
         return col.astype("<f4"), "f32"
 
-    def export_mask(self, scope: str) -> np.ndarray:
+    def _export_base(self, scope: str):
+        """The scope's mask plus the layer array and rows it was taken with:
+        the arrays are copy-on-write and read-only, so holding the references
+        is a snapshot that later layer edits cannot change."""
         with self.lock:
             active, selection = self.active, self.selection
+            layer, rows = self.layer, list(self.layers)
         if scope == "active":
-            return active
-        if scope == "selected":
-            return selection & active & self.valid
-        if scope == "displayed":
-            return active & self.valid & self._display()
-        raise EditError("invalid_scope", f"unknown export scope {scope}")
+            mask = active
+        elif scope == "selected":
+            mask = selection & active & self.valid
+        elif scope == "displayed":
+            mask = active & self.valid & self._display()
+        else:
+            raise EditError("invalid_scope", f"unknown export scope {scope}")
+        return mask, layer, rows
+
+    def export_mask(
+        self, scope: str, layers: list[int] | None = None
+    ) -> np.ndarray:
+        """The points an export holds. `layers` limits it to the chosen layer
+        ids (0 = main); visibility is ignored. None means every layer."""
+        mask, layer, rows = self._export_base(scope)
+        if layers is None:
+            return mask
+        known = {x.id for x in rows}
+        chosen = set(layers)
+        if not chosen:
+            raise EditError("no_layers_chosen", "choose at least one layer")
+        unknown = chosen - known - {0}
+        if unknown:
+            raise EditError("unknown_layer", f"no such layer: {min(unknown)}")
+        if chosen >= known | {0}:
+            return mask
+        lut = np.zeros(256, dtype=bool)
+        lut[sorted(chosen)] = True
+        if layer is None:
+            return mask  # only main exists and it is chosen
+        return mask & lut[layer]
+
+    def export_layer_plan(self, scope: str, layers: list[int] | None = None):
+        """One file per layer: ([(layer id, name)], mask_of). Main (id 0,
+        named "main") comes first, then the layers in row order. `mask_of`
+        builds one layer's mask from the snapshot taken here, so memory never
+        holds all the masks at once and a layer edit made meanwhile changes
+        nothing."""
+        mask, layer, rows = self._export_base(scope)
+        if not rows:
+            raise EditError("no_layers", "this session has no layers")
+        known = {x.id for x in rows}
+        if layers is not None:
+            chosen = set(layers)
+            if not chosen:
+                raise EditError("no_layers_chosen", "choose at least one layer")
+            unknown = chosen - known - {0}
+            if unknown:
+                raise EditError(
+                    "unknown_layer", f"no such layer: {min(unknown)}"
+                )
+        else:
+            chosen = known | {0}
+        plan = [(0, "main")] if 0 in chosen else []
+        plan += [(x.id, x.name) for x in rows if x.id in chosen]
+
+        def mask_of(layer_id: int) -> np.ndarray:
+            return mask & (layer == layer_id)
+
+        return plan, mask_of
+
+
+def _step_tool(tool_text: str) -> str:
+    # an older build knows no "sparse", "layer", "plane" or "thin" step tool: it loads such a step as a plain selection
+    if tool_text in ("sparse", "layer", "plane", "thin"):
+        return "selection"
+    return "polygon" if tool_text == "prism" else tool_text
 
 
 def _tool_text(tool) -> str:
@@ -658,6 +1782,9 @@ def _tool_text(tool) -> str:
 
 def candidate_summary(cand: Candidate) -> dict:
     r = cand.result
+    effective = {"mode": cand.mode, "intervals": cand.intervals}
+    if cand.tilt is not None:
+        effective["tilt"] = cand.tilt
     return {
         "candidate_id": cand.id,
         "cloud_revision": cand.cloud_revision,
@@ -669,9 +1796,7 @@ def candidate_summary(cand: Candidate) -> dict:
         "bounds": None
         if r.bounds is None
         else {"min": list(r.bounds[0]), "max": list(r.bounds[1])},
-        "effective_protection": {
-            "mode": cand.mode,
-            "intervals": cand.intervals,
-        },
+        "effective_protection": effective,
         "cluster": cand.cluster,
+        "protected_by_layers": cand.protected_by_layers,
     }

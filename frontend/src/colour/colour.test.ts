@@ -1,24 +1,20 @@
 import { expect, test } from "vitest";
 import type { FieldInfo } from "../state/types";
-import { colourize, colourOptions, decodePackedRgb, heightRamp } from "./modes";
+import { createAppStore } from "../state/app";
+import { sessionFixture } from "../testing/fixtures";
+import { layerColourKey } from "./key";
+import { colourize, colourOptions, colourOptionsFor, colourizeMasked, heightRamp, layerPaletteRgb } from "./modes";
 import { PALETTE } from "./palette";
 
 const f = (name: string, type = "F", size = 4): FieldInfo => ({ name, type, size, count: 1 });
 const XYZ = [f("x"), f("y"), f("z")];
 
-test("UI-17 options come from the schema; absent fields are disabled with a reason", () => {
-  const none = colourOptions(XYZ);
-  expect(none.find((o) => o.id === "height")?.enabled).toBe(true);
-  expect(none.find((o) => o.id === "flat")?.enabled).toBe(true);
-  for (const id of ["rgb", "intensity"]) {
-    const o = none.find((x) => x.id === id);
-    expect(o?.enabled).toBe(false);
-    expect(o?.reason).toMatch(/no .*field/i);
+test("UI-17 options are Turbo, Viridis, Grey, Distance to viewer and Normal shading, all enabled, whatever the schema holds", () => {
+  for (const schema of [XYZ, [...XYZ, f("rgba", "U"), f("intensity")]]) {
+    const o = colourOptions(schema);
+    expect(o.map((x) => x.id)).toEqual(["turbo", "viridis", "flat", "distance", "normals"]);
+    expect(o.every((x) => x.enabled && (x.id === "normals" ? x.attr === "@normal" : x.attr === undefined))).toBe(true);
   }
-  const rgb = colourOptions([...XYZ, f("rgba", "U")]);
-  expect(rgb.find((o) => o.id === "rgb")).toMatchObject({ enabled: true, attr: "rgba" });
-  const inten = colourOptions([...XYZ, f("intensity")]);
-  expect(inten.find((o) => o.id === "intensity")).toMatchObject({ enabled: true, attr: "intensity" });
 });
 
 test("UI-17 height ramp spans bounds min/max and is clamped", () => {
@@ -27,15 +23,6 @@ test("UI-17 height ramp spans bounds min/max and is clamped", () => {
   expect(heightRamp(0, -5, 5)).not.toEqual(heightRamp(5, -5, 5));
   expect(heightRamp(1, 2, 2)).toHaveLength(3); // zero range is finite
   expect(heightRamp(1, 2, 2).every(Number.isFinite)).toBe(true);
-});
-
-test("UI-17 packed RGB decodes 0xRRGGBB from float32 or uint32 bits, alpha ignored", () => {
-  const u = new Uint32Array([0xff8040, 0x7fff8040 & 0xffffffff, 0x01ff0000]);
-  expect(decodePackedRgb(u, 0)).toEqual([1, 128 / 255, 64 / 255]);
-  expect(decodePackedRgb(u, 1)).toEqual([1, 128 / 255, 64 / 255]);
-  expect(decodePackedRgb(u, 2)).toEqual([1, 0, 0]);
-  const asF = new Float32Array(new Uint32Array([0x00ff8040]).buffer);
-  expect(decodePackedRgb(new Uint32Array(asF.buffer), 0)).toEqual([1, 128 / 255, 64 / 255]);
 });
 
 test("UI-17 flags override the base colour with the palette", () => {
@@ -58,14 +45,53 @@ test("UI-17 flags override the base colour with the palette", () => {
   expect([...noDel.slice(9, 12)]).toEqual(f32(PALETTE.base));
 });
 
-test("UI-17 rgb and intensity modes use the attr block", () => {
-  const attr = new Uint32Array([0xff0000, 0x00ff00]);
-  const base = { coords: new Float32Array(6), flags: new Uint8Array(2), count: 2, origin: [0, 0, 0] as [number, number, number] };
-  const rgb = colourize({ ...base, attr, attrKind: "u32" }, { mode: "rgb", bounds: null, markDeleted: false });
-  expect([...rgb.slice(0, 6)]).toEqual([1, 0, 0, 0, 1, 0]);
-  const inten = colourize(
-    { ...base, attr: new Float32Array([0, 10]), attrKind: "f32" },
-    { mode: "intensity", bounds: null, markDeleted: false },
-  );
-  expect(inten[0]).toBeLessThan(inten[3]);
+test("UI-852 colourOptionsFor is the five modes for a layer-less session and adds an enabled Layers entry (no render attribute) when the session has layers", () => {
+  expect(colourOptionsFor(XYZ, false).map((x) => x.id)).toEqual(["turbo", "viridis", "flat", "distance", "normals"]);
+  const o = colourOptionsFor(XYZ, true);
+  expect(o.map((x) => x.id)).toEqual(["turbo", "viridis", "flat", "distance", "normals", "layers"]);
+  expect(o[5]).toMatchObject({ label: "Layers", enabled: true });
+  expect(o[5].attr).toBeUndefined();
+});
+
+const PT = (n: number) => ({ coords: new Float32Array(n * 3), flags: new Uint8Array(n), count: n, origin: [0, 0, 0] as [number, number, number] });
+
+test("UI-853 Layers mode: sub layer points take their layer colour by colour index, main stays grey, and the selected, protected and preview colours still win", () => {
+  const rgb = layerPaletteRgb([
+    { id: 1, name: "A", colour: 0, visible: true, count: 1, bounds: null },
+    { id: 4, name: "B", colour: 2, visible: true, count: 1, bounds: null },
+  ]);
+  const r = { ...PT(6), layer: new Uint8Array([0, 1, 4, 1, 1, 1]) };
+  r.flags = new Uint8Array([0, 0, 0, 1, 2, 8]); // main, A, B, selected, protected, preview-add
+  const { colours, ovr } = colourizeMasked(r, { mode: "layers", bounds: null, markDeleted: false, layerRgb: rgb });
+  const at = (i: number) => [...colours.slice(3 * i, 3 * i + 3)];
+  const f = (c: readonly number[]) => c.map(Math.fround);
+  expect(at(0)).toEqual(f(PALETTE.base));
+  expect(at(1)).toEqual(f(rgb[1]!));
+  expect(at(2)).toEqual(f(rgb[4]!));
+  expect(rgb[1]).not.toEqual(rgb[4]);
+  expect(at(3)).toEqual(f(PALETTE.selected));
+  expect(at(4)).toEqual(f(PALETTE.protected));
+  expect(at(5)).toEqual(f(PALETTE.previewAdd));
+  expect([...ovr]).toEqual([0, 0, 0, 1, 1, 1]);
+});
+
+test("UI-854 Layers mode with no layer block or an unknown id falls back to the base grey; the other modes ignore a layer block", () => {
+  const rgb = layerPaletteRgb([{ id: 1, name: "A", colour: 0, visible: true, count: 1, bounds: null }]);
+  const grey = [...PALETTE.base].map(Math.fround);
+  const none = colourizeMasked(PT(2), { mode: "layers", bounds: null, markDeleted: false, layerRgb: rgb }).colours;
+  expect([...none.slice(0, 3)]).toEqual(grey);
+  const r = { ...PT(2), layer: new Uint8Array([9, 1]) };
+  const out = colourizeMasked(r, { mode: "layers", bounds: null, markDeleted: false, layerRgb: rgb }).colours;
+  expect([...out.slice(0, 3)]).toEqual(grey);
+  const flat = colourizeMasked(r, { mode: "flat", bounds: null, markDeleted: false, layerRgb: rgb }).colours;
+  expect([...flat.slice(3, 6)]).toEqual(grey);
+});
+
+test("UI-855 the colour cache key follows the layer colours only in Layers mode", () => {
+  const st = (mode: "turbo" | "layers", colour: number) => {
+    const s = createAppStore().get();
+    return { ...s, colour: { ...s.colour, mode }, session: sessionFixture({ layers: [{ id: 1, name: "A", colour, visible: true, count: 1, bounds: null }] }) };
+  };
+  expect(layerColourKey(st("layers", 0), false)).not.toBe(layerColourKey(st("layers", 1), false));
+  expect(layerColourKey(st("turbo", 0), false)).toBe(layerColourKey(st("turbo", 1), false));
 });

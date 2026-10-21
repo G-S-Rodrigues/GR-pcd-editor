@@ -287,7 +287,36 @@ def test_clu_32_two_points_at_exactly_the_cell_diagonal_in_one_cell():
     assert ids(res) == {2, 3}
 
 
-def test_clu_33_partial_prefix_with_overshoot_of_one_round():
+def _tree_prefix_oracle(xyz, eligible, seed_id, radius, limit):
+    """Independent oracle (cKDTree hop BFS): the first `limit` points by
+    (hop, distance to the seed squared, index)."""
+    idx = np.flatnonzero(eligible)
+    pts = xyz[idx]
+    r_eff = radius * (1.0 + CLUSTER_REL)
+    tree = cKDTree(pts)
+    local = int(np.searchsorted(idx, seed_id))
+    hop = np.full(len(idx), -1, dtype=np.int64)
+    hop[local] = 0
+    frontier = [local]
+    level = 0
+    while frontier:
+        level += 1
+        nxt = []
+        for p in frontier:
+            for q in tree.query_ball_point(pts[p], r_eff * (1 + 1e-12)):
+                d = pts[p] - pts[q]
+                if hop[q] < 0 and (d * d).sum() <= r_eff * r_eff:
+                    hop[q] = level
+                    nxt.append(q)
+        frontier = nxt
+    members = np.flatnonzero(hop >= 0)
+    d = pts[members] - pts[local]
+    d2 = (d * d).sum(axis=1)
+    order = np.lexsort((idx[members], d2, hop[members]))
+    return np.sort(idx[members][order[:limit]])
+
+
+def test_clu_33_partial_is_exactly_the_nearest_limit_points():
     xyz, _ = room_rows(30_000, 3)
     eligible = np.ones(len(xyz), dtype=bool)
     full = connected_component(xyz, eligible, 0, 0.5)
@@ -296,10 +325,145 @@ def test_clu_33_partial_prefix_with_overshoot_of_one_round():
         xyz, eligible, 0, 0.5, max_points=limit, on_limit="partial"
     )
     assert res.complete is False and res.limit == limit
-    assert limit < len(res.ids) < len(full.ids)
+    assert len(res.ids) == limit
     assert set(res.ids.tolist()) <= set(full.ids.tolist())
-    # everything in the partial is within the component, and seed is in it
     assert 0 in set(res.ids.tolist())
+    assert np.array_equal(
+        res.ids, _tree_prefix_oracle(xyz, eligible, 0, 0.5, limit)
+    )
+
+
+def _brute_prefix(xyz, eligible, seed_id, radius, limit):
+    """Oracle (A4): brute-force pairwise d2 <= r_eff2 adjacency, level BFS,
+    lexsort by (hop, d2 to the seed, index). Small clouds only."""
+    idx = np.flatnonzero(eligible)
+    pts = xyz[idx]
+    r_eff = radius * (1.0 + CLUSTER_REL)
+    diff = pts[:, None, :] - pts[None, :, :]
+    adj = (diff * diff).sum(axis=2) <= r_eff * r_eff
+    local = int(np.searchsorted(idx, seed_id))
+    hop = np.full(len(idx), -1, dtype=np.int64)
+    hop[local] = 0
+    frontier = np.array([local])
+    level = 0
+    while len(frontier):
+        level += 1
+        reach = adj[frontier].any(axis=0) & (hop < 0)
+        hop[reach] = level
+        frontier = np.flatnonzero(reach)
+    members = np.flatnonzero(hop >= 0)
+    d = pts[members] - pts[local]
+    d2 = (d * d).sum(axis=1)
+    order = np.lexsort((idx[members], d2, hop[members]))
+    return np.sort(idx[members][order[:limit]]), len(members)
+
+
+def _lattice():
+    g = np.arange(12) * 0.25
+    x, y = np.meshgrid(g, g, indexing="ij")
+    return np.column_stack([x.ravel(), y.ravel(), np.zeros(144)]), 0.25
+
+
+def _clu44_cases():
+    out = []
+    for fuzz in (1, 2, 3):
+        xyz, _ = room_rows(2_500, fuzz)
+        out.append((f"room{fuzz}", xyz, 1.2))
+        rng = np.random.default_rng(50 + fuzz)
+        out.append((f"cloud{fuzz}", rng.uniform(0, 4, (1_500, 3)), 0.45))
+    lat, r = _lattice()
+    out.append(("lattice", lat, r))
+    return out
+
+
+@pytest.mark.parametrize(
+    "name,xyz,radius", _clu44_cases(), ids=[c[0] for c in _clu44_cases()]
+)
+def test_clu_44_exact_cap_equals_the_nearest_prefix_oracle(name, xyz, radius):
+    eligible = np.ones(len(xyz), dtype=bool)
+    _, size = _brute_prefix(xyz, eligible, 0, radius, 1)
+    assert size > 20, name
+    for limit in (1, 7, size // 3, size - 1):
+        want, _ = _brute_prefix(xyz, eligible, 0, radius, limit)
+        got = connected_component(
+            xyz, eligible, 0, radius, max_points=limit, on_limit="partial"
+        )
+        assert len(got.ids) == limit, (name, limit)
+        assert np.array_equal(got.ids, want), (name, limit)
+
+
+def _reaches_all(xyz, ids_, seed_id, radius):
+    r_eff = radius * (1.0 + CLUSTER_REL)
+    pts = xyz[ids_]
+    diff = pts[:, None, :] - pts[None, :, :]
+    adj = (diff * diff).sum(axis=2) <= r_eff * r_eff
+    seen = np.zeros(len(ids_), dtype=bool)
+    start = int(np.searchsorted(ids_, seed_id))
+    seen[start] = True
+    frontier = np.array([start])
+    while len(frontier):
+        reach = adj[frontier].any(axis=0) & ~seen
+        seen |= reach
+        frontier = np.flatnonzero(reach)
+    return bool(seen.all())
+
+
+def test_clu_45_the_result_is_connected_through_the_seed_even_on_a_u_shape():
+    arm = [(0.0, 0.5 * i, 0.0) for i in range(21)]  # left arm, y 0..10
+    right = [(1.0, 0.5 * i, 0.0) for i in range(21)]
+    bottom = [(0.5, 0.0, 0.0)]
+    xyz = np.array(arm + right + bottom)
+    eligible = np.ones(len(xyz), dtype=bool)
+    seed_id = (
+        20  # top of the left arm, 1.0 across the gap from the right arm top
+    )
+    for limit in (5, 15, 30):
+        res = connected_component(
+            xyz, eligible, seed_id, 0.5, max_points=limit, on_limit="partial"
+        )
+        assert len(res.ids) == limit
+        assert _reaches_all(xyz, res.ids, seed_id, 0.5), limit
+    res = connected_component(
+        xyz, eligible, seed_id, 0.5, max_points=15, on_limit="partial"
+    )
+    assert set(res.ids.tolist()) == set(range(6, 21))  # down the left arm
+    for seed in (1, 2):
+        rx, _ = room_rows(2_500, seed)
+        e = np.ones(len(rx), dtype=bool)
+        res = connected_component(
+            rx, e, 0, 1.2, max_points=300, on_limit="partial"
+        )
+        assert _reaches_all(rx, res.ids, 0, 1.2)
+
+
+def test_clu_46_limit_equal_to_the_size_is_complete_and_the_order_is_stable():
+    xyz, _ = room_rows(3_000, 5)
+    e = np.ones(len(xyz), dtype=bool)
+    full = connected_component(xyz, e, 0, 1.2)
+    size = len(full.ids)
+    same = connected_component(
+        xyz, e, 0, 1.2, max_points=size, on_limit="partial"
+    )
+    assert same.complete is True and np.array_equal(same.ids, full.ids)
+    less = connected_component(
+        xyz, e, 0, 1.2, max_points=size - 1, on_limit="partial"
+    )
+    assert less.complete is False and len(less.ids) == size - 1
+    one = connected_component(xyz, e, 0, 1.2, max_points=1, on_limit="partial")
+    assert one.ids.tolist() == [0] and one.complete is False
+    again = connected_component(
+        xyz, e, 0, 1.2, max_points=size - 1, on_limit="partial"
+    )
+    assert np.array_equal(less.ids, again.ids)
+
+
+@pytest.mark.parametrize("bad", [0, -3])
+def test_clu_48_max_points_below_one_is_refused(bad):
+    with pytest.raises(EditError) as err:
+        connected_component(
+            XYZ, np.ones(N, bool), 0, 0.5, max_points=bad, on_limit="partial"
+        )
+    assert err.value.code == "invalid_max_points"
 
 
 def test_clu_34_cancel_inside_a_round_and_from_progress():
@@ -332,3 +496,12 @@ def test_clu_36_radius_too_small_for_the_extent_raises_cleanly():
         connected_component(pts, np.ones(2, bool), 0, 1e-5)
     assert err.value.code == "radius_too_small"
     assert "at least" in err.value.message
+
+
+def test_api_102_cluster_default_max_points_is_500():
+    from gr_pcd.api.schemas import ClusterToolBody
+    from gr_pcd.session.codec import ClusterTool as CodecClusterTool
+
+    body = ClusterToolBody(type="cluster", seed_id=1, radius=1.0)
+    assert body.to_spec().max_points == 500
+    assert CodecClusterTool(1, 1.0).max_points == 500

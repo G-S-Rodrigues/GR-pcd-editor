@@ -19,8 +19,8 @@ from gr_pcd.session.errors import (
     NotFoundError,
     ReplaceConflict,
 )
-from gr_pcd.session.exporter import export_session
-from gr_pcd.session.jobs import SUPERSEDED, JobManager
+from gr_pcd.session.exporter import export_per_layer, export_session
+from gr_pcd.session.jobs import CANCELS, JobManager
 from gr_pcd.settings import Settings
 
 
@@ -30,6 +30,7 @@ class Download:
     filename: str
     edit_counter: int = 0
     session_id: str = ""
+    kind: str = ""  # the work sub folder asked of ensure_dir, not a dir name
 
 
 class SessionManager:
@@ -136,8 +137,8 @@ class SessionManager:
         """`body(session, ctx, ticket)`; supersedes older select/candidate."""
         with self._lock:
             session = self.require()
-            if kind in SUPERSEDED:
-                self.jobs.cancel_kinds(SUPERSEDED)
+            if kind in CANCELS:
+                self.jobs.cancel_kinds(CANCELS[kind])
             ticket = session.clock.ticket()
             return self.jobs.submit(
                 kind, lambda ctx: body(session, ctx, ticket)
@@ -149,22 +150,64 @@ class SessionManager:
             lambda s, ctx, t: s.run_select(spec, t, ctx.token, ctx.progress),
         )
 
+    def submit_detect_planes(self, spec, scope: str):
+        return self._submit(
+            "planes",
+            lambda s, ctx, t: s.run_detect_planes(
+                spec, scope, t, ctx.token, ctx.progress
+            ),
+        )
+
+    def submit_preview(self, spec: SelectSpec):
+        return self._submit(
+            "preview",
+            lambda s, ctx, t: s.run_preview(spec, t, ctx.token, ctx.progress),
+        )
+
+    def submit_commit(self, preview_id: str, evaluate_candidate: bool = True):
+        return self._submit(
+            "select",
+            lambda s, ctx, t: s.commit_pending(
+                preview_id, t, ctx.token, evaluate_candidate
+            ),
+        )
+
     def submit_candidate(self):
         return self._submit(
             "candidate",
             lambda s, ctx, t: s.run_candidate(t, ctx.token, ctx.progress),
         )
 
-    def submit_export(self, fmt: str, scope: str):
+    def submit_export(
+        self,
+        fmt: str,
+        scope: str,
+        layers: list[int] | None = None,
+        per_layer: bool = False,
+    ):
         export_id = uuid.uuid4().hex
+
+        def per_layer_body(session, ctx, _ticket):
+            summary = export_per_layer(
+                session, self._dir("exports"), fmt, scope, ctx.token, layers
+            )
+            for f in summary["files"]:
+                self.downloads[f["export_id"]] = Download(
+                    f.pop("path"), f["filename"], kind="exports"
+                )
+            return summary
 
         def body(session, ctx, _ticket):
             dest = self._dir("exports") / f"{export_id}.pcd"
-            summary = export_session(session, dest, fmt, scope, ctx.token)
-            self.downloads[export_id] = Download(dest, summary["filename"])
+            summary = export_session(
+                session, dest, fmt, scope, ctx.token, layers=layers
+            )
+            self.downloads[export_id] = Download(
+                dest, summary["filename"], kind="exports"
+            )
             return {"export_id": export_id, **summary}
 
-        return self._submit("export", body)
+        return self._submit("export", per_layer_body if per_layer else body)
 
     def submit_save(self):
         archive_id = uuid.uuid4().hex
@@ -174,7 +217,11 @@ class SessionManager:
             summary = save_archive(session, dest, ctx.token)
             counter = summary.pop("edit_counter")
             self.downloads[archive_id] = Download(
-                dest, summary["filename"], counter, session.id
+                dest,
+                summary["filename"],
+                counter,
+                session.id,
+                "session-archives",
             )
             return {"archive_id": archive_id, **summary}
 
@@ -182,7 +229,9 @@ class SessionManager:
 
     def download(self, download_id: str, kind_dir: str) -> Download:
         d = self.downloads.get(download_id)
-        if d is None or d.path.parent.name != kind_dir or not d.path.exists():
+        # the folder may be `<kind>.u<uid>` (workdir fallback), so the kind is
+        # recorded when the file is made instead of read from the folder name
+        if d is None or d.kind != kind_dir or not d.path.exists():
             raise NotFoundError("no such download")
         return d
 

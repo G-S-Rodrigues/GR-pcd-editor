@@ -239,3 +239,74 @@ def room_rows(n=300_000, seed=7):
         ),
     )
     return np.concatenate(parts), np.concatenate(labels)
+
+
+# Plane-detection room (part 20): floor z ~ 0, ceiling z ~ 3, four walls with MORE points than the ceiling, ghosts
+# under the floor and scattered mid-height. Coordinates are multiples of 2^-8 (dyadic). Labels: 0 floor, 1
+# ceiling, 2 wall, 3 ghost.
+PLANE_FLOOR, PLANE_CEILING, PLANE_WALL, PLANE_GHOST = range(4)
+
+
+def plane_room_rows(n=60_000, seed=11):
+    """Return (xyz float64 (n, 3), labels int8 (n,)). Deterministic for a seed; imports no production code."""
+    import numpy as np
+
+    rng = np.random.default_rng(seed)
+    share = [0.48, 0.10, 0.40, 0.02]
+    counts = [int(n * s) for s in share]
+    counts[0] += n - sum(counts)
+    q = 2.0**-8
+
+    def grid(lo, hi, c):
+        return np.round(rng.uniform(lo, hi, c) / q) * q
+
+    parts, labels = [], []
+
+    def add(label, xyz):
+        parts.append(xyz)
+        labels.append(np.full(len(xyz), label, dtype=np.int8))
+
+    c = counts[PLANE_FLOOR]
+    add(
+        PLANE_FLOOR,
+        np.column_stack(
+            [grid(0, 20, c), grid(0, 24, c), rng.integers(-2, 3, c) * q]
+        ),
+    )
+    c = counts[PLANE_CEILING]
+    add(
+        PLANE_CEILING,
+        np.column_stack(
+            [grid(0, 20, c), grid(0, 24, c), 3.0 + rng.integers(-2, 3, c) * q]
+        ),
+    )
+    c = counts[PLANE_WALL]
+    side = rng.choice(
+        4, c, p=[0.4, 0.3, 0.15, 0.15]
+    )  # the first wall alone has more points than the ceiling
+    u, z = grid(0, 1, c), grid(0, 3, c)
+    add(
+        PLANE_WALL,
+        np.column_stack(
+            [
+                np.where(side == 0, 0.0, np.where(side == 1, 20.0, u * 20)),
+                np.where(side == 2, 0.0, np.where(side == 3, 24.0, u * 24)),
+                z,
+            ]
+        ),
+    )
+    c = counts[PLANE_GHOST]
+    half = c // 2
+    add(
+        PLANE_GHOST,
+        np.column_stack(
+            [
+                grid(0, 20, c),
+                grid(0, 24, c),
+                np.concatenate(
+                    [grid(-2, -0.5, half), grid(0.5, 2.5, c - half)]
+                ),
+            ]
+        ),
+    )
+    return np.concatenate(parts), np.concatenate(labels)

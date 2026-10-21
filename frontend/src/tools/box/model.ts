@@ -23,10 +23,12 @@ const finite3 = (v: readonly number[]) => v.length === 3 && v.every(Number.isFin
 
 export const defaultBox = (center: Vec3): BoxModel => ({
   center: [...center],
-  dimensions: [1, 1, 1],
+  dimensions: [...DEFAULT_BOX_SIZE],
   quat: IDENTITY,
   mode: "inside",
 });
+/** A new or reset box is 3 m on each side (owner ruling, part 12 answers): big enough to see, small enough to be a local edit. */
+export const DEFAULT_BOX_SIZE: Vec3 = [3, 3, 3];
 export const resetBox = defaultBox;
 /** A file just opened: start from a small cube at the pivot, never from the whole cloud (one click on Apply could delete it). */
 export const boxForOpen = (_previous: BoxModel, pivot: Vec3): BoxModel => defaultBox(pivot);
@@ -180,5 +182,15 @@ export function toBoxTool(b: BoxModel) {
     dimensions: [...b.dimensions] as Vec3,
     rpy_deg: quatToRpy(b.quat),
     mode: b.mode,
+  };
+}
+
+/** The inverse of toBoxTool: the editable box of a stored shape (rpy in degrees, roll/pitch/yaw). Parts 14 and 15 reuse it. */
+export function boxFromShape(shape: { center: readonly number[]; dimensions: readonly number[]; rpy_deg: readonly number[]; mode: BoxMode }): BoxModel {
+  return {
+    center: [shape.center[0], shape.center[1], shape.center[2]],
+    dimensions: [shape.dimensions[0], shape.dimensions[1], shape.dimensions[2]],
+    quat: rpyToQuat([shape.rpy_deg[0], shape.rpy_deg[1], shape.rpy_deg[2]]),
+    mode: shape.mode,
   };
 }

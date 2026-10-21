@@ -128,3 +128,182 @@ export function countInXyz(xyz: Float32Array, c: number[], d: number[], slab?: [
   }
   return n;
 }
+
+/**
+ * Tilted floor scene (E2E-44, E2E-45): a 20 x 20 floor grid on the plane z = 0.1 x + 0.05 y (one point per
+ * cell, a vertical offset of -0.02, 0 or +0.02 in a fixed pattern) and a 3 x 3 x 3 ghost block 1..3 m above
+ * that plane at x 2..4, y 12..14. Truth is counted here, independently of the app.
+ */
+export const TILTED = { floor: 400, ghost: 27, a: 0.1, b: 0.05, half: 0.03 };
+
+export function tiltedFloorPcd(): Buffer {
+  const rows: string[] = [];
+  const plane = (x: number, y: number) => TILTED.a * x + TILTED.b * y;
+  for (let x = 0; x < 20; x++) for (let y = 0; y < 20; y++) rows.push(`${x} ${y} ${plane(x, y) + ((x + y) % 3 - 1) * 0.02} 0.5`);
+  for (let x = 2; x < 5; x++) for (let y = 12; y < 15; y++) for (let k = 1; k < 4; k++) rows.push(`${x} ${y} ${plane(x, y) + k} 1.5`);
+  const head = ["# .PCD v.7 - synthetic tilted floor", "VERSION .7", "FIELDS x y z intensity", "SIZE 4 4 4 4", "TYPE F F F F",
+    "COUNT 1 1 1 1", `WIDTH ${rows.length}`, "HEIGHT 1", "VIEWPOINT 0 0 0 1 0 0 0", `POINTS ${rows.length}`, "DATA ascii"];
+  return Buffer.from(`${head.join("\n")}\n${rows.join("\n")}\n`);
+}
+
+/** Tilt angles (deg) whose slab normal is the floor normal. Independent of the app: from the plane equation. */
+export function tiltedFloorAngles(): { rx: number; ry: number } {
+  const len = Math.hypot(TILTED.a, TILTED.b, 1);
+  return { rx: (Math.asin(TILTED.b / len) * 180) / Math.PI, ry: (Math.atan(-TILTED.a) * 180) / Math.PI };
+}
+
+/** Points whose slab coordinate lies in [min, max] (inclusive): the oracle for the tilted protection slab. */
+export function countInTiltedSlab(rows: number[][], rxDeg: number, ryDeg: number, pivot: number[], min: number, max: number): number {
+  const rx = (rxDeg * Math.PI) / 180;
+  const ry = (ryDeg * Math.PI) / 180;
+  const n = [Math.cos(rx) * Math.sin(ry), -Math.sin(rx), Math.cos(rx) * Math.cos(ry)];
+  return rows.filter((r) => {
+    const s = n[0] * (r[0] - pivot[0]) + n[1] * (r[1] - pivot[1]) + n[2] * r[2];
+    return s >= min - 1e-9 && s <= max + 1e-9;
+  }).length;
+}
+
+/**
+ * Dense floor and wall for Normal shading (E2E-79): a 20 x 20 floor at z 0 (0.2 m grid, x 0..19.8) and a wall at
+ * x -5 (y 0..19.8, z 0..3.8, 0.2 m grid). The wall is farther than one normal voxel from the floor, so no voxel
+ * mixes the two surfaces. Truth: the floor normal is +Z, the wall normal +X.
+ */
+export const NORMAL_ROOM_TOTAL = 100 * 100 + 100 * 20;
+export function normalRoomPcd(): Buffer {
+  const rows: string[] = [];
+  for (let i = 0; i < 100; i++) for (let j = 0; j < 100; j++) rows.push(`${(i * 0.2).toFixed(1)} ${(j * 0.2).toFixed(1)} 0 0.5`);
+  for (let j = 0; j < 100; j++) for (let k = 0; k < 20; k++) rows.push(`-5 ${(j * 0.2).toFixed(1)} ${(k * 0.2).toFixed(1)} 0.7`);
+  const head = ["# .PCD v.7 - synthetic normal room", "VERSION .7", "FIELDS x y z intensity", "SIZE 4 4 4 4", "TYPE F F F F",
+    "COUNT 1 1 1 1", `WIDTH ${rows.length}`, "HEIGHT 1", "VIEWPOINT 0 0 0 1 0 0 0", `POINTS ${rows.length}`, "DATA ascii"];
+  return Buffer.from(`${head.join("\n")}\n${rows.join("\n")}\n`);
+}
+
+/**
+ * Sparse-point scene (E2E-121): a dense 40 x 40 floor at z 0 and a dense 40 x 10 wall at x -5 (both on a 0.2 m grid),
+ * and ten floating artifacts: five single points, one triple and one pair, all at least 3 m from the floor and the wall
+ * and from each other. Every floor and wall point has dozens of neighbours within a few grid steps; the artifacts have
+ * at most two. Truth is counted here, independently of the app: the artifacts are the points above z 3.
+ */
+export const SPARSE = { floor: 1600, wall: 400, artifacts: 10 };
+export const SPARSE_TOTAL = SPARSE.floor + SPARSE.wall + SPARSE.artifacts;
+export function sparseRoomPcd(): Buffer {
+  const rows: string[] = [];
+  const g = (i: number) => (i * 0.2).toFixed(1);
+  for (let i = 0; i < 40; i++) for (let j = 0; j < 40; j++) rows.push(`${g(i)} ${g(j)} 0 0.5`);
+  for (let j = 0; j < 40; j++) for (let k = 0; k < 10; k++) rows.push(`-5 ${g(j)} ${g(k)} 0.7`);
+  for (const [x, y, z] of [[1, 1, 3.5], [6.5, 1, 3.5], [1, 6.5, 3.5], [6.5, 6.5, 3.5], [3.8, 3.8, 3.5], [3.8, 0.5, 5], [3.9, 0.5, 5], [3.8, 0.6, 5], [6.5, 3.8, 4.5], [6.6, 3.8, 4.5]]) rows.push(`${x} ${y} ${z} 1.5`);
+  const head = ["# .PCD v.7 - synthetic sparse room", "VERSION .7", "FIELDS x y z intensity", "SIZE 4 4 4 4", "TYPE F F F F",
+    "COUNT 1 1 1 1", `WIDTH ${rows.length}`, "HEIGHT 1", "VIEWPOINT 0 0 0 1 0 0 0", `POINTS ${rows.length}`, "DATA ascii"];
+  return Buffer.from(`${head.join("\n")}\n${rows.join("\n")}\n`);
+}
+
+/**
+ * Oracle for the exact Max points cap (independent of the app): the first `k` points of the seed's component by
+ * (hops from the seed in the radius graph, squared distance to the seed, file index). Brute force, small clouds only.
+ */
+export function clusterNearestTruth(rows: number[][], seed: number, radius: number, k: number): number[] {
+  const r2 = (radius * (1 + 1e-12)) ** 2;
+  const d2 = (a: number[], b: number[]) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
+  const ok = rows.map((r) => Number.isFinite(r[0]) && Number.isFinite(r[1]) && Number.isFinite(r[2]));
+  const hop = new Array<number>(rows.length).fill(-1);
+  hop[seed] = 0;
+  let frontier = [seed];
+  for (let level = 1; frontier.length; level++) {
+    const next: number[] = [];
+    for (const p of frontier) {
+      for (let q = 0; q < rows.length; q++) {
+        if (ok[q] && hop[q] < 0 && d2(rows[p], rows[q]) <= r2) {
+          hop[q] = level;
+          next.push(q);
+        }
+      }
+    }
+    frontier = next;
+  }
+  const members = hop.map((h, i) => (h >= 0 ? i : -1)).filter((i) => i >= 0);
+  members.sort((a, b) => hop[a] - hop[b] || d2(rows[a], rows[seed]) - d2(rows[b], rows[seed]) || a - b);
+  return members.slice(0, k).sort((a, b) => a - b);
+}
+
+const asciiPcd = (title: string, rows: string[]): Buffer => {
+  const head = [`# .PCD v.7 - ${title}`, "VERSION .7", "FIELDS x y z intensity", "SIZE 4 4 4 4", "TYPE F F F F",
+    "COUNT 1 1 1 1", `WIDTH ${rows.length}`, "HEIGHT 1", "VIEWPOINT 0 0 0 1 0 0 0", `POINTS ${rows.length}`, "DATA ascii"];
+  return Buffer.from(`${head.join("\n")}\n${rows.join("\n")}\n`);
+};
+
+/**
+ * Plane-room scene (E2E-186..): a 40 x 40 floor at z 0 (0.25 grid, 1,600 points), a 30 x 30 ceiling at z 3 (900),
+ * two 20 x 10 walls at x -1 and x 11 (200 each, 400), twelve ghosts under the floor (z -0.5) and nine at mid-height
+ * (z 1.5). Every coordinate is dyadic. Truth is counted here, independently of the app. The wall heights are scattered
+ * so that no horizontal row of wall points is a plane of its own (the detection needs 1% of the points to form one);
+ * with `rowWalls` the walls are regular rows, which adds two more rows (z 1.5 and 2.75) to the list for the layout test.
+ */
+export const PLANE_ROOM = { floor: 1600, ceiling: 900, walls: 400, under: 12, mid: 9 };
+export const PLANE_ROOM_TOTAL = PLANE_ROOM.floor + PLANE_ROOM.ceiling + PLANE_ROOM.walls + PLANE_ROOM.under + PLANE_ROOM.mid;
+export function planeRoomPcd(rowWalls = false): Buffer {
+  const rows: string[] = [];
+  for (let i = 0; i < 40; i++) for (let j = 0; j < 40; j++) rows.push(`${i * 0.25} ${j * 0.25} 0 0.5`);
+  for (let i = 0; i < 30; i++) for (let j = 0; j < 30; j++) rows.push(`${i * 0.25} ${j * 0.25} 3 0.6`);
+  for (const x of [-1, 11]) for (let j = 0; j < 20; j++) for (let k = 0; k < 10; k++) rows.push(`${x} ${j * 0.5} ${rowWalls ? 0.5 + k * 0.25 : 0.5 + ((j * 37 + k * 101 + j * k * 11 + (x > 0 ? 53 : 0)) % 64) * 0.03125} 0.7`);
+  for (let i = 0; i < 12; i++) rows.push(`${1.5 + i * 0.5} 2.5 -0.5 0.1`);
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) rows.push(`${4 + i * 0.5} ${4 + j * 0.5} 1.5 0.1`);
+  return asciiPcd("synthetic plane room", rows);
+}
+
+/** Independent oracle: valid rows with |n . p - d| <= t (inclusive), in float32 coordinates as stored. */
+export function countPlane(rows: number[][], n: number[], d: number, t: number): number {
+  return rows.filter((r) => {
+    const p = [Math.fround(r[0]), Math.fround(r[1]), Math.fround(r[2])];
+    return p.every(Number.isFinite) && Math.abs(n[0] * p[0] + n[1] * p[1] + n[2] * p[2] - d) <= t + 1e-9;
+  }).length;
+}
+
+/**
+ * Duplicate scene: `roomPcd` plus 37 rows that repeat floor rows exactly (x 0 y 0..19 and x 1 y 0..16) and 20 rows
+ * 5e-4 away in x from floor rows (x 5, y 0..19). Appended at the end, so the originals come first.
+ */
+export const DUP = { exact: 37, near: 20 };
+export function dupRoomPcd(): Buffer {
+  const base = roomPcd().toString().trimEnd().split("\n");
+  const body = base.slice(base.indexOf("DATA ascii") + 1);
+  const rows = [...body];
+  for (let k = 0; k < DUP.exact; k++) rows.push(`${k < 20 ? 0 : 1} ${k < 20 ? k : k - 20} 0 0.9`);
+  for (let y = 0; y < DUP.near; y++) rows.push(`5.0005 ${y} 0 0.9`);
+  return asciiPcd("synthetic duplicate room", rows);
+}
+
+const fin = (r: number[]) => [0, 1, 2].every((i) => Number.isFinite(r[i]));
+const f32 = (r: number[]) => [Math.fround(r[0]), Math.fround(r[1]), Math.fround(r[2])];
+
+/** Rows (by index) a duplicate selection holds: a valid row with an earlier valid row within eps (inclusive). */
+export function dupTruth(rows: number[][], eps: number): number[] {
+  const p = rows.map((r) => (fin(r) ? f32(r) : null));
+  const out: number[] = [];
+  for (let i = 0; i < p.length; i++) {
+    if (!p[i]) continue;
+    for (let j = 0; j < i; j++) {
+      if (!p[j]) continue;
+      const d2 = (p[i]![0] - p[j]![0]) ** 2 + (p[i]![1] - p[j]![1]) ** 2 + (p[i]![2] - p[j]![2]) ** 2;
+      if (d2 <= eps * eps) {
+        out.push(i);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+/** Rows (by index) a voxel subsample selects: all but the lowest index in each cube [i*edge, (i+1)*edge) from the minimum. */
+export function voxelTruth(rows: number[][], edge: number): number[] {
+  const idx = rows.map((r, i) => (fin(r) ? i : -1)).filter((i) => i >= 0);
+  const p = idx.map((i) => f32(rows[i]));
+  const lo = [0, 1, 2].map((a) => Math.min(...p.map((q) => q[a])));
+  const seen = new Set<string>();
+  const out: number[] = [];
+  idx.forEach((i, k) => {
+    const key = [0, 1, 2].map((a) => Math.floor((p[k][a] - lo[a]) / edge)).join(",");
+    if (seen.has(key)) out.push(i);
+    else seen.add(key);
+  });
+  return out;
+}

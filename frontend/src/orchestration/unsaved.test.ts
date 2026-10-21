@@ -41,7 +41,7 @@ test("UI-94 every control has a distinct non-empty tooltip and no dead 'next ste
     seen.set(t, id);
     expect(t, id).not.toMatch(/next step|not active yet/i);
   }
-  for (const id of ["compare-original", "compare-edited", "compare-overlay", "compare-split", "compare-hold-original", "overlay-opacity", "export-scope", "export-format", "export-go", "export-cancel"]) {
+  for (const id of ["compare-original", "compare-edited", "compare-overlay", "compare-split", "overlay-opacity", "export-scope", "export-format", "export-go", "export-cancel"]) {
     expect(describeControls().some((c) => c.id === id), id).toBe(true);
   }
 });

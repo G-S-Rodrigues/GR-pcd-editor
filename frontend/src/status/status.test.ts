@@ -51,7 +51,7 @@ test("UI-23 unsaved flag, job progress and no-session state", () => {
 });
 
 test("UI-24 mode and frame indicator is always present", () => {
-  expect(modeIndicator(initialState())).toBe("Tool: None · Op: Replace · Scope: Displayed · Frame: file (Z up) · Unit: m (assumed)");
+  expect(modeIndicator(initialState())).toBe("Tool: None · Op: Add · Scope: Displayed · Frame: file (Z up) · Unit: m (assumed)");
   expect(modeIndicator({ ...initialState(), tool: "box", op: "subtract", scope: "active", session: session({ unit: "mm" }) })).toBe(
     "Tool: Box · Op: Subtract · Scope: Active · Frame: file (Z up) · Unit: mm (assumed)",
   );

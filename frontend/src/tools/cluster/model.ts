@@ -1,4 +1,6 @@
-import type { Candidate, Scope, Vec3 } from "../../state/types";
+import type { AppState } from "../../state/app";
+import type { Scope, Vec3 } from "../../state/types";
+import { previewClusterOf } from "../preview";
 import type { BoxTool } from "../../orchestration/tooltypes";
 import type { PrismTool } from "../../orchestration/tooltypes";
 
@@ -17,10 +19,10 @@ export const CLUSTER_LIMIT_TEXT = "Expansion paused: cluster larger than the lim
 
 export const defaultCluster = (): ClusterModel => ({
   seed: null,
-  radius: 0.5,
+  radius: 0.3,
   region: "none",
   excludeProtected: true,
-  maxPoints: 2_000_000,
+  maxPoints: 500,
   scope: "displayed",
 });
 
@@ -53,10 +55,11 @@ export function toClusterTool(m: ClusterModel, box: BoxTool | null, prism: Prism
 }
 
 /** A limit hit selects the partial cluster; say so and how to go on. Null when the cluster is complete. */
-export function clusterLimitText(c: Candidate | null): string | null {
-  const cl = c?.cluster as { complete?: boolean; limit?: number | null } | null | undefined;
+export function clusterLimitText(cluster: unknown): string | null {
+  const cl = cluster as { complete?: boolean; limit?: number | null } | null | undefined;
   if (!cl || cl.complete !== false) return null;
-  return `Stopped at ${(cl.limit ?? 0).toLocaleString("en-US")} points; raise Max points or clear the field for no limit`;
+  const n = (cl.limit ?? 0).toLocaleString("en-US");
+  return `Stopped at limit ${n}: the ${n} points nearest the seed are selected; raise Max points or clear the field for no limit`;
 }
 
 export const MEMORY_GUARD_TEXT =
@@ -66,18 +69,21 @@ export const MEMORY_GUARD_TEXT =
 export const clusterErrorText = (code: string): string | null =>
   code === "component_limit_reached" ? CLUSTER_LIMIT_TEXT : code === "memory_guard" ? MEMORY_GUARD_TEXT : null;
 
-export function clusterPanel(c: Candidate | null): { label: string; value: string }[] {
-  const cl = c?.cluster as
+/** The rows of the Cluster block: the pending preview's cluster while one exists (marked), else the committed candidate's. */
+export function clusterPanel(s: AppState): { label: string; value: string }[] {
+  const cl = previewClusterOf(s) as
     | { seed_id: number; radius: number; size: number; bounds: { min: number[]; max: number[] } }
     | null
     | undefined;
-  if (!c || !cl) return [];
+  if (!cl) return [];
+  const pending = s.preview?.cluster !== undefined;
+  if (!pending && !s.candidate) return [];
   const f = (v: number[]) => v.map((x) => Math.round(x * 1000) / 1000).join(", ");
   return [
     { label: "Seed", value: String(cl.seed_id) },
     { label: "Radius", value: String(cl.radius) },
     { label: "Size", value: String(cl.size) },
-    { label: "Candidates", value: String(c.candidates) },
+    pending ? { label: "Status", value: "Preview, not committed" } : { label: "Candidates", value: String(s.candidate?.candidates ?? 0) },
     { label: "Bounds", value: `${f(cl.bounds.min)} to ${f(cl.bounds.max)}` },
   ];
 }

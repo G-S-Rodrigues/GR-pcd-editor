@@ -1,55 +1,51 @@
 import type { AttrArray } from "../render/parse";
-import type { Bounds, FieldInfo, Vec3 } from "../state/types";
+import { LAYER_COLOURS } from "../layers/model";
+import type { Bounds, FieldInfo, Layer, Vec3 } from "../state/types";
+import { type Tilt, slabCoordinate } from "../inspector/tilt";
 import { PALETTE, type Rgb } from "./palette";
+import { NORMAL_ATTR, decodeNormal, normalColour } from "./normals";
+import { RAMP_STOPS, rampAt } from "./ramps";
 
-export type ColourMode = "height" | "rgb" | "intensity" | "flat";
+export type ColourMode = "turbo" | "viridis" | "flat" | "distance" | "normals" | "layers";
 
 export interface ColourOption {
   id: ColourMode;
   label: string;
   enabled: boolean;
   reason?: string;
+  /** Render attribute this mode needs (only Normal shading: the computed @normal). */
   attr?: string;
 }
 
-export function colourOptions(schema: FieldInfo[]): ColourOption[] {
-  const has = (n: string) => schema.some((s) => s.name === n);
-  const rgbField = has("rgb") ? "rgb" : has("rgba") ? "rgba" : undefined;
+/** The colour modes; every one works on any file, so the schema does not matter. */
+export function colourOptions(_schema: FieldInfo[]): ColourOption[] {
   return [
-    { id: "height", label: "Height (Z)", enabled: true },
-    rgbField
-      ? { id: "rgb", label: "RGB", enabled: true, attr: rgbField }
-      : { id: "rgb", label: "RGB", enabled: false, reason: "This file has no rgb or rgba field" },
-    has("intensity")
-      ? { id: "intensity", label: "Intensity", enabled: true, attr: "intensity" }
-      : { id: "intensity", label: "Intensity", enabled: false, reason: "This file has no intensity field" },
-    { id: "flat", label: "Flat grey", enabled: true },
+    { id: "turbo", label: "Height (Turbo)", enabled: true },
+    { id: "viridis", label: "Height (Viridis)", enabled: true },
+    { id: "flat", label: "Grey", enabled: true },
+    { id: "distance", label: "Distance to viewer", enabled: true },
+    { id: "normals", label: "Normal shading", enabled: true, attr: NORMAL_ATTR },
   ];
 }
 
-const STOPS: Rgb[] = [
-  [0.267, 0.005, 0.329],
-  [0.231, 0.322, 0.546],
-  [0.128, 0.567, 0.551],
-  [0.369, 0.789, 0.383],
-  [0.993, 0.906, 0.144],
-];
-
-/** Viridis-like ramp over [lo, hi], clamped; a zero range maps to the middle. */
-export function heightRamp(z: number, lo: number, hi: number): Rgb {
-  const t = hi > lo ? Math.min(1, Math.max(0, (z - lo) / (hi - lo))) : 0.5;
-  const f = t * (STOPS.length - 1);
-  const i = Math.min(STOPS.length - 2, Math.floor(f));
-  const u = f - i;
-  const a = STOPS[i];
-  const b = STOPS[i + 1];
-  return [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u];
+/** The five modes, plus Layers when the session has layers (a layer-less session never offers it). */
+export function colourOptionsFor(schema: FieldInfo[], hasLayers: boolean): ColourOption[] {
+  return [...colourOptions(schema), ...(hasLayers ? [{ id: "layers" as const, label: "Layers", enabled: true }] : [])];
 }
 
-/** `bits` holds uint32 words (a float32 attr is viewed over the same bytes); layout 0xAARRGGBB, alpha ignored. */
-export function decodePackedRgb(bits: Uint32Array, i: number): Rgb {
-  const v = bits[i];
-  return [((v >>> 16) & 255) / 255, ((v >>> 8) & 255) / 255, (v & 255) / 255];
+const hexRgb = (hex: string): Rgb => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255) as unknown as Rgb;
+const LAYER_RGB: readonly Rgb[] = LAYER_COLOURS.map(hexRgb);
+
+/** Colour per layer id (index 0..255; main and unknown ids are undefined and draw in the base grey). */
+export function layerPaletteRgb(layers: readonly Layer[]): (Rgb | undefined)[] {
+  const out: (Rgb | undefined)[] = new Array(256).fill(undefined);
+  for (const l of layers) out[l.id] = LAYER_RGB[((l.colour % 16) + 16) % 16];
+  return out;
+}
+
+/** Colour of height z over [lo, hi] on a stop table (default Turbo), clamped; a zero range maps to the middle. */
+export function heightRamp(z: number, lo: number, hi: number, stops: readonly Rgb[] = RAMP_STOPS.turbo): Rgb {
+  return rampAt(stops, hi > lo ? (z - lo) / (hi - lo) : 0.5);
 }
 
 export interface ColourInput {
@@ -59,49 +55,63 @@ export interface ColourInput {
   origin: Vec3;
   attr?: AttrArray;
   attrKind?: "f32" | "u32" | "i32";
+  /** Layer id per point (0 = main); used by the Layers mode only. */
+  layer?: Uint8Array;
 }
 export interface ColourContext {
   mode: ColourMode;
   bounds: Bounds | null;
   markDeleted: boolean;
+  /** Colour per layer id for the Layers mode (see `layerPaletteRgb`). */
+  layerRgb?: readonly (Rgb | undefined)[];
+  /** Colour of selected (candidate) points; default PALETTE.selected. */
+  selected?: Rgb;
+  /** Protected slab intervals (Z, file frame) to draw strong; absent when the protection section is collapsed. */
+  region?: { intervals: { min: number; max: number }[]; tilt?: Tilt } | null;
 }
 
 /** Per-point RGB (float 0..1); selection/protection/deleted flags override the base colour. */
 export function colourize(r: ColourInput, ctx: ColourContext): Float32Array {
+  return colourizeMasked(r, ctx).colours;
+}
+
+/**
+ * `colours` as `colourize`; `ovr` is 1 for each point whose colour is a flag, protected or region colour and 0 for the
+ * points the mode colours itself. The Distance shader recolours only the 0 points (the camera decides their colour).
+ */
+export function colourizeMasked(r: ColourInput, ctx: ColourContext): { colours: Float32Array; ovr: Float32Array } {
   const out = new Float32Array(r.count * 3);
+  const ovr = new Float32Array(r.count);
   const lo = ctx.bounds ? ctx.bounds.min[2] : 0;
   const hi = ctx.bounds ? ctx.bounds.max[2] : 0;
-  let bits: Uint32Array | null = null;
-  if (ctx.mode === "rgb" && r.attr) bits = new Uint32Array(r.attr.buffer, r.attr.byteOffset, r.count);
-  let imin = 0;
-  let imax = 0;
-  if (ctx.mode === "intensity" && r.attr) {
-    imin = Number.POSITIVE_INFINITY;
-    imax = Number.NEGATIVE_INFINITY;
-    for (let i = 0; i < r.count; i++) {
-      const v = r.attr[i];
-      if (Number.isFinite(v)) {
-        imin = Math.min(imin, v);
-        imax = Math.max(imax, v);
-      }
-    }
-  }
+  const stops = ctx.mode === "turbo" ? RAMP_STOPS.turbo : ctx.mode === "viridis" ? RAMP_STOPS.viridis : null;
+  const nrm = ctx.mode === "normals" && r.attr && r.attrKind === "u32" ? (r.attr as Uint32Array) : null;
+  const lay = ctx.mode === "layers" && r.layer && ctx.layerRgb ? r.layer : null;
+  const tmp: [number, number, number] = [0, 0, 0];
+  const region = ctx.region && ctx.region.intervals.length > 0 ? ctx.region : null;
+  const tilt = region?.tilt;
+  const inRegion = (i: number) => {
+    const z = r.coords[3 * i + 2] + r.origin[2];
+    const v = tilt ? slabCoordinate([r.coords[3 * i] + r.origin[0], r.coords[3 * i + 1] + r.origin[1], z], tilt) : z;
+    return region?.intervals.some((iv) => v >= iv.min && v <= iv.max) ?? false;
+  };
   for (let i = 0; i < r.count; i++) {
     const f = r.flags[i];
     let c: Rgb;
-    if (f & 2) c = PALETTE.protected;
-    else if (f & 1) c = PALETTE.selected;
+    ovr[i] = 1;
+    if (f & 2) c = region ? PALETTE.protectedStrong : PALETTE.protected;
+    else if (f & 8) c = PALETTE.previewAdd;
+    else if (f & 16) c = PALETTE.previewRemove;
+    else if (f & 1) c = ctx.selected ?? PALETTE.selected;
     else if (f & 4 && ctx.markDeleted) c = PALETTE.deleted;
-    else if (ctx.mode === "height") c = heightRamp(r.coords[3 * i + 2] + r.origin[2], lo, hi);
-    else if (ctx.mode === "rgb" && bits) c = decodePackedRgb(bits, i);
-    else if (ctx.mode === "intensity" && r.attr) {
-      const t = imax > imin ? (r.attr[i] - imin) / (imax - imin) : 0.5;
-      const g = 0.3 + 0.7 * Math.min(1, Math.max(0, t));
-      c = [g, g, g];
-    } else c = PALETTE.base;
+    else if (region && inRegion(i)) c = PALETTE.protectedStrong;
+    else {
+      ovr[i] = 0;
+      c = stops ? heightRamp(r.coords[3 * i + 2] + r.origin[2], lo, hi, stops) : nrm ? normalColour(decodeNormal(nrm[i], tmp)) : lay ? (ctx.layerRgb![lay[i]] ?? PALETTE.base) : PALETTE.base;
+    }
     out[3 * i] = c[0];
     out[3 * i + 1] = c[1];
     out[3 * i + 2] = c[2];
   }
-  return out;
+  return { colours: out, ovr };
 }

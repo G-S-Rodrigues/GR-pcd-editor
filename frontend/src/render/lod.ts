@@ -24,11 +24,11 @@ export const LOD_INTERACT = 150_000;
 export const LOD_FLAGGED_CAP = 50_000;
 /** The full draw comes back this long after the last camera change. */
 export const LOD_IDLE_MS = 250;
-const SELECTED_OR_PROTECTED = 1 | 2;
+const SELECTED_OR_PROTECTED = 1 | 2 | 8 | 16;
 
 /**
  * Draw index for interaction: every `ceil(n / cap)`-th point (deterministic, at most `cap`) plus the selected and
- * protected points (flags 1 and 2; deleted-only points do not count), thinned evenly to `LOD_FLAGGED_CAP` if there
+ * protected points (flags 1, 2 and the preview bits 8, 16; deleted-only points do not count), thinned evenly to `LOD_FLAGGED_CAP` if there
  * are more. Ascending, no duplicates. Null when the cloud already fits the cap: draw everything.
  */
 export function lodIndex(n: number, cap: number, flags?: Uint8Array): Uint32Array | null {

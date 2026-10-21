@@ -154,16 +154,41 @@ open(sys.argv[1], "wb").write(head.encode() + body)
 PY
 if [ -n "$vol" ]; then
     docker run --rm -u 0 --entrypoint sh -v "$vol:/work" gr-pcd-visualizer:local -c \
-        'mkdir -p /work/uploads /work/sessions; chown 0:0 /work/uploads /work/sessions; chmod 755 /work/uploads /work/sessions' >/dev/null 2>&1 || true
+        'mkdir -p /work/uploads /work/sessions /work/exports /work/session-archives; chown 0:0 /work/uploads /work/sessions /work/exports /work/session-archives; chmod 755 /work/uploads /work/sessions /work/exports /work/session-archives' >/dev/null 2>&1 || true
 fi
 code=$(curl -s -o /dev/null -w '%{http_code}' -X POST --data-binary "@$pcd" \
     -H 'Content-Type: application/octet-stream' \
     "http://127.0.0.1:$port/api/session/upload?upload_id=0123456789abcdef0123456789abcdef&filename=t.pcd&replace=true" || true)
 rm -f "$pcd"
-if [ -n "$vol" ] && [ "$code" = "200" ]; then
+# export, then download it: the file lands in exports.u<uid> and must still be served
+exp_code=000
+exp_same=no
+if [ "$code" = "200" ]; then
+    job=$(curl -s -X POST -H 'Content-Type: application/json' \
+        -d '{"format":"binary","scope":"active"}' "http://127.0.0.1:$port/api/session/export" |
+        python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' || true)
+    eid=""
+    for _ in $(seq 1 100); do
+        eid=$(curl -s "http://127.0.0.1:$port/api/jobs/$job" | python3 -c '
+import json, sys
+j = json.load(sys.stdin)
+print((j.get("result") or {}).get("export_id", "") if j["status"] == "complete" else "")' || true)
+        [ -n "$eid" ] && break
+        sleep 0.2
+    done
+    if [ -n "$eid" ]; then
+        out=$(mktemp)
+        exp_code=$(curl -s -o "$out" -w '%{http_code}' "http://127.0.0.1:$port/api/exports/$eid" || true)
+        disk=$(docker exec "$cid" sh -c "cat /work/exports.u*/$eid.pcd | sha256sum | cut -d' ' -f1" 2>/dev/null || true)
+        got=$(sha256sum "$out" | cut -d' ' -f1)
+        [ -n "$disk" ] && [ "$disk" = "$got" ] && exp_same=yes
+        rm -f "$out"
+    fi
+fi
+if [ -n "$vol" ] && [ "$code" = "200" ] && [ "$exp_code" = "200" ] && [ "$exp_same" = "yes" ]; then
     pass CTR-11
 else
-    fail CTR-11 "volume='$vol' upload status=$code (stale root-owned /work/uploads)"
+    fail CTR-11 "volume='$vol' upload=$code export download=$exp_code identical=$exp_same (stale root-owned /work dirs)"
 fi
 
 # CTR-07 failures propagate (AC-31), then clean runs pass

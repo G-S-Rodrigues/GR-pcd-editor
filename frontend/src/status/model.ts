@@ -57,7 +57,7 @@ const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 /** Always-visible mode, operation, scope, frame and unit text. */
 export function modeIndicator(s: AppState): string {
-  const tool = s.interaction === "pick-pivot" ? "Pick pivot" : s.interaction === "pick-floor" ? "Pick floor point" : s.interaction === "pick-slice" ? "Pick slice point" : cap(s.tool);
+  const tool = s.interaction === "pick-pivot" ? "Pick pivot" : s.interaction === "pick-floor" ? "Pick floor point" : cap(s.tool);
   const unit = s.session?.unit ?? "m";
   const view = s.compare === "edited" ? "" : ` · View: ${cap(s.compare)} (read-only)`;
   const floorHint = s.interaction === "pick-floor" && rectAxis(s.camera) === null ? " · Use Front, Back, Left or Right view so the floor is a line" : "";

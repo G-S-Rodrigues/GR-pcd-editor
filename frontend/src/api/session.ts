@@ -23,6 +23,8 @@ export function normaliseState(raw: unknown): SessionState {
   const r = raw as Json;
   return {
     ...(r as unknown as SessionState),
+    counts: { main: 0, hidden: 0, ...(r.counts as object) } as SessionState["counts"],
+    layers: (r.layers as SessionState["layers"]) ?? [],
     bounds: (r.bounds as SessionState["bounds"]) ?? null,
     active_bounds: (r.active_bounds as SessionState["active_bounds"]) ?? null,
     client_state: (r.client_state as Record<string, unknown>) ?? {},
@@ -59,6 +61,28 @@ export interface SelectionBody {
 }
 export const submitSelection = (b: SelectionBody) =>
   postJson<{ id: string }>("/api/session/selection", b);
+export interface PreviewBody {
+  cloud_revision: number;
+  op: SelectionOp;
+  scope: Scope;
+  tool: Json | null;
+}
+export const submitPreview = (b: PreviewBody) => postJson<{ id: string }>("/api/session/selection/preview", b);
+export const submitCommit = (b: { cloud_revision: number; preview_id: string }) =>
+  postJson<{ id: string }>("/api/session/selection/commit", b);
+export const discardPreview = (cloud_revision: number) =>
+  postJson("/api/session/selection/preview/discard", { cloud_revision });
+export interface DetectPlanesBody {
+  cloud_revision: number;
+  scope: Scope;
+  distance: number;
+  max_tilt_deg: number;
+  max_planes: number;
+  region: Json | null;
+  exclude_protected: boolean;
+}
+/** Starts the read-only plane detection job (the result carries `planes`, `eligible` and `cloud_revision`). */
+export const detectPlanes = (b: DetectPlanesBody) => postJson<{ id: string }>("/api/session/planes/detect", b);
 export const submitCandidate = (cloud_revision: number) =>
   postJson<{ id: string }>("/api/session/candidate", { cloud_revision });
 
@@ -67,6 +91,13 @@ const revCall = async (path: string, cloud_revision: number) =>
 export const clearSelection = (rev: number) => revCall("selection/clear", rev);
 export const undo = (rev: number) => revCall("undo", rev);
 export const redo = (rev: number) => revCall("redo", rev);
+export const rollback = async (cloud_revision: number, cursor: number) =>
+  normaliseState(await postJson("/api/session/history/rollback", { cloud_revision, cursor }));
+export const deleteStep = async (cloud_revision: number, sid: number) =>
+  normaliseState(await postJson("/api/session/history/delete-step", { cloud_revision, sid }));
+/** An empty name clears the step's name. Does not change the cloud revision. */
+export const renameStep = async (sid: number, name: string) =>
+  normaliseState(await postJson("/api/session/history/rename", { sid, name }));
 export const removeInvalid = (rev: number) => revCall("remove-invalid", rev);
 export async function apply(cloud_revision: number, candidate_id: string, description: string) {
   return normaliseState(

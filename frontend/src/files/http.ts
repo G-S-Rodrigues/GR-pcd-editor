@@ -43,6 +43,8 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
   }
 }
 
+/** A request with any method and a JSON body (PUT, PATCH, DELETE), through the same session header and error mapping. */
+export const sendJson = <T>(method: string, url: string, body?: unknown) => request<T>(method, url, body);
 export const getJson = <T>(url: string) => request<T>("GET", url);
 export const postJson = <T>(url: string, body?: unknown) => request<T>("POST", url, body ?? {});
 export const deleteJson = <T>(url: string) => request<T>("DELETE", url);

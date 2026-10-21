@@ -4,6 +4,7 @@ import { historyRows } from "../inspector/history";
 import { setGlobal, setLocal, setOperationMode, acknowledge, toProtectionBody } from "../inspector/protection";
 import { createAppStore } from "../state/app";
 import { candidateFixture, sessionFixture } from "../testing/fixtures";
+import { addVertex, closePolygon, emptyPolygon, startDrawing } from "../tools/polygon/model";
 import { createEditor, keyAction } from "./edit";
 
 const hist = (n: number, cursor = n) => ({
@@ -24,6 +25,7 @@ function setup(session = sessionFixture()) {
     clearSelection: vi.fn(async (_r: number) => sessionFixture()),
     refreshState: vi.fn(async () => undefined),
     refreshRender: vi.fn(async () => true),
+    supersedePreview: vi.fn(() => undefined),
   };
   const confirm = vi.fn(() => true);
   const ed = createEditor(store, api, confirm);
@@ -59,6 +61,33 @@ describe("editor actions", () => {
     expect(t.api.refreshRender).toHaveBeenCalled();
     // a new apply after undo clears the redo branch (server state shows fewer entries)
     expect(historyRows(sessionFixture({ history: hist(3, 1) })).map((r) => r.undone)).toEqual([false, true, true]);
+  });
+
+  it("UI-702 apply while a preview job runs supersedes the preview once before the request and deletes the committed candidate only; a dismissed confirm does not", async () => {
+    const t = setup();
+    const order: string[] = [];
+    t.api.supersedePreview.mockImplementation(() => void order.push("supersede"));
+    t.api.apply.mockImplementation(async () => {
+      order.push("apply");
+      return sessionFixture({ revision: { cloud: 4, params: 5 }, history: hist(1) });
+    });
+    t.store.set({
+      candidate: candidateFixture({ candidates: 42 }),
+      draft: true,
+      preview: { id: "p", op: "add", selected_after: 12, base_selected: 10, added: 2, removed: 0 },
+      job: { busy: true, preview: true, progress: null, message: "Computing preview..." },
+    });
+    await t.ed.apply();
+    expect(order).toEqual(["supersede", "apply"]);
+    expect(t.api.apply).toHaveBeenCalledWith(3, "c1", "Delete 42 points (box)");
+    expect(t.store.get().draft).toBe(false);
+    expect(t.store.get().preview).toBeNull();
+    const d = setup();
+    d.confirm.mockReturnValue(false);
+    d.store.set({ candidate: candidateFixture({ candidates: 600 }), job: { busy: true, preview: true, progress: null, message: null } });
+    await d.ed.apply();
+    expect(d.api.supersedePreview).not.toHaveBeenCalled();
+    expect(d.api.apply).not.toHaveBeenCalled();
   });
 
   it("UI-76 apply without a current candidate sends nothing", async () => {
@@ -181,5 +210,34 @@ describe("editor actions", () => {
     t.store.set({ candidate: candidateFixture({ candidates: 42, cloud_revision: 4, params_revision: 5 }) });
     await t.ed.apply();
     expect(t.api.apply).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("Apply with the Polygon tool (13-7, owner request a)", () => {
+  const closedSquare = () => {
+    let p = startDrawing(emptyPolygon());
+    for (const v of [[0, 0], [4, 0], [4, 4], [0, 4]] as [number, number][]) p = addVertex(p, v);
+    return { ...closePolygon(p).state, editing: true };
+  };
+  it("UI-667 a polygon delete leaves the tool armed with an empty polygon, out of edit mode, ready for the next shape", async () => {
+    const t = setup();
+    t.store.update((s) => ({ ...s, tool: "polygon", tools: { ...s.tools, polygon: closedSquare() } }));
+    t.store.set({ candidate: candidateFixture({ candidates: 42 }) });
+    await t.ed.apply();
+    expect(t.store.get().tool).toBe("polygon");
+    expect(t.store.get().tools.polygon).toEqual(emptyPolygon());
+  });
+  it("UI-667 other tools and a refused Apply keep their shapes", async () => {
+    const t = setup();
+    const box = t.store.get().tools.box;
+    t.store.set({ candidate: candidateFixture({ candidates: 42 }) });
+    await t.ed.apply();
+    expect(t.store.get().tools.box).toEqual(box);
+    const stale = setup();
+    stale.store.update((s) => ({ ...s, tool: "polygon", tools: { ...s.tools, polygon: closedSquare() } }));
+    stale.store.set({ candidate: candidateFixture({ candidates: 42 }) });
+    stale.api.apply.mockRejectedValueOnce(new ApiError(409, "stale_revision", "stale"));
+    await stale.ed.apply();
+    expect(stale.store.get().tools.polygon.phase).toBe("closed");
   });
 });

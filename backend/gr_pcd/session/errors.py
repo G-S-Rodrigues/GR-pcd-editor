@@ -25,6 +25,13 @@ class NotFoundError(Exception):
         self.message = message
 
 
+class NoSuchLayer(NotFoundError):
+    code = "no_such_layer"
+
+    def __init__(self, layer_id: int) -> None:
+        super().__init__(f"there is no layer {layer_id}")
+
+
 class ReplaceConflict(Exception):
     code = "unsaved_work"
     message = (

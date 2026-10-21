@@ -145,3 +145,13 @@ describe("also delete the kept points (7c-3)", () => {
     expect(r.error).toMatch(/cloud/i);
   });
 });
+
+describe("Part 18 effective protection line", () => {
+  it("UI-927 an override preview names the protected layers it still keeps, and nothing when there are none", () => {
+    const ep = { mode: "override", intervals: [[5, 6]] };
+    expect(effectiveText(candidateFixture({ effective_protection: ep, protected_by_layers: 9 }))).toMatch(/, plus protected layers \(9 points\)$/);
+    const plain = effectiveText(candidateFixture({ effective_protection: ep }));
+    expect(effectiveText(candidateFixture({ effective_protection: ep, protected_by_layers: 0 }))).toBe(plain);
+    expect(plain).not.toMatch(/plus/);
+  });
+});

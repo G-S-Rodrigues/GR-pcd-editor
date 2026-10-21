@@ -1,4 +1,4 @@
-import type { Download, ExportFormat, ExportScope } from "../files/downloads";
+import type { Download, ExportFormat, ExportScope, PerLayerExport } from "../files/downloads";
 import { type AppState, addNotice } from "../state/app";
 import type { Store } from "../state/store";
 import type { Counts } from "../state/types";
@@ -6,9 +6,14 @@ import type { Counts } from "../state/types";
 export interface ExportOptions {
   scope: ExportScope;
   format: ExportFormat;
+  /** A strict subset of layer ids (0 = main); absent means every layer. */
+  layers?: number[];
+  /** One file per chosen layer. */
+  perLayer?: boolean;
 }
 export interface ExportDeps {
-  startExport(format: ExportFormat, scope: ExportScope): Promise<Download>;
+  startExport(format: ExportFormat, scope: ExportScope, layers?: number[]): Promise<Download>;
+  startExportPerLayer?(format: ExportFormat, scope: ExportScope, layers?: number[]): Promise<PerLayerExport>;
 }
 
 const n = (v: number) => v.toLocaleString("en-US");
@@ -36,10 +41,19 @@ export async function runExport(
   store: Store<AppState>,
   opts: ExportOptions,
   deps: ExportDeps,
-): Promise<{ ok: boolean; message: string }> {
+): Promise<{ ok: boolean; message: string } & Partial<PerLayerExport>> {
   try {
-    const dl = await deps.startExport(opts.format, opts.scope);
-    const message = `Export prepared; your browser decides where it is saved. Suggested name: ${dl.filename}. The source file is never overwritten.`;
+    if (opts.perLayer && deps.startExportPerLayer) {
+      const r = await (opts.layers ? deps.startExportPerLayer(opts.format, opts.scope, opts.layers) : deps.startExportPerLayer(opts.format, opts.scope));
+      const list = r.files.map((f) => `${f.filename} (${n(f.count)} point${f.count === 1 ? "" : "s"})`).join(", ");
+      const skipped = r.skipped.length ? ` Skipped, nothing in scope: ${r.skipped.map((s) => s.layer_name).join(", ")}.` : "";
+      const message = `Export prepared as ${r.files.length} file${r.files.length === 1 ? "" : "s"}; your browser decides where ${r.files.length === 1 ? "it is" : "they are"} saved: ${list}.${skipped} The source file is never overwritten.`;
+      addNotice(store, "info", "export_done", message);
+      return { ok: true, message, files: r.files, skipped: r.skipped };
+    }
+    const dl = opts.layers ? await deps.startExport(opts.format, opts.scope, opts.layers) : await deps.startExport(opts.format, opts.scope);
+    const exact = opts.layers && dl.count !== undefined ? ` ${n(dl.count)} points exported.` : "";
+    const message = `Export prepared; your browser decides where it is saved. Suggested name: ${dl.filename}. The source file is never overwritten.${exact}`;
     addNotice(store, "info", "export_done", message);
     return { ok: true, message };
   } catch (e) {

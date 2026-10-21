@@ -1,11 +1,12 @@
-import { protectionBlock } from "../inspector/protection";
-import { canApply } from "../orchestration/runner";
+import { applyBlockedText, canApply } from "../orchestration/runner";
 import { headline } from "../status/headline";
 import { shouldWarn, unsavedLabel } from "../orchestration/unsaved";
 import type { AppState } from "../state/app";
 import type { Store } from "../state/store";
 import { control } from "./controls";
 import { h } from "./dom";
+import { iconControl } from "./iconbutton";
+import { iconSvg } from "./icons";
 
 export interface ToolbarActions {
   pickFile: (file: File) => void;
@@ -30,18 +31,18 @@ export function buildToolbar(root: HTMLElement, store: Store<AppState>, a: Toolb
       input.value = "";
     },
   });
-  const save = control("button", { id: "save-session", disabled: true, onclick: a.saveSession }, "Save session");
-  const exp = control("button", { id: "export", disabled: true, onclick: a.openExport }, "Export");
+  const save = iconControl("save-session", "save", { disabled: true, onclick: a.saveSession });
+  const exp = iconControl("export", "exp", { disabled: true, onclick: a.openExport });
   const badge = h("span", { id: "unsaved-badge", class: "badge" });
-  const undo = control("button", { id: "undo", disabled: true, onclick: a.undo }, "Undo");
-  const redo = control("button", { id: "redo", disabled: true, onclick: a.redo }, "Redo");
+  const undo = iconControl("undo", "undo", { disabled: true, onclick: a.undo });
+  const redo = iconControl("redo", "redo", { disabled: true, onclick: a.redo });
   const preview = control("button", { id: "preview", disabled: true, onclick: a.preview }, "Preview");
-  const apply = control("button", { id: "apply", disabled: true, onclick: a.apply }, "Apply");
+  const apply = control("button", { id: "apply", class: "danger", disabled: true, onclick: a.apply }, iconSvg("trash", 16), " Delete");
   const hlDelete = h("span", { id: "headline-delete", class: "headline" });
   const hlKept = h("span", { id: "headline-kept", class: "headline" });
   root.append(
     input,
-    control("button", { id: "open-file", onclick: () => input.click() }, "Open from this computer"),
+    iconControl("open-file", "open", { onclick: () => input.click() }),
     h("span", { class: "sep" }),
     save,
     exp,
@@ -76,16 +77,11 @@ export function buildToolbar(root: HTMLElement, store: Store<AppState>, a: Toolb
     set(
       apply,
       canApply(s) && s.compare === "edited",
-      !s.session
-        ? "no file open"
-        : s.compare !== "edited"
-          ? "return to the edited view"
-          : s.job.busy
-          ? "a job is running"
-          : s.draft
-            ? "commit or discard the drafted tool shape first"
-            : protectionBlock(s.tools.protection) ?? (s.candidate ? "the preview is out of date or empty; preview again" : "preview a selection first"),
+      applyBlockedText(s),
     );
+    if (s.draft && canApply(s) && s.compare === "edited") {
+      apply.title = `${tips.get(apply) ?? ""} (a draft is pending: Apply deletes only the ${(s.session?.selection.count ?? 0).toLocaleString("en-US")} committed selected points, not the preview)`;
+    }
   };
   store.subscribe(sync);
   sync(store.get());

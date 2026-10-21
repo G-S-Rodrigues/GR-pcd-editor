@@ -313,6 +313,7 @@ The box is an oriented volume with centre `c`, positive dimensions `(dx, dy, dz)
 - Support replacing, adding to and subtracting from the current selection.
 - Radius changes recompute the full component. Dense artefacts connected to real walls may be inseparable with this method; the preview must expose bridges rather than imply semantic recognition.
 - Long computations must be cancellable. A configurable warning threshold may pause a very large expansion, but a partial component must never be labelled complete or committed silently.
+- A Max points cap is exact: when the component is larger, exactly the Max points points nearest to the seed (hop count, then distance, then point index) are selected. A partial cluster is allowed and is always labelled "Stopped at limit N".
 
 ### 12. Selection, preview and deletion semantics
 
@@ -417,3 +418,104 @@ Initial targets, to be benchmarked on a documented desktop Linux reference PC wi
 7. Apply deletion, compare before/after, and undo any over-removal.
 8. Save the editing session and export a new full-resolution PCD with every retained field preserved.
 
+## Part 10 addendum
+
+- Section 8: the dual-ended sliders are superseded by on-canvas filter boxes (grips, cut planes with arrows, typed
+  values, per-side and global reset). Filters stay world-axis-aligned, inclusive and ANDed; the numeric control ids are kept.
+- Section 10: the protected slab may be tilted about X and Y (each within 60 degrees) around a pivot at the
+  active-bounds XY centre, to follow a sloping floor. A level slab behaves as before. It is still a plane, not a surface.
+- AC-17 stands and covers the tilt (a non-level tilt is stored in the session). AC-15 is unchanged.
+
+## Part 11 addendum
+
+- Section 14 (undo, redo and sessions): the undo list becomes a timeline of steps under the view. A step has a stable id, a tool,
+  an optional name (80 characters at most) and its point count; the history keeps at most 500 steps. A marker
+  separates applied steps from rolled-back ones; dragging it, the Roll back button or the keys move it, and Undo and
+  Redo are the marker moved by one. Applying a new deletion while rolled back discards the later steps after a
+  confirmation. A single step may be removed (its points return, later steps stay), renamed, or highlighted.
+- The timeline is part of the session archive (manifest only, archive VERSION unchanged); an older archive gets a
+  strip rebuilt from its step descriptions. AC-17 stands and covers the timeline; AC-15 is unchanged.
+
+## Part 12b addendum
+
+- Sections 9 and 11 (selection and preview): Add, Subtract and Intersect show a live preview of their result before
+  Commit draft: the server computes it without changing the selection, candidate or history; points it would add and
+  remove are drawn in their own colours with exact counts. Cluster parameters (seed, radius, region, Exclude protected,
+  Max points) re-preview live. Apply deletes only the committed selection; saving drops a pending preview. A pending
+  preview is never part of the session archive: archive VERSION unchanged, AC-17 stands, AC-15 unchanged.
+
+## Part 13 addendum
+
+- Sections 9 and 11 (selection): Replace is no longer offered; the operations are Add, Subtract and Intersect. While
+  nothing is selected the first selection is live (each shape edit replaces the selection, nothing is previewed); the
+  wire still accepts replace. A Live preview switch turns the preview off, and Commit draft then previews and commits.
+  Delete (the old Apply) is red. The Slice view and its keys are removed; rectangle select spans the whole cloud along
+  the view axis. The Box tool starts as a 3 m cube and a click moves it.
+- Tool flow: Cluster arms at once and waits for a seed click (Pick point toggles waiting, set and paused); Clear
+  selection and pressing a tool again disarm it; Select displayed and Invert refuse while a tool is armed. The Polygon
+  tool has an edit mode (add and remove vertices); a polygon delete blanks the polygon.
+- History steps store their editable shape (box, polygon, cluster with its region, sparse parameters; a filter step
+  becomes the box of its bounds) in the session archive as an optional manifest key (archive VERSION unchanged; an older
+  archive loads with no shapes, an older build ignores the key). A step click centres the camera on the step's bounds
+  and Edit shape reopens the shape; it never changes the history.
+- Sparse points is a new selection tool (a point with fewer than a set number of points in its 3 x 3 x 3 cubes of edge
+  radius). AC-17 stands; AC-15 is unchanged.
+
+## Part 14 amendment
+
+- Direct manipulation (lines 254-258): the face arrows resize (they no longer translate); a plain left-drag on the box
+  body moves the box in the plane facing the camera; rings rotate the box about all three axes. Ctrl+drag always orbits
+  and Shift+drag pans, even over the box. Esc during a drag restores the box from before the drag; there is no box undo
+  stack and Ctrl+Z stays deletions only. Keyboard: arrows nudge, Alt+arrows resize, `,` and `.` rotate (owner rulings
+  2026-10-18 and 2026-10-20).
+
+## Part 14b amendment
+
+- Rotation rings sit on the face arrows: six rings, one per arrow, each turning the box about that arrow's box-local
+  axis. The arrows are thicker, axis-coloured and have filled heads. Pick priority is ring (within 6 px of its outline)
+  before arrow before body; end-on arrows and edge-on rings are not picked. The angle is measured in the ring plane
+  about the ring centre. Ctrl/Meta+drag over a handle orbits. The Axes select is removed (owner rulings 2026-10-20 and
+  2026-10-21).
+
+## Part 18 addendum (layers: protection, Floor, menu)
+
+- Sections 10 and 11 and the layers (this also records the Part 15b layer model, which had no addendum): the protected
+  set P is the height band union the points of protected layers; candidate, counts, Cluster and Sparse "Exclude
+  protected" and the render flags all read P from one place. AC-17 stands and AC-15 is unchanged. A protected layer's
+  points are never deleted; they are kept and counted in Kept by protection.
+- AC-07 is refined by owner ruling 571: Override protection replaces only the height band; protected layers always
+  apply, so the effective protection line of an override preview adds "plus protected layers (N points)".
+- New layer from protected points snapshots the global band (it must be on) into a protected layer named Floor.
+- Each layer row has a fold-out menu: rename, 16 colours, visible, protected, lock, Select/Add/Subtract/Intersect with
+  the layer as operand (one shot, scope Active), Edit layer, To main, Up/Down (stored order), Merge, Delete points
+  (confirmed, a timeline step, refused for a protected layer). A locked layer refuses assignments, set-members, merge,
+  To main and Hide selected over its points with 422 `layer_locked`; Apply and Undo still delete and restore them.
+- The archive stays version 2: layer items carry optional `protected` and `locked` keys written only when true; an
+  older build opens such a file and drops them silently.
+
+## Part 19 addendum (layer edits in Undo, per-layer export)
+
+- Reverses the Part 15b ruling (2): layer edits are timeline steps. Section 14 Undo covers layer membership edits
+  (create, assign, set to selection, merge, To main). The Part 14 amendment's "Ctrl+Z stays deletions only" becomes
+  "Ctrl+Z undoes timeline steps (deletions and layer edits); there is still no box undo stack".
+- A layer edit while steps are rolled back asks to discard them first; No sends nothing. A layer step that a later layer
+  step builds on cannot be deleted (422 `step_has_dependents`; the card's delete is disabled with the reason).
+- Export gains One file per layer (`per_layer`): one PCD per chosen layer, Main first, empty layers skipped and listed.
+- This supersedes the Part 18 addendum line "The archive stays version 2": the archive is version 3 only when a layer
+  step exists (older builds refuse it), otherwise version 2; v1 and v2 files still open. AC-12 and AC-17 stand.
+
+## Part 20 addendum (Planes, Thin)
+
+- Section 12 (selection tools): two new tools. **Planes** detects near-horizontal Detected planes (read only) and selects
+  the points within a distance of a chosen one; **Thin** selects duplicates (distance 0 exact, above 0 within the
+  distance, inclusive) or a voxel subsample, keeping the lowest-index point. Both compose with Add, Subtract and Intersect
+  and take a region and Exclude protected like Sparse points.
+- Section 10 (protection): a Detected plane can become the protection band (Use as protection band). The 60 degree tilt
+  limit applies per axis and protection stays a slab about the plane. Protection is not a timeline step, so replacing an
+  enabled band asks first.
+- Section 16 (deletion): subsampling is an explicit selection and a Delete, never silent; it is one timeline step.
+- Section 14 (archive): a session with a `plane` or `thin` step keeps the existing archive version (2 or 3); a build
+  older than Part 20 refuses it. The detected list is not saved.
+- Owner decisions built as defaults: O10 keepers are eligible points only; O11 an enabled band is replaced after a confirm.
+- Licence: the algorithms are published ones (RANSAC plane fitting, voxel grid downsampling, fixed-radius neighbour
+  search); no CloudCompare code is used.

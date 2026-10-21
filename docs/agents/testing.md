@@ -127,7 +127,7 @@ export, save, persist, unsaved, tooltips), under `frontend/src/**`; backend rend
   budget label), `UI-130..133` (ViewCube, keys), `UI-134..135` (slice),
   `UI-140..141` (single key table: no duplicates, every documented key
   classifies to its handler, `?` toggles help), `UI-142` (handle size in
-  pixels), `UI-143` (draft text and outline), `UI-144` (upload cancel),
+  pixels), `UI-143` (draft outline; its note text is the preview text since 12b), `UI-144` (upload cancel),
   `UI-145` (a restored page keeps the view only: op, scope and tool are not
   restored), `UI-146` (start banner).
 - Backend IDs: `API-50..53` (stale displayed selection, cluster partial result,
@@ -141,7 +141,7 @@ export, save, persist, unsaved, tooltips), under `frontend/src/**`; backend rend
   at least 60 % of the width at 1280x720 and 1920x1080, with a field focused and
   each tool panel open; screenshots `layout-1280.png`, `layout-1920.png` go to
   the smoke output), `E2E-22` (upload cancel on a held-back request), `E2E-23`
-  (draft outline note), `E2E-24` (a reloaded session starts Replace, Displayed,
+  (draft outline and preview note), `E2E-24` (a reloaded session starts Replace, Displayed,
   no tool, default cluster limit), `E2E-24b` (start banner with no session).
   `SMOKE_SHOTS_DIR=<dir> bash scripts/smoke.sh` keeps every screenshot to look at.
   Run a subset with `bash scripts/smoke.sh npx playwright test -g "E2E-2[01]"`.
@@ -195,7 +195,7 @@ export, save, persist, unsaved, tooltips), under `frontend/src/**`; backend rend
   drawn; the full draw returns 250 ms after the last change. `UI-162/163`, `E2E-28` (reads
   `window.__editor.drawnCount()`).
 - Notices: timers are per id, successful opens clear stale open/drop notices, an empty cloud warns
-  (`UI-166..168`); rotation rings are clamped to 90 px / 30% of the view (`UI-169`); the floor-pick hint
+  (`UI-166..168`); rotation rings are 8 px in radius (`UI-169`, retired in Part 14b); the floor-pick hint
   (`UI-170`), the Protection slab legend entry (`UI-171`, `UI-128` extended with the `slab` id/label) and the
   10 s slow-job hint (`UI-173`, `orchestration/jobhint.ts`); smoke `E2E-31`.
 - Not done: label dedup (`UI-172`) would change existing asserts outside the ruling; needs a ruling.
@@ -228,3 +228,288 @@ export, save, persist, unsaved, tooltips), under `frontend/src/**`; backend rend
   `UI-23`), `UI-184` (Protected shows `updating…` until the server has the picked floor), `UI-187` (Rect tooltip).
 - Deliberately not done: pick-floor hint in Top/Bottom (m-2: smoke `E2E-31` pins no hint in Top) and Rect disarm after
   a drag (m-7: `E2E-29` needs it armed across views; the tooltip says it stays on).
+
+
+## Part 10 additions (filter boxes, protection band, tilted slab)
+
+- Backend: `TLT-00..08` (`tests/unit/test_protection_tilt.py`: TLT-00 is the golden table of slab coordinates shared
+  with the frontend test, TLT-06 covers the tilt surviving Apply), `API-70/71` and `SES-50/51`
+  (`tests/integration/test_protection_tilt_api.py`). Level takes the old Z path unchanged; a tilt is on the wire and in
+  the archive only when non-level, so old archives and level JSON are byte-identical.
+- Tilt tolerance: tilted slab membership is float64 with an inclusive `GEO_EPS_ROTATED` (1e-9); level uses eps 0.
+- Frontend: `UI-200..207` (filter boxes), `UI-202/203` (planes), `UI-210..214` (band), `UI-220..226`
+  (`inspector/tilt.test.ts` and the tilted routing describe in `viewport/interact.test.ts`).
+- Smoke: `E2E-35..43` (boxes, planes, band, fold), `E2E-44` (tilted floor: Y ring by real mouse, typed fit, upper arrow,
+  ghosts deleted and floor kept, Level) and `E2E-45` (typed tilt equals dragged tilt; session download and reopen and a
+  reload keep it). Fixture `tiltedFloorPcd` in `e2e/synthetic.ts`: floor z = 0.1 x + 0.05 y (400 points, offsets
+  +-0.02) and 27 ghosts 1..3 m above; truth comes from `countInTiltedSlab`, an oracle independent of the app.
+- The `filter-*` control ids are unchanged by the boxes (the panel sliders went; the numeric ids stayed on the boxes).
+  New ids: `prot-tilt-x`, `prot-tilt-y`, `prot-level`; read-only hooks `protectionArrows()` and `tiltRings()`.
+
+## Collapsible inspector sections (part 10-8)
+
+IDs: `UI-230..232` (`frontend/src/ui/sections.test.ts`: all open by default, per-section
+fold, client-state round trip, old sessions all open) and `E2E-46` (click and Enter fold
+each section, reload restores, counts unchanged). Fold state is `AppState.sectionsOpen`
+(only closed ids stored; ids avoid the UI-92 words) next to `floorPanelOpen`.
+
+## Part 11 additions (history timeline)
+
+- Backend: `HST-01..21` (history model; HST-20 is a property test against a brute-force oracle of the active set after
+  random rollback, delete-step and rename sequences, HST-21 round-trips 60 random sequences through save and open),
+  `API-80..86` (the three `POST /session/history/*` routes and `GET /session/render?mode=step`), `SES-60..66`
+  (manifest `sid`, `tool`, `name`, `next_sid`; hostile fields give `bad_archive`; an old archive rebuilds its strip).
+  The archive stays at VERSION 1 with no new zip entries.
+- Frontend: `UI-240..280` (`frontend/src/timeline/model.test.ts` pure model: steps, marker slots, highlight, hover,
+  rename and drag transitions, key table, confirmation texts, layer style; `orchestration/edit-steps.test.ts`;
+  `api/history-steps.test.ts`; `timeline/wire.test.ts`: controls, tooltips, legend row only while active, help rows;
+  UI-276 the view state is not saved, UI-280 reconcile with no session returns the same object).
+- Smoke: `E2E-50` (three tools, three cards, icons, counts, tooltips), `E2E-51` (click highlight: overlay count equals the
+  recorded count, colour differs from Selected and Deleted, hover preview, click again, strip background and Esc clear,
+  legend row), `E2E-52` (layout at 1280x720 and 1920x1080 with 25 steps; `#timeline` is excluded from the E2E-21 overflow
+  scan because it scrolls on its own), `E2E-53` (real-mouse marker drag, one POST on release, counts equal fixture truth,
+  Undo and Redo), `E2E-54` (button and slider keys), `E2E-55` (delete a middle step, confirmation, `Delete` on a focused
+  step never fires Apply), `E2E-56` (apply while rolled back asks first), `E2E-57` (rename by double-click, pencil, F2),
+  `E2E-58` (save and reopen keep the strip; an export after a rollback holds exactly the active steps' result).
+- Fix chunk after Part 11: `WRK-07..13` (export and archive download from a `<kind>.u<uid>` fallback dir; symlinked,
+  dangling and foreign-owned bases are never used or chmodded, sweeps skip symlinks), `SES-67..69` (hostile
+  `next_sid`, more than 500 entries, old-format clamp), `HST-22` (one mask copy per rollback), `UI-233..234` (fold
+  sync), `UI-282..285` (step view under a running job, budget in the cache key, reconcile), `E2E-65` (Delete on step
+  buttons and the marker never applies), `E2E-66` (rapid marker keys and Undo/Redo send no stale request), `E2E-67`
+  (a typed tilt beyond 60 degrees shows the limit under the field). CTR-11 also exports and downloads from the
+  root-owned volume.
+- Read-only hook `stepLayer()`. The smoke helpers wait until the app is idle before a marker drag, because a gesture
+  during a running job is ignored by design, and cope with a tool or fold state the previous test left restored.
+
+## Part 12b additions (live preview of Add, Subtract and Intersect)
+
+- Backend: `SES-70..76` (`tests/unit/test_preview.py`: preview counts equal a numpy oracle and change nothing, commit by
+  id installs exactly the previewed mask, stale rules, cancel, render flags 8 and 16, Apply after a preview deletes the
+  committed set only; SES-76 measures 1M points), `API-90..99` (`POST /session/selection/preview`, `.../commit`,
+  `.../preview/discard`, `GET /session/render?preview=<id>` with `X-Preview-Id`, job cancel rules, save drops a pending
+  preview).
+- Frontend: `UI-400..415` (preview model, palette, colourize precedence, LOD keeps flagged points, legend rows, runner
+  debounce, supersede, commit by id, discard, Replace unchanged, refresher, canApply, cluster tuning, shouldPreview),
+  `UI-416..418` (commit and discard enablement, commit label, Esc key row).
+- Smoke: `E2E-80` (box Add by a real handle drag), `E2E-81` (Subtract and Intersect), `E2E-82` (polygon clicks),
+  `E2E-83` (cluster Add, radius re-preview, Apply deletes the committed union), `E2E-84` (Apply before commit), `E2E-85`
+  (Esc, Discard draft, Replace stays live), `E2E-86` (save with a pending draft), `E2E-87` (cluster tuning, Exclude
+  protected, cancel). Truth is a fixture oracle in the spec (box inclusion, cluster BFS), never production code.
+- Read-only hook `previewLayer()`: drawn points of the main layer flagged will-be-added and will-be-removed, and the
+  preview id. Changed existing tests: `E2E-23` (note text), `E2E-61` (Apply enabled during a draft, owner ruling A).
+
+## Runner candidate race
+
+- A live selection whose job result lands while its state refresh is in flight keeps its candidate when the superseding
+  edit was only a draft over it (runner `epoch`; a re-select, params change, reset or another selection job still drops
+  it). Tests: `UI-653`, `UI-654` (`orchestration/runner.test.ts`), smoke `E2E-88` (plain, immediate Link distance edit,
+  and a held render read as fault injection). Run `--repeat-each` with `--workers=1`: parallel workers share one server
+  session and fail each other.
+
+### Delete during preview
+
+- A preview job sets `job.preview`; `canApply` ignores it (owner ruling A: Delete deletes the committed selection only), and
+  `editor.apply()` calls `supersedePreview` first. A shape edit while a commit is in flight no longer cancels the commit;
+  its preview runs when the commit settles; a commit cancelled from outside re-evaluates the candidate. The Delete key
+  adds a notice with `applyBlockedText` when blocked (`deleteKeyOutcome`). Tests: `UI-700..705` (`runner.test.ts`,
+  `edit.test.ts`), smoke `E2E-130` (preview request held; RED seen at HEAD) and `E2E-131` (commit poll held; passed at HEAD
+  too, so it is a regression guard only).
+
+- Part 16-2 (camera cluster above a smaller ViewCube; reverses the 12-3 "under"): cube edge 40, stage 80, arrow ring 68,
+  zone offset 5, wrapper 160 (`view/layout.ts`; ring and wrapper are larger than first planned because `UI-332` found
+  corner zones touching arrows at ring 62). Cube stage and face sizes now come from `cubeNavCss()` only. Tests: `UI-710`,
+  `UI-711` (`ui/camera-cluster.test.ts`), smoke `E2E-132` (Front/Left/Top/Back at 1280x720 and 1920x1080, screenshots
+  `viewcube-<w>-<view>.png`); changed: `UI-326`, `E2E-72` ("under" became "above"). Not seen RED: `E2E-132`.
+
+- Part 16-3 (selected colour): four presets (Orange default, Magenta, White, Lime; `colour/selectcolour.ts`), a radiogroup
+  `sel-colour` of `sel-colour-<id>` swatches in the Selection block after Scope; `AppState.selectedColour`, saved as
+  `client_state.ui.selectedColour` only when not orange. Tests: `UI-720..724` (`colour/selectcolour.test.ts`, `legend.test.ts`),
+  `UI-725` (`persist.test.ts`), `UI-726` (`ui/selectcolour-panel.test.ts`), smoke `E2E-133` (real mouse, keyboard, colour modes,
+  Save and reopen, Clear selection; canvas pixels read from a real screenshot) and `E2E-134` (Add preview keeps its pink; writes
+  `selected-colour-<mode>-<preset>.png`, 3 modes x 4 presets, to look at with `SMOKE_SHOTS_DIR`). The box handles are drawn
+  in the same orange as the default colour, so a pixel count of orange includes them. Not seen RED: `E2E-133`, `E2E-134`.
+
+## Part 13 additions (tool flow)
+
+- Backend: `STS-01..14` (`tests/unit/test_step_shapes.py`: `shape_of` per tool, `tool_summary` unchanged, the entry keeps its
+  shape through undo, reorder, rename and delete, archive round trip, an archive without the key loads with `shape: null`,
+  hostile shapes give `bad_archive`, VERSION stays 1, exact step bounds, a sparse step is stored as tool `selection`) and
+  `SPR-01..11` (`tests/unit/test_sparse.py, test_sparse_api.py, test_sparse_perf.py`: isolated points selected and dense walls not, a brute-force oracle, the
+  neighbour boundary, region, protection, scope, composition with Add/Subtract/Intersect and preview, cancel, invalid
+  parameters, 1M points in at most 2.0 s and 150 MiB: measured 0.50 s and +72 MiB).
+- Frontend `UI-600..611` (first selection live, `liveFirst`, Replace and Slice removed), `UI-616..625` (operation icon
+  radios, Live preview switch, red Delete), `UI-631..639` (Cluster Pick point states, Clear selection disarms,
+  `selectionDisabledReason`), `UI-645..652` (3 m box, click to centre, `boxFromShape`), `UI-653..654` (runner candidate
+  race), `UI-655..668` (Polygon edit mode: `insertVertex`, `removeVertex`, `setEditing`, the hint and key action, the pointer
+  routing in `viewport/polygon-edit.test.ts`, the pencil panel, Backspace, a polygon delete blanks the polygon),
+  `UI-669..683` (history click centres the camera, `shapeToPatch`, Edit shape, Sparse points model and panel). 13-7 uses
+  655..668 because 653 and 654 went to the runner race fix.
+- Smoke `E2E-110..123` (plus `E2E-118b`): the first selection is live (three real handle drags), the + icon, the radio group,
+  the Cluster toggle (waiting, set, paused), Clear selection disarms, the Polygon pencil with the real mouse (draw, drag,
+  insert on an edge, Backspace, double click, Esc), Box click to centre, Live preview off, a step click centres the
+  camera and Edit shape (box, polygon, cluster) leaves the history alone, save and reopen keep the shapes, Delete is red
+  and Select displayed refuses while armed, Sparse points on `sparseRoomPcd` (`e2e/synthetic.ts`: dense floor and wall with
+  ten floating points above z 3; truth is the points above z 3), layout at 1280x720 and 1920x1080 with a highlighted step,
+  and keyboard only.
+- Not covered by a browser test: an old `.pcdsession` without step shapes (the disabled Edit shape button and its reason are
+  unit-tested, `UI-675`, and the loader by `STS-09`); the look of the vertex crosses and of the red Delete (computed styles
+  are asserted, no golden image). The seed cross of an edited cluster step is drawn at the step's centre because the
+  server stores the seed id, not its position.
+
+## Part 14 additions (box gizmo)
+
+- Backend `BXR-01..06` (`tests/unit`): the rotated-box mask against a per-point Rodrigues oracle, level and yaw-only bit
+  identical to the old formulas, pitch +-90, outside is the complement, the wire accepts three finite angles, quaternion
+  to rpy to backend round trip.
+- Unit `UI-550..559` (`tools/box/handles.test.ts`, `body.test.ts`: arrows resize, body move model), `UI-563..568`
+  (`viewport/interact*.test.ts`: priorities, Shift/Ctrl, click kept, Esc restore, hover), `UI-569/570` (overlay spec),
+  `UI-571..575` (`ui/keys.box.test.ts`, `tools/box/keyedit.test.ts`: keyboard), `UI-576/577` (`tools/box/docs.test.ts`:
+  note text and the stored-shape round trip), `UI-578` (an edge-on ring is never picked).
+- Smoke `E2E-100..105`: `E2E-100` is the layout sweep at 1280x720 and 1920x1080 (a fitted box covers 5 to 50 percent of
+  the canvas so a plain drag can start outside it; Fit to view covers it all, so only Ctrl+drag orbits there), `E2E-101`
+  arrow drag, `E2E-102` body drag with Shift pan and Ctrl orbit, `E2E-103` three real ring drags (on the arrow rings since Part 14b) against an independent
+  rotation oracle, `E2E-104` keyboard sequence, `E2E-105` Esc mid-drag. Face views are reached by their keys (1, 3, 6),
+  not by clicking the ViewCube, because a face turned away is not clickable. No browser test covers hover cursors.
+
+## Part 14b additions (rings on the arrows, thicker arrows)
+
+- Frontend unit: `UI-894..904` (ring geometry and gap in the ring plane, pick priority ring before arrow, inside of a ring
+  and end-on arrows fall through to the body, `RING_PICK_EDGE_ON` 0.25 pinned, `ringPlaneHit` and `ringAngle` with a
+  perspective-only behind-the-eye guard and an ortho case, `advanceTurn`, Ctrl over a handle orbits, `boxRings()` hook),
+  `UI-903` (arrow and ring geometry, colours, widths), `UI-906` (WCAG contrast against 0x15181d: rings >= 3, arrows
+  >= 4.5). `UI-905` is unused (retired).
+- Smoke `E2E-163..167`. The oracle maps the ring plane to the screen with the app's `projectWorld`, drags in that plane
+  and computes the expected angle independently of the app maths; Step 0 measured the app against it at 3e-14 rad, and
+  `E2E-163` asserts 1e-6 rad for axis and signed angle on all six rings in the ViewCube corner view. `E2E-167` writes
+  `/out/part14b-<w>x<h>-<state>.png` (top, corner, corner-hover-ring, corner-dragging, rotated) for owner review: keep
+  them with `SMOKE_SHOTS_DIR=<dir> bash scripts/smoke.sh ...`, never commit them.
+- Changed tests (ids and geometry only, assertions kept): UI-40, UI-550, UI-551, UI-557, UI-558, UI-559 (priority now
+  ring before arrow), UI-563, UI-566, UI-567, UI-569, UI-570, UI-576, UI-578, the unnamed rotate-drag test, E2E-103.
+  Removed: both `UI-169` tests (replaced by UI-894..896).
+
+## Part 15a additions (Hide selected)
+
+- Unit `UI-500..504` (`view/hidden.test.ts`: the id bitmap, exactness, `applyHidden` compaction, same object when empty),
+  `UI-505/506` (`orchestration/refresh.test.ts`: primary and second render compacted, the deleted overlay is not, the set
+  drops with the cache or a different session id), `UI-507..514` (`orchestration/hide.test.ts`: button states, refusal
+  reasons, Select displayed and Invert refused, the extra Apply confirm, hidden seed pick, never persisted, hide keeps the
+  tool armed, Save notice), `UI-515/516` (`ui/hiddenchip.test.ts`: the legend chip), `UI-517` (export dialog note).
+- Smoke `E2E-90` (hide the floor and its ghosts, the drawn count drops by exactly the count, Apply asks with the exact
+  text, the export re-parsed with the independent reader equals the room minus the ghosts and includes the hidden floor,
+  Show restores the draw, a reload shows nothing hidden) and `E2E-90b` (button and chip overlap sweep at 1280x720 and
+  1920x1080). Superseded by the layer-backed version below: E2E-90 was flipped in 15b-7 and the unit ids UI-500..506, 511 were replaced.
+
+## Part 15b additions (named layers)
+
+- Backend: `test_layers*.py`, `test_archive_layers.py`, `test_export_layers.py` and the tool-exclusion tests (LAY-00..72: the server-side layer model, the retained ids
+  property LAY-20/21, every tool excluding hidden points, archive version 2 only with layers, export by layer, the
+  layer render block with `X-Layers: 1` only when layers exist). The existing suite passes unedited.
+- Frontend unit: `UI-800..866` (model, api, params hook, Hide selected on layers, panel, legend rows, export picker,
+  colour by layer, Edit layer and Set layer to selection, never-persisted layer UI, Edit shape title for layer steps).
+- Smoke `E2E-140..146` (layer from the floor and hidden, save and reopen, ghost Apply with a hidden layer and no
+  confirm, Edit layer with the steal confirm, export picker re-parsed with the independent reader, Undo restoring layer
+  membership, eight-layer overlay sweep at 1280x720 and 1920x1080). `E2E-90` reads the layer Hidden. Run smoke with
+  `bash scripts/smoke.sh npx playwright test --workers=1`.
+
+## Part 17 additions (cluster cap, panel and header polish)
+
+- Backend: `CLU-44..48` (exact cap oracle by brute-force pairwise distance on small clouds, ties by (hop, distance, index),
+  `invalid_max_points` for 0 and negative caps) and `API-100..102`. `CLU-47` has new bounds measured on the checks image
+  with 1.5x headroom: K=500 on the 331k room <= 0.25 s and 155 MiB (measured 0.10 to 0.15 s, 103 MiB); K=165k <= 11.4 s
+  and 400 MiB (measured 7.1 to 7.6 s, 260 MiB; the 4.5 s target was missed after one optimisation attempt); a 20k chain
+  with K=10k <= 11.7 s and 105 MiB (measured 7.8 s, 68 MiB). Peak RSS is read from `VmHWM` (`ru_maxrss` inherits the
+  pytest parent). The existing `CLU-22` and `CLU-40..43` thresholds are unchanged.
+- Frontend unit: `UI-872..893` (cluster block follows the pending preview, tool stays armed after Commit draft, why
+  Delete is off, Show hidden reselects, defaults 0.3 and 500, Scope row, filter boxes open collapsed, armed tool section
+  first, compact left panel in `leftpanel.test.ts` and `layerspanel.test.ts`).
+- Smoke `E2E-150..160`. `E2E-158` logs the left-panel content height (`LEFT-PANEL-CONTENT`) and does not assert a height
+  target: the target is pending an owner ruling. `E2E-160` writes `/out/part17-<w>x<h>-idle.png` and
+  `-cluster-armed.png` for owner review; keep them with `SMOKE_SHOTS_DIR=<dir> bash scripts/smoke.sh ...` and never
+  commit them.
+- Step-0 measurements at HEAD 73870ad (room open, no tool, no layers): `#toolbar` 45 px and `#viewbar` 51 px, one line
+  each; `#tools` content 385.7 px (369.7 like for like); stage 596.8 px at 720 and 956.8 px at 1080. After 17-10 the
+  `#tools` content is 345.4 px at both sizes; after 17-11 `#toolbar` is at most 33 px and `#viewbar` at most 29 px.
+- Changed existing tests (setup, selector, text or geometry only, nothing loosened): UI-62, UI-65, UI-202, UI-203,
+  UI-300, UI-400, UI-513, UI-666, UI-816, UI-831..838, UI-863, UI-864, UI-890; E2E-10, E2E-13, E2E-16, E2E-20, E2E-24,
+  E2E-25, E2E-30, E2E-35, E2E-35b, E2E-36, E2E-37, E2E-38, E2E-40, E2E-41, E2E-46, E2E-62, E2E-90, E2E-113..115,
+  E2E-121, E2E-143, E2E-146. `E2E-143` is a known flake that also fails at 73870ad (open item).
+
+## Part 18 additions (protected layers, Floor from the band, per-layer menu)
+
+- Backend: `LAY-80..99` including `LAY-30b`, `LAY-94b` and `LAY-97b` (flags survive every `Layer` rebuild, one protected
+  set for candidate, state count, Cluster and Sparse eligibility and render flags, archive optional keys written only
+  when true and non-boolean refused, the flag PATCH, order, merge, Floor from band and the `layer_locked` 422). pytest
+  618 to 644. Changed existing tests: `LAY-17` and `LAY-40` (expected rows gain `protected` and `locked` false).
+- Frontend unit: `UI-910..927` (model, api, orchestration, the headline "in protected layers" split, `UI-927` the
+  override line "plus protected layers (N points)") and `UI-921..926` (the menu in `layerspanel.test.ts`). vitest 718 to
+  736. Changed existing tests, setup only: the `LayersDeps` literals in `orchestration/layers.test.ts` and
+  `orchestration/editlayer.test.ts` gain `selectLayerOp` and `apply`.
+- Smoke `E2E-170..176`. The test wall box for these tests is the `x = -1` column (`WALL18`): the older wall box also holds
+  12 floor points, which a new layer takes out of the Floor. `E2E-175` logs `LEFT-PANEL-MENU <w>x<h>`: Floor's open menu
+  is 242 px tall at 1280x720 (the left panel scrolls, 738/631) and 215 px at 1920x1080 (no scroll, 991/991); it asserts
+  no overlap, the menu inside the panel and `overflow-y` auto or scroll. `E2E-176` writes
+  `/out/part18-<w>x<h>-menu.png` and `-floor.png`; keep them with `SMOKE_SHOTS_DIR=<dir> bash scripts/smoke.sh ...`,
+  never commit them.
+- Changed existing smoke tests: none.
+
+## Part 19 additions (layer edits in Undo, export each layer to its own file)
+
+- Backend: `HST-23..31` (the layer step in `History`, `replace`, dependents, and `HST-31`, a 300-sequence property test of
+  deletion and layer steps against the plain-set oracle `tests/fixtures/step_oracle.py`), `SES-77..86` (archive
+  version 3), `LAY-100..112` (engine steps, ordered flips, delete-step refusal), `API-103..108` and `LAY-120..127`
+  (routes and per-layer export). pytest 643 to 697 (`test_pcd_61`, the 1M read, is a known load flake).
+- Soundness replay compares membership (per-point layer and row id), never row order: re-inserting a deleted row at its
+  stored index drifts the order by design, so the stop rule does not fire on order.
+- Frontend unit: `UI-928..953` (layer cards, delete state and confirm text, `step_has_dependents` notice, undo texts,
+  the rolled-back gate in `layers.ts`, the One file per layer dialog and `startExportPerLayer`). vitest 736 to 763.
+- Smoke `E2E-177..185`. `E2E-182` re-parses each of the three downloads with the independent reader in
+  `e2e/synthetic.ts` against fixture truth. Headless Chromium delivers one `download` event per programmatic anchor click
+  (spike at 19-0), so no zip fallback exists; the dialog keeps a link list as the fallback for a browser that blocks
+  several downloads (the real prompt is a manual QA item). `E2E-185` writes `/out/part19-<w>x<h>-strip.png` and
+  `-export.png`; keep them with `SMOKE_SHOTS_DIR`, never commit them. Smoke 161 to 171.
+- Dialog-listener rule (E2E-90): register `page.on("dialog")` after the helper that opens the room, or answer by message
+  text; each test leaves an unsaved session and the next open asks to discard it. `E2E-179` and `E2E-180` replace the
+  listeners after the open and answer the Remove step and discard texts by content. Hover a card before clicking its
+  delete button.
+- Archive rule: version 3 is written only when a layer step exists; v1 and v2 still open; a pre-19 build refuses v3
+  (read from the code, not executed).
+- Changed existing tests, by id, nothing loosened: `LAY-10`, `LAY-11`, `LAY-40`, `LAY-94b`, `LAY-96`, `LAY-30` (version
+  3), `LAY-38` (version 3, no layers block), `LAY-33` (last leg uses version 4), `HST-20`, `HST-20b`, `LAY-20`,
+  `LAY-20b` (rewritten on the shared oracle, thresholds unchanged; `LAY-20` op mix gains merge), `UI-265` (empty
+  strip text "No steps yet"), `UI-837` (the layers note and title wording). `HST-21` and `LAY-21` go green through the
+  oracle unchanged.
+
+## Part 20 additions (Planes: floor and ceiling detection; Thin: duplicates and voxel subsample)
+
+- Backend: `THN-01..14` (`geometry/voxel.py` key extraction shared with Sparse, the Thin tool: eps 0, eps > 0 with a
+  dyadic boundary, lowest-index keeper, voxel, eligible-only keepers, budget refusal), `PLN-01..15` (RANSAC detection,
+  plane membership, determinism, the batch bound), `STS-15..18` (step shapes), `SES-87..89` (archive), `API-109..116`
+  (the read-only detect job and the select route; `tests/unit/test_planes_api.py`). pytest 697 to 741. The 1M bounds
+  `PLN-14/15` and `THN-13/14` run one call in a fresh process under `RLIMIT_AS` (`tests/fixtures/plane_rss.py`) and are
+  the worst of 3 runs of the committed code x1.5 (detect 1.50 s / 96 MiB, plane mask 0.03 s, duplicates at 1e-3
+  2.96 s / 171 MiB, voxel 0.81 s / 133 MiB). The voxel number is slower than the Step 0 spike (0.25 s); reported, not tuned.
+- Frontend unit: `UI-954..983` (models, `bandFromPlane`, the detect flow in `orchestration/planes.ts`, panels, step cards).
+  vitest 763 to 797. Changed existing test: `UI-890` (the tool order is box, polygon, cluster, sparse, plane, thin).
+- Smoke `E2E-186..194`: `E2E-186` Detect, held progress and Cancel; `E2E-187` ceiling Delete, Undo, Redo; `E2E-188` the
+  tilted floor as the protection band (angles within 0.01 degrees of the plane equation, Protected equals the slab
+  oracle, the O11 replace confirm answered by its text); `E2E-189` a plane as a protected layer and the band route;
+  `E2E-190` duplicates at 0, export re-parsed with no duplicate row; `E2E-191` 1e-3, voxel and a box Subtract/Add;
+  `E2E-192` Save, reopen, Edit shape, no list after a reload; `E2E-193` layout (logs `TOOL-ROW <w>x<h>`);
+  `E2E-194` writes `/out/part20-<w>x<h>-planes.png` and `-thin.png` (keep with `SMOKE_SHOTS_DIR`, never commit).
+  Oracles `countPlane`, `dupTruth`, `voxelTruth` are in `e2e/synthetic.ts` and import nothing from the app.
+- Fixture lesson: the detection needs 1% of the points to form a plane, so regular rows of wall points (equal z) become
+  planes of their own. `planeRoomPcd()` scatters the wall heights; `planeRoomPcd(true)` keeps the rows to give the layout
+  test 4 list rows. A Box armed over an existing selection is a draft (needs Commit draft): `sel-clear` first.
+  The status bar groups thousands (`2,921`).
+- Step 0 (checks image, `-m 6g`, throwaway spike): RANSAC on 360k points, floor normal error 1e-5 rad, d 5e-4, 0.89 s,
+  +76 MiB; a tilted floor 1e-4 rad; 1.2M 1.08 s; 9.6M (manual) 3.19 s with the 2 planes right. Thin 1M with 50 %
+  duplicates: eps 0 0.38 s, eps 1e-3 2.4 s, voxel 0.05 0.25 s. Thin 10M (manual): eps 0 7.3 s (+926 MiB), eps 1e-3
+  32.8 s, voxel 4.4 s (+124 MiB), `count_neighbors` 7.1 s; all completed under 6 GiB.
+- Determinism scope: the seed is fixed (0), so two runs in one build give identical planes (checked in one process and in
+  two fresh processes). Across machines or BLAS builds the planes agree to 1e-3 only (LAPACK `eigh` bits may differ).
+- Lowest-index rule: for duplicates and voxels the point with the lowest index is kept and later ones are selected;
+  only points the tool may select (scope, region, Exclude protected) count as copies (O10). Chain caveat: with eps > 0 a
+  chain of points spaced eps apart keeps only its first point.
+- One job worker: a select queues behind a running detect, so the panel shows "Detecting planes..." as busy (`API-110`).
+- A pre-20 build refuses an archive holding a `plane` or `thin` step (`bad_archive`); documented, not tested.
+- Known load flakes unchanged: `test_pcd_61`, `E2E-57`, `test_nrm_07` timing.

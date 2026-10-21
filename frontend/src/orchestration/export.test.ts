@@ -102,3 +102,81 @@ test("UI-89 a failed save job never marks saved", async () => {
   expect(markSaved).not.toHaveBeenCalled();
   expect(store.get().session?.unsaved).toBe(true);
 });
+
+test("UI-286 save flushes the pending client state before the archive is made, and a failed flush does not block Save", async () => {
+  const store = createAppStore();
+  store.set({ session: sessionFixture({ unsaved: true }) });
+  const order: string[] = [];
+  const ok = await runSave(store, {
+    flushClientState: async () => {
+      order.push("flush");
+    },
+    startSave: async () => {
+      order.push("download");
+      return { url: "/u", filename: "a.pcdsession", archiveId: "a" };
+    },
+    markSaved: async () => sessionFixture({ unsaved: false }),
+  });
+  expect(order).toEqual(["flush", "download"]);
+  expect(ok.ok).toBe(true);
+  const r = await runSave(store, {
+    flushClientState: async () => {
+      throw new Error("put failed");
+    },
+    startSave: async () => ({ url: "/u", filename: "a.pcdsession", archiveId: "b" }),
+    markSaved: async () => sessionFixture({ unsaved: false }),
+  });
+  expect(r.ok).toBe(true);
+});
+
+test("UI-843 a layer export passes the chosen ids and the notice reports the exact count the server wrote", async () => {
+  const startExport = vi.fn(async () => ({ url: "/u", filename: "a_cleaned.pcd", count: 12345 }));
+  const store = createAppStore();
+  const r = await runExport(store, { ...exportDefaults(), layers: [0, 2] }, { startExport });
+  expect(startExport).toHaveBeenCalledWith("binary", "active", [0, 2]);
+  expect(r.message).toContain("12,345 points exported");
+});
+
+test("UI-844 without layers the call and the message are exactly as before, even when the server sends a count", async () => {
+  const startExport = vi.fn(async () => ({ url: "/u", filename: "a_cleaned.pcd", count: 9 }));
+  const r = await runExport(createAppStore(), exportDefaults(), { startExport });
+  expect(startExport).toHaveBeenCalledWith("binary", "active");
+  expect(r.message).not.toMatch(/exported\./);
+  expect(r.message).toBe("Export prepared; your browser decides where it is saved. Suggested name: a_cleaned.pcd. The source file is never overwritten.");
+});
+
+// ---- Part 19 (UI-951, UI-953)
+const perLayer = {
+  files: [
+    { url: "/api/exports/e1", filename: "a_main_cleaned.pcd", count: 50, layerName: "Main" },
+    { url: "/api/exports/e2", filename: "a_Floor_cleaned.pcd", count: 1, layerName: "Floor" },
+  ],
+  skipped: [{ layer_id: 2, layer_name: "Ghosts" }],
+};
+
+test("UI-951 the per-layer notice lists the names and exact counts, and skipped layers", async () => {
+  const store = createAppStore();
+  const startExportPerLayer = vi.fn(async () => perLayer);
+  const r = await runExport(store, { ...exportDefaults(), perLayer: true, layers: [0, 1] }, { startExport: vi.fn(), startExportPerLayer });
+  expect(startExportPerLayer).toHaveBeenCalledWith("binary", "active", [0, 1]);
+  expect(r.ok).toBe(true);
+  expect(r.files).toEqual(perLayer.files);
+  expect(r.skipped).toEqual(perLayer.skipped);
+  expect(r.message).toBe(
+    "Export prepared as 2 files; your browser decides where they are saved: a_main_cleaned.pcd (50 points), a_Floor_cleaned.pcd (1 point). Skipped, nothing in scope: Ghosts. The source file is never overwritten.",
+  );
+  expect(store.get().notices.at(-1)?.text).toBe(r.message);
+});
+
+test("UI-953 a failed per-layer export is an error notice with no files", async () => {
+  const store = createAppStore();
+  const r = await runExport(store, { ...exportDefaults(), perLayer: true }, {
+    startExport: vi.fn(),
+    startExportPerLayer: async () => {
+      throw new Error("disk full");
+    },
+  });
+  expect(r.ok).toBe(false);
+  expect(r.files).toBeUndefined();
+  expect(store.get().notices.at(-1)?.level).toBe("error");
+});

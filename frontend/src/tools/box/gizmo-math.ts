@@ -46,14 +46,26 @@ export function resizeFace(b: BoxModel, axisIdx: 0 | 1 | 2, sign: 1 | -1, d: num
   return { ...b, dimensions, center };
 }
 
-/** Angle of the ray/plane intersection about `axis` through `center`; null if the ray is parallel to the plane. */
-export function ringAngle(r: Ray, center: Vec3, axis: Vec3): number | null {
+/**
+ * Where the ray meets the plane through `center` with normal `axis`: the hit point and the ray parameter t.
+ * Null when the ray is parallel to the plane, or (perspective only) when the plane lies behind the eye.
+ * An ortho ray is a line: the ortho camera draws behind its eye, so t <= 0 is valid there.
+ */
+export function ringPlaneHit(r: Ray, center: Vec3, axis: Vec3, ortho: boolean): { point: Vec3; t: number } | null {
   const n = normalize(axis);
   const denom = dot(n, r.dir);
   if (Math.abs(denom) < 1e-12) return null;
   const t = dot(n, sub(center, r.origin)) / denom;
-  const p: Vec3 = [r.origin[0] + t * r.dir[0], r.origin[1] + t * r.dir[1], r.origin[2] + t * r.dir[2]];
-  const rel = sub(p, center);
+  if (!ortho && t <= 0) return null;
+  return { point: [r.origin[0] + t * r.dir[0], r.origin[1] + t * r.dir[1], r.origin[2] + t * r.dir[2]], t };
+}
+
+/** Angle of the ray/plane intersection about `axis` through `center`; null if the ray is parallel to the plane or (perspective) the plane is behind the eye. */
+export function ringAngle(r: Ray, center: Vec3, axis: Vec3, ortho = false): number | null {
+  const hit = ringPlaneHit(r, center, axis, ortho);
+  if (!hit) return null;
+  const n = normalize(axis);
+  const rel = sub(hit.point, center);
   const helper: Vec3 = Math.abs(n[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
   const u = normalize(crossV(helper, n));
   const w = crossV(n, u);
@@ -73,6 +85,16 @@ export function rotationDelta(a0: number, a1: number): number {
   return d;
 }
 
+/** Running total of a ring drag: each new angle adds its shortest delta, so turns past 180 degrees keep going. A null angle holds. */
+export interface TurnState {
+  prev: number;
+  total: number;
+}
+export function advanceTurn(st: TurnState, angle: number | null): TurnState {
+  if (angle === null) return st;
+  return { prev: angle, total: st.total + rotationDelta(st.prev, angle) };
+}
+
 /** Rotates the box about its own centre around a world axis. */
 export function rotateBox(b: BoxModel, worldAxis: Vec3, angle: number): BoxModel {
   return { ...b, quat: normalizeQ(mul(fromAxisAngle(worldAxis, angle), b.quat)) };
@@ -81,11 +103,10 @@ export function rotateBox(b: BoxModel, worldAxis: Vec3, angle: number): BoxModel
 export const snap = (v: number, inc: number): number => (inc > 0 ? Math.round(v / inc) * inc : v);
 export const applyPrecision = (delta: number, on: boolean): number => (on ? delta * 0.1 : delta);
 
-export type HandleClass = "translate" | "resize" | "rotate";
-export const HANDLE_STYLES: Record<HandleClass, { shape: "arrow" | "square" | "ring"; colour: string }> = {
-  translate: { shape: "arrow", colour: "#ff5555" },
-  resize: { shape: "square", colour: "#ffd23f" },
-  rotate: { shape: "ring", colour: "#4cc9f0" },
+export type HandleClass = "resize" | "rotate";
+export const HANDLE_STYLES: Record<HandleClass, { shape: "arrow" | "ring" }> = {
+  resize: { shape: "arrow" },
+  rotate: { shape: "ring" },
 };
 
 /** A pointer-down that hits a handle drives the gizmo (camera orbit disabled for the drag); anything else the camera. */

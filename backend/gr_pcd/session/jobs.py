@@ -20,7 +20,19 @@ from gr_pcd.session.budget import make_rss_guard
 log = logging.getLogger(__name__)
 
 MAX_JOBS = 200
-SUPERSEDED = ("select", "candidate")
+SUPERSEDED = ("select", "candidate", "preview")
+# kinds the orphan sweeper cancels when the client stops polling; a detect is swept but a new select does not cancel it
+ORPHAN_SWEPT = (*SUPERSEDED, "planes")
+# what a new job of a kind cancels: a preview only replaces an older preview
+# (it must not cancel a commit or a candidate evaluation in flight)
+CANCELS = {
+    "select": SUPERSEDED,
+    "candidate": SUPERSEDED,
+    "preview": ("preview",),
+    "planes": (
+        "planes",
+    ),  # a new detect supersedes the old one; select/candidate keep running
+}
 JOB_ORPHAN_S = 20.0
 SWEEP_TICK_S = 1.0
 
@@ -94,11 +106,11 @@ class JobManager:
             self.sweep()
 
     def sweep(self) -> None:
-        """Cancel select/candidate jobs whose client stopped polling."""
+        """Cancel select/candidate/preview/planes jobs whose client stopped polling."""
         now = self._clock()
         for job in list(self._jobs.values()):
             if (
-                job.kind in SUPERSEDED
+                job.kind in ORPHAN_SWEPT
                 and job.status in ("queued", "running")
                 and now - job.last_seen > self._orphan_s
             ):

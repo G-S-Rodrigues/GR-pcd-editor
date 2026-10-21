@@ -3,6 +3,7 @@
 *.pcd.zip
 *.session
 *.session.zip
+*.pcdsession
 /uploads/
 /outputs/
 .env

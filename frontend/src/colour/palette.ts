@@ -7,9 +7,17 @@ export const PALETTE = {
   base: hex(0xb0b0b0),
   selected: hex(0xff9f1c),
   protected: hex(0x00d1ff),
+  /** Points inside the protected slab while the protection section is open (brighter than `protected`). */
+  protectedStrong: hex(0x00f0ff),
   slab: hex(0xc77dff),
   deleted: hex(0xe63946),
+  /** Highlighted history step (its deleted points) and its lighter hover preview. */
+  step: hex(0x7bd88f),
+  stepHover: hex(0xcdeccf),
   pivot: hex(0xffffff),
+  /** Pending Add/Subtract/Intersect preview: points that will be added / will be removed. */
+  previewAdd: hex(0xff4fd8),
+  previewRemove: hex(0x5b7cff),
 } as const;
 
 export const DELETED_OPACITY_DEFAULT = 0.35;

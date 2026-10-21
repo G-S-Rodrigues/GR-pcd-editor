@@ -1,39 +1,83 @@
 import { PROTECTION_COPY, effectiveText, retainedText } from "../inspector/protection";
 import * as P from "../inspector/protection";
-import { FILTER_COPY, AXES, type Axis } from "../inspector/filters";
+import { FILTER_COPY, filterSummary } from "../inspector/filters";
 import { type AppState, addNotice } from "../state/app";
+import { deleteBlockedNote } from "../orchestration/runner";
 import type { Store } from "../state/store";
 import type { Vec3 } from "../state/types";
 import * as B from "../tools/box/model";
 import { displayedBounds, fitToView, rectAxis, rectDepth } from "../tools/box/rect";
 import { POLYGON_DEPTH_NOTE, Z_UNLIMITED } from "../tools/polygon/model";
 import * as PG from "../tools/polygon/model";
-import { CLUSTER_LIMIT_TEXT, clusterLimitText, clusterPanel, regionOptions, setRadius } from "../tools/cluster/model";
+import { polygonHint } from "../tools/polygon/edit";
+import { CLUSTER_LIMIT_TEXT, type RegionKind, clusterLimitText, clusterPanel, regionOptions, setRadius } from "../tools/cluster/model";
+import { type SparseModel, setMinNeighbours, setSparseRadius, sparseSummary } from "../tools/sparse/model";
+import { type PlaneModel, planeRows, planeSummary, setMaxPlanes, setMaxTilt, setPlaneDistance } from "../tools/plane/model";
+import { type ThinModel, setThinDistance, setThinEdge, setThinMethod, thinSummary } from "../tools/thin/model";
+import { planesNote } from "../orchestration/planes";
+import { clusterPickState, pickText, pressPick } from "../tools/cluster/pick";
 import { headline } from "../status/headline";
-import { draftText } from "../tools/draft";
-import { invertNote, scopeNotice } from "../orchestration/selection";
+import { commitEnabled, commitLabel, discardEnabled, previewClusterOf, previewParts } from "../tools/preview";
+import { scopeNotice, selectionDisabledReason } from "../orchestration/selection";
+import { hideState } from "../orchestration/hide";
 import { historyRows } from "../inspector/history";
 import { control } from "./controls";
+import { SELECTED_COLOURS, type SelectedColourId } from "../colour/selectcolour";
+import { cssColour } from "./legend";
+import { iconControl } from "./iconbutton";
+import { iconSvg } from "./icons";
+import { commitNumber } from "./numfield";
 import { TOOLTIPS } from "./tooltips";
 import { h } from "./dom";
+import { foldSyncer, foldable } from "./fold";
+import { type SectionId, isSectionOpen, setSectionOpen } from "./sections";
+
+/** The first-selection note: the short line is visible, the advice is its tooltip (part 17-10). */
+export const LIVE_NOTE = "First selection: edits are live.";
+export const LIVE_NOTE_TITLE = "First selection: edits are live. Choose Add, Subtract or Intersect to preview changes instead.";
 
 /** What the panels need from the rest of the app. */
+/** The Box tool hint under the Gizmo fields. */
+export const BOX_NOTE =
+  "Drag an arrow to resize that face (Alt: both sides), drag the box to move it, drag the small ring on an arrow to rotate about that axis. Shift is fine, Ctrl+drag orbits. Arrow keys nudge.";
+
 export interface PanelActions {
   toolChanged: () => void;
   scopeChanged: () => void;
-  filterEdit: (axis: Axis, patch: Partial<{ enabled: boolean; min: number; max: number }>) => { ok: boolean; error?: string };
-  filterResetBounds: () => void;
   filterResetAll: () => void;
   protectionEdit: (fn: (m: P.ProtectionModel) => P.ProtectionEdit) => P.ProtectionEdit;
   setTool: (t: AppState["tool"]) => void;
   commitDraft: () => void;
+  discardDraft: () => void;
   selectDisplayed: () => void;
   invert: () => void;
   clearSelection: () => void;
+  toggleHide: () => void;
+  layerCreate: (name: string) => void;
+  layerAssign: () => void;
+  layerRelease: () => void;
+  layerSelect: (id: number) => void;
+  layerToggle: (id: number) => void;
+  layerToMain: (id: number) => void;
+  layerChoose: (id: number) => void;
+  layerEdit: (id: number) => void;
+  layerSet: () => void;
+  layerFromBand: () => void;
+  layerRename: (id: number, name: string) => void;
+  layerColour: (id: number, colour: number) => void;
+  layerFlag: (id: number, flag: "protected" | "locked", value: boolean) => void;
+  layerOp: (id: number, op: "replace" | "add" | "subtract" | "intersect") => void;
+  layerMove: (id: number, dir: -1 | 1) => void;
+  layerMerge: (from: number, into: number) => void;
+  layerDeletePoints: (id: number) => void;
   removeInvalid: () => void;
   removeInvalidVisible: () => boolean;
   removeInvalidLabel: () => string;
   cancelJob: () => void;
+  planeDetect: () => void;
+  planeCancel: () => void;
+  planeSelect: (index: number) => void;
+  planeBand: (index: number) => void;
   startDrawing: () => void;
   finishPolygon: () => string | null;
   cancelDrawing: () => void;
@@ -41,7 +85,6 @@ export interface PanelActions {
   viewSize: () => { w: number; h: number };
 }
 
-import { SLICE_COPY, type SliceAxis, sliceFromBox, stepSlice } from "../view/slice";
 const RECT_REASON = "switch to an ortho view (click a ViewCube face)";
 type Sync = (s: AppState) => void;
 const fmt = (v: number) => String(Math.round(v * 1e6) / 1e6);
@@ -49,12 +92,59 @@ const fmt = (v: number) => String(Math.round(v * 1e6) / 1e6);
 export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: PanelActions): void {
   const toolBtn = (id: string, tool: AppState["tool"], label: string) =>
     control("button", { id, onclick: () => a.setTool(store.get().tool === tool ? "none" : tool) }, label);
-  const btns = { box: toolBtn("tool-box", "box", "Box"), polygon: toolBtn("tool-polygon", "polygon", "Polygon"), cluster: toolBtn("tool-cluster", "cluster", "Cluster") };
-  const op = control(
-    "select",
-    { id: "op-select", onchange: () => store.set({ op: op.value as AppState["op"] }) },
-    ...[["replace", "Replace"], ["add", "Add"], ["subtract", "Subtract"], ["intersect", "Intersect"]].map(([v, t]) => h("option", { value: v, text: t })),
+  const btns = {
+    box: toolBtn("tool-box", "box", "Box"),
+    polygon: toolBtn("tool-polygon", "polygon", "Polygon"),
+    cluster: toolBtn("tool-cluster", "cluster", "Cluster"),
+    sparse: toolBtn("tool-sparse", "sparse", "Sparse points"),
+    plane: toolBtn("tool-plane", "plane", "Planes"),
+    thin: toolBtn("tool-thin", "thin", "Thin"),
+  };
+  // Operation: three icon radios (none pressed while the first selection is live). Replace is not offered.
+  const OPS = [
+    ["add", "op-add", "add"],
+    ["subtract", "op-subtract", "sub"],
+    ["intersect", "op-intersect", "int"],
+  ] as const;
+  const chooseOp = (value: AppState["op"]) => {
+    // choosing an operation ends the first (live) selection: the next edit previews against the selection
+    store.set({ op: value, liveFirst: false });
+    const s = store.get();
+    // with a draft showing, a new operation re-previews that shape
+    if ((s.draft || s.preview) && s.tool !== "none") a.toolChanged();
+  };
+  const opBtns = OPS.map(([value, id, icon], i) => {
+    const b = iconControl(id, icon, {
+      role: "radio",
+      onclick: () => chooseOp(value),
+      onkeydown: (e: KeyboardEvent) => {
+        const d = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+        if (!d) return;
+        e.preventDefault();
+        const j = (i + d + OPS.length) % OPS.length;
+        chooseOp(OPS[j][0]);
+        opBtns[j].focus();
+      },
+    });
+    return b;
+  });
+  const op = control("div", { id: "op-select", role: "radiogroup", "aria-label": "Operation", class: "opgroup" }, ...opBtns);
+  const previewLive = control(
+    "button",
+    {
+      id: "preview-live",
+      role: "switch",
+      class: "toggle",
+      onclick: () => {
+        store.set({ previewLive: !store.get().previewLive });
+        const s = store.get();
+        if (s.draft && s.tool !== "none") a.toolChanged(); // turning it on previews the shape now; off drops the old preview
+      },
+    },
+    iconSvg("eye", 16),
+    " Live preview",
   );
+  const liveNote = h("p", { id: "live-note", class: "note", hidden: true });
   const scope = control(
     "select",
     {
@@ -67,8 +157,52 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     h("option", { value: "displayed", text: "Displayed" }),
     h("option", { value: "active", text: "Active" }),
   );
+  // Selected colour: four swatch radios (Orange default); view-only, saved with the session when not orange
+  const chooseColour = (id: SelectedColourId) => store.set({ selectedColour: id });
+  const swatches = SELECTED_COLOURS.map((p, i) => {
+    const b = control(
+      "button",
+      {
+        id: `sel-colour-${p.id}`,
+        type: "button",
+        role: "radio",
+        class: "swatch",
+        "aria-label": `Selected colour ${p.label}`,
+        onclick: () => chooseColour(p.id),
+        onkeydown: (e: KeyboardEvent) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            chooseColour(p.id);
+            return;
+          }
+          const d = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+          if (!d) return;
+          e.preventDefault();
+          const j = (i + d + SELECTED_COLOURS.length) % SELECTED_COLOURS.length;
+          chooseColour(SELECTED_COLOURS[j].id);
+          swatches[j].focus();
+        },
+      },
+    );
+    b.style.background = cssColour(p.colour);
+    return b;
+  });
+  const swatchGroup = control("div", { id: "sel-colour", role: "radiogroup", "aria-label": "Selected colour", class: "opgroup" }, ...swatches);
+  // Select displayed and Invert stay clickable but inactive (aria-disabled) while a tool is armed: the click explains why
+  const guardedBtns: HTMLButtonElement[] = [];
+  const guarded = (b: HTMLButtonElement) => (guardedBtns.push(b), b);
+  const refuse = (): boolean => {
+    const why = selectionDisabledReason(store.get());
+    if (why) addNotice(store, "warn", "selection_disabled", why);
+    return why !== null;
+  };
+  // Hide selected: a text button (no glyph); inactive buttons stay clickable so the click explains why (like Select displayed)
+  const hideBtn = control("button", { id: "sel-hide", "aria-pressed": "false", onclick: () => a.toggleHide() }, "Hide selected");
   const commit = control("button", { id: "sel-commit", onclick: a.commitDraft }, "Commit draft");
+  const discard = control("button", { id: "sel-discard", onclick: a.discardDraft }, "Discard draft");
   const note = h("p", { id: "scope-note", class: "note" });
+  const deleteBlocked = h("p", { id: "delete-blocked", class: "note warn", hidden: true });
+  const clusterLimit = h("p", { id: "cluster-limit", class: "note warn", hidden: true });
   const invalid = control("button", { id: "remove-invalid", onclick: a.removeInvalid }, "Remove invalid");
   const draftNote = h("p", { id: "draft-note", class: "note warn", hidden: true });
   const keptWarn = h("p", { id: "kept-warning", class: "note warn", hidden: true });
@@ -83,44 +217,86 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
   const keptToggle = control("button", { id: "sel-show-kept", onclick: () => store.update((s) => ({ ...s, showKept: !s.showKept })) }, "Show kept points");
   root.append(
     h("h2", { text: "Tools" }),
-    h("div", { class: "stack" }, btns.box, btns.polygon, btns.cluster),
+    h("div", { class: "stack" }, btns.box, btns.polygon, btns.cluster, btns.sparse, btns.plane, btns.thin),
     h("h2", { text: "Selection" }),
-    h("label", {}, "Operation ", op),
-    h("label", {}, "Scope ", scope),
-    commit,
+    h("div", { class: "oprow" }, h("span", { text: "Operation" }), op, previewLive),
+    liveNote,
+    h("div", { class: "oprow scoperow" }, h("label", { text: "Scope" }), scope),
+    h("div", { class: "oprow" }, h("span", { text: "Selected colour" }), swatchGroup),
+    h("div", { class: "stack" }, commit, discard),
     h(
       "div",
       { class: "stack" },
-      control("button", { id: "sel-select-displayed", onclick: a.selectDisplayed }, "Select displayed"),
-      control("button", { id: "sel-invert", onclick: a.invert }, "Invert"),
-      control("button", { id: "sel-clear", onclick: a.clearSelection }, "Clear selection"),
+      guarded(control("button", { id: "sel-select-displayed", onclick: () => refuse() || a.selectDisplayed() }, "Select displayed")),
+      guarded(control("button", { id: "sel-invert", onclick: () => refuse() || a.invert() }, "Invert")),
     ),
+    h("div", { class: "stack" }, control("button", { id: "sel-clear", onclick: a.clearSelection }, "Clear selection"), hideBtn),
+    deleteBlocked,
     note,
+    clusterLimit,
     draftNote,
     keptWarn,
     keptDelete,
     keptToggle,
+    h("div", { id: "layers-slot" }),
     h("h2", { text: "Cloud" }),
     invalid,
-    h("p", { class: "note", text: "Navigation: left-drag orbits, middle/right-drag or Shift-drag pans, wheel zooms. Click ? for all keys." }),
   );
   const sync: Sync = (s) => {
-    for (const k of ["box", "polygon", "cluster"] as const) btns[k].classList.toggle("active", s.tool === k);
+    for (const k of ["box", "polygon", "cluster", "sparse", "plane", "thin"] as const) btns[k].classList.toggle("active", s.tool === k);
     const open = s.session !== null;
     const ro = s.compare !== "edited";
     for (const [k, b] of Object.entries(btns)) {
       b.disabled = !open || ro;
       b.title = `${TOOLTIPS[`tool-${k}`]}${ro ? " (disabled: return to the edited view to edit)" : ""}`;
     }
-    op.value = s.op;
+    OPS.forEach(([value], i) => {
+      const on = !s.liveFirst && s.op === value;
+      opBtns[i].setAttribute("aria-checked", String(on));
+      opBtns[i].tabIndex = on || (s.liveFirst && i === 0) ? 0 : -1;
+      opBtns[i].disabled = !open || ro;
+    });
+    previewLive.setAttribute("aria-checked", String(s.previewLive));
+    previewLive.setAttribute("aria-pressed", String(s.previewLive));
+    previewLive.replaceChildren(iconSvg(s.previewLive ? "eye" : "eyeoff", 16), " Live preview");
+    liveNote.hidden = !(s.liveFirst && s.tool !== "none");
+    liveNote.textContent = liveNote.hidden ? "" : LIVE_NOTE;
+    liveNote.title = liveNote.hidden ? "" : LIVE_NOTE_TITLE;
     scope.value = s.scope;
-    commit.disabled = !s.draft;
-    commit.textContent = s.draft ? `Commit: ${s.op} tool shape` : "Commit draft";
-    const dn = draftText(s);
+    SELECTED_COLOURS.forEach((p, i) => {
+      const on = s.selectedColour === p.id;
+      swatches[i].setAttribute("aria-checked", String(on));
+      swatches[i].tabIndex = on ? 0 : -1;
+      swatches[i].disabled = !open;
+    });
+    const why = selectionDisabledReason(s);
+    for (const b of guardedBtns) {
+      const id = b.getAttribute("data-control") ?? "";
+      b.setAttribute("aria-disabled", String(why !== null));
+      b.classList.toggle("inactive", why !== null);
+      b.title = why ? `${TOOLTIPS[id]} (${why})` : (TOOLTIPS[id] ?? "");
+    }
+    const hs = hideState(s);
+    hideBtn.textContent = hs.label;
+    hideBtn.setAttribute("aria-pressed", String(hs.pressed));
+    hideBtn.setAttribute("aria-disabled", String(hs.reason !== null));
+    hideBtn.classList.toggle("inactive", hs.reason !== null);
+    hideBtn.title = hs.reason ? `${TOOLTIPS["sel-hide"]} (${hs.reason})` : TOOLTIPS["sel-hide"];
+    commit.disabled = !commitEnabled(s);
+    commit.textContent = commitLabel(s);
+    discard.disabled = !discardEnabled(s);
+    const dn = previewParts(s);
     draftNote.hidden = dn === null;
-    draftNote.textContent = dn ?? "";
+    draftNote.textContent = dn?.text ?? "";
+    draftNote.title = dn?.title ?? "";
     const n = scopeNotice(s);
-    note.textContent = n ?? (s.op === "invert" ? invertNote(s.scope) : "");
+    note.textContent = n ?? "";
+    const db = deleteBlockedNote(s);
+    deleteBlocked.hidden = db === null;
+    deleteBlocked.textContent = db ?? "";
+    const lim = clusterLimitText(previewClusterOf(s));
+    clusterLimit.hidden = lim === null;
+    clusterLimit.textContent = lim ?? "";
     const hl = headline(s);
     keptWarn.hidden = hl.warning === null;
     keptWarn.textContent = hl.warning ?? "";
@@ -135,7 +311,16 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
   sync(store.get());
 }
 
-export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: PanelActions): void {
+/** Where `buildEditPanels` puts the four tool sections and what it scrolls to the top when a tool is armed. */
+export interface EditPanelSlots {
+  /** The fixed slot above File: the armed tool's section is its only visible child. Defaults to `root`. */
+  toolRoot?: HTMLElement;
+  /** The scrolling panel (the inspector); its `scrollTop` is set to 0 once per arming. */
+  scroller?: { scrollTop: number };
+}
+
+export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: PanelActions, slots: EditPanelSlots = {}): void {
+  const toolRoot = slots.toolRoot ?? root;
   const syncs: Sync[] = [];
   const errors = h("div", { id: "edit-error", class: "notice error", hidden: true });
   const showErr = (m: string | null | undefined) => {
@@ -154,10 +339,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     view?: { show: (v: number) => string; empty: number },
   ) => {
     const input = control("input", { id, type: "text", inputmode: "decimal", onchange: () => {
-      const raw = input.value.trim();
-      const blank = view !== undefined && (raw === "" || raw.toLowerCase() === "unlimited");
-      const v = blank ? view.empty : Number(raw);
-      const err = (raw === "" && !blank) || Number.isNaN(v) ? `${label} must be a number` : commit(v);
+      const err = commitNumber(input.value, label, commit, view);
       showErr(err);
       sync(store.get());
     } });
@@ -179,9 +361,25 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     return h("label", { class: "f" }, label, el);
   };
   const button = (id: string, label: string, onclick: () => void) => control("button", { id, onclick }, label);
-  const section = (title: string, visible: (s: AppState) => boolean, ...kids: (Node | null)[]) => {
-    const el = h("section", { class: "panel" }, h("h2", { text: title }), ...kids);
-    syncs.push((s) => (el.hidden = !visible(s)));
+  const section = (id: SectionId, title: string, visible: (s: AppState) => boolean, ...kids: (Node | null)[]) => {
+    const f = foldable(store, id, h("h2", { text: title }), ...kids);
+    syncs.push((s) => {
+      f.el.hidden = !visible(s);
+      f.sync(s);
+    });
+    return f.el;
+  };
+  /** A panel section the user can fold; its open state is `floorPanelOpen` (also drives the strong protected colour). */
+  const collapsible = (title: string, visible: (s: AppState) => boolean, ...kids: (Node | null)[]) => {
+    const el = h("details", { class: "panel", open: true }, h("summary", { title: "Fold or unfold this section; while it is open the protected slab is drawn in a stronger colour" }, h("h2", { text: title })), ...kids);
+    el.addEventListener("toggle", () => {
+      if (el.open !== store.get().floorPanelOpen) store.update((s) => ({ ...s, floorPanelOpen: el.open }));
+    });
+    const foldSync = foldSyncer(el, (s) => s.floorPanelOpen);
+    syncs.push((s) => {
+      el.hidden = !visible(s);
+      foldSync(s);
+    });
     return el;
   };
   const text = (get: (s: AppState) => string, cls = "note") => {
@@ -243,6 +441,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     rectButton.title = ok ? TOOLTIPS["box-rect"] : `${TOOLTIPS["box-rect"]} (disabled: ${RECT_REASON})`;
   });
   const boxPanel = section(
+    "box",
     "Box",
     (s) => s.tool === "box",
     text((s) => B.boxValidity(s.tools.box) ?? ""),
@@ -281,7 +480,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
       button("box-fit-view", "Fit to view", () => {
         const s = store.get();
         const axis = rectAxis(s.camera);
-        const depth = axis === null ? null : rectDepth(axis, s.session?.active_bounds ?? null, s.slice);
+        const depth = axis === null ? null : rectDepth(axis, s.session?.active_bounds ?? null);
         const box = depth ? fitToView(s.tools.box, s.camera, a.viewSize(), depth) : null;
         if (box) boxEdit(() => ({ ok: true, box }));
         else showErr(RECT_REASON);
@@ -306,10 +505,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
         return null;
       }),
     ),
-    select("gizmo-frame", "Axes", [["local", "Box axes"], ["world", "World axes"]], (s) => (s.gizmo.local ? "local" : "world"), (v) =>
-      store.update((s) => ({ ...s, gizmo: { ...s.gizmo, local: v === "local" } })),
-    ),
-    h("p", { class: "note", text: "Drag arrows to move, squares to resize (Alt: both sides), rings to rotate; Shift for fine control." }),
+    h("p", { class: "note", text: BOX_NOTE }),
   );
 
   // ---- polygon
@@ -332,9 +528,10 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
   const vertexList = h("div", { class: "verts" });
   let vertKey = "";
   syncs.push((s) => {
-    const key = `${s.tools.polygon.phase}|${s.tools.polygon.vertices.length}`;
+    const key = `${s.tools.polygon.phase}|${s.tools.polygon.vertices.length}|${s.tools.polygon.editing}`;
     if (key === vertKey && vertexList.contains(document.activeElement)) return;
     vertKey = key;
+    const editing = s.tools.polygon.editing;
     vertexList.replaceChildren(
       ...s.tools.polygon.vertices.map((v, i) => {
         const mk = (axis: 0 | 1) => {
@@ -359,15 +556,45 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
           });
           return inp;
         };
-        return h("div", { class: "vertrow" }, h("span", { text: `${i + 1}` }), mk(0), mk(1));
+        const remove = editing
+          ? h("button", {
+              type: "button",
+              "data-vertex-remove": String(i),
+              title: `Remove vertex ${i + 1}`,
+              "aria-label": `Remove vertex ${i + 1}`,
+              text: "×",
+              onclick: () => {
+                const r = PG.removeVertex(store.get().tools.polygon, i);
+                if (!r.ok) return showErr(r.message ?? "The vertex could not be removed");
+                showErr(null);
+                store.update((st) => ({ ...st, tools: { ...st.tools, polygon: r.state } }));
+                a.toolChanged();
+              },
+            })
+          : null;
+        return h("div", { class: editing ? "vertrow editing" : "vertrow" }, h("span", { text: `${i + 1}` }), mk(0), mk(1), remove);
       }),
     );
   });
+  const drawBtn = button("poly-draw", "Draw polygon", a.startDrawing);
+  const editBtn = iconControl("poly-edit", "pencil", {
+    onclick: () => store.update((s) => ({ ...s, tools: { ...s.tools, polygon: PG.setEditing(s.tools.polygon, !s.tools.polygon.editing) } })),
+  });
+  const polyHint = h("p", { class: "note" });
+  syncs.push((s) => {
+    const hint = polygonHint(s.tools.polygon);
+    polyHint.textContent = hint.text;
+    drawBtn.classList.toggle("hint", hint.accentDraw);
+    editBtn.disabled = s.tools.polygon.phase !== "closed";
+    editBtn.setAttribute("aria-pressed", String(s.tools.polygon.editing));
+    editBtn.classList.toggle("active", s.tools.polygon.editing);
+  });
   const polyPanel = section(
+    "polygon",
     "Polygon",
     (s) => s.tool === "polygon",
-    h("div", { class: "stack" }, button("poly-draw", "Draw polygon", a.startDrawing), button("poly-finish", "Close polygon", () => showErr(a.finishPolygon())), button("poly-cancel", "Cancel drawing", a.cancelDrawing), button("poly-clear", "Clear polygon", a.clearPolygon)),
-    text((s) => (s.tools.polygon.phase === "drawing" ? `Drawing: ${s.tools.polygon.vertices.length} vertices. Click to add, Enter to close, Esc to cancel.` : s.tools.polygon.phase === "closed" ? "Polygon closed. Drag a vertex or edit it numerically." : "Press Draw polygon, then click in the view.")),
+    h("div", { class: "stack" }, drawBtn, button("poly-finish", "Close polygon", () => showErr(a.finishPolygon())), button("poly-cancel", "Cancel drawing", a.cancelDrawing), button("poly-clear", "Clear polygon", a.clearPolygon), editBtn),
+    polyHint,
     vertexList,
     row(polyZ("zMin", "poly-zmin", "Z min"), polyZ("zMax", "poly-zmax", "Z max")),
     text((s) => PG.polygonProblem(s.tools.polygon) ?? (s.tools.polygon.zMin <= -Z_UNLIMITED && s.tools.polygon.zMax >= Z_UNLIMITED ? "Z limits: unlimited" : "")),
@@ -378,13 +605,44 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     h("p", { class: "note", text: POLYGON_DEPTH_NOTE }),
   );
 
+  // arming a tool opens its section if it was folded (through the store, like a click on its summary) and scrolls the panel to the
+  // top, once per arming: the armed tool's section is the first one (the fixed tool slot above File)
+  let prevTool = store.get().tool;
+  syncs.push((s) => {
+    if (s.tool === prevTool) return;
+    prevTool = s.tool;
+    if (s.tool === "none") return;
+    if (!isSectionOpen(s.sectionsOpen, s.tool)) store.update((st) => ({ ...st, sectionsOpen: setSectionOpen(st.sectionsOpen, s.tool as SectionId, true) }));
+    if (slots.scroller) slots.scroller.scrollTop = 0;
+  });
+
   // ---- cluster
+  // Pick point is a toggle with three states (waiting, set, paused); pressing it always leaves it waiting
+  const pickButton = control(
+    "button",
+    {
+      id: "cluster-pick-seed",
+      class: "toggle",
+      onclick: () => {
+        const had = store.get().tools.cluster.seed !== null;
+        store.update((s) => ({ ...s, ...pressPick(s) }));
+        if (had) a.discardDraft(); // the old seed's draft or preview is gone with it
+      },
+    },
+    "Pick point",
+  );
+  syncs.push((s) => {
+    const st = clusterPickState(s);
+    pickButton.setAttribute("data-state", st);
+    pickButton.setAttribute("aria-pressed", String(st === "waiting"));
+  });
   const clusterPanelEl = section(
+    "cluster",
     "Cluster",
     (s) => s.tool === "cluster",
-    h("div", { class: "stack" }, button("cluster-pick-seed", "Pick seed", () => store.set({ interaction: store.get().interaction === "pick-seed" ? "orbit" : "pick-seed" })), button("cluster-cancel", "Cancel", a.cancelJob)),
-    text((s) => (s.tools.cluster.seed ? `Seed: point ${s.tools.cluster.seed.id} at ${s.tools.cluster.seed.point.map(fmt).join(", ")}` : "No seed yet: press Pick seed, then click a point")),
-    field("cluster-radius", "Radius", (s) => s.tools.cluster.radius, (v) => {
+    h("div", { class: "stack" }, pickButton, button("cluster-cancel", "Cancel", a.cancelJob)),
+    text((s) => pickText(s)),
+    field("cluster-radius", "Link distance", (s) => s.tools.cluster.radius, (v) => {
       const r = setRadius(store.get().tools.cluster, v);
       if (!r.ok) return r.error ?? "Invalid radius";
       store.update((s) => ({ ...s, tools: { ...s.tools, cluster: r.model } }));
@@ -429,53 +687,182 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     }),
     (() => {
       const dl = h("dl", { id: "cluster-result" });
-      syncs.push((s) => dl.replaceChildren(...clusterPanel(s.candidate).flatMap((r) => [h("dt", { text: r.label }), h("dd", { text: r.value })])));
+      syncs.push((s) => dl.replaceChildren(...clusterPanel(s).flatMap((r) => [h("dt", { text: r.label }), h("dd", { text: r.value })])));
       return dl;
     })(),
-    text((s) => clusterLimitText(s.candidate) ?? (s.notices.some((n) => n.code === "component_limit_reached") ? CLUSTER_LIMIT_TEXT : ""), "note warn"),
+    text((s) => clusterLimitText(previewClusterOf(s)) ?? (s.notices.some((n) => n.code === "component_limit_reached") ? CLUSTER_LIMIT_TEXT : ""), "note warn"),
   );
 
-  // ---- filters
-  const filterAxis = (axis: Axis) => {
-    const U = axis.toUpperCase();
-    const bounds = (s: AppState) => ({ lo: s.session?.bounds?.min[AXN.indexOf(axis)] ?? 0, hi: s.session?.bounds?.max[AXN.indexOf(axis)] ?? 1 });
-    const slider = (which: "min" | "max") => {
-      const el = control("input", { id: `filter-${axis}-${which}-slider`, type: "range", step: "any", oninput: () => {
-        const r = a.filterEdit(axis, { enabled: true, [which]: Number(el.value) });
-        showErr(r.ok ? null : r.error);
+  // ---- sparse points: select isolated points (floating artifacts), keep walls and floors
+  const sparseEdit = (r: { ok: boolean; model: SparseModel; error?: string }): string | null => {
+    if (!r.ok) return r.error ?? "Invalid value";
+    store.update((s) => ({ ...s, tools: { ...s.tools, sparse: r.model } }));
+    a.toolChanged();
+    return null;
+  };
+  const sparsePanel = section(
+    "sparse",
+    "Sparse points",
+    (s) => s.tool === "sparse",
+    text((s) => sparseSummary(s.tools.sparse)),
+    (() => {
+      const input = control("input", { id: "sparse-radius", type: "text", inputmode: "decimal", placeholder: "From point spacing", onchange: () => {
+        const raw = input.value.trim();
+        const v = raw === "" ? null : Number(raw);
+        showErr(sparseEdit(setSparseRadius(store.get().tools.sparse, v === null || Number.isFinite(v) ? v : Number.NaN)));
+        sync(store.get());
+      } });
+      const sync: Sync = (s) => {
+        if (document.activeElement !== input) input.value = s.tools.sparse.radius === null ? "" : fmt(s.tools.sparse.radius);
+      };
+      syncs.push(sync);
+      return h("label", { class: "f" }, "Radius", input);
+    })(),
+    field("sparse-min", "Min neighbours", (s) => s.tools.sparse.minNeighbours, (v) => sparseEdit(setMinNeighbours(store.get().tools.sparse, v))),
+    (() => {
+      const sel = control("select", { id: "sparse-region", onchange: () => {
+        store.update((s) => ({ ...s, tools: { ...s.tools, sparse: { ...s.tools.sparse, region: sel.value as RegionKind } } }));
+        a.toolChanged();
       } });
       syncs.push((s) => {
-        const { lo, hi } = bounds(s);
-        el.min = String(lo);
-        el.max = String(hi);
-        if (document.activeElement !== el) el.value = String(s.tools.filters[axis][which]);
+        const t = currentToolPair(s);
+        const opts = regionOptions(t.box, t.prism);
+        sel.replaceChildren(...opts.map((o) => h("option", { value: o, text: o === "none" ? "Whole cloud" : o === "box" ? "Current box" : "Current polygon" })));
+        sel.value = opts.includes(s.tools.sparse.region) ? s.tools.sparse.region : "none";
       });
-      return el;
-    };
-    return h(
-      "div",
-      { class: "filter" },
-      check(`filter-${axis}-enabled`, `${U} filter`, (s) => s.tools.filters[axis].enabled, (v) => showErr(a.filterEdit(axis, { enabled: v }).error)),
-      row(
-        field(`filter-${axis}-min`, "min", (s) => s.tools.filters[axis].min, (v) => a.filterEdit(axis, { min: v }).error ?? null),
-        field(`filter-${axis}-max`, "max", (s) => s.tools.filters[axis].max, (v) => a.filterEdit(axis, { max: v }).error ?? null),
-      ),
-      slider("min"),
-      slider("max"),
-    );
+      return h("label", { class: "f" }, "Region ", sel);
+    })(),
+    check("sparse-exclude-protected", "Exclude protected points", (s) => s.tools.sparse.excludeProtected, (v) => {
+      store.update((s) => ({ ...s, tools: { ...s.tools, sparse: { ...s.tools.sparse, excludeProtected: v } } }));
+      a.toolChanged();
+    }),
+  );
+
+  // ---- planes: detect floor and ceiling planes (read only), choose one, select its points
+  const regionSelect = (id: string, key: "plane" | "thin") => {
+    const sel = control("select", { id, onchange: () => {
+      store.update((s) => ({ ...s, tools: { ...s.tools, [key]: { ...s.tools[key], region: sel.value as RegionKind } } }));
+      if (key === "thin" || store.get().planes.chosen) a.toolChanged();
+    } });
+    syncs.push((s) => {
+      const t = currentToolPair(s);
+      const opts = regionOptions(t.box, t.prism);
+      sel.replaceChildren(...opts.map((o) => h("option", { value: o, text: o === "none" ? "Whole cloud" : o === "box" ? "Current box" : "Current polygon" })));
+      sel.value = opts.includes(s.tools[key].region) ? s.tools[key].region : "none";
+    });
+    return h("label", { class: "f" }, "Region ", sel);
   };
+  // distance, tilt and count only steer the next detection; region and protection also change the chosen plane's points
+  const planeEdit = (r: { ok: boolean; model: PlaneModel; error?: string }): string | null => {
+    if (!r.ok) return r.error ?? "Invalid value";
+    store.update((s) => ({ ...s, tools: { ...s.tools, plane: r.model } }));
+    return null;
+  };
+  const detectBtn = button("plane-detect", "Detect planes", () => a.planeDetect());
+  const cancelBtn = button("plane-cancel", "Cancel", () => a.planeCancel());
+  const planeList = h("div", { id: "plane-list", class: "planelist" });
+  let listKey = "";
+  syncs.push((s) => {
+    detectBtn.disabled = !s.session || s.planes.busy;
+    cancelBtn.hidden = !s.planes.busy;
+    const fresh = s.session !== null && s.planes.revision === s.session.revision.cloud;
+    const key = JSON.stringify([fresh, s.planes.list, s.planes.chosenRow, s.planes.rowNote]);
+    if (key === listKey) return;
+    listKey = key;
+    const rows = fresh && s.planes.list ? planeRows(s.planes.list, s.session?.active_bounds ?? null) : [];
+    planeList.replaceChildren(
+      ...rows.flatMap((r) => {
+        const chosen = s.planes.chosenRow === r.index;
+        const sel = h("button", { id: `plane-select-${r.index}`, type: "button", title: "Select the points within the distance of this Detected plane; Delete then removes them", "aria-pressed": String(chosen), onclick: () => a.planeSelect(r.index) }, "Select");
+        const band = h("button", { id: `plane-band-${r.index}`, type: "button", title: "Make the height protection band follow this Detected plane (a tilted band when the plane is tilted)", onclick: () => a.planeBand(r.index) }, "Use as protection band");
+        const note = s.planes.rowNote?.row === r.index ? [h("p", { class: "note warn", id: `plane-note-${r.index}`, text: s.planes.rowNote.text })] : [];
+        return [
+          h("div", { class: chosen ? "planerow chosen" : "planerow", "data-plane": String(r.index) }, h("span", { class: "planelabel", text: r.label }), h("span", { class: "planenums", text: `z ${r.z}, tilt ${r.tilt} deg, ${r.count} points` }), sel, band),
+          ...note,
+        ];
+      }),
+    );
+  });
+  const planePanel = section(
+    "plane",
+    "Planes",
+    (s) => s.tool === "plane",
+    text((s) => planeSummary(s.tools.plane)),
+    field("plane-distance", "Distance", (s) => s.tools.plane.distance, (v) => planeEdit(setPlaneDistance(store.get().tools.plane, v))),
+    field("plane-max-tilt", "Max tilt (deg)", (s) => s.tools.plane.maxTilt, (v) => planeEdit(setMaxTilt(store.get().tools.plane, v))),
+    field("plane-max", "Max planes", (s) => s.tools.plane.maxPlanes, (v) => planeEdit(setMaxPlanes(store.get().tools.plane, v))),
+    regionSelect("plane-region", "plane"),
+    check("plane-exclude-protected", "Exclude protected points", (s) => s.tools.plane.excludeProtected, (v) => {
+      store.update((s) => ({ ...s, tools: { ...s.tools, plane: { ...s.tools.plane, excludeProtected: v } } }));
+      if (store.get().planes.chosen) a.toolChanged();
+    }),
+    h("div", { class: "stack" }, detectBtn, cancelBtn),
+    text(planesNote, "note"),
+    planeList,
+  );
+
+  // ---- thin: duplicates and voxel subsample, always a selection that Delete then removes
+  const thinEdit = (r: { ok: boolean; model: ThinModel; error?: string }): string | null => {
+    if (!r.ok) return r.error ?? "Invalid value";
+    store.update((s) => ({ ...s, tools: { ...s.tools, thin: r.model } }));
+    a.toolChanged();
+    return null;
+  };
+  const thinDistance = field("thin-distance", "Distance", (s) => s.tools.thin.distance, (v) => thinEdit(setThinDistance(store.get().tools.thin, v)));
+  const thinEdge = field("thin-edge", "Voxel edge", (s) => s.tools.thin.edge, (v) => thinEdit(setThinEdge(store.get().tools.thin, v)));
+  syncs.push((s) => {
+    thinDistance.hidden = s.tools.thin.method !== "duplicates";
+    thinEdge.hidden = s.tools.thin.method !== "voxel";
+  });
+  const thinPanel = section(
+    "thin",
+    "Thin",
+    (s) => s.tool === "thin",
+    text((s) => thinSummary(s.tools.thin)),
+    select("thin-method", "Method", [["duplicates", "Duplicates"], ["voxel", "Voxel grid"]], (s) => s.tools.thin.method, (v) => showErr(thinEdit(setThinMethod(store.get().tools.thin, v as "duplicates" | "voxel")))),
+    thinDistance,
+    thinEdge,
+    regionSelect("thin-region", "thin"),
+    check("thin-exclude-protected", "Exclude protected points", (s) => s.tools.thin.excludeProtected, (v) => {
+      store.update((s) => ({ ...s, tools: { ...s.tools, thin: { ...s.tools.thin, excludeProtected: v } } }));
+      a.toolChanged();
+    }),
+  );
+
+  // ---- filters (the six boxes live on the canvas, see filterboxes/; the panel keeps the note, summary and global reset)
   const filterPanel = section(
+    "display",
     "Display filter",
     (s) => s.session !== null,
     h("p", { class: "note", text: FILTER_COPY }),
-    ...AXES.map(filterAxis),
-    h("div", { class: "stack" }, button("filter-reset-bounds", "Reset to cloud", a.filterResetBounds), button("filter-reset-all", "Reset filters", a.filterResetAll)),
-    text((s) => (s.session ? `Displayed: ${s.session.counts.displayed.toLocaleString("en-US")} of ${s.session.counts.active.toLocaleString("en-US")} active points` : "")),
+    text((s) =>
+      s.session ? `${filterSummary(s.tools.filters, s.session.bounds, s.session.counts)}. Displayed: ${s.session.counts.displayed.toLocaleString("en-US")} of ${s.session.counts.active.toLocaleString("en-US")} active points` : "",
+    ),
+    h("div", { class: "stack" }, button("filter-reset-all", "Reset filters", a.filterResetAll)),
   );
 
   // ---- protection
   const prot = (fn: (m: P.ProtectionModel) => P.ProtectionEdit) => showErr(a.protectionEdit(fn).error);
-  const protPanel = section(
+  // a refused tilt says why right under the fields (the shared #edit-error sits at the top of the panels, out of sight from here)
+  const tiltNote = h("p", { id: "prot-tilt-note", class: "note warn", hidden: true });
+  const tiltKey = (s: AppState) => `${s.tools.protection.tilt.rx},${s.tools.protection.tilt.ry}`;
+  let noteAt = "";
+  const tiltMsg = (m: string | null) => {
+    tiltNote.hidden = !m;
+    tiltNote.textContent = m ?? "";
+    noteAt = tiltKey(store.get());
+  };
+  syncs.push((s) => {
+    if (!tiltNote.hidden && tiltKey(s) !== noteAt) tiltMsg(null); // the tilt moved by a ring drag or Level: the refusal is outdated
+  });
+  const tilt = (patch: { rx?: number; ry?: number }) => {
+    const b = store.get().session?.active_bounds;
+    const centre: [number, number] = b ? [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2] : [0, 0];
+    const r = a.protectionEdit((m) => P.setTilt(m, patch, centre));
+    tiltMsg(r.ok ? null : (r.error ?? "Invalid"));
+    return r.ok ? null : (r.error ?? "Invalid");
+  };
+  const protPanel = collapsible(
     "Height protection",
     (s) => s.session !== null,
     h("p", { class: "note", text: PROTECTION_COPY }),
@@ -494,6 +881,12 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
       field("prot-min", "Min Z", (s) => s.tools.protection.global.min, (v) => { const r = a.protectionEdit((m) => P.setGlobal(m, { min: v })); return r.ok ? null : (r.error ?? "Invalid"); }),
       field("prot-max", "Max Z", (s) => s.tools.protection.global.max, (v) => { const r = a.protectionEdit((m) => P.setGlobal(m, { max: v })); return r.ok ? null : (r.error ?? "Invalid"); }),
     ),
+    row(
+      field("prot-tilt-x", "Tilt X (deg)", (s) => s.tools.protection.tilt.rx, (v) => tilt({ rx: v })),
+      field("prot-tilt-y", "Tilt Y (deg)", (s) => s.tools.protection.tilt.ry, (v) => tilt({ ry: v })),
+    ),
+    tiltNote,
+    button("prot-level", "Level", () => { tiltMsg(null); prot((m) => ({ ok: true, model: P.levelled(m) })); }),
     select("prot-mode", "This operation", [["inherit", "Use global"], ["add_local", "Add local slab"], ["override", "Override global"]], (s) => s.tools.protection.mode, (v) => prot((m) => ({ ok: true, model: P.setOperationMode(m, v as P.OpMode) }))),
     row(
       field("prot-local-min", "Local min", (s) => s.tools.protection.local?.min ?? 0, (v) => { const r = a.protectionEdit((m) => P.setLocal(m, { min: v, max: m.local?.max ?? v })); return r.ok ? null : (r.error ?? "Invalid"); }, (s) => s.tools.protection.mode === "inherit"),
@@ -509,42 +902,6 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     text((s) => effectiveText(s.candidate)),
   );
 
-  // ---- slice view (render only)
-  const setSlice = (fn: (sl: AppState["slice"]) => AppState["slice"]) => store.update((s) => ({ ...s, slice: fn(s.slice) }));
-  const slicePanel = section(
-    "Slice view",
-    (s) => s.session !== null,
-    h("p", { class: "note", text: SLICE_COPY }),
-    check("slice-enabled", "Slice view", (s) => s.slice.enabled, (v) => setSlice((sl) => ({ ...sl, enabled: v }))),
-    select("slice-axis", "Axis", [["x", "X"], ["y", "Y"], ["z", "Z"]], (s) => s.slice.axis, (v) => setSlice((sl) => ({ ...sl, axis: v as SliceAxis }))),
-    row(
-      field("slice-centre", "Centre", (s) => s.slice.centre, (v) => {
-        if (!Number.isFinite(v)) return "Slice centre must be a number";
-        setSlice((sl) => ({ ...sl, centre: v, enabled: true }));
-        return null;
-      }),
-      field("slice-thickness", "Thick", (s) => s.slice.thickness, (v) => {
-        if (!(v > 0) || !Number.isFinite(v)) return "Slice thickness must be a number above 0";
-        setSlice((sl) => ({ ...sl, thickness: v, enabled: true }));
-        return null;
-      }),
-    ),
-    h(
-      "div",
-      { class: "stack" },
-      button("slice-from-box", "From box", () => {
-        const s = store.get();
-        const ax = rectAxis(s.camera);
-        const axis: SliceAxis = ax === null ? s.slice.axis : (["x", "y", "z"] as const)[ax];
-        setSlice((sl) => sliceFromBox(s.tools.box, axis, sl));
-      }),
-      button("slice-at-point", "At point", () => store.set({ interaction: store.get().interaction === "pick-slice" ? "orbit" : "pick-slice" })),
-      button("slice-prev", "Back [", () => setSlice((sl) => stepSlice(sl, -1))),
-      button("slice-next", "Forward ]", () => setSlice((sl) => stepSlice(sl, 1))),
-      button("slice-off", "Off", () => setSlice((sl) => ({ ...sl, enabled: false }))),
-    ),
-  );
-
   // ---- history
   const histList = h("ol", { id: "history-list" });
   syncs.push((s) => {
@@ -554,9 +911,11 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
       ),
     );
   });
-  const histPanel = section("History", (s) => s.session !== null, histList, text((s) => (s.session && s.session.history.entries.length === 0 ? "No edits yet" : "")));
+  const histPanel = section("history", "History", (s) => s.session !== null, histList, text((s) => (s.session && s.session.history.entries.length === 0 ? "No edits yet" : "")));
 
-  root.append(errors, boxPanel, polyPanel, clusterPanelEl, filterPanel, slicePanel, protPanel, histPanel);
+  root.append(errors);
+  toolRoot.append(boxPanel, polyPanel, clusterPanelEl, sparsePanel, planePanel, thinPanel);
+  root.append(filterPanel, protPanel, histPanel);
   const syncAll = (s: AppState) => {
     for (const f of syncs) f(s);
   };

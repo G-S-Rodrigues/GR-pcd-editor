@@ -1,5 +1,6 @@
 import type { Bounds, Candidate, Protection } from "../state/types";
 import { type CompareMode, editAllowed } from "../compare/model";
+import { MAX_TILT_DEG, type Tilt, isLevel, levelTilt, normalOf } from "./tilt";
 
 export type OpMode = "inherit" | "add_local" | "override";
 export interface Interval {
@@ -11,6 +12,8 @@ export interface ProtectionModel {
   mode: OpMode;
   local: Interval | null;
   ack: boolean;
+  /** One slab orientation for the global and the local interval. */
+  tilt: Tilt;
 }
 
 export const PROTECTION_COPY =
@@ -21,6 +24,7 @@ export const emptyProtection = (): ProtectionModel => ({
   mode: "inherit",
   local: null,
   ack: false,
+  tilt: levelTilt(),
 });
 
 export const protectionFromState = (p: Protection): ProtectionModel => ({
@@ -28,7 +32,73 @@ export const protectionFromState = (p: Protection): ProtectionModel => ({
   mode: p.operation.mode,
   local: p.operation.local ? { ...p.operation.local } : null,
   ack: p.operation.acknowledge_override,
+  tilt: p.tilt ? { rx: p.tilt.rx_deg, ry: p.tilt.ry_deg, pivot: [p.tilt.pivot[0], p.tilt.pivot[1]] } : levelTilt(),
 });
+
+const clampDeg = (v: number) => Math.min(MAX_TILT_DEG, Math.max(-MAX_TILT_DEG, v));
+
+/**
+ * Sets the tilt angles (typed values, validated to +-60). The pivot is the given active-bounds XY centre on the
+ * first non-zero tilt and stays until Level; angles back at 0 on both levels the slab.
+ */
+export function setTilt(m: ProtectionModel, patch: { rx?: number; ry?: number }, centre: [number, number]): ProtectionEdit {
+  const rx = patch.rx ?? m.tilt.rx;
+  const ry = patch.ry ?? m.tilt.ry;
+  if (![rx, ry, ...centre].every(Number.isFinite)) return { ok: false, model: m, error: "The tilt must be a number of degrees" };
+  if (Math.abs(rx) > MAX_TILT_DEG || Math.abs(ry) > MAX_TILT_DEG) {
+    return { ok: false, model: m, error: `The slab tilt is limited to +-${MAX_TILT_DEG} degrees` };
+  }
+  if (rx === 0 && ry === 0) return { ok: true, model: { ...m, tilt: levelTilt() } };
+  const pivot: [number, number] = isLevel(m.tilt) ? [centre[0], centre[1]] : m.tilt.pivot;
+  return { ok: true, model: { ...m, tilt: { rx, ry, pivot } } };
+}
+
+const DEG = 180 / Math.PI;
+const r1 = (v: number) => Math.round(v * 10) / 10;
+
+/**
+ * Use as protection band: the global band becomes the slab about a detected plane. The angles come from the plane normal
+ * (rx = -asin(ny), ry = atan2(nx, nz), the `normalOf` convention), the pivot is the given active-bounds XY centre, and
+ * the interval is [s0 - t, s0 + t] with s0 the slab coordinate of the plane. It is refused when either angle is beyond 60 degrees.
+ */
+export function bandFromPlane(m: ProtectionModel, plane: { normal: [number, number, number]; d: number; thickness: number }, centre: [number, number]): ProtectionEdit {
+  const [nx, ny, nz] = plane.normal;
+  if (![nx, ny, nz, plane.d, plane.thickness, ...centre].every(Number.isFinite) || !(plane.thickness > 0)) {
+    return { ok: false, model: m, error: "This plane has no usable numbers" };
+  }
+  const rx = -Math.asin(Math.max(-1, Math.min(1, ny))) * DEG;
+  const ry = Math.atan2(nx, nz) * DEG;
+  if (Math.abs(rx) > MAX_TILT_DEG || Math.abs(ry) > MAX_TILT_DEG) {
+    return { ok: false, model: m, error: `This plane needs a tilt of rx ${r1(rx)}, ry ${r1(ry)} degrees; the protection band allows at most ${MAX_TILT_DEG} on each` };
+  }
+  const level = rx === 0 && ry === 0;
+  const tilt: Tilt = level ? levelTilt() : { rx, ry, pivot: [centre[0], centre[1]] };
+  const n = normalOf(tilt);
+  const s0 = level ? plane.d : plane.d - n[0] * centre[0] - n[1] * centre[1];
+  const t = plane.thickness;
+  return { ok: true, model: { ...m, tilt, global: { enabled: true, min: s0 - t, max: s0 + t } } };
+}
+
+/** O11: the confirm text when a band is already enabled (it is replaced; protection is not a timeline step), else null. */
+export function bandReplaceText(m: ProtectionModel): string | null {
+  if (!m.global.enabled) return null;
+  const t = isLevel(m.tilt) ? "level" : `tilt rx ${r1(m.tilt.rx)}, ry ${r1(m.tilt.ry)} degrees`;
+  return `Replace the protection band ${m.global.min} to ${m.global.max} (${t}) with this Detected plane?`;
+}
+
+/** Level button: angles 0 and the pivot cleared; the intervals are untouched. */
+export const levelled = (m: ProtectionModel): ProtectionModel => ({ ...m, tilt: levelTilt() });
+
+/** A ring drag: add `deltaDeg` to rx (X ring) or ry (Y ring), clamped to +-60. */
+export function rotateSlab(m: ProtectionModel, which: "x" | "y", deltaDeg: number, centre: [number, number]): ProtectionModel {
+  if (!Number.isFinite(deltaDeg)) return m;
+  const r = setTilt(
+    m,
+    which === "x" ? { rx: clampDeg(m.tilt.rx + deltaDeg) } : { ry: clampDeg(m.tilt.ry + deltaDeg) },
+    centre,
+  );
+  return r.ok ? r.model : m;
+}
 
 export interface ProtectionEdit {
   ok: boolean;
@@ -81,6 +151,8 @@ export function alsoDeleteKept(m: ProtectionModel, cloud: Bounds | null): Protec
 export type ProtectionBody = {
   global: { enabled: boolean; min: number; max: number };
   operation: { mode: OpMode; local: Interval | null; acknowledge_override: boolean };
+  /** Sent only when the slab is tilted, so a level body is exactly what it was before tilting existed. */
+  tilt?: { rx_deg: number; ry_deg: number; pivot: [number, number] };
 };
 export type BodyResult =
   | { ok: true; body: ProtectionBody }
@@ -97,17 +169,16 @@ export function toProtectionBody(m: ProtectionModel): BodyResult {
       message: "Override ignores the global protection; acknowledge this to preview or apply",
     };
   }
-  return {
-    ok: true,
-    body: {
-      global: { ...m.global },
-      operation: {
-        mode: m.mode,
-        local: m.mode === "inherit" ? null : m.local,
-        acknowledge_override: m.mode === "override" && m.ack,
-      },
+  const body: ProtectionBody = {
+    global: { ...m.global },
+    operation: {
+      mode: m.mode,
+      local: m.mode === "inherit" ? null : m.local,
+      acknowledge_override: m.mode === "override" && m.ack,
     },
   };
+  if (!isLevel(m.tilt)) body.tilt = { rx_deg: m.tilt.rx, ry_deg: m.tilt.ry, pivot: [m.tilt.pivot[0], m.tilt.pivot[1]] };
+  return { ok: true, body };
 }
 
 export const retainedText = (c: Candidate | null): string =>
@@ -117,10 +188,12 @@ export function effectiveText(c: Candidate | null): string {
   const ep = c?.effective_protection as { mode?: string; intervals?: [number, number][] } | null | undefined;
   if (!ep) return "";
   const iv = (ep.intervals ?? []).map(([a, b]) => `[${a}, ${b}]`).join(" and ") || "none";
-  return `Effective protection (${ep.mode ?? "inherit"}): Z ${iv}`;
+  const layers = c?.protected_by_layers ?? 0;
+  const plus = layers > 0 ? `, plus protected layers (${layers.toLocaleString("en-US")} ${layers === 1 ? "point" : "points"})` : "";
+  return `Effective protection (${ep.mode ?? "inherit"}): Z ${iv}${plus}`;
 }
 
-/** Drag a height-plane handle by a world Z delta; min never passes max. */
+/** Drag a slab plane by a distance along the slab normal (world Z at level); min never passes max. */
 export function dragPlane(
   m: ProtectionModel,
   which: "global" | "local",

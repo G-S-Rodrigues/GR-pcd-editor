@@ -21,7 +21,7 @@ const BOX = { type: "box", center: [1, 2, 3], dimensions: [4, 5, 6], rpy_deg: [0
 
 describe("selection builder", () => {
   it("UI-66 every op x scope builds the exact body with the store's cloud revision", () => {
-    for (const op of ["replace", "add", "subtract", "intersect"] as const) {
+    for (const op of ["add", "subtract", "intersect"] as const) {
       for (const scope of ["displayed", "active"] as const) {
         const r = buildSelection(base({ tool: "box", op, scope }));
         expect(r).toEqual({
@@ -30,10 +30,12 @@ describe("selection builder", () => {
         });
       }
     }
-    // invert needs no tool and ignores the selected one
-    const inv = buildSelection(base({ tool: "none", op: "invert", scope: "active" }));
-    expect(inv).toEqual({ ok: true, body: { cloud_revision: 9, op: "invert", scope: "active", tool: null, evaluate_candidate: true } });
-    expect(buildSelection(base({ tool: "none", op: "replace" })).ok).toBe(false);
+    // the first selection (liveFirst) goes out as the wire replace whatever op is shown
+    for (const op of ["add", "subtract", "intersect"] as const) {
+      const live = buildSelection(base({ tool: "box", op, scope: "active", liveFirst: true }));
+      expect(live).toEqual({ ok: true, body: { cloud_revision: 9, op: "replace", scope: "active", tool: BOX, evaluate_candidate: true } });
+    }
+    expect(buildSelection(base({ tool: "none", op: "add" })).ok).toBe(false);
     expect(buildSelection({ ...base({ tool: "box" }), session: null }).ok).toBe(false);
     expect(invertNote("displayed")).toMatch(/relative to displayed/);
     expect(invertNote("active")).toMatch(/relative to active/);

@@ -16,54 +16,116 @@ view, global height protection (the purple slab) and the live counts in the stat
 1. **Open** a `.pcd` or `.pcdsession` (file picker, or drag and drop).
 2. Navigate: the ViewCube or keys `1`..`6` (top, bottom, front, back, left,
    right), `P` toggles perspective/orthographic, `F` fits the cloud. The orbit
-   pivot can be reset, typed as X/Y/Z or picked on a point.
-3. Pick a tool (**Box**, **Polygon**, **Cluster**), shape it with numbers or its
-   3D handles, and read the **exact** counts in the status bar (Selected,
-   Protected, Candidates). **Apply** is enabled only for an up-to-date preview.
+   pivot can be reset, or picked by clicking a point (Pick pivot; Esc cancels).
+3. Pick a tool (**Box**, **Polygon**, **Cluster**, **Sparse points**, **Planes**, **Thin**), shape it with
+   numbers or its 3D handles, and read the **exact** counts in the status bar (Selected,
+   Protected, Candidates). The red **Delete** button (the `Delete` key) removes the selected
+   points that are not protected; it is enabled only for an up-to-date selection.
 4. **Undo/Redo** (`Ctrl+Z`, `Ctrl+Y`) walk the history. Compare with **Original**,
-   **Overlay** (deleted points in red, adjustable opacity), **Split** (original
-   left, edited right, one camera) or hold `O` for the original. Comparison
-   views are read-only.
+   **Overlay** (deleted points in red, opacity slider beside the icon while Overlay
+   is on) or **Split** (original left, edited right, one camera): the four data
+   modes are an icon group next to the toolbar. Comparison views are read-only.
 5. **Export** (scope: active by default, displayed, or selected) or **Save session**.
 
 | Input | Action |
 |---|---|
-| Left-drag | Orbit about the pivot (drags a tool handle or the rectangle when one is active) |
+| Left-drag | Orbit about the pivot (drags a tool handle or the rectangle when one is active; with the Box tool a drag that starts on the box moves it) |
+| Box tool: drag a face arrow / a small ring on an arrow / the box body | Resize that face (Alt: both sides) / rotate the box about that arrow's axis (six rings, one per arrow) / move the box in the plane facing the camera; Ctrl+drag always orbits, also when it starts over a handle; Esc during a drag restores the box; Reset box and Reset rotation sit in the panel (there is no Axes select) |
+| Box tool keys | Arrows nudge by Step (PageUp/PageDown along the view), Alt+arrows grow or shrink both faces, `,` and `.` turn by Angle step (Shift: the axis nearest screen-right; Ctrl+Shift: the view axis); Shift is a tenth |
 | Middle/right-drag, Shift+left-drag | Pan |
 | Wheel | Zoom |
-| ViewCube (top right of the view) | Click a face to look along that axis; click an edge or corner for a diagonal view; it follows every camera change |
+| ViewCube (top right of the view, under the four camera buttons) | Click a face to look along that axis; click an edge or corner for a diagonal view; it follows every camera change |
+| Selected colour (Selection block, left) | Four swatches (Orange, Magenta, White, Lime) set the colour of selected points on the canvas and in the legend; view only, saved with the session |
 | `1` `2` `3` `4` `5` `6` | Top, bottom, front, back, left, right (the ViewCube faces) |
 | `P`, `F`, `Alt+F` | Perspective/orthographic, fit the cloud, fit the camera to the current candidate |
-| Hold `O` | Show the original (read-only) |
-| Hold `R`, or the **Rect** button | Rectangle select: drag a rectangle in a face view to set the box (depth: the slice slab, or the whole cloud) |
-| `[` `]` | Move the slice slab (a render-only clip that changes no count) |
-| `Delete` | Apply the previewed deletion (same as **Apply**, with the same confirmation for bulk deletes) |
+| Hold `R`, or the **Rect** button | Rectangle select: drag a rectangle in a face view to set the box (depth: the whole cloud along the view axis) |
+| Drag a filter box grip, or the arrow on its plane | Set that side of the display filter (six boxes on the canvas; Shift is finer, a typed value and a per-side reset sit in the box, the chip collapses it) |
+| Arrow keys on a focused grip | Nudge the filter value (Shift finer, PageUp/PageDown ten steps, Home/End the cloud bounds) |
+| Drag a protection arrow, or the band's edge | Move that side of the protected slab (open **Height protection**; the band is drawn translucent and the protected points in cyan) |
+| Drag a blue ring around the slab | Tilt the protected slab about X or Y (limit 60 degrees); **Level** or the two angle fields reset or type it |
+| Click a step icon in the timeline (under the view) | Highlight the points that step deleted in a distinct green (hover shows a lighter preview; click again, click the strip background or press `Esc` to clear; the legend lists **Step highlight** only while it is on) |
+| Drag the timeline marker, or the **Roll back to here** button on a step (hover or focus it), or `Left` `Right` `Home` `End` on the marker | Roll the history back or forward to that point; later steps grey out and can be redone, one request is sent when you let go. **Undo** and **Redo** move the marker one slot |
+| Double-click a step name, the pencil button, or `F2` on a focused step | Rename the step (an empty name restores the default label) |
+| `x` button on a step, or `Delete` / `Backspace` on a focused step or on one of its buttons (the marker ignores them; they never apply) | Remove just that step after a confirmation (its points come back; later steps stay; it cannot be undone). `Enter` or `Space` highlights, arrow keys move between steps |
+| `Delete` | Delete the selected points (same as the red **Delete** button, with the same confirmation for bulk deletes) |
+| Click in the view with the Box tool armed | Move the box to the clicked point (a cloud point, else the horizontal plane through the box centre); a drag still orbits |
+| Pencil button of the Polygon tool, then click an edge / `Backspace` over a vertex or double-click it / `Enter` or `Esc` | Polygon edit mode: add a vertex on the edge, remove the vertex under the pointer (never below three), leave the mode; dragging a vertex works with or without it |
+| Click a step icon in the timeline, then **Edit shape** on the highlighted step (or `Enter` on it) | The camera centres on the step; Edit shape clears the selection and reopens the step's box, polygon, cluster or sparse shape as a live selection of its own tool (the history does not change; deleting again adds a new step; steps from older sessions have no stored shape and only centre) |
 | `Ctrl+Z`, `Ctrl+Y` | Undo, redo |
-| `Enter`, `Esc` | Close the polygon, cancel drawing, leave pick mode, close help |
+| `Enter`, `Esc` | Close the polygon, cancel drawing, leave polygon edit mode, leave pick mode, discard a pending draft, close help; Esc during a grip, arrow or ring drag restores the value |
 | `?` or the **?** button | Show the key list (generated from the same table the handlers use) |
 
 The legend in the view names the highlight colours (unselected, candidate,
-protected-kept, deleted overlay). Next to **Apply**, "Will delete N" and "Kept by
+protected-kept, deleted overlay). Next to **Delete**, "Will delete N" and "Kept by
 protection M" show the exact numbers; when M is above 0 a warning says selected
 points lie in the protected interval (ghosts in the floor slab?). Add, Subtract
-and Intersect shapes are drawn in their own outline colour with a "draft, not yet
-applied" note. **Cancel upload** stops a file that is still being sent.
+and Intersect shapes are drawn in their own outline colour and previewed live:
+points the shape would add are drawn magenta and points it would remove blue
+(the legend lists **Will be added** or **Will be removed** only while a preview is
+on), and a note gives the exact counts. **Cancel upload** stops a file that is still being sent.
 
 Concepts worth knowing:
 
 - **Height protection is a coordinate slab**, not a semantic floor: points inside
-  the protected Z interval are never deleted, and there are no ramps.
+  the protected interval are never deleted. The slab is horizontal by default; it
+  can be tilted up to 60 degrees about X and Y (rings, the angle fields or **Level**)
+  to follow a sloping floor, and it stays a plane, not a surface: no ramps or curves.
 - A **polygon** selection includes points through the whole view depth unless its
   Z limits are enabled.
-- A **display filter hides** points from the view; it does not delete them. The
+- A **display filter hides** points from the view; it does not delete them. It is
+  edited with six boxes on the canvas, not panel sliders. The
   scope (Displayed or Active) decides whether a selection reaches hidden points.
-- **Replace** updates the preview live while you edit; **Add, Subtract and
-  Intersect** keep the tool shape as a draft until you press the commit button.
+- The **first selection** is live: while nothing is selected, every edit of the shape
+  (a box handle, a polygon vertex, a cluster radius) replaces the selection at once and
+  none of the operation icons is pressed. Choose **Add**, **Subtract** or **Intersect**
+  (three icons; there is no Replace) and the next edits show a live preview of the result
+  (also while you tune a Cluster's link distance, region, Exclude protected or Max points);
+  the selection changes only when you press **Commit draft**; **Discard draft** or `Esc`
+  drops the preview. The **Live preview** switch turns the preview off: edits then ask for
+  nothing and Commit draft previews and commits once. **Delete** keeps deleting only the
+  committed selection while a draft is shown, never the previewed points. Saving drops a
+  pending draft.
+- **Tool flow:** pressing **Cluster** arms it and waits for one click on a point; **Pick
+  point** (waiting, set, paused) clears the seed and waits for another. Pressing a tool
+  again, or **Clear selection**, disarms it; **Select displayed** and **Invert** refuse
+  with a reason while a tool is armed. A polygon delete leaves the Polygon tool armed with
+  a blank polygon. The Box tool starts as a 3 m cube.
+- **Layers** (section before History) are named groups of points. **New layer** makes one from the selection,
+  **Assign selection** moves the selection into the chosen row, **Release to main** and a row's **To main** give points
+  back; each row has an eye (a hidden layer is not drawn, picked or selected, but stays in the cloud, the counts and
+  the export), **Select**, **Edit** and **To main**. **Edit** clears the selection, opens a Box at the layer's bounds as
+  a live selection; resize it and press **Set layer to selection** to make the layer hold exactly those points (points
+  taken from another layer are confirmed first; the selection stays). Layers are saved in the session (version 2, version 3 when a layer step exists), restored on reopen, and the Export dialog can export a subset of layers. Layer edits are steps in the timeline: Ctrl+Z
+  undoes them and the Export dialog can write one file per layer. **New layer from protected points** snapshots the height band into a protected layer called
+  Floor. The chevron on a row opens its menu: rename, 16 colours, Visible, **Protected** (its points are never deleted
+  by any Delete; Override protection frees only the band), **Lock** (no points move into or out of it), Select, Add,
+  Subtract and Intersect with the layer, Up and Down, Merge into another layer and **Delete points**. The colour
+  control has a **Layers** entry (layer colours, main in grey) while layers exist.
+- **Hide selected** (Selection section, after Clear selection) moves the selected points into the layer **Hidden** and
+  hides it; the button then reads **Show hidden (N)** and a **N hidden - Show** chip appears in the legend. Hidden
+  points are not drawn, picked or selected (Select displayed, Invert and Delete leave them alone), but they stay in the
+  cloud and **Export** contains them. Unlike the earlier view-only version it is saved with the session.
+- **Sparse points** selects points with fewer than a set number of neighbours (default 8)
+  within a small cube around them, so isolated artifacts in the open go while dense walls
+  and floors stay. The radius (empty: derived from the point spacing), the region (whole
+  cloud, box or polygon) and Exclude protected are set in its panel; it is an ordinary
+  selection tool and composes with Add, Subtract and Intersect. The neighbour count is an
+  upper-bound proxy for a true radius count, and its quality on a real scan is for you to judge.
+- **Planes** finds floor and ceiling candidates: Detect lists up to 4 near-horizontal planes (lowest first, with their
+  point counts); choose a row to select the points within the Distance of that plane, or **Use as protection band** to
+  protect a tilted floor. Detection changes nothing by itself.
+- **Thin** selects duplicate points (distance 0 for exact copies, above 0 for near copies) or a voxel subsample; Delete
+  then removes them and Undo brings them back. The point with the lowest index in each group stays. Both tools follow
+  published algorithms (RANSAC plane fitting, voxel grid downsampling) and contain no CloudCompare code.
 - The unit is a label only (metres, assumed); the file frame is used as stored, Z up.
 - Counts in the status bar are exact; "Rendered" is the sampled number of points
   drawn and is never a cloud total.
 - The app warns before leaving the page while there are unsaved edits. The
   `.pcdsession` download stores the edits and the view; reopen it with **Open**.
+- By design the view state (camera, which inspector sections are folded, tool settings) lives in the server's session
+  and is restored when the page loads while that session is still open, so a fresh browser tab shows the folds of the
+  session it attaches to. Opening another file starts a new session. Save flushes any pending view change first, so the
+  archive carries the current folds and camera.
 
 ## Prerequisites
 
@@ -203,7 +265,7 @@ these checks are manual, on a real browser with a GPU and a private map you own:
 - [ ] Draw budget 1,000,000 and Auto (max): the status bar says "(sampled to budget)" and the frame rate is acceptable.
 - [ ] Box, rectangle and polygon previews follow the drag without stalls; Apply is exact.
 - [ ] Pick floor point, then Apply: floor points survive and ghosts above the slab go.
-- [ ] Slice view (`[` `]`) clips the view while the status counts do not change.
+- [ ] A step click centres the camera on its points, and a Box click moves the box to the clicked point.
 - [ ] The ViewCube and `1`..`6` agree; the help overlay (`?`) lists every key.
 - [ ] 1280x720 and 1920x1080 windows: no horizontal scrollbars in the side panels.
 - [ ] Export, reopen the exported PCD in your viewer, and compare the point count.

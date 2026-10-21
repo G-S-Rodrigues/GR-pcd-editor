@@ -4,7 +4,6 @@ import type { Viewport } from "../../pick/ray";
 import { screenRay } from "../../pick/screenray";
 import type { Bounds, Vec3 } from "../../state/types";
 import { type Camera, lookDirection, rightVector } from "../../view/camera";
-import { AXIS_INDEX, type Slice } from "../../view/slice";
 import { MIN_EXTENT, type BoxModel, worldExtents } from "./model";
 
 export const MIN_RECT_PX = 4;
@@ -28,11 +27,8 @@ export function rectAxis(cam: Camera): 0 | 1 | 2 | null {
   return look !== null && right !== null && look !== right ? look : null;
 }
 
-/** Extent of the box along the view axis: the slice slab if it is on that axis, else the active bounds. */
-export function rectDepth(axis: 0 | 1 | 2, bounds: Bounds | null, slice: Slice | null): Depth | null {
-  if (slice?.enabled && AXIS_INDEX[slice.axis] === axis) {
-    return { min: slice.centre - slice.thickness / 2, max: slice.centre + slice.thickness / 2 };
-  }
+/** Extent of the box along the view axis: the whole active-bounds extent. */
+export function rectDepth(axis: 0 | 1 | 2, bounds: Bounds | null): Depth | null {
   return bounds ? { min: bounds.min[axis], max: bounds.max[axis] } : null;
 }
 
@@ -80,7 +76,14 @@ export function narrowBox(
   const old = worldExtents(prev);
   const center: Vec3 = [0, 0, 0];
   const dimensions: Vec3 = [0, 0, 0];
+  const aligned = prev.quat.every((q, k) => q === IDENTITY[k]);
   for (const i of [0, 1, 2] as const) {
+    if (i === axis && aligned) {
+      // Untouched depth: keep the old values bit-exact (a lo/hi round trip can differ by one ulp).
+      center[i] = prev.center[i];
+      dimensions[i] = prev.dimensions[i];
+      continue;
+    }
     const lo = i === axis ? old.min[i] : Math.max(Math.min(a[i], b[i]), old.min[i]);
     const hi = i === axis ? old.max[i] : Math.min(Math.max(a[i], b[i]), old.max[i]);
     if (hi < lo) return null;

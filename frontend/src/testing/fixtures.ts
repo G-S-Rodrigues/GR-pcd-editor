@@ -13,7 +13,8 @@ export const sessionFixture = (over: Partial<SessionState> = {}): SessionState =
     unit: "m",
     unsaved: false,
     revision: { cloud: 3, params: 4 },
-    counts: { original: 1000, active: 900, deleted: 100, invalid_total: 0, invalid_active: 0, displayed: 800, selected: 0, protected: 0 },
+    counts: { original: 1000, active: 900, deleted: 100, invalid_total: 0, invalid_active: 0, displayed: 800, selected: 0, protected: 0, main: 0, hidden: 0 },
+    layers: [],
     bounds: { min: [0, 0, 0], max: [10, 10, 10] },
     active_bounds: { min: [0, 0, 0], max: [10, 10, 10] },
     display_filter: {

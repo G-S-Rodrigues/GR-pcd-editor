@@ -4,15 +4,14 @@ import { resolveSeed, spacingEstimate } from "../pick/resolve";
 import { type AppState, addNotice } from "../state/app";
 import type { Store } from "../state/store";
 import { orbit, pan, togglePerspective, zoom } from "../view/camera";
-import type { ToolInteraction } from "./interact";
+import { keyEditBox } from "../tools/box/keyedit";
+import { CLICK_SLOP_PX, type ToolInteraction } from "./interact";
 import { fitBounds } from "../view/fit";
-import { isClipped, stepSlice } from "../view/slice";
 import { pickPivot } from "../view/pivot";
 import { classifyKey, presetForKey } from "../ui/keys";
 import { applyPreset } from "../view/presets";
 
 const ORBIT_RAD_PER_PX = 0.005;
-const CLICK_SLOP_PX = 4;
 
 /** Mouse and keyboard navigation: left orbit, middle/right/Shift pan, wheel zoom, 1-6 presets, P, F. */
 export function attachControls(
@@ -21,14 +20,16 @@ export function attachControls(
   size: () => { w: number; h: number },
   tools?: ToolInteraction,
   onSeedPicked?: () => void,
-  onPointPicked?: (kind: "floor" | "slice", point: [number, number, number]) => void,
+  onPointPicked?: (kind: "floor", point: [number, number, number]) => void,
 ): () => void {
-  let drag: { x: number; y: number; startX: number; startY: number; pan: boolean } | null = null;
+  // `tool`: the press went to a tool handle or the box body, so the camera ignores its moves
+  let drag: { x: number; y: number; startX: number; startY: number; pan: boolean; tool: boolean } | null = null;
 
   const onDown = (e: PointerEvent) => {
     canvas.setPointerCapture(e.pointerId);
-    if (tools?.pointerDown(e)) return; // a handle is being dragged: the camera stays put
+    const tool = tools?.pointerDown(e) ?? false; // a handle or the box body is being dragged: the camera stays put
     drag = {
+      tool,
       x: e.clientX,
       y: e.clientY,
       startX: e.clientX,
@@ -38,7 +39,13 @@ export function attachControls(
   };
   const onMove = (e: PointerEvent) => {
     if (tools?.pointerMove(e)) return;
-    if (!drag) return;
+    if (!drag) {
+      const h = tools?.hover(e) ?? null;
+      canvas.style.cursor = h?.cursor ?? "";
+      if ((h?.id ?? null) !== store.get().boxHover) store.update((st) => ({ ...st, boxHover: h?.id ?? null }));
+      return;
+    }
+    if (drag.tool) return;
     const dx = e.clientX - drag.x;
     const dy = e.clientY - drag.y;
     drag.x = e.clientX;
@@ -51,8 +58,16 @@ export function attachControls(
     });
   };
   const onUp = (e: PointerEvent) => {
-    if (tools?.pointerUp()) return;
+    if (tools?.pointerUp()) {
+      drag = null;
+      return;
+    }
     if (!drag) return;
+    // a press the tools took but did not drag (an unmoved press on the box body) is still a click for click-to-centre
+    if (drag.tool && !tools?.takeClick()) {
+      drag = null;
+      return;
+    }
     const moved = Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY);
     const wasPan = drag.pan;
     drag = null;
@@ -66,7 +81,7 @@ export function attachControls(
   async function onClick(e: PointerEvent) {
     const s = store.get();
     if (tools?.click(e)) return;
-    if ((s.interaction !== "pick-pivot" && s.interaction !== "pick-seed" && s.interaction !== "pick-floor" && s.interaction !== "pick-slice") || !s.render) return;
+    if ((s.interaction !== "pick-pivot" && s.interaction !== "pick-seed" && s.interaction !== "pick-floor") || !s.render) return;
     const allowed = editAllowed(s.compare);
     if (!allowed.ok) {
       addNotice(store, "warn", "pick_refused", allowed.reason);
@@ -75,7 +90,7 @@ export function attachControls(
     const rect = canvas.getBoundingClientRect();
     const px = e.clientX - rect.left;
     const py = e.clientY - rect.top;
-    const hit = pickPoint(s.render, s.camera, size(), px, py, 8, (w) => !isClipped(s.slice, w));
+    const hit = pickPoint(s.render, s.camera, size(), px, py, 8);
     if (!hit) {
       addNotice(store, "info", "no_point", "No point near the click; try again closer to a point");
       return;
@@ -96,9 +111,9 @@ export function attachControls(
         addNotice(store, "info", "no_point", "No point near the click; try again closer to a point");
         return;
       }
-      if (s.interaction === "pick-floor" || s.interaction === "pick-slice") {
+      if (s.interaction === "pick-floor") {
         store.set({ interaction: "orbit" });
-        onPointPicked?.(s.interaction === "pick-floor" ? "floor" : "slice", seed.point);
+        onPointPicked?.("floor", seed.point);
         return;
       }
       if (s.interaction === "pick-seed") {
@@ -119,15 +134,27 @@ export function attachControls(
     }
   }
 
+  /** The box keys act only with the Box tool armed on the edited view, and not while a drag or rectangle is under way. */
+  const boxKeysLive = () => {
+    const s = store.get();
+    return s.tool === "box" && !!s.session && s.compare === "edited" && s.interaction === "orbit" && !s.rect && !drag;
+  };
   const onKey = (e: KeyboardEvent) => {
-    const id = classifyKey({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey, shiftKey: e.shiftKey, target: (e.target as HTMLElement | null)?.tagName ?? "" });
+    const id = classifyKey({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey, shiftKey: e.shiftKey, target: (e.target as HTMLElement | null)?.tagName ?? "", boxTool: boxKeysLive() });
     if (!id) return;
     const s = store.get();
+    if (id === "box-nudge" || id === "box-grow" || id === "box-turn") {
+      const box = keyEditBox(s.tools.box, e.key, { shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey }, s.camera, s.gizmo);
+      if (box) {
+        e.preventDefault();
+        store.update((st) => ({ ...st, tools: { ...st.tools, box } }));
+        tools?.changed();
+      }
+      return;
+    }
     const preset = presetForKey(e.key);
     if (preset && id.startsWith("view-")) {
       store.set({ camera: applyPreset(s.camera, preset) });
-    } else if (id === "slice-prev" || id === "slice-next") {
-      store.set({ slice: stepSlice(s.slice, id === "slice-next" ? 1 : -1) });
     } else if (id === "perspective") {
       store.set({ camera: togglePerspective(s.camera) });
     } else if (id === "fit" && s.session?.active_bounds) {

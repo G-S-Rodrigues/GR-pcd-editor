@@ -1,6 +1,7 @@
 import { expect, test, vi } from "vitest";
 import type { RenderData } from "../render/parse";
 import { createAppStore } from "../state/app";
+import { sessionFixture } from "../testing/fixtures";
 import { createRefresher } from "./refresh";
 
 const data = (n: number): RenderData => ({
@@ -37,7 +38,7 @@ test("UI-22 refresh aborts the previous request and passes mode, budget and colo
   store.set({
     renderMode: "original",
     budget: 1000,
-    colour: { mode: "intensity", pointSize: 2 },
+    colour: { mode: "turbo", pointSize: 2 },
     session: { schema: [{ name: "intensity", type: "F", size: 4, count: 1 }] } as never,
   });
   const signals: AbortSignal[] = [];
@@ -49,7 +50,7 @@ test("UI-22 refresh aborts the previous request and passes mode, budget and colo
   const p1 = r.refresh();
   const p2 = r.refresh();
   await Promise.all([p1, p2]);
-  expect(fetchRender).toHaveBeenCalledWith("original", 1000, "intensity", expect.anything());
+  expect(fetchRender).toHaveBeenCalledWith("original", 1000, undefined, expect.anything());
   expect(signals[0].aborted).toBe(true);
 });
 
@@ -62,4 +63,45 @@ test("UI-22 a failed refresh reports a notice and keeps the previous render", as
   expect(await r.refresh()).toBe(false);
   expect(store.get().render?.count).toBe(3);
   expect(store.get().notices.at(-1)?.code).toBe("render_failed");
+});
+
+test("UI-410 edited render requests carry preview=<id> only when a preview is set and the primary render is edited; a response without the header clears it and refetches once", async () => {
+  const store = createAppStore();
+  const prev = { id: "p9", op: "add" as const, selected_after: 2, base_selected: 1, added: 1, removed: 0 };
+  const calls: unknown[][] = [];
+  const fetchRender = vi.fn(async (...a: unknown[]) => {
+    calls.push(a);
+    return { ...data(1), previewId: a[5] === "p9" && fetchRender.mock.calls.length === 1 ? undefined : (a[5] as string | undefined) };
+  });
+  const r = createRefresher(store, fetchRender as never);
+  store.set({ renderMode: "edited", preview: null });
+  await r.refresh();
+  expect(calls[0]).toHaveLength(4); // no preview argument at all
+  calls.length = 0;
+  fetchRender.mockClear();
+  store.set({ preview: prev });
+  await r.refresh();
+  expect(calls).toHaveLength(2);
+  expect(calls[0][5]).toBe("p9");
+  expect(calls[1]).toHaveLength(4); // refetched once, without the stale id
+  expect(store.get().preview).toBeNull();
+  // another primary mode never sends it
+  store.set({ renderMode: "original", preview: prev });
+  calls.length = 0;
+  await r.refresh();
+  expect(calls.every((c) => c.length === 4)).toBe(true);
+});
+
+const flaggedData = (): RenderData => ({ ...data(4), ids: Uint32Array.from([10, 11, 12, 13]), flags: Uint8Array.from([0, 1, 0, 0]) });
+test("UI-801 the refresher passes the very same render object for every mode and never touches the layers", async () => {
+  const store = createAppStore();
+  const session = sessionFixture({ layers: [{ id: 1, name: "A", colour: 0, visible: false, count: 3, bounds: null }] });
+  store.set({ session, compare: "split", renderMode: "original" });
+  const raw = flaggedData();
+  const r = createRefresher(store, async () => raw);
+  await r.refresh();
+  expect(store.get().render).toBe(raw);
+  expect(store.get().render2).toBe(raw);
+  r.clear();
+  expect(store.get().session?.layers).toBe(session.layers);
 });
