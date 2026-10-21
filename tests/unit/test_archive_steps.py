@@ -429,3 +429,25 @@ def test_ses_89_archive_version_rule_is_unchanged_with_plane_steps(
     assert (
         m["version"] == before
     )  # the existing rule: plane and thin steps do not bump it
+
+
+def test_ses_93_thin_duplicates_with_edge_zero_round_trips(mgr, tmp_path):
+    """The engine checks only the field a method uses, so a Thin step saved through the API with the other field
+    at 0 must still reload: the stored shape carries the default for the unused field."""
+    from gr_pcd.editing.thin import ThinSpec
+
+    s = mgr.require()
+    job = wait(
+        mgr.submit_select(
+            SelectSpec(
+                "replace",
+                "active",
+                ThinSpec(method="duplicates", distance=100.0, edge=0.0),
+            )
+        )
+    )
+    assert job.status == "complete", job.error
+    s.apply(job.result["candidate"]["candidate_id"], s.clock.cloud, None)
+    loaded = load(tmp_path, save(mgr))
+    shape = loaded.entries[-1].shape
+    assert shape["method"] == "duplicates" and shape["distance"] == 100.0

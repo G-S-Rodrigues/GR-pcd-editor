@@ -238,11 +238,15 @@ def shape_of(
             "region": _region_shape(tool.region),
         }
     if isinstance(tool, ThinSpec):
+        # the engine validates only the field the method uses; the other one is stored as its default so the
+        # archive loader (which checks both) accepts every step the engine accepted
+        dflt = ThinSpec()
+        voxel = tool.method == "voxel"
         return {
             "type": "thin",
             "method": tool.method,
-            "distance": float(tool.distance),
-            "edge": float(tool.edge),
+            "distance": float(dflt.distance if voxel else tool.distance),
+            "edge": float(tool.edge if voxel else dflt.edge),
             "exclude_protected": bool(tool.exclude_protected),
             "region": _region_shape(tool.region),
         }
