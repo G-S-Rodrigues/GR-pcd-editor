@@ -274,7 +274,8 @@ def build_router(manager: SessionManager, settings: Settings) -> APIRouter:
         s.clear_selection(body.cloud_revision)
         return s.state()
 
-    # ---- layers: synchronous, under the session lock, not timeline steps --
+    # ---- layers: synchronous, under the session lock; membership edits and
+    # layer add/remove are timeline steps, settings are not ----------------
     @router.post("/session/layers")
     def create_layer(body: LayerCreateBody):
         s = manager.require()
