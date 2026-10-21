@@ -17,6 +17,8 @@ from fixtures.sessions import fixture_dir, make_settings, wait, write_scene
 from gr_pcd.editing.history import LayerRowChange
 from gr_pcd.editing.layers import Layer
 from gr_pcd.pcd.errors import PcdError
+from gr_pcd.session.archive import load_archive
+from gr_pcd.session.budget import HISTORY_FRACTION
 from gr_pcd.session.manager import SessionManager
 
 FLOOR = Layer(1, "Floor", 0)
@@ -414,3 +416,30 @@ def test_ses_86_old_reader_keys_and_counters_are_present(mgr, tmp_path):
         assert e["file"] == f"history/{i}.bin"
     assert "cursor" in m["history"] and m["history"]["next_sid"] == 5
     assert m["version"] == 3
+
+
+def test_ses_90_load_refuses_history_over_budget(mgr, tmp_path):
+    """Layer steps overlap by design, so the loader applies the history budget the engine applies on push."""
+    s = build(mgr)
+    for _ in range(
+        20
+    ):  # A out to main and back: overlapping ids, no net change
+        push(s, A, 1, 0, (), "A to main")
+        push(s, A, 0, 1, (), "A to Floor")
+    s.history.cursor = len(s.history.entries)
+    path = save(mgr)
+    total = sum(e.nbytes for e in s.history.entries)
+    ok_budget = int(total / HISTORY_FRACTION) + 1
+    assert (
+        total > 4000 and ok_budget > 8000
+    )  # the cloud itself fits at either budget
+    dest = tmp_path / "ok-source.pcd"
+    assert len(load_archive(path, dest, ok_budget, 1 << 30).entries) == len(
+        s.history.entries
+    )
+    dest = tmp_path / "dest-source.pcd"
+    with pytest.raises(PcdError) as ei:
+        load_archive(path, dest, ok_budget - 8, 1 << 30)
+    assert ei.value.code == "bad_archive", ei.value.message
+    assert "history" in ei.value.message
+    assert not dest.exists()

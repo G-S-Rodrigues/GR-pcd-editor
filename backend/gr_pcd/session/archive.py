@@ -42,7 +42,7 @@ from gr_pcd.geometry.filters import DisplayFilter, validate_filter
 from gr_pcd.pcd.errors import PcdError
 from gr_pcd.pcd.model import PcdCloud
 from gr_pcd.pcd.reader import read_pcd
-from gr_pcd.session.budget import ensure_free_space
+from gr_pcd.session.budget import HISTORY_FRACTION, ensure_free_space
 from gr_pcd.session.codec import (
     MAX_SHAPE_VERTICES,
     filter_from_dict,
@@ -558,10 +558,18 @@ def _load_open(zf, dest_source, budget, max_source_bytes) -> LoadedArchive:
     entries: list[HistoryEntry] = []
     scratch = np.ones(cloud.n, dtype=bool)
     at_cursor = scratch.copy()
+    history_limit = int(budget * HISTORY_FRACTION)  # as History.push applies it
+    history_bytes = 0
     for i, (fname, kind, description) in enumerate(metas):
         sid, tool, name, shape = steps.fields[i]
         if i == cursor:
             at_cursor = scratch.copy()
+        # ids are 4 bytes each, a layer step adds a 2-byte from/to pair per id
+        history_bytes += (
+            by_name[fname].file_size * (3 if i in layer_rows else 2) // 2
+        )
+        if history_bytes > history_limit:
+            raise _bad("the history is larger than this server's memory allows")
         ids = _read_ids(zf, by_name[fname], cloud.n)
         if i in layer_rows:
             frm, to = _read_diff(
