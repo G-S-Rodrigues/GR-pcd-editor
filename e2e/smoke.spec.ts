@@ -5520,3 +5520,28 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
     await checkLayout(page, w, h);
   });
 }
+
+// 18-6: owner screenshots, the Floor from the band with its menu open and the cloud coloured by layer; asserts only that the menu is visible and there are no console errors
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-176 18 owner screenshots at ${w}x${h}: Floor protected with its menu open, then coloured by layer`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => {
+      if (m.type() === "error" && !/404/.test(m.text())) errors.push(m.text());
+    });
+    const t = layerMenu(page);
+    const floor = await t.floorFromBand();
+    await t.wallLayer();
+    await t.openMore(floor.id);
+    await expect(page.locator(`[data-layer-details="${floor.id}"]`)).toBeVisible();
+    await page.mouse.move(5, 5);
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: `/out/part18-${w}x${h}-menu.png` });
+    await t.ctl("colour-mode").selectOption("layers");
+    await t.ctl("cube-top").click();
+    await page.waitForTimeout(600);
+    await page.screenshot({ path: `/out/part18-${w}x${h}-floor.png` });
+    expect(errors).toEqual([]);
+  });
+}
