@@ -2,7 +2,7 @@
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from gr_pcd.editing.protection import (
     Interval,
@@ -240,6 +240,24 @@ class LayerPatchBody(Model):
     # a plain int: the engine answers invalid_colour for anything else
     colour: int | str | float | None = None
     visible: bool | None = None
+    protected: StrictBool | None = None
+    locked: StrictBool | None = None
+
+
+class LayerOrderBody(Model):
+    ids: list[int]
+
+
+class LayerMergeBody(Model):
+    cloud_revision: int
+    into: int = Field(ge=1, le=255)
+    dry_run: bool = False
+
+
+class LayerFromProtectionBody(Model):
+    cloud_revision: int
+    name: str | None = None
+    dry_run: bool = False
 
 
 class LayerVisibilityBody(Model):

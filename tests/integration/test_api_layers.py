@@ -77,6 +77,8 @@ def test_lay_40_create_answers_the_state_and_changes_no_revision(api):
             "name": "Floor",
             "colour": 0,
             "visible": True,
+            "protected": False,
+            "locked": False,
             "count": 100,
             "bounds": {"min": [0.0, 0.0, 0.0], "max": [9.0, 9.0, 0.0]},
         }

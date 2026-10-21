@@ -19,7 +19,10 @@ from gr_pcd.api.schemas import (
     ExportBody,
     LayerAssignBody,
     LayerCreateBody,
+    LayerFromProtectionBody,
     LayerMembersBody,
+    LayerMergeBody,
+    LayerOrderBody,
     LayerPatchBody,
     LayerToolBody,
     LayerVisibilityBody,
@@ -286,6 +289,28 @@ def build_router(manager: SessionManager, settings: Settings) -> APIRouter:
         s.set_layers_visibility(body.ids, body.visible)
         return s.state()
 
+    @router.put("/session/layers/order")
+    def layers_order(body: LayerOrderBody):
+        s = manager.require()
+        s.set_layer_order(body.ids)
+        return s.state()
+
+    @router.post("/session/layers/from-protection")
+    def layer_from_protection(body: LayerFromProtectionBody):
+        s = manager.require()
+        op = s.layer_from_protection(
+            body.cloud_revision, body.name, body.dry_run
+        )
+        return {**s.state(), "layer_op": op}
+
+    @router.post("/session/layers/{layer_id}/merge")
+    def merge_layer(layer_id: int, body: LayerMergeBody):
+        s = manager.require()
+        op = s.merge_layer(
+            body.cloud_revision, layer_id, body.into, body.dry_run
+        )
+        return {**s.state(), "layer_op": op}
+
     @router.post("/session/layers/{layer_id}/assign")
     def assign_layer(layer_id: int, body: LayerAssignBody):
         s = manager.require()
@@ -303,7 +328,14 @@ def build_router(manager: SessionManager, settings: Settings) -> APIRouter:
     @router.patch("/session/layers/{layer_id}")
     def patch_layer(layer_id: int, body: LayerPatchBody):
         s = manager.require()
-        s.patch_layer(layer_id, body.name, body.colour, body.visible)
+        s.patch_layer(
+            layer_id,
+            body.name,
+            body.colour,
+            body.visible,
+            body.protected,
+            body.locked,
+        )
         return s.state()
 
     @router.delete("/session/layers/{layer_id}")

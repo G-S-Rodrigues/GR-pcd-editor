@@ -339,6 +339,8 @@ def test_lay_17_state_layers_counts_and_bounds(mgr):
             "name": "Floor",
             "colour": 0,
             "visible": True,
+            "protected": False,
+            "locked": False,
             "count": 100,
             "bounds": {"min": [0.0, 0.0, 0.0], "max": [9.0, 9.0, 0.0]},
         }

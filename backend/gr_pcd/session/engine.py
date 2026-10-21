@@ -403,6 +403,8 @@ class EditingSession:
                 "name": lay.name,
                 "colour": lay.colour,
                 "visible": lay.visible,
+                "protected": lay.protected,
+                "locked": lay.locked,
                 "count": int(counts[lay.id]),
                 "bounds": bounds.get(lay.id),
             }
@@ -504,6 +506,53 @@ class EditingSession:
             "released": released,
         }
 
+    def _check_unlocked(self, mask: np.ndarray, target: int = 0) -> None:
+        """Refuse a move into a locked layer or out of one (lock = membership)."""
+        if target and self._find_layer(target).locked:
+            raise EditError(
+                "layer_locked",
+                f"layer {self._find_layer(target).name} is locked; "
+                "unlock it first",
+            )
+        for lay in self.layers:
+            if not lay.locked or lay.id == target:
+                continue
+            n = int(((self.layer == lay.id) & mask).sum())
+            if n:
+                raise EditError(
+                    "layer_locked",
+                    f"{n} of these points are in locked layer {lay.name}; "
+                    "unlock it first",
+                )
+
+    def _create_from_mask(
+        self,
+        mask: np.ndarray,
+        name: str | None,
+        visible: bool,
+        protected: bool = False,
+        dry_run: bool = False,
+    ) -> dict:
+        self._check_unlocked(mask)
+        lid = lowest_free_id(self.layers)
+        clean = clean_layer_name(f"Layer {lid}" if name is None else name)
+        op = self._layer_op(mask, lid)
+        if dry_run:
+            return op
+        self.layer = assign(self.layer, mask, lid, self.cloud.n)
+        self.layers = [
+            *self.layers,
+            Layer(
+                lid,
+                clean,
+                next_colour(self.layers),
+                bool(visible),
+                protected,
+            ),
+        ]
+        self._layers_changed()
+        return op
+
     def create_layer(
         self,
         cloud_revision: int,
@@ -519,18 +568,85 @@ class EditingSession:
                 raise EditError(
                     "empty_selection", "select some visible points first"
                 )
-            lid = lowest_free_id(self.layers)
-            clean = clean_layer_name(f"Layer {lid}" if name is None else name)
-            op = self._layer_op(moved, lid)
+            return self._create_from_mask(moved, name, visible, False, dry_run)
+
+    def layer_from_protection(
+        self,
+        cloud_revision: int,
+        name: str | None = None,
+        dry_run: bool = False,
+    ) -> dict:
+        """A protected layer (default name Floor) of the points inside the
+        global height band; the selection, band and history are untouched."""
+        with self.lock:
+            self.require_cloud(cloud_revision)
+            g = self.protection.global_
+            if not g.enabled:
+                raise EditError(
+                    "no_protection_band", "turn on height protection first"
+                )
+            mask = (
+                protected_mask(
+                    self.xyz, self.valid, [(g.min, g.max)], self.protection.tilt
+                )
+                & self._selectable()
+                & self.valid
+            )
+            if not mask.any():
+                raise EditError(
+                    "empty_band", "no visible point is inside the band"
+                )
+            return self._create_from_mask(
+                mask, "Floor" if name is None else name, True, True, dry_run
+            )
+
+    def merge_layer(
+        self,
+        cloud_revision: int,
+        layer_id: int,
+        into: int,
+        dry_run: bool = False,
+    ) -> dict:
+        """Every point of `layer_id` (deleted ones too) joins `into`; the
+        source layer goes away and the target keeps its name and flags."""
+        with self.lock:
+            self.require_cloud(cloud_revision)
+            if into == layer_id:
+                raise EditError(
+                    "invalid_merge", "a layer cannot merge into itself"
+                )
+            src, dst = self._find_layer(layer_id), self._find_layer(into)
+            for lay in (src, dst):
+                if lay.locked:
+                    raise EditError(
+                        "layer_locked",
+                        f"layer {lay.name} is locked; unlock it first",
+                    )
+            op = {
+                "moved": int(
+                    ((self.layer == layer_id) & self.active & self.valid).sum()
+                ),
+                "from_other_layers": 0,
+                "released": 0,
+            }
             if dry_run:
                 return op
-            self.layer = assign(self.layer, moved, lid, self.cloud.n)
-            self.layers = [
-                *self.layers,
-                Layer(lid, clean, next_colour(self.layers), bool(visible)),
-            ]
+            self.layer = assign(
+                self.layer, self.layer == layer_id, into, self.cloud.n
+            )
+            self.layers = [x for x in self.layers if x.id != layer_id]
             self._layers_changed()
             return op
+
+    def set_layer_order(self, ids: list[int]) -> None:
+        with self.lock:
+            current = {x.id: x for x in self.layers}
+            if len(ids) != len(set(ids)) or set(ids) != set(current):
+                raise EditError(
+                    "invalid_order", "the order must list every layer once"
+                )
+            self.layers = [current[i] for i in ids]
+            self._layers_changed(cosmetic=True)
 
     def assign_layer(
         self,
@@ -549,6 +665,7 @@ class EditingSession:
                 raise EditError(
                     "empty_selection", "select some visible points first"
                 )
+            self._check_unlocked(moved, layer_id)
             if layer_id == 0:
                 op = {
                     "moved": 0,
@@ -582,6 +699,7 @@ class EditingSession:
                 raise EditError(
                     "empty_selection", "select some visible points first"
                 )
+            self._check_unlocked(moved, layer_id)
             old = (self.layer == layer_id) & self.active & self.valid
             released = old & ~moved
             op = self._layer_op(moved, layer_id, int(released.sum()))
@@ -596,7 +714,12 @@ class EditingSession:
         """Remove a layer; every point it held (deleted ones too) is main."""
         with self.lock:
             self.require_cloud(cloud_revision)
-            self._find_layer(layer_id)
+            lay = self._find_layer(layer_id)
+            if lay.locked:
+                raise EditError(
+                    "layer_locked",
+                    f"layer {lay.name} is locked; unlock it first",
+                )
             self.layers = [x for x in self.layers if x.id != layer_id]
             self.layer = delete_layer(self.layer, layer_id)
             if not self.layers:
