@@ -16,6 +16,9 @@ import {
   snap,
   translateDelta,
 } from "./gizmo-math";
+import { defaultCamera } from "../../view/camera";
+import { applyPreset } from "../../view/presets";
+import { boxOverlaySpec } from "./overlay";
 import { boxCorners, defaultBox, quatToRpy, rpyToQuat } from "./model";
 
 const ray = (origin: Vec3, dir: Vec3): Ray => ({ origin, dir });
@@ -88,9 +91,15 @@ describe("gizmo math", () => {
     expect(routePointerDown(false)).toBe("camera");
     const s = Object.values(HANDLE_STYLES);
     expect(new Set(s.map((x) => x.shape)).size).toBe(2);
-    expect(new Set(s.map((x) => x.colour)).size).toBe(2);
     expect(HANDLE_STYLES.resize.shape).toBe("arrow");
     expect(HANDLE_STYLES.rotate.shape).toBe("ring");
+    // per axis the arrow and its ring have different colours
+    const spec = boxOverlaySpec(defaultBox([0, 0, 0]), applyPreset({ ...defaultCamera(), distance: 10 }, "top"), null, 720);
+    for (const i of ["0", "1", "2"]) {
+      const arrow = spec.arrows.find((x) => x.id === `resize-${i}+`)!;
+      const ring = spec.rings.find((x) => x.id === `rotate-${i}+`)!;
+      expect(arrow.colour).not.toBe(ring.colour);
+    }
   });
 
   it("UI-900 ringAngle: a plane behind the eye holds in perspective, an ortho ray is a line", () => {

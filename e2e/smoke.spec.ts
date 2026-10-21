@@ -5267,3 +5267,41 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
     expect(m.stage).toBeGreaterThan(STEP0_STAGE[h]);
   });
 }
+
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-167 14b owner screenshots at ${w}x${h}: corner, hovered ring, mid ring drag, top, rotated`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => {
+      if (m.type() === "error" && !/404/.test(m.text())) errors.push(m.text());
+    });
+    await gizmoBox(page, "top");
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `/out/part14b-${w}x${h}-top.png` });
+    await cornerView(page);
+    await page.mouse.move(5, 5);
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `/out/part14b-${w}x${h}-corner.png` });
+    const a = await stableHandle(page, "rotate-1+");
+    await page.mouse.move(Math.round(a.x), Math.round(a.y));
+    await expect.poll(async () => hook(page, (e) => (e.state() as unknown as { boxHover: string | null }).boxHover)).toBe("rotate-1+");
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `/out/part14b-${w}x${h}-corner-hover-ring.png` });
+    const c = (await hook(page, (e) => e.boxRings())).find((r) => r.id === "rotate-1+")!.centre!;
+    const [vx, vy] = [a.x - c.x, a.y - c.y];
+    const n = Math.hypot(vx, vy);
+    await page.mouse.down();
+    await page.mouse.move(Math.round(c.x - (vy / n) * 30 + (vx / n) * 10), Math.round(c.y + (vx / n) * 30 + (vy / n) * 10), { steps: 5 });
+    await page.mouse.move(Math.round(c.x - (vy / n) * 50 + (vx / n) * 20), Math.round(c.y + (vx / n) * 50 + (vy / n) * 20), { steps: 5 });
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `/out/part14b-${w}x${h}-corner-dragging.png` });
+    await page.mouse.up();
+    await appIdle(page);
+    for (const [id, deg] of [["rotate-0+", 25], ["rotate-2+", 20]] as [string, number][]) await ringTurn(page, id, deg);
+    await page.mouse.move(5, 5);
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `/out/part14b-${w}x${h}-rotated.png` });
+    expect(errors).toEqual([]);
+  });
+}

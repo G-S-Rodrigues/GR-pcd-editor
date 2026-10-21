@@ -10,7 +10,7 @@ import { rightVector } from "../view/camera";
 import { pxPerUnit } from "../view/pointsize";
 import { tiltRings } from "../inspector/rings";
 import { planeAnchors } from "./interact";
-import { clearGroup, drawHeavy, drawLines, drawThick } from "./lines3d";
+import { clearGroup, drawHeavy, drawLines, drawThick, drawTriangles } from "./lines3d";
 
 const BAND_OPACITY = 0.12;
 const HEAD_PX = 9;
@@ -43,8 +43,8 @@ export function createToolsOverlay(scene: THREE.Scene) {
         heavy(c, pairs, outline, origin, s, viewH);
         const spec = boxOverlaySpec(t.box, s.camera, s.boxHover, viewH);
         for (const a of spec.arrows) {
-          const pts: Vec3[] = [a.base, a.tip, a.barbs[0], a.barbs[1]];
-          drawThick(group, pts, [[0, 1], [1, 2], [1, 3]], a.colour, origin, s, viewH, a.width);
+          drawThick(group, [a.base, a.headBase], [[0, 1]], a.colour, origin, s, viewH, a.width);
+          drawTriangles(group, [[a.tip, a.barbs[0], a.barbs[1]]], a.colour, origin);
         }
         for (const r of spec.rings) {
           drawThick(group, r.pts, r.pts.map((_, i): [number, number] => [i, (i + 1) % r.pts.length]), r.colour, origin, s, viewH, r.width);

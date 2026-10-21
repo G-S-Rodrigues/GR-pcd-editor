@@ -53,6 +53,17 @@ export function drawThick(group: THREE.Group, pts: Vec3[], pairs: [number, numbe
   }
 }
 
+/** A filled triangle (depth test off, both faces), added to `group`. */
+export function drawTriangles(group: THREE.Group, tris: [Vec3, Vec3, Vec3][], colour: number, origin: Vec3, renderOrder = 9): void {
+  const a = new Float32Array(tris.length * 9);
+  tris.forEach((t, k) => t.forEach((p, j) => { for (let c = 0; c < 3; c++) a[k * 9 + j * 3 + c] = p[c] - origin[c]; }));
+  const g = new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(a, 3));
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: colour, side: THREE.DoubleSide, depthTest: false, depthWrite: false }));
+  m.renderOrder = renderOrder;
+  m.frustumCulled = false;
+  group.add(m);
+}
+
 /** Removes and disposes every child of `group`. */
 export function clearGroup(group: THREE.Group): void {
   for (const c of [...group.children]) {
