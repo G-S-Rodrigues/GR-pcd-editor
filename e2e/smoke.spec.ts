@@ -4831,6 +4831,9 @@ test("E2E-143 15b Edit layer: the box starts at the member bounds, a resized box
   const wallId = await t.newLayer("Wall");
   await t.openMore(id);
   await t.edit(id).click();
+  // Edit layer clears the selection (async) and then seeds the Box at the member bounds, overwriting the box fields: type only once edit mode is on
+  await expect(t.ctl("layer-set")).toBeVisible();
+  await expect(page.locator("#layer-editing")).toContainText("Editing layer Floor");
   await t.setBox([-1, 4.5, 2.5], [1, 10, 5]);
   await t.exact("Selected", String(ROOM.wall));
   await t.ctl("layer-set").click();
