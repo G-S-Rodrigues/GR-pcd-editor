@@ -25,6 +25,8 @@ class Layer:
     name: str
     colour: int  # 0..15, an index into the client palette
     visible: bool = True
+    protected: bool = False  # never deleted by any Apply
+    locked: bool = False  # membership fixed (points can still be deleted)
 
 
 def clean_layer_name(name) -> str:
@@ -100,13 +102,23 @@ def counts_by_layer(layer: np.ndarray | None, mask: np.ndarray) -> np.ndarray:
     return np.bincount(layer[mask], minlength=256).astype(np.int64)
 
 
+def _flag_mask(layer: np.ndarray | None, flagged: list[int]):
+    if layer is None or not flagged:
+        return None
+    lut = np.zeros(256, dtype=bool)
+    lut[flagged] = True
+    return lut[layer]
+
+
 def hidden_points(
     layer: np.ndarray | None, layers: list[Layer]
 ) -> np.ndarray | None:
     """Mask of points in a hidden layer, or None when nothing is hidden."""
-    hidden = [lay.id for lay in layers if not lay.visible]
-    if layer is None or not hidden:
-        return None
-    lut = np.zeros(256, dtype=bool)
-    lut[hidden] = True
-    return lut[layer]
+    return _flag_mask(layer, [lay.id for lay in layers if not lay.visible])
+
+
+def protected_points(
+    layer: np.ndarray | None, layers: list[Layer]
+) -> np.ndarray | None:
+    """Mask of points in a protected layer, or None when none is protected."""
+    return _flag_mask(layer, [lay.id for lay in layers if lay.protected])

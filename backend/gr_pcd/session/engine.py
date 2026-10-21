@@ -2,7 +2,7 @@
 
 import threading
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -25,6 +25,7 @@ from gr_pcd.editing.layers import (
     hidden_points,
     lowest_free_id,
     next_colour,
+    protected_points,
 )
 from gr_pcd.editing.protection import (
     OperationProtection,
@@ -96,6 +97,7 @@ class Candidate:
     tool_text: str
     tilt: dict | None = None
     tool_shape: dict | None = None
+    protected_by_layers: int = 0
 
 
 @dataclass(frozen=True)
@@ -237,13 +239,18 @@ class EditingSession:
             self._display_cache = (filt, mask)
         return mask
 
-    def _protected(self, protection: ProtectionState) -> np.ndarray:
-        return protected_mask(
+    def _protected(
+        self, protection: ProtectionState, layer=None, layers=()
+    ) -> np.ndarray:
+        """P: the height band plus every protected layer (one set)."""
+        band = protected_mask(
             self.xyz,
             self.valid,
             effective_intervals(protection),
             protection.tilt,
         )
+        by_layer = protected_points(layer, list(layers))
+        return band if by_layer is None else band | by_layer
 
     def require_cloud(self, cloud_revision: int) -> None:
         if cloud_revision != self.clock.cloud:
@@ -318,7 +325,9 @@ class EditingSession:
             "invalid_active": int((active & ~self.valid).sum()),
             "displayed": int((base & display).sum()),
             "selected": int((selection & base).sum()),
-            "protected": int((self._protected(protection) & base).sum()),
+            "protected": int(
+                (self._protected(protection, layer, layers) & base).sum()
+            ),
         }
         out = {
             "session_id": self.id,
@@ -599,7 +608,7 @@ class EditingSession:
         out = []
         for lay in self.layers:
             if lay.id in ids and lay.visible != visible:
-                lay = Layer(lay.id, lay.name, lay.colour, visible)
+                lay = replace(lay, visible=visible)
                 changed = True
             out.append(lay)
         self.layers = out
@@ -611,7 +620,12 @@ class EditingSession:
         name: str | None = None,
         colour: int | None = None,
         visible: bool | None = None,
+        protected: bool | None = None,
+        locked: bool | None = None,
     ) -> None:
+        for flag in (protected, locked):
+            if flag is not None and not isinstance(flag, bool):
+                raise EditError("invalid_flag", "a flag is true or false")
         with self.lock:
             lay = self._find_layer(layer_id)
             new_name = lay.name if name is None else clean_layer_name(name)
@@ -628,11 +642,21 @@ class EditingSession:
             else:
                 new_colour = colour
             new_visible = lay.visible if visible is None else bool(visible)
-            new = Layer(lay.id, new_name, new_colour, new_visible)
+            new = replace(
+                lay,
+                name=new_name,
+                colour=new_colour,
+                visible=new_visible,
+                protected=lay.protected if protected is None else protected,
+                locked=lay.locked if locked is None else locked,
+            )
             if new == lay:
                 return
             self.layers = [new if x.id == lay.id else x for x in self.layers]
-            self._layers_changed(cosmetic=new_visible == lay.visible)
+            self._layers_changed(
+                cosmetic=new_visible == lay.visible
+                and new.protected == lay.protected
+            )
 
     def set_layers_visibility(
         self, ids: list[int] | None, visible: bool
@@ -685,11 +709,8 @@ class EditingSession:
             )
             region = fn(self.xyz, valid, tool.region, token)
         protected = (
-            protected_mask(
-                self.xyz,
-                valid,
-                effective_intervals(snap["protection"]),
-                snap["protection"].tilt,
+            self._protected(
+                snap["protection"], snap.get("layer"), snap.get("layers", ())
             )
             if tool.exclude_protected
             else None
@@ -778,6 +799,8 @@ class EditingSession:
                 "selection": self.selection,
                 "protection": self.protection,
                 "filter": self.display_filter,
+                "layer": self.layer,
+                "layers": list(self.layers),
             }
         snap["display"] = self._display(token)
         snap["scope"] = scope_mask(
@@ -936,6 +959,7 @@ class EditingSession:
                 raise Stale()
             active, selection = self._selectable(), self.selection
             protection = self.protection
+            layer, layers = self.layer, list(self.layers)
             cluster = self._last_cluster
             tool_text = self._last_tool_text
             tool_shape = self._last_tool_shape
@@ -947,12 +971,16 @@ class EditingSession:
                 )
         display = self._display(token)
         intervals = effective_intervals(protection)
-        protected = protected_mask(
-            self.xyz, self.valid, intervals, protection.tilt
-        )
+        protected = self._protected(protection, layer, layers)
+        by_layer = protected_points(layer, layers)
         token.check()
         res = candidate_deletion(
             self.xyz, active, self.valid, selection, protected, display
+        )
+        kept_by_layers = (
+            0
+            if by_layer is None
+            else int((selection & active & self.valid & by_layer).sum())
         )
         token.check()
         cand = Candidate(
@@ -968,6 +996,7 @@ class EditingSession:
             cluster=cluster,
             tool_text=tool_text,
             tool_shape=tool_shape,
+            protected_by_layers=kept_by_layers,
         )
         with self.lock:
             if token.cancelled:
@@ -1149,6 +1178,7 @@ class EditingSession:
             step_ids = self.history.entry(step).ids if mode == "step" else None
             hidden = hidden_points(self.layer, self.layers)
             layer = self.layer if self.layers else None
+            layers = list(self.layers)
         display = self._display()
         valid = self.valid
         if mode == "step":
@@ -1181,9 +1211,7 @@ class EditingSession:
                 )
             ]
         )
-        protected = protected_mask(
-            self.xyz, valid, effective_intervals(protection), protection.tilt
-        )
+        protected = self._protected(protection, layer, layers)
         sel = selection & active & valid
         shown = sel
         if pend is not None:
@@ -1327,4 +1355,5 @@ def candidate_summary(cand: Candidate) -> dict:
         else {"min": list(r.bounds[0]), "max": list(r.bounds[1])},
         "effective_protection": effective,
         "cluster": cand.cluster,
+        "protected_by_layers": cand.protected_by_layers,
     }
