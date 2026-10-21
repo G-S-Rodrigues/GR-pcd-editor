@@ -16,6 +16,7 @@ from gr_pcd.editing.history import (
     History,
     LayerRowChange,
     RevisionClock,
+    dependents_in,
     with_ids,
 )
 from gr_pcd.editing.invalid import remove_invalid
@@ -416,7 +417,8 @@ class EditingSession:
         return out
 
     def _deletable(self, entries, e) -> bool:
-        """No later layer step builds on this one (cached per step list)."""
+        """No later layer step builds on this one (cached per step list; computed
+        on the snapshot the state was built from, not the live history)."""
         key = tuple(x.sid for x in entries)
         with self.lock:
             cache = self._deletable_cache
@@ -424,7 +426,7 @@ class EditingSession:
                 cache = (key, {})
                 self._deletable_cache = cache
             if e.sid not in cache[1]:
-                cache[1][e.sid] = not self.history.dependents(e.sid)
+                cache[1][e.sid] = not dependents_in(entries, e.sid)
             return cache[1][e.sid]
 
     # ---- layers: reads --------------------------------------------------

@@ -4,6 +4,7 @@ Sessions are built by hand (state set directly, steps pushed on the history)
 so these tests do not depend on how the engine creates layer steps.
 """
 
+import dataclasses
 import json
 import zipfile
 
@@ -443,3 +444,25 @@ def test_ses_90_load_refuses_history_over_budget(mgr, tmp_path):
     assert ei.value.code == "bad_archive", ei.value.message
     assert "history" in ei.value.message
     assert not dest.exists()
+
+
+def test_ses_92_state_deletable_uses_the_snapshot(mgr):
+    """A step that exists on the live history only while `state()` runs must not decide (or be cached as) the
+    deletable flag of the steps in the snapshot."""
+    s = build(mgr)
+    last = s.history.entries[-1]
+    live = s.history.entries
+    real = s.history.dependents
+
+    def with_transient_step(sid):
+        live.append(dataclasses.replace(last, sid=9999))
+        try:
+            return real(sid)
+        finally:
+            live.pop()
+
+    s.history.dependents = with_transient_step
+    s.state()
+    del s.history.dependents
+    rows = s.state()["history"]["entries"]
+    assert rows[-1]["sid"] == last.sid and rows[-1]["deletable"] is True

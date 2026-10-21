@@ -227,22 +227,29 @@ class History:
         """The later layer steps (applied or greyed) that block deleting this
         one: they share ids with it, or one made a row the other uses. A
         deletion step is never blocked (it writes another array)."""
-        i = self._index(sid)
-        e = self.entries[i]
-        if e.kind != LAYER:
-            return []
-        made, uses = e.made(), e.uses()
-        out = []
-        for later in self.entries[i + 1 :]:
-            if later.kind != LAYER:
-                continue
-            if (
-                np.intersect1d(e.ids, later.ids, assume_unique=True).size
-                or (later.made() & uses)
-                or (made & later.uses())
-            ):
-                out.append(later.sid)
-        return out
+        return dependents_in(self.entries, sid)
+
+
+def dependents_in(entries, sid: int) -> list[int]:
+    """`History.dependents` over a given list of entries (a snapshot)."""
+    i = next((k for k, x in enumerate(entries) if x.sid == sid), -1)
+    if i < 0:
+        raise EditError("no_such_step", f"there is no step {sid}")
+    e = entries[i]
+    if e.kind != LAYER:
+        return []
+    made, uses = e.made(), e.uses()
+    out = []
+    for later in entries[i + 1 :]:
+        if later.kind != LAYER:
+            continue
+        if (
+            np.intersect1d(e.ids, later.ids, assume_unique=True).size
+            or (later.made() & uses)
+            or (made & later.uses())
+        ):
+            out.append(later.sid)
+    return out
 
 
 class RevisionClock:
