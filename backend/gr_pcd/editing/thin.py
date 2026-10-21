@@ -27,7 +27,7 @@ from gr_pcd.geometry.voxel import voxel_keys
 from gr_pcd.session.budget import check_budget
 
 METHODS = ("duplicates", "voxel")
-PAIR_BYTES = 16  # per (ordered) neighbour pair held by the pair search
+PAIR_BYTES = 48  # per (ordered) neighbour pair: the SciPy i/j/v entry plus the filtered copies, measured
 PAIR_CHUNK_CAP = 4_000_000  # neighbour entries evaluated per step
 THIN_BYTES_PER_POINT = 48  # named from the 20-4 measurement
 DEDUP_REL = (
@@ -100,7 +100,8 @@ def _near_duplicates(
         return out
     reach = eps * (1.0 + DEDUP_REL)
     tree = cKDTree(pts)
-    pairs = int(tree.count_neighbors(tree, reach))
+    counts = tree.query_ball_point(pts, reach, return_length=True)
+    pairs = int(counts.sum(dtype=np.int64))
     if token is not None:
         token.check()
     if budget is not None:
@@ -110,13 +111,17 @@ def _near_duplicates(
             "the duplicate search",
             "Use a smaller distance, a region, or a coarser voxel grid.",
         )
-    mean = max(1.0, pairs / m)
-    step = max(1, int(PAIR_CHUNK_CAP / mean))
     eps2 = eps * eps
-    for lo in range(0, m, step):
+    cum = np.cumsum(counts, dtype=np.int64)
+    del counts
+    lo = 0
+    while lo < m:
         if token is not None:
             token.check()
-        hi = min(m, lo + step)
+        # cut on cumulative per-row counts, so a dense blob cannot land in one chunk
+        base = int(cum[lo - 1]) if lo else 0
+        hi = int(np.searchsorted(cum, base + PAIR_CHUNK_CAP, "right"))
+        hi = min(m, max(hi, lo + 1))
         sub = cKDTree(pts[lo:hi])
         mat = sub.sparse_distance_matrix(tree, reach, output_type="ndarray")
         i, j, v = mat["i"] + lo, mat["j"], mat["v"]
@@ -132,6 +137,7 @@ def _near_duplicates(
         out[i] = True
         if on_progress is not None:
             on_progress(hi / m)
+        lo = hi
     return out
 
 

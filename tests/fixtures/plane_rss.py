@@ -11,7 +11,7 @@ import sys
 import time
 
 LIMIT_AS = 3 * 1024**3
-KINDS = ("detect", "plane", "dup", "voxel")
+KINDS = ("detect", "plane", "dup", "voxel", "dupblob")
 
 
 def run_case(kind, n, *, timeout=120):
@@ -58,11 +58,17 @@ def _child(args):
     kind, n = args["kind"], args["n"]
     if kind in ("detect", "plane"):
         xyz, _ = plane_room_rows(n, 11)
+    elif kind == "dupblob":  # 5 percent identical rows, the rest on a 1 cm grid
+        side = int(np.ceil((n - n // 20) ** (1 / 3)))
+        g = np.stack(np.meshgrid(*[np.arange(side)] * 3, indexing="ij"), -1)
+        grid = g.reshape(-1, 3)[: n - n // 20] * 0.01
+        xyz = np.vstack([np.full((n // 20, 3), 5.0), grid])
     else:  # half the rows are exact copies of the other half
         base, _ = room_rows(n // 2, 7)
         xyz = np.vstack([base, base])
     xyz = np.ascontiguousarray(xyz)
     eligible = np.ones(len(xyz), dtype=bool)
+    extra = {}
     with open("/proc/self/clear_refs", "w") as f:
         f.write("5")  # reset VmHWM to the current RSS
     base_mib = _status_mib("VmRSS")
@@ -80,6 +86,25 @@ def _child(args):
                 & eligible
             ).sum()
         )
+    elif kind == "dupblob":
+        from scipy.spatial import cKDTree
+
+        from gr_pcd.editing.thin import duplicate_mask
+
+        tree = cKDTree(xyz)
+        pairs = int(tree.count_neighbors(tree, 1e-3 * (1 + 1e-12)))
+        del tree
+        budget = int(1.05 * pairs * 16)
+        with open("/proc/self/clear_refs", "w") as f:
+            f.write("5")
+        base_mib = _status_mib("VmRSS")
+        try:
+            res = int(duplicate_mask(xyz, eligible, 1e-3, budget=budget).sum())
+            code = None
+        except Exception as exc:  # noqa: BLE001
+            res, code = -1, getattr(exc, "code", type(exc).__name__)
+        extra["budget_mib"] = budget / 1024**2
+        extra["code"] = code
     elif kind == "dup":
         from gr_pcd.editing.thin import duplicate_mask
 
@@ -100,6 +125,7 @@ def _child(args):
                 "peak_mib": peak,
                 "growth_mib": peak - base_mib,
                 "result": res,
+                **extra,
             }
         )
     )
