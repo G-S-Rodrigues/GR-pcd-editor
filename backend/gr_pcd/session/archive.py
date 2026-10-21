@@ -170,15 +170,7 @@ def save_archive(session, path: Path, token) -> dict:
         manifest["layers"] = {
             "file": "layers.bin",
             "sha256": hashlib.sha256(layer_bytes).hexdigest(),
-            "items": [
-                {
-                    "id": x.id,
-                    "name": x.name,
-                    "colour": x.colour,
-                    "visible": x.visible,
-                }
-                for x in layers
-            ],
+            "items": [_layer_item(x) for x in layers],
         }
     fd, tmp_name = tempfile.mkstemp(
         dir=path.parent, prefix=".archive-", suffix=".part"
@@ -549,6 +541,21 @@ def _load_open(zf, dest_source, budget, max_source_bytes) -> LoadedArchive:
     )
 
 
+def _layer_item(x: Layer) -> dict:
+    item = {
+        "id": x.id,
+        "name": x.name,
+        "colour": x.colour,
+        "visible": x.visible,
+    }
+    # optional keys, written only when true: a version 2 file stays valid
+    if x.protected:
+        item["protected"] = True
+    if x.locked:
+        item["locked"] = True
+    return item
+
+
 def _layer_manifest(manifest: dict, version: int, by_name: dict):
     """The validated `layers` block, or None for a layer-less (v1) archive."""
     has_key = "layers" in manifest
@@ -594,8 +601,11 @@ def _layer_manifest(manifest: dict, version: int, by_name: dict):
                 raise _bad("invalid layer name")
         except EditError:
             raise _bad("invalid layer name")
+        prot, lock = it.get("protected", False), it.get("locked", False)
+        if type(prot) is not bool or type(lock) is not bool:
+            raise _bad("invalid layer flag")
         seen.add(lid)
-        out.append(Layer(lid, name, colour, vis))
+        out.append(Layer(lid, name, colour, vis, prot, lock))
     return sha, out
 
 

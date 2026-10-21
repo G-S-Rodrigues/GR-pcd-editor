@@ -238,3 +238,65 @@ def test_lay_38_a_layer_step_survives_and_ids_are_reused(env, tmp_path):
     m = manifest_of(save(env))
     assert [i["id"] for i in m["layers"]["items"]] == [1]
     assert "next_id" not in m["layers"]
+
+
+def test_lay_89_flags_and_stored_order_round_trip(env, tmp_path):
+    s = with_layers(env)
+    s.patch_layer(1, visible=True)
+    s.patch_layer(1, protected=True)
+    # a second layer stored first: the list order is the stored order
+    from dataclasses import replace
+
+    s.layers = [replace(s.layers[0], id=2, name="Wall", locked=True)] + [
+        s.layers[0]
+    ]
+    s.layer = s.layer.copy()
+    s.layer[s.layer == 1] = 1  # ids stay valid: layer 2 simply has no points
+    path = save(env)
+    items = manifest_of(path)["layers"]["items"]
+    assert [i["name"] for i in items] == ["Wall", "Ghosts"]
+    assert items[0].get("protected") is True and items[0]["locked"] is True
+    assert "locked" not in items[1] and items[1]["protected"] is True
+    fresh = SessionManager(make_settings(tmp_path / "other"))
+    try:
+        s2 = fresh.open_archive(path)
+        assert s2.layers == s.layers
+    finally:
+        fresh.jobs.shutdown()
+
+
+def test_lay_30b_unflagged_manifest_has_no_flag_keys(env):
+    with_layers(env)
+    items = manifest_of(save(env))["layers"]["items"]
+    assert items == [{"id": 1, "name": "Ghosts", "colour": 0, "visible": False}]
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        {"protected": 1},
+        {"locked": "yes"},
+        {"protected": None},
+        {"locked": 0},
+    ],
+)
+def test_lay_90_non_boolean_flags_are_refused(env, tmp_path, edit):
+    path = with_layers(env) and save(env)
+    out = tmp_path / "bad.pcdsession"
+    set_manifest(path, out, lambda m: m["layers"]["items"][0].update(edit))
+    rejects(tmp_path, out)
+
+
+def test_lay_91_a_manifest_without_the_keys_loads_with_both_false(
+    env, tmp_path
+):
+    with_layers(env)
+    path = save(env)
+    assert "protected" not in manifest_of(path)["layers"]["items"][0]
+    fresh = SessionManager(make_settings(tmp_path / "other"))
+    try:
+        s2 = fresh.open_archive(path)
+        assert s2.layers[0].protected is False
+        assert s2.layers[0].locked is False
+    finally:
+        fresh.jobs.shutdown()
