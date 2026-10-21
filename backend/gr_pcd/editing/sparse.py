@@ -22,12 +22,12 @@ from gr_pcd.editing.cancel import CancelToken
 from gr_pcd.editing.errors import EditError
 from gr_pcd.geometry.box import BoxSpec
 from gr_pcd.geometry.prism import PrismSpec
+from gr_pcd.geometry.voxel import voxel_keys
 
 DEFAULT_MIN_NEIGHBOURS = 8
 MAX_MIN_NEIGHBOURS = 1_000_000
 AUTO_FACTOR = 6.0  # auto radius = this many median nearest-neighbour distances
 AUTO_SAMPLE = 50_000
-MAX_KEY = 1 << 62
 SPARSE_BYTES_PER_POINT = 64
 
 
@@ -84,19 +84,12 @@ def neighbourhood_counts(
     if n == 0:
         return np.zeros(0, dtype=np.int64)
     rel = pts - pts.min(axis=0)
-    cells = rel.max(axis=0) / radius + 3.0  # a cube of margin on every side
-    if (
-        not np.isfinite(cells).all()
-        or float(np.prod(np.minimum(cells, 1e30))) >= MAX_KEY
-    ):
-        raise EditError(
-            "invalid_tool",
-            "the sparse radius is too small for the extent of the cloud",
-        )
-    ijk = np.floor(rel / radius).astype(np.int64) + 1
-    dims = ijk.max(axis=0) + 2
-    key = (ijk[:, 0] * dims[1] + ijk[:, 1]) * dims[2] + ijk[:, 2]
-    del ijk, rel
+    key, dims = voxel_keys(
+        rel,
+        radius,
+        "the sparse radius is too small for the extent of the cloud",
+    )
+    del rel
     uniq, inv, cnt = np.unique(key, return_inverse=True, return_counts=True)
     del key
     total = np.zeros(len(uniq), dtype=np.int64)
