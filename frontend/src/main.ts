@@ -16,6 +16,8 @@ import { type ProtectionModel, floorFromPick, protectionFromState, setGlobal } f
 import { createProtectionController } from "./inspector/protection-controller";
 import { createEditor } from "./orchestration/edit";
 import { createRunner, deleteKeyOutcome } from "./orchestration/runner";
+import { createPlanesController } from "./orchestration/planes";
+import { emptyPlanes } from "./tools/plane/model";
 import { armTool, disarmed } from "./orchestration/toolstate";
 import { createUploadCanceller } from "./orchestration/upload-cancel";
 import { type UploadOptions, uploadFile } from "./files/upload";
@@ -177,6 +179,7 @@ function onOpened(state: SessionState) {
   const fitted = state.active_bounds
     ? fitBounds(resetPivot(cam, state.active_bounds), state.active_bounds, w / Math.max(ph, 1))
     : cam;
+  planesCtl.cancel();
   runner.reset();
   const restored = restoreClientState(state.client_state);
   store.update((st) => ({
@@ -187,6 +190,7 @@ function onOpened(state: SessionState) {
     liveFirst: state.selection.count === 0,
     scope: "displayed",
     candidate: null,
+    planes: emptyPlanes(),
     tools: {
       ...st.tools,
       box: boxForOpen(st.tools.box, fitted.target),
@@ -249,7 +253,16 @@ buildViewbar($("viewbar"), store, {
   },
 });
 buildStatusbar($("statusbar"), $("modebar"), store);
+const planesCtl = createPlanesController(
+  store,
+  { detect: (b) => api.detectPlanes(b as api.DetectPlanesBody), poll: (id, opts) => pollJob(id, opts), cancelJob: (id) => postJson(`/api/jobs/${id}/cancel`) },
+  { protectionEdit: (fn) => protection.edit(fn), confirm: (m) => window.confirm(m), toolChanged: () => runner.onToolChanged() },
+);
 const panelActions = {
+  planeDetect: () => void planesCtl.detect(),
+  planeCancel: () => planesCtl.cancel(),
+  planeSelect: (i: number) => planesCtl.select(i),
+  planeBand: (i: number) => planesCtl.band(i),
   toolChanged: () => runner.onToolChanged(),
   scopeChanged: () => runner.paramsChanged("scope"),
   filterResetAll: () => filters.resetToCloud(),

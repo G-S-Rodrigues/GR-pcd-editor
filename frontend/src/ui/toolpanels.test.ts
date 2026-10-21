@@ -17,8 +17,8 @@ beforeEach(() => {
   store.set({ ...createAppStore().get(), session: sessionFixture(), tool: "none" });
 });
 
-test("UI-890 the four tool sections live in the toolRoot slot and the other sections stay in the root; the slot order is box, polygon, cluster, sparse", () => {
-  expect(ids(toolRoot)).toEqual(["box", "polygon", "cluster", "sparse"]);
+test("UI-890 the six tool sections live in the toolRoot slot and the other sections stay in the root; the slot order is box, polygon, cluster, sparse, plane, thin", () => {
+  expect(ids(toolRoot)).toEqual(["box", "polygon", "cluster", "sparse", "plane", "thin"]);
   const rest = ids(dom.root).filter((x) => x !== null);
   expect(rest).not.toContain("box");
   expect(rest).not.toContain("cluster");

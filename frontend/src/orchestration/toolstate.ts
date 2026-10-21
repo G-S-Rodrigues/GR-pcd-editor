@@ -22,5 +22,7 @@ export function disarmed(st: AppState): AppState {
     interaction: "orbit",
     liveFirst: true,
     tools: { ...st.tools, polygon: emptyPolygon(), cluster: { ...st.tools.cluster, seed: null } },
+    // the detected list stays; the chosen plane goes with the selection
+    planes: { ...st.planes, chosen: null, chosenRow: null, rowNote: null },
   };
 }

@@ -52,8 +52,8 @@ export interface PlanesState {
   eligible: number;
   /** The scope the detection used. */
   scope: Scope | null;
-  /** The distance the detection used, which becomes the slab half thickness of a chosen row. */
-  distance: number;
+  /** The cloud revision the list belongs to; a different current revision makes the list stale. */
+  revision: number | null;
   chosen: ChosenPlane | null;
   chosenRow: number | null;
   busy: boolean;
@@ -67,7 +67,7 @@ export const emptyPlanes = (): PlanesState => ({
   list: null,
   eligible: 0,
   scope: null,
-  distance: DEFAULT_PLANE_DISTANCE,
+  revision: null,
   chosen: null,
   chosenRow: null,
   busy: false,

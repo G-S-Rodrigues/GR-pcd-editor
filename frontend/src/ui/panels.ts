@@ -12,6 +12,9 @@ import * as PG from "../tools/polygon/model";
 import { polygonHint } from "../tools/polygon/edit";
 import { CLUSTER_LIMIT_TEXT, type RegionKind, clusterLimitText, clusterPanel, regionOptions, setRadius } from "../tools/cluster/model";
 import { type SparseModel, setMinNeighbours, setSparseRadius, sparseSummary } from "../tools/sparse/model";
+import { type PlaneModel, planeRows, planeSummary, setMaxPlanes, setMaxTilt, setPlaneDistance } from "../tools/plane/model";
+import { type ThinModel, setThinDistance, setThinEdge, setThinMethod, thinSummary } from "../tools/thin/model";
+import { planesNote } from "../orchestration/planes";
 import { clusterPickState, pickText, pressPick } from "../tools/cluster/pick";
 import { headline } from "../status/headline";
 import { commitEnabled, commitLabel, discardEnabled, previewClusterOf, previewParts } from "../tools/preview";
@@ -71,6 +74,10 @@ export interface PanelActions {
   removeInvalidVisible: () => boolean;
   removeInvalidLabel: () => string;
   cancelJob: () => void;
+  planeDetect: () => void;
+  planeCancel: () => void;
+  planeSelect: (index: number) => void;
+  planeBand: (index: number) => void;
   startDrawing: () => void;
   finishPolygon: () => string | null;
   cancelDrawing: () => void;
@@ -90,6 +97,8 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     polygon: toolBtn("tool-polygon", "polygon", "Polygon"),
     cluster: toolBtn("tool-cluster", "cluster", "Cluster"),
     sparse: toolBtn("tool-sparse", "sparse", "Sparse points"),
+    plane: toolBtn("tool-plane", "plane", "Planes"),
+    thin: toolBtn("tool-thin", "thin", "Thin"),
   };
   // Operation: three icon radios (none pressed while the first selection is live). Replace is not offered.
   const OPS = [
@@ -208,7 +217,7 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
   const keptToggle = control("button", { id: "sel-show-kept", onclick: () => store.update((s) => ({ ...s, showKept: !s.showKept })) }, "Show kept points");
   root.append(
     h("h2", { text: "Tools" }),
-    h("div", { class: "stack" }, btns.box, btns.polygon, btns.cluster, btns.sparse),
+    h("div", { class: "stack" }, btns.box, btns.polygon, btns.cluster, btns.sparse, btns.plane, btns.thin),
     h("h2", { text: "Selection" }),
     h("div", { class: "oprow" }, h("span", { text: "Operation" }), op, previewLive),
     liveNote,
@@ -234,7 +243,7 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     invalid,
   );
   const sync: Sync = (s) => {
-    for (const k of ["box", "polygon", "cluster", "sparse"] as const) btns[k].classList.toggle("active", s.tool === k);
+    for (const k of ["box", "polygon", "cluster", "sparse", "plane", "thin"] as const) btns[k].classList.toggle("active", s.tool === k);
     const open = s.session !== null;
     const ro = s.compare !== "edited";
     for (const [k, b] of Object.entries(btns)) {
@@ -729,6 +738,97 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     }),
   );
 
+  // ---- planes: detect floor and ceiling planes (read only), choose one, select its points
+  const regionSelect = (id: string, key: "plane" | "thin") => {
+    const sel = control("select", { id, onchange: () => {
+      store.update((s) => ({ ...s, tools: { ...s.tools, [key]: { ...s.tools[key], region: sel.value as RegionKind } } }));
+      if (key === "thin" || store.get().planes.chosen) a.toolChanged();
+    } });
+    syncs.push((s) => {
+      const t = currentToolPair(s);
+      const opts = regionOptions(t.box, t.prism);
+      sel.replaceChildren(...opts.map((o) => h("option", { value: o, text: o === "none" ? "Whole cloud" : o === "box" ? "Current box" : "Current polygon" })));
+      sel.value = opts.includes(s.tools[key].region) ? s.tools[key].region : "none";
+    });
+    return h("label", { class: "f" }, "Region ", sel);
+  };
+  // distance, tilt and count only steer the next detection; region and protection also change the chosen plane's points
+  const planeEdit = (r: { ok: boolean; model: PlaneModel; error?: string }): string | null => {
+    if (!r.ok) return r.error ?? "Invalid value";
+    store.update((s) => ({ ...s, tools: { ...s.tools, plane: r.model } }));
+    return null;
+  };
+  const detectBtn = button("plane-detect", "Detect planes", () => a.planeDetect());
+  const cancelBtn = button("plane-cancel", "Cancel", () => a.planeCancel());
+  const planeList = h("div", { id: "plane-list", class: "planelist" });
+  let listKey = "";
+  syncs.push((s) => {
+    detectBtn.disabled = !s.session || s.planes.busy;
+    cancelBtn.hidden = !s.planes.busy;
+    const fresh = s.session !== null && s.planes.revision === s.session.revision.cloud;
+    const key = JSON.stringify([fresh, s.planes.list, s.planes.chosenRow, s.planes.rowNote]);
+    if (key === listKey) return;
+    listKey = key;
+    const rows = fresh && s.planes.list ? planeRows(s.planes.list, s.session?.active_bounds ?? null) : [];
+    planeList.replaceChildren(
+      ...rows.flatMap((r) => {
+        const chosen = s.planes.chosenRow === r.index;
+        const sel = h("button", { id: `plane-select-${r.index}`, type: "button", title: "Select the points within the distance of this Detected plane; Delete then removes them", "aria-pressed": String(chosen), onclick: () => a.planeSelect(r.index) }, "Select");
+        const band = h("button", { id: `plane-band-${r.index}`, type: "button", title: "Make the height protection band follow this Detected plane (a tilted band when the plane is tilted)", onclick: () => a.planeBand(r.index) }, "Use as protection band");
+        const note = s.planes.rowNote?.row === r.index ? [h("p", { class: "note warn", id: `plane-note-${r.index}`, text: s.planes.rowNote.text })] : [];
+        return [
+          h("div", { class: chosen ? "planerow chosen" : "planerow", "data-plane": String(r.index) }, h("span", { class: "planelabel", text: r.label }), h("span", { class: "planenums", text: `z ${r.z}, tilt ${r.tilt} deg, ${r.count} points` }), sel, band),
+          ...note,
+        ];
+      }),
+    );
+  });
+  const planePanel = section(
+    "plane",
+    "Planes",
+    (s) => s.tool === "plane",
+    text((s) => planeSummary(s.tools.plane)),
+    field("plane-distance", "Distance", (s) => s.tools.plane.distance, (v) => planeEdit(setPlaneDistance(store.get().tools.plane, v))),
+    field("plane-max-tilt", "Max tilt (deg)", (s) => s.tools.plane.maxTilt, (v) => planeEdit(setMaxTilt(store.get().tools.plane, v))),
+    field("plane-max", "Max planes", (s) => s.tools.plane.maxPlanes, (v) => planeEdit(setMaxPlanes(store.get().tools.plane, v))),
+    regionSelect("plane-region", "plane"),
+    check("plane-exclude-protected", "Exclude protected points", (s) => s.tools.plane.excludeProtected, (v) => {
+      store.update((s) => ({ ...s, tools: { ...s.tools, plane: { ...s.tools.plane, excludeProtected: v } } }));
+      if (store.get().planes.chosen) a.toolChanged();
+    }),
+    h("div", { class: "stack" }, detectBtn, cancelBtn),
+    text(planesNote, "note"),
+    planeList,
+  );
+
+  // ---- thin: duplicates and voxel subsample, always a selection that Delete then removes
+  const thinEdit = (r: { ok: boolean; model: ThinModel; error?: string }): string | null => {
+    if (!r.ok) return r.error ?? "Invalid value";
+    store.update((s) => ({ ...s, tools: { ...s.tools, thin: r.model } }));
+    a.toolChanged();
+    return null;
+  };
+  const thinDistance = field("thin-distance", "Distance", (s) => s.tools.thin.distance, (v) => thinEdit(setThinDistance(store.get().tools.thin, v)));
+  const thinEdge = field("thin-edge", "Voxel edge", (s) => s.tools.thin.edge, (v) => thinEdit(setThinEdge(store.get().tools.thin, v)));
+  syncs.push((s) => {
+    thinDistance.hidden = s.tools.thin.method !== "duplicates";
+    thinEdge.hidden = s.tools.thin.method !== "voxel";
+  });
+  const thinPanel = section(
+    "thin",
+    "Thin",
+    (s) => s.tool === "thin",
+    text((s) => thinSummary(s.tools.thin)),
+    select("thin-method", "Method", [["duplicates", "Duplicates"], ["voxel", "Voxel grid"]], (s) => s.tools.thin.method, (v) => showErr(thinEdit(setThinMethod(store.get().tools.thin, v as "duplicates" | "voxel")))),
+    thinDistance,
+    thinEdge,
+    regionSelect("thin-region", "thin"),
+    check("thin-exclude-protected", "Exclude protected points", (s) => s.tools.thin.excludeProtected, (v) => {
+      store.update((s) => ({ ...s, tools: { ...s.tools, thin: { ...s.tools.thin, excludeProtected: v } } }));
+      a.toolChanged();
+    }),
+  );
+
   // ---- filters (the six boxes live on the canvas, see filterboxes/; the panel keeps the note, summary and global reset)
   const filterPanel = section(
     "display",
@@ -814,7 +914,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
   const histPanel = section("history", "History", (s) => s.session !== null, histList, text((s) => (s.session && s.session.history.entries.length === 0 ? "No edits yet" : "")));
 
   root.append(errors);
-  toolRoot.append(boxPanel, polyPanel, clusterPanelEl, sparsePanel);
+  toolRoot.append(boxPanel, polyPanel, clusterPanelEl, sparsePanel, planePanel, thinPanel);
   root.append(filterPanel, protPanel, histPanel);
   const syncAll = (s: AppState) => {
     for (const f of syncs) f(s);
