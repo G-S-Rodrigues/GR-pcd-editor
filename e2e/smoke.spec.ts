@@ -4972,3 +4972,74 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
     await checkLayout(page, w, h);
   });
 }
+
+// 17-11: owner screenshots, idle and Cluster armed with a partial result, 3 layers; the only assertions are idle and no console errors
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-160 17 owner screenshots at ${w}x${h}: idle and Cluster armed with 3 layers`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => {
+      if (m.type() === "error" && !/404/.test(m.text())) errors.push(m.text());
+    });
+    const t = layerHelpers(page);
+    await t.floorSelected();
+    await t.newLayer("L1");
+    for (let i = 2; i <= 3; i++) {
+      await t.ctl("sel-clear").click();
+      await t.ctl("tool-box").click();
+      await t.setBox([2 * i, 9.5, 0], [1.5, 22, 0.5]);
+      await t.newLayer(`L${i}`);
+    }
+    await t.ctl("sel-clear").click();
+    await t.exact("Selected", "0");
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: `/out/part17-${w}x${h}-idle.png` });
+    await t.ctl("tool-cluster").click();
+    await t.setNum("cluster-radius", 1.0);
+    await t.ctl("cluster-max-points").fill("200");
+    await t.ctl("cluster-max-points").press("Tab");
+    await t.ctl("cluster-pick-seed").click();
+    await page.waitForTimeout(200);
+    const px = await page.evaluate((p) => (window as unknown as { __editor: EditorHook }).__editor.projectWorld(p as [number, number, number]), [...CL.floor]);
+    expect(px).not.toBeNull();
+    await page.mouse.click(px!.x, px!.y);
+    await expect(page.locator("#inspector")).toContainText("Seed: point");
+    await t.exact("Selected", "200");
+    await expect(page.locator("#cluster-limit")).toContainText("Stopped at limit 200");
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: `/out/part17-${w}x${h}-cluster-armed.png` });
+    expect(errors).toEqual([]);
+  });
+}
+
+// 17-11: the step-0 stage height at HEAD 73870ad (room open, no tool, no layers)
+const STEP0_STAGE = { 720: 596.8, 1080: 956.8 } as const;
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-159 17 the header rows are thinner at ${w}x${h}: one line each, every control inside its row, the stage is taller`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const t = helpers(page);
+    await openRoom(page, t.exact);
+    const m = await page.evaluate(() => {
+      const row = (id: string) => {
+        const r = document.getElementById(id)!;
+        const rb = r.getBoundingClientRect();
+        const ctl = [...r.querySelectorAll<HTMLElement>("[data-control]")].map((e) => {
+          const b = e.getBoundingClientRect();
+          return { id: e.getAttribute("data-control")!, visible: b.width > 0 && b.height > 0, inside: b.top >= rb.top - 0.5 && b.bottom <= rb.bottom + 0.5 && b.left >= rb.left - 0.5 && b.right <= rb.right + 0.5 };
+        });
+        return { height: rb.height, ctl };
+      };
+      return { toolbar: row("toolbar"), viewbar: row("viewbar"), stage: document.getElementById("viewport")!.getBoundingClientRect().height };
+    });
+    expect(m.toolbar.height).toBeLessThanOrEqual(33);
+    expect(m.viewbar.height).toBeLessThanOrEqual(29);
+    for (const c of [...m.toolbar.ctl, ...m.viewbar.ctl]) {
+      expect(c.visible, `${c.id} is visible`).toBe(true);
+      expect(c.inside, `${c.id} is inside its row`).toBe(true);
+    }
+    expect(m.toolbar.ctl.length).toBeGreaterThan(5);
+    expect(m.viewbar.ctl.length).toBeGreaterThan(3);
+    expect(m.stage).toBeGreaterThan(STEP0_STAGE[h]);
+  });
+}

@@ -33,7 +33,7 @@
       .ib.active, .ib[aria-pressed=true] { background: #2b4a7a; border-color: var(--accent); outline: none; }
       button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
       input[type=text] { width: 7.5em; }
-      .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 5px 8px; background: var(--panel); border-bottom: 1px solid var(--line); }
+      .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 2px 6px; background: var(--panel); border-bottom: 1px solid var(--line); }
       .row .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 4px; }
       .row label { color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
       #body { flex: 1; display: grid; grid-template-columns: 220px minmax(0, 1fr) 280px; min-height: 0; }
@@ -108,7 +108,14 @@
       .export-layers { margin: 6px 0; }
       .export-layer-rows { display: flex; flex-direction: column; max-height: 160px; overflow-y: auto; }
       #legend .chip { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
-      .headline { font-weight: 600; font-size: 12px; padding: 0 6px; }
+      .headline { font-weight: 600; font-size: 12px; padding: 0 6px; line-height: 24px; }
+      #toolbar { padding-top: 1px; padding-bottom: 1px; }
+      #toolbar .ib { width: 30px; height: 30px; }
+      #viewbar .ib { width: 24px; height: 24px; }
+      #viewbar input[type=range] { margin: 0; }
+      #viewbar .mode-group { padding: 0; border-radius: 6px; }
+      #viewbar .mode-group .ib { width: 22px; height: 22px; }
+      #toolbar button:not(.ib), #viewbar button:not(.ib), #toolbar select, #viewbar select, #toolbar input, #viewbar input { height: 24px; padding: 1px 6px; box-sizing: border-box; }
       .headline.warn, .note.warn { color: #00d1ff; }
       #fbox-layer { position: absolute; inset: 0; pointer-events: none; z-index: 2; overflow: hidden; }
       .fbox { position: absolute; left: 0; top: 0; width: 156px; height: 28px; display: flex; align-items: center; gap: 3px; padding: 2px 3px; background: rgba(29,34,41,0.92); border: 1px solid var(--line); border-radius: 5px; pointer-events: auto; font-size: 12px; }
