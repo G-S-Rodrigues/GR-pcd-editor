@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { BIG, FLOOR, GHOST, NORMAL_ROOM_TOTAL, ROOM, ROOM_TOTAL, SPARSE, SPARSE_TOTAL, TILTED, TOTAL, bigRoomPcd, bigRoomXyz, countInTiltedSlab, clusterNearestTruth, countInXyz, normalRoomPcd, parsePcd, roomPcd, rowKey, sparseRoomPcd, syntheticPcd, tiltedFloorAngles, tiltedFloorPcd, truthKeys } from "./synthetic";
+import { BIG, DUP, FLOOR, PLANE_ROOM, PLANE_ROOM_TOTAL, GHOST, NORMAL_ROOM_TOTAL, ROOM, ROOM_TOTAL, SPARSE, SPARSE_TOTAL, TILTED, TOTAL, bigRoomPcd, bigRoomXyz, countInTiltedSlab, clusterNearestTruth, countInXyz, countPlane, dupRoomPcd, dupTruth, normalRoomPcd, planeRoomPcd, voxelTruth, parsePcd, roomPcd, rowKey, sparseRoomPcd, syntheticPcd, tiltedFloorAngles, tiltedFloorPcd, truthKeys } from "./synthetic";
 
 test("open a cloud, navigate, pick a pivot, colour, read counts", async ({ page }) => {
   const errors: string[] = [];
@@ -5780,5 +5780,332 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
     await expect(page.locator("#export-files")).toBeVisible();
     await page.screenshot({ path: `/out/part19-${w}x${h}-export.png` });
     expect(errors).toEqual([]);
+  });
+}
+
+// ---------------------------------------------------------------- part 20: Planes and Thin (E2E-186..194)
+const planeUi = (page: Pg) => {
+  const t = layerMenu(page);
+  const k = tl(page);
+  const asked: string[] = [];
+  const mode = { answer: "accept" as "accept" | "dismiss" };
+  page.removeAllListeners("dialog"); // after the helpers, before the open: only the band-replace ask is recorded, every other ask is accepted
+  page.on("dialog", (d) => {
+    if (/^Replace the protection band/.test(d.message())) {
+      asked.push(d.message());
+      void (mode.answer === "accept" ? d.accept() : d.dismiss());
+    } else void d.accept();
+  });
+  /** The status bar groups thousands: a plain digit string is compared in that form. */
+  const exact = (name: string, v: number | string) => t.exact(name, /^\d+$/.test(String(v)) ? Number(v).toLocaleString("en-US") : v);
+  const unfold = async () => {
+    const closed = page.locator("details[data-section]:not([open]) > summary:visible");
+    for (let i = 0; i < 12 && (await closed.count()) > 0; i++) await closed.first().click();
+  };
+  const rows = page.locator("#plane-list [data-plane]");
+  const openCloud = async (name: string, buf: Buffer, total: number) => {
+    await page.goto("/");
+    await page.locator("#file-input").setInputFiles({ name, mimeType: "application/octet-stream", buffer: buf });
+    await exact("Original", total);
+    await k.idle();
+  };
+  const useTool = async (id: string) => {
+    if (!(await t.ctl(id).evaluate((e) => e.classList.contains("active")))) await t.ctl(id).click();
+    await unfold();
+  };
+  const detect = async (n: number) => {
+    await useTool("tool-plane");
+    await t.ctl("plane-detect").click();
+    await expect(rows).toHaveCount(n, { timeout: 30000 });
+  };
+  /** The numbers of row i as the list shows them. */
+  const rowOf = async (i: number) => {
+    const text = (await rows.nth(i).innerText()).replace(/\s+/g, " ");
+    const m = /z (-?[\d.]+), tilt (-?[\d.]+) deg, ([\d,]+) points/.exec(text);
+    expect(m, text).not.toBeNull();
+    return { text, z: Number(m![1]), tilt: Number(m![2]), count: Number(m![3].replace(/,/g, "")) };
+  };
+  const exportRows = async (testInfo: import("@playwright/test").TestInfo, name: string) => {
+    await t.ctl("export").click();
+    const [dl] = await Promise.all([page.waitForEvent("download"), t.ctl("export-go").click()]);
+    const path = testInfo.outputPath(name);
+    await dl.saveAs(path);
+    return parsePcd(readFileSync(path)).rows;
+  };
+  return { ...t, exact, k, asked, mode, unfold, rows, openCloud, useTool, detect, rowOf, exportRows };
+};
+const planeRows = () => parsePcd(planeRoomPcd()).rows;
+const dupRows = () => parsePcd(dupRoomPcd()).rows;
+const DUP_TOTAL = ROOM_TOTAL + DUP.exact + DUP.near;
+
+test("E2E-186 20 Planes: Detect lists Lowest about 0 and Highest about 3 with the counts of fixture truth, shows its progress while held, and Cancel leaves no list", async ({ page }) => {
+  const t = planeUi(page);
+  await t.openCloud("planes.pcd", planeRoomPcd(), PLANE_ROOM_TOTAL);
+  await t.useTool("tool-plane");
+  await expect(t.rows).toHaveCount(0);
+  const hold = holdRequests(page, "POST", "/session/planes/detect");
+  await t.ctl("plane-detect").click();
+  await hold.reached;
+  await expect(page.locator("#inspector")).toContainText("Detecting planes");
+  await expect(t.ctl("plane-cancel")).toBeVisible();
+  await t.ctl("plane-cancel").click();
+  await expect(t.ctl("plane-cancel")).toBeHidden();
+  await expect(page.locator("#inspector")).not.toContainText("Detecting planes");
+  hold.release();
+  await t.k.idle();
+  await expect(t.rows).toHaveCount(0);
+  await expect(page.locator("#inspector")).not.toContainText("found among");
+  await t.detect(2);
+  const rows = planeRows();
+  const low = await t.rowOf(0);
+  const high = await t.rowOf(1);
+  expect(low.text).toContain("Lowest (floor?)");
+  expect(high.text).toContain("Highest (ceiling?)");
+  expect(Math.abs(low.z)).toBeLessThan(0.01);
+  expect(Math.abs(high.z - 3)).toBeLessThan(0.01);
+  expect(low.count).toBe(countPlane(rows, [0, 0, 1], 0, 0.03));
+  expect(high.count).toBe(countPlane(rows, [0, 0, 1], 3, 0.03));
+  expect([low.count, high.count]).toEqual([PLANE_ROOM.floor, PLANE_ROOM.ceiling]);
+  await expect(page.locator("#inspector")).toContainText("2 found among");
+});
+
+test("E2E-187 20 Planes: choosing the Highest row selects the ceiling, Delete removes exactly it as a Plane step, Undo restores, Redo repeats", async ({ page }) => {
+  const t = planeUi(page);
+  await t.openCloud("planes.pcd", planeRoomPcd(), PLANE_ROOM_TOTAL);
+  await t.detect(2);
+  await page.locator("#plane-select-1").click();
+  await t.exact("Selected", String(PLANE_ROOM.ceiling));
+  await t.exact("Candidates", String(PLANE_ROOM.ceiling));
+  await t.ctl("apply").click();
+  await t.exact("Active", String(PLANE_ROOM_TOTAL - PLANE_ROOM.ceiling));
+  await expect(t.k.cards).toHaveCount(1);
+  await expect(t.k.card(0)).toHaveAttribute("title", new RegExp(`^Plane delete, ${PLANE_ROOM.ceiling} points`));
+  await t.ctl("undo").click();
+  await t.exact("Active", String(PLANE_ROOM_TOTAL));
+  await t.ctl("redo").click();
+  await t.exact("Active", String(PLANE_ROOM_TOTAL - PLANE_ROOM.ceiling));
+  await expect(t.k.cards).toHaveCount(1);
+});
+
+test("E2E-188 20 Use as protection band on a tilted floor: the band tilt is the floor's, Protected equals fixture truth, a box Delete over the ghosts and the floor keeps the floor, and an enabled band is replaced only after a Yes", async ({ page }) => {
+  const t = planeUi(page);
+  await t.openCloud("tilted.pcd", tiltedFloorPcd(), TILTED.floor + TILTED.ghost);
+  await t.useTool("tool-plane");
+  await t.ctl("plane-detect").click();
+  await expect(t.rows.first()).toBeVisible({ timeout: 30000 });
+  const first = await t.rowOf(0);
+  expect(first.text).toContain("Lowest");
+  await page.locator("#plane-band-0").click();
+  await expect(t.ctl("prot-enabled")).toBeChecked({ timeout: 15000 });
+  expect(t.asked).toEqual([]); // no band was enabled: no confirm
+  const rowsT = parsePcd(tiltedFloorPcd()).rows;
+  const ang = tiltedFloorAngles();
+  const b = await tiltNow(page);
+  expect(Math.abs(b.rx - ang.rx)).toBeLessThan(0.01);
+  expect(Math.abs(b.ry - ang.ry)).toBeLessThan(0.01);
+  const truth = countInTiltedSlab(rowsT, b.rx, b.ry, b.pivot, b.min, b.max);
+  expect(truth).toBe(TILTED.floor);
+  await t.exact("Protected", String(truth));
+  // an enabled band: No changes nothing, Yes replaces it, both after the confirm text
+  t.mode.answer = "dismiss";
+  await page.locator("#plane-band-0").click();
+  await expect.poll(() => t.asked.length, { timeout: 15000 }).toBe(1);
+  expect(t.asked[0]).toMatch(/^Replace the protection band -?[\d.]+ to -?[\d.]+ \(tilt rx -?[\d.]+, ry -?[\d.]+ degrees\) with this Detected plane\?$/);
+  expect(await tiltNow(page)).toEqual(b);
+  t.mode.answer = "accept";
+  await page.locator("#plane-band-0").click();
+  await expect.poll(() => t.asked.length, { timeout: 15000 }).toBe(2);
+  await t.exact("Protected", String(truth));
+  // the ghosts and the floor in one box: the floor stays
+  await t.k.boxAt(10, 10, 2, 40, 40, 12);
+  await t.exact("Selected", String(TILTED.floor + TILTED.ghost));
+  await t.exact("Candidates", String(TILTED.ghost));
+  await t.ctl("apply").click();
+  await t.exact("Active", String(TILTED.floor));
+});
+
+test("E2E-189 20 a Detected plane protects through a layer: the Lowest plane as a protected layer survives a box Delete over the room, and New layer from protected points after the band holds the floor", async ({ page }) => {
+  const t = planeUi(page);
+  await t.openCloud("planes.pcd", planeRoomPcd(), PLANE_ROOM_TOTAL);
+  await t.detect(2);
+  await page.locator("#plane-select-0").click();
+  await t.exact("Selected", String(PLANE_ROOM.floor));
+  const id = await t.newLayer("Floor");
+  await expect.poll(async () => (await t.byName("Floor"))?.count, { timeout: 15000 }).toBe(PLANE_ROOM.floor);
+  await t.openMore(id);
+  await t.m("protected", id).click();
+  await expect.poll(async () => (await t.byName("Floor"))?.protected, { timeout: 15000 }).toBe(true);
+  await t.ctl("sel-clear").click(); // a box over an existing selection is a draft: clear it so the box is the first selection
+  await t.k.boxAt(5, 5, 1.5, 30, 30, 8);
+  await t.exact("Selected", String(PLANE_ROOM_TOTAL));
+  await t.exact("Candidates", String(PLANE_ROOM_TOTAL - PLANE_ROOM.floor));
+  await t.ctl("apply").click();
+  await t.exact("Active", String(PLANE_ROOM.floor));
+  expect((await t.byName("Floor"))!.count).toBe(PLANE_ROOM.floor);
+  // the band route: a fresh open, the Lowest plane as the band, then the band's points as a protected layer
+  await t.openCloud("planes.pcd", planeRoomPcd(), PLANE_ROOM_TOTAL);
+  await t.detect(2);
+  await page.locator("#plane-band-0").click();
+  await expect(t.ctl("prot-enabled")).toBeChecked({ timeout: 15000 });
+  await t.exact("Protected", String(PLANE_ROOM.floor));
+  await t.ctl("layer-from-band").click();
+  await expect.poll(async () => (await t.byName("Floor"))?.count, { timeout: 15000 }).toBe(PLANE_ROOM.floor);
+  expect((await t.byName("Floor"))!.protected).toBe(true);
+});
+
+test("E2E-190 20 Thin duplicates with distance 0: Selected is the duplicate truth, Delete leaves no duplicate row in the export, and Undo restores", async ({ page }, testInfo) => {
+  const t = planeUi(page);
+  await t.openCloud("dups.pcd", dupRoomPcd(), DUP_TOTAL);
+  const all = dupRows();
+  const dup = dupTruth(all, 0);
+  expect(dup.length).toBe(DUP.exact);
+  await t.useTool("tool-thin");
+  await t.exact("Selected", String(DUP.exact));
+  await t.exact("Candidates", String(DUP.exact));
+  await t.ctl("apply").click();
+  await t.exact("Active", String(DUP_TOTAL - DUP.exact));
+  await expect(t.k.card(0)).toHaveAttribute("title", new RegExp(`^Thin delete, ${DUP.exact} points`));
+  const out = (await t.exportRows(testInfo, "thin0.pcd")).filter((r) => r.every(Number.isFinite));
+  const xyz = (r: number[]) => r.slice(0, 3).map(Math.fround).join(",");
+  expect(new Set(out.map(xyz)).size).toBe(out.length); // no duplicate row is left
+  const drop = new Set(dup);
+  const kept = all.filter((r, i) => r.every(Number.isFinite) && !drop.has(i)).map(f32key).sort();
+  expect(out.map(f32key).sort()).toEqual(kept);
+  await t.ctl("undo").click();
+  await t.exact("Active", String(DUP_TOTAL));
+});
+
+test("E2E-191 20 Thin with distance 1e-3 and with a voxel edge 0.05 select the fixture truth, and a box Subtract and Add compose with the Thin selection", async ({ page }) => {
+  const t = planeUi(page);
+  await t.openCloud("dups.pcd", dupRoomPcd(), DUP_TOTAL);
+  const all = dupRows();
+  const near = dupTruth(all, 1e-3);
+  expect(near.length).toBe(DUP.exact + DUP.near);
+  await t.useTool("tool-thin");
+  await t.setNum("thin-distance", 0.001);
+  await t.exact("Selected", String(near.length));
+  await t.ctl("thin-method").selectOption("voxel");
+  await expect(t.ctl("thin-edge")).toBeVisible();
+  const vox = voxelTruth(all, 0.05);
+  await t.exact("Selected", String(vox.length));
+  expect(vox.length).toBeGreaterThan(0);
+  // back to the distance rule, then compose with boxes
+  await t.ctl("thin-method").selectOption("duplicates");
+  await t.exact("Selected", String(near.length));
+  const sel = new Set(near);
+  const A = { c: [0, 10, 0], d: [1, 30, 1] };
+  const inA = all.map((r, i) => (sel.has(i) && r.every(Number.isFinite) && inBox(r, A.c, A.d) ? i : -1)).filter((i) => i >= 0);
+  expect(inA.length).toBeGreaterThan(0);
+  await t.useTool("tool-box");
+  await t.ctl("op-subtract").click();
+  await t.setBox(A.c, A.d);
+  await t.previewLeaves(near.length - inA.length);
+  await t.ctl("sel-commit").click();
+  await t.exact("Selected", String(near.length - inA.length));
+  const left = new Set(near.filter((i) => !inA.includes(i)));
+  const B = { c: [5, 10, 0], d: [1, 30, 1] };
+  const inB = all.map((r, i) => (r.every(Number.isFinite) && inBox(r, B.c, B.d) && !left.has(i) ? i : -1)).filter((i) => i >= 0);
+  await t.ctl("op-add").click();
+  await t.setBox(B.c, B.d);
+  await t.previewIs(left.size + inB.length);
+  await t.ctl("sel-commit").click();
+  await t.exact("Selected", String(left.size + inB.length));
+});
+
+test("E2E-192 20 Save and reopen keep the Plane and Thin steps; Edit shape on each reopens the tool with the stored numbers; a reload shows no plane list", async ({ page }, testInfo) => {
+  const t = planeUi(page);
+  await t.openCloud("planes.pcd", planeRoomPcd(), PLANE_ROOM_TOTAL);
+  await t.detect(2);
+  await t.setNum("plane-distance", 0.05); // the slab half thickness is read when the row is chosen
+  await page.locator("#plane-select-1").click();
+  await t.exact("Selected", String(PLANE_ROOM.ceiling));
+  await t.ctl("apply").click();
+  await t.exact("Active", String(PLANE_ROOM_TOTAL - PLANE_ROOM.ceiling));
+  await t.useTool("tool-thin");
+  await t.ctl("thin-method").selectOption("voxel");
+  await t.setNum("thin-edge", 0.5);
+  const after = planeRows().filter((r) => r[2] < 2.9);
+  const vox = voxelTruth(after, 0.5);
+  await t.exact("Selected", String(vox.length));
+  await t.ctl("apply").click();
+  await t.exact("Active", String(PLANE_ROOM_TOTAL - PLANE_ROOM.ceiling - vox.length));
+  await expect(t.k.cards).toHaveCount(2);
+  const [dl] = await Promise.all([page.waitForEvent("download"), t.ctl("save-session").click()]);
+  const path = testInfo.outputPath("pt.pcdsession");
+  await dl.saveAs(path);
+  await page.locator("#file-input").setInputFiles({ name: "other.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
+  await t.exact("Active", String(TOTAL));
+  await page.locator("#file-input").setInputFiles({ name: "pt.pcdsession", mimeType: "application/octet-stream", buffer: readFileSync(path) });
+  await t.exact("Original", String(PLANE_ROOM_TOTAL));
+  await expect(t.k.cards).toHaveCount(2);
+  await expect(t.k.card(0)).toHaveAttribute("title", /^Plane delete/);
+  await expect(t.k.card(1)).toHaveAttribute("title", /^Thin delete/);
+  await expect(t.rows).toHaveCount(0);
+  await t.k.idle();
+  await t.k.card(1).locator(".step-icon").click();
+  await t.ctl("step-edit-shape").click();
+  await expect(t.ctl("tool-thin")).toHaveClass(/active/);
+  await t.unfold();
+  await expect(t.ctl("thin-method")).toHaveValue("voxel");
+  await expect(t.ctl("thin-edge")).toHaveValue("0.5");
+  await t.k.idle();
+  await t.k.card(0).locator(".step-icon").click();
+  await t.ctl("step-edit-shape").click();
+  await expect(t.ctl("tool-plane")).toHaveClass(/active/);
+  await t.unfold();
+  await expect(t.ctl("plane-distance")).toHaveValue("0.05");
+  await expect(t.rows).toHaveCount(0); // a reopen shows no list; the step's plane is what Edit shape holds
+  await expect(t.k.cards).toHaveCount(2);
+  // a reload keeps the steps but shows no detection
+  await page.reload();
+  await t.exact("Original", String(PLANE_ROOM_TOTAL));
+  await expect(t.rows).toHaveCount(0);
+});
+
+for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-193 20 layout at ${w}x${hgt}: with the Planes section open and 4 rows (the wall rows of the layout fixture join the floor and the ceiling) nothing overflows or overlaps; the tool row geometry is logged`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: w, height: hgt });
+    const t = planeUi(page);
+    await t.openCloud("planes.pcd", planeRoomPcd(true), PLANE_ROOM_TOTAL);
+    await t.useTool("tool-plane");
+    await t.detect(4);
+    const g = await page.evaluate(() => {
+      const panel = document.getElementById("editpanels")!;
+      const tools = document.querySelector("#tools .stack")!;
+      const tb = tools.getBoundingClientRect();
+      const btns = [...tools.children].map((c) => c.getBoundingClientRect());
+      const overlap = btns.some((a, i) => btns.some((b, j) => j > i && a.left < b.right - 0.5 && a.right > b.left + 0.5 && a.top < b.bottom - 0.5 && a.bottom > b.top + 0.5));
+      const inside = btns.every((r) => r.left >= tb.left - 1 && r.right <= tb.right + 1);
+      const list = document.getElementById("plane-list")!.getBoundingClientRect();
+      const pb = panel.getBoundingClientRect();
+      const doc = document.documentElement;
+      return { overlap, inside, rowW: Math.round(tb.width), rowH: Math.round(tb.height), tops: [...new Set(btns.map((r) => Math.round(r.top)))].length, scroll: [panel.scrollWidth, panel.clientWidth], listInside: list.left >= pb.left - 1 && list.right <= pb.right + 1, doc: [doc.scrollWidth - doc.clientWidth] };
+    });
+    console.log(`TOOL-ROW ${g.rowW}x${g.rowH} (${g.tops} line(s))`);
+    testInfo.annotations.push({ type: "TOOL-ROW", description: `${g.rowW}x${g.rowH} lines ${g.tops}` });
+    expect(g.overlap).toBe(false);
+    expect(g.inside).toBe(true);
+    expect(g.scroll[0]).toBeLessThanOrEqual(g.scroll[1] + 1);
+    expect(g.listInside).toBe(true);
+    expect(g.doc).toEqual([0]);
+  });
+}
+
+for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-194 20 owner screenshots at ${w}x${hgt}: the Planes section with its rows and the Thin section`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: hgt });
+    const t = planeUi(page);
+    await t.openCloud("planes.pcd", planeRoomPcd(), PLANE_ROOM_TOTAL);
+    await t.detect(2);
+    await page.locator("#plane-select-0").click();
+    await t.exact("Selected", String(PLANE_ROOM.floor));
+    await page.mouse.move(5, 5);
+    await t.k.idle();
+    await page.screenshot({ path: `/out/part20-${w}x${hgt}-planes.png` });
+    await t.useTool("tool-thin");
+    await t.ctl("thin-method").selectOption("voxel");
+    await t.k.idle();
+    await page.mouse.move(5, 5);
+    await page.screenshot({ path: `/out/part20-${w}x${hgt}-thin.png` });
   });
 }
