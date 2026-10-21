@@ -4815,8 +4815,8 @@ const hideHelpers = (page: import("@playwright/test").Page) => {
 test("E2E-90 15a Hide selected: the drawn count drops by exactly the hidden count, Select displayed and Invert run and leave the hidden points out, Apply asks nothing, the export still holds the hidden points, Show restores the draw, a reload still shows the hidden layer", async ({ page }, testInfo) => {
   const t = hideHelpers(page);
   const asked: string[] = [];
-  page.on("dialog", (d) => asked.push(d.message()));
   const n = await t.floorSelected();
+  page.on("dialog", (d) => asked.push(d.message())); // after the open: the "unsaved edits" ask of a file left by an earlier test (E2E-166) is not under test
   const drawn0 = await t.drawn();
   await expect(t.hideBtn).toHaveText("Hide selected");
   await t.hideBtn.click();
