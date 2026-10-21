@@ -12,7 +12,12 @@ from gr_pcd.editing.cancel import Cancelled, CancelToken
 from gr_pcd.editing.candidate import CandidateResult, candidate_deletion
 from gr_pcd.editing.cluster import build_eligible, connected_component
 from gr_pcd.editing.errors import EditError
-from gr_pcd.editing.history import History, RevisionClock, with_ids
+from gr_pcd.editing.history import (
+    History,
+    LayerRowChange,
+    RevisionClock,
+    with_ids,
+)
 from gr_pcd.editing.invalid import remove_invalid
 from gr_pcd.editing.layers import (
     COLOURS,
@@ -171,6 +176,7 @@ class EditingSession:
         self.layers_rev = 0
         self._selectable_cache: tuple | None = None
         self._layer_stats_cache: tuple | None = None
+        self._deletable_cache: tuple | None = None
         self.history = History(int(budget * HISTORY_FRACTION))
         self.clock = RevisionClock()
         self.client_state: dict = {}
@@ -368,6 +374,11 @@ class EditingSession:
                         "count": len(e.ids),
                         "shape": e.shape,
                         "bounds": self._bounds_of_step(e),
+                        **(
+                            {"deletable": self._deletable(entries, e)}
+                            if e.kind == "layer"
+                            else {}
+                        ),
                     }
                     for i, e in enumerate(entries)
                 ],
@@ -387,6 +398,18 @@ class EditingSession:
             out["layers"] = rows
             counts["main"], counts["hidden"] = n_main, n_hidden
         return out
+
+    def _deletable(self, entries, e) -> bool:
+        """No later layer step builds on this one (cached per step list)."""
+        key = tuple(x.sid for x in entries)
+        with self.lock:
+            cache = self._deletable_cache
+            if cache is None or cache[0] != key:
+                cache = (key, {})
+                self._deletable_cache = cache
+            if e.sid not in cache[1]:
+                cache[1][e.sid] = not self.history.dependents(e.sid)
+            return cache[1][e.sid]
 
     # ---- layers: reads --------------------------------------------------
     def _layer_rows(self, base, layer, layers, key):
@@ -471,7 +494,8 @@ class EditingSession:
                 return lay
         raise NoSuchLayer(layer_id)
 
-    # ---- layers: edits (not timeline steps, not in Undo) ---------------
+    # ---- layers: edits (membership moves and layer add/remove are
+    # timeline steps; rename, colour, eye, flags and order are not) -------
     def _movable(self) -> np.ndarray:
         """The selected points a layer edit may move."""
         return self.selection & self._selectable() & self.valid
@@ -525,6 +549,56 @@ class EditingSession:
                     "unlock it first",
                 )
 
+    def _commit_layers(
+        self,
+        new_layer: np.ndarray | None,
+        new_layers: list,
+        description,
+        visible: tuple | None = None,
+    ) -> None:
+        """Push one layer step for the diff against the current arrays (none
+        when nothing changes), then install the new state. The push comes
+        first, so a refusal (too many steps, budget) changes nothing.
+        `description` maps the number of points whose layer changed to text;
+        `visible` is (ids, flag): a visibility change that is not a step."""
+        zeros = None
+        old, new = self.layer, new_layer
+        if old is None or new is None:
+            zeros = np.zeros(self.cloud.n, dtype=np.uint8)
+        old = zeros if old is None else old
+        new = zeros if new is None else new
+        ids = np.flatnonzero(old != new).astype(np.uint32)
+        before = {x.id: i for i, x in enumerate(self.layers)}
+        after = {x.id: i for i, x in enumerate(new_layers)}
+        rows = tuple(
+            [
+                LayerRowChange(i, x, False)
+                for i, x in enumerate(self.layers)
+                if x.id not in after
+            ]
+            + [
+                LayerRowChange(i, x, True)
+                for i, x in enumerate(new_layers)
+                if x.id not in before
+            ]
+        )
+        if len(ids) or rows:
+            self.history.push(
+                "layer",
+                description(f"{len(ids):,}"),
+                ids,
+                "layer",
+                None,
+                old[ids],
+                new[ids],
+                rows,
+            )
+        self.layer = new_layer
+        self.layers = list(new_layers)
+        if visible is not None and visible[0]:
+            self._set_visible(visible[0], visible[1])
+        self._layers_changed()
+
     def _create_from_mask(
         self,
         mask: np.ndarray,
@@ -539,18 +613,21 @@ class EditingSession:
         op = self._layer_op(mask, lid)
         if dry_run:
             return op
-        self.layer = assign(self.layer, mask, lid, self.cloud.n)
-        self.layers = [
-            *self.layers,
-            Layer(
-                lid,
-                clean,
-                next_colour(self.layers),
-                bool(visible),
-                protected,
-            ),
-        ]
-        self._layers_changed()
+        what = "New protected layer" if protected else "New layer"
+        self._commit_layers(
+            assign(self.layer, mask, lid, self.cloud.n),
+            [
+                *self.layers,
+                Layer(
+                    lid,
+                    clean,
+                    next_colour(self.layers),
+                    bool(visible),
+                    protected,
+                ),
+            ],
+            lambda n: f"{what} {clean}, {n} points",
+        )
         return op
 
     def create_layer(
@@ -631,11 +708,11 @@ class EditingSession:
             }
             if dry_run:
                 return op
-            self.layer = assign(
-                self.layer, self.layer == layer_id, into, self.cloud.n
+            self._commit_layers(
+                assign(self.layer, self.layer == layer_id, into, self.cloud.n),
+                [x for x in self.layers if x.id != layer_id],
+                lambda n: f"Merged {src.name} into {dst.name}, {n} points",
             )
-            self.layers = [x for x in self.layers if x.id != layer_id]
-            self._layers_changed()
             return op
 
     def set_layer_order(self, ids: list[int]) -> None:
@@ -676,10 +753,16 @@ class EditingSession:
                 op = self._layer_op(moved, layer_id)
             if dry_run:
                 return op
-            self.layer = assign(self.layer, moved, layer_id, self.cloud.n)
-            if visible is not None and layer_id:
-                self._set_visible([layer_id], bool(visible))
-            self._layers_changed()
+            target = self._find_layer(layer_id).name if layer_id else "main"
+            self._commit_layers(
+                assign(self.layer, moved, layer_id, self.cloud.n),
+                self.layers,
+                lambda n: f"{n} points to {target}",
+                visible=(
+                    [layer_id] if visible is not None and layer_id else None,
+                    bool(visible),
+                ),
+            )
             return op
 
     def set_layer_members(
@@ -706,8 +789,14 @@ class EditingSession:
             if dry_run:
                 return op
             out = assign(self.layer, released, 0, self.cloud.n)
-            self.layer = assign(out, moved, layer_id, self.cloud.n)
-            self._layers_changed()
+            self._commit_layers(
+                assign(out, moved, layer_id, self.cloud.n),
+                self.layers,
+                lambda n: (
+                    f"{lay.name} set to the selection: "
+                    f"{op['moved']:,} in, {op['released']:,} out"
+                ),
+            )
             return op
 
     def delete_layer(self, cloud_revision: int, layer_id: int) -> None:
@@ -720,11 +809,12 @@ class EditingSession:
                     "layer_locked",
                     f"layer {lay.name} is locked; unlock it first",
                 )
-            self.layers = [x for x in self.layers if x.id != layer_id]
-            self.layer = delete_layer(self.layer, layer_id)
-            if not self.layers:
-                self.layer = None
-            self._layers_changed()
+            rest = [x for x in self.layers if x.id != layer_id]
+            self._commit_layers(
+                delete_layer(self.layer, layer_id) if rest else None,
+                rest,
+                lambda n: f"Removed layer {lay.name}, {n} points to main",
+            )
 
     def _set_visible(self, ids: list[int], visible: bool) -> bool:
         changed = False
@@ -1190,15 +1280,54 @@ class EditingSession:
             self._changed()
 
     def _flip(self, entries, back: bool) -> None:
-        # one copy of the mask for the whole move (the sets are disjoint, so
-        # the order does not matter), not one per step under the session lock
-        if entries:
+        # one copy of the mask for the whole move (the deletion sets are
+        # disjoint, so the order does not matter), not one per step under the
+        # session lock; layer steps are flipped in order
+        deletions = [e for e in entries if e.kind != "layer"]
+        if deletions:
             out = self.active.copy()
-            for e in entries:
+            for e in deletions:
                 out[e.ids] = back
             out.flags.writeable = False
             self.active = out
+        self._flip_layers([e for e in entries if e.kind == "layer"], back)
         self._changed()
+
+    def _flip_layers(self, entries, back: bool) -> None:
+        """Undo (back) or redo layer steps, newest first when going back.
+        A row a flip removes is written back into its step with the
+        attributes it has now, so the flip that returns it restores them."""
+        if not entries:
+            return
+        arr = (
+            np.zeros(self.cloud.n, dtype=np.uint8)
+            if self.layer is None
+            else self.layer.copy()
+        )
+        rows = list(self.layers)
+        for e in reversed(entries) if back else entries:
+            arr[e.ids] = e.frm if back else e.to
+            changed = []
+            for r in reversed(e.rows) if back else e.rows:
+                if r.created == back:  # the row leaves
+                    cur = next((x for x in rows if x.id == r.layer.id), None)
+                    if cur is not None:
+                        rows.remove(cur)
+                        r = replace(r, layer=cur)
+                else:
+                    rows.insert(min(r.index, len(rows)), r.layer)
+                changed.append(r)
+            if e.rows:
+                kept = list(reversed(changed)) if back else changed
+                self.history.replace(e.sid, replace(e, rows=tuple(kept)))
+        self.layers = rows
+        if rows:
+            arr.flags.writeable = False
+            self.layer = arr
+        else:
+            self.layer = None
+        self.layers_rev += 1
+        self._strip_hidden_from_selection()
 
     def rollback(self, cloud_revision: int, cursor: int) -> None:
         """Move the marker: later steps' points return, or are deleted again."""
@@ -1226,8 +1355,23 @@ class EditingSession:
         every other step keeps deleting exactly its own set."""
         with self.lock:
             self.require_cloud(cloud_revision)
+            entry = self.history.entry(sid)
+            if entry.kind == "layer":
+                if self.history.dependents(sid):
+                    raise EditError(
+                        "step_has_dependents",
+                        "a later step changes the same points or layer; "
+                        "remove that step first",
+                    )
+                if any(
+                    e.sid == sid
+                    for e in self.history.entries[: self.history.cursor]
+                ):
+                    self._flip_layers([entry], True)
             entry, applied = self.history.delete_step(sid)
-            self._flip([entry] if applied else [], True)
+            self._flip(
+                [entry] if applied and entry.kind != "layer" else [], True
+            )
 
     def rename_step(self, sid: int, name: str | None) -> None:
         with self.lock:

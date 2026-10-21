@@ -82,7 +82,11 @@ def test_lay_10_create_moves_the_selection_and_changes_no_revision(mgr):
         (1, "Floor", 0, True)
     ]
     assert s.clock.cloud == cloud and s.clock.params > params
-    assert len(s.history.entries) == entries
+    # Part 19: a layer edit is one timeline step (the revision stays)
+    assert len(s.history.entries) == entries + 1
+    step = s.history.entries[-1]
+    assert (step.kind, step.tool) == ("layer", "layer")
+    assert set(step.ids.tolist()) == SCENE_FLOOR
     assert s.candidate is None and s.pending is None
     assert s.unsaved and s.layers_rev == 1
     assert ids(s.selection) == SCENE_FLOOR  # D3: the selection is kept
@@ -239,7 +243,9 @@ def test_lay_11_render_omits_hidden_points_per_mode(mgr):
     assert drawn(s, "deleted")[0] == SCENE_GHOST
     got, _ = drawn(s, "original")
     assert got == ids(s.valid) - SCENE_FLOOR  # ghosts (deleted) stay drawn
-    sid = s.history.entries[0].sid
+    # the floor layer's create is step 0 now; the ghost deletion is the last
+    sid = s.history.entries[-1].sid
+    assert s.history.entries[-1].kind == "delete"
     arrays, _ = s.render(10**6, "step", step=sid)
     assert set(arrays.ids.tolist()) == SCENE_GHOST
 

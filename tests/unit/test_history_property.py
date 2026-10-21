@@ -9,9 +9,11 @@ step deletion, rollback and redo, and after an archive round trip.
 import random
 
 import numpy as np
+import pytest
 
 from fixtures.pcdgen import build_pcd, xyz_fields
 from fixtures.sessions import make_settings, select_box
+from fixtures.step_oracle import StepOracle
 from gr_pcd.editing.errors import EditError
 from gr_pcd.geometry.box import BoxSpec
 from gr_pcd.session.manager import SessionManager
@@ -42,36 +44,6 @@ def open_cloud(tmp_path, rows):
     return mgr
 
 
-class Oracle:
-    """Plain sets: steps = [(sid, set)], cursor, nothing clever."""
-
-    def __init__(self, n):
-        self.n = n
-        self.steps: list[tuple[int, set]] = []
-        self.cursor = 0
-        self.next_sid = 0
-        self.names: dict[int, str | None] = {}
-
-    def active(self):
-        gone = set()
-        for _, ids in self.steps[: self.cursor]:
-            gone |= ids
-        return set(range(self.n)) - gone
-
-    def apply(self, ids):
-        self.steps = self.steps[: self.cursor] + [(self.next_sid, set(ids))]
-        self.names[self.next_sid] = None
-        self.next_sid += 1
-        self.cursor = len(self.steps)
-
-    def delete(self, sid):
-        idx = [s for s, _ in self.steps].index(sid)
-        self.steps.pop(idx)
-        if idx < self.cursor:
-            self.cursor -= 1
-        del self.names[sid]
-
-
 def check(s, o):
     active_o = o.active()
     got = set(np.flatnonzero(s.active).tolist())
@@ -82,17 +54,37 @@ def check(s, o):
     assert set(np.flatnonzero(s.export_mask("active")).tolist()) == active_o
     h = st["history"]
     assert h["cursor"] == o.cursor
-    assert [e["sid"] for e in h["entries"]] == [sid for sid, _ in o.steps]
+    assert [e["sid"] for e in h["entries"]] == [x.sid for x in o.steps]
     assert len({e["sid"] for e in h["entries"]}) == len(h["entries"])
-    sets = [set(e.ids.tolist()) for e in s.history.entries]
-    assert sets == [ids for _, ids in o.steps]
-    # pairwise disjoint over ALL steps, applied or greyed
+    assert [e["kind"] for e in h["entries"]] == [x.kind for x in o.steps]
+    # deletion steps are pairwise disjoint over ALL of them, applied or greyed;
+    # layer steps overlap by design (Part 19)
     seen: set = set()
-    for ids in sets:
-        assert not (seen & ids)
-        seen |= ids
+    for e, x in zip(s.history.entries, o.steps, strict=True):
+        if x.kind == "delete":
+            ids = set(e.ids.tolist())
+            assert ids == x.ids
+            assert not (seen & ids)
+            seen |= ids
+        else:
+            assert {
+                int(i): (int(a), int(b))
+                for i, a, b in zip(e.ids, e.frm, e.to, strict=True)
+            } == x.diff
+    # the per-point layer (kept on deleted points), the rows in order, and
+    # which layer steps may be deleted
+    got_lid = [0] * o.n if s.layer is None else np.asarray(s.layer).tolist()
+    assert got_lid == o.lid
+    assert [lay.id for lay in s.layers] == o.order
+    assert [lay.name for lay in s.layers] == [
+        o.attrs[k]["name"] for k in o.order
+    ]
+    for e in h["entries"]:
+        assert ("deletable" in e) == (e["kind"] == "layer")
+        if e["kind"] == "layer":
+            assert e["deletable"] == o.deletable(e["sid"])
     assert [e["name"] for e in h["entries"]] == [
-        o.names[sid] for sid, _ in o.steps
+        o.names[x.sid] for x in o.steps
     ]
 
 
@@ -117,12 +109,67 @@ def do_apply(mgr, s, o, xyz, rng):
     o.apply(expect)
 
 
+def select_some(mgr, s, o, xyz, rng):
+    """Select (replace) the active points inside a random box; the oracle's
+    movable set (no layer is hidden here, so every active one)."""
+    box, c, d = random_box(rng)
+    job = select_box(mgr, box, op="replace", scope="active")
+    assert job.status == "complete", job.error
+    inside = np.all(np.abs(xyz - np.array(c)) <= np.array(d) / 2.0, axis=1)
+    return set(np.flatnonzero(inside).tolist()) & o.active()
+
+
+def do_layer(mgr, s, o, xyz, rng, op, tag):
+    rev = s.clock.cloud
+    rows = sorted(o.row_ids())
+    if op == "merge":
+        if len(rows) >= 2:
+            a, b = rng.sample(rows, 2)
+            s.merge_layer(rev, a, b)
+            o.merge(a, b)
+        return
+    if op == "to_main":
+        if rows:
+            k = rng.choice(rows)
+            s.delete_layer(rev, k)
+            o.to_main(k)
+        return
+    moved = select_some(mgr, s, o, xyz, rng)
+    if not moved:
+        return
+    if op == "create":
+        s.create_layer(rev, name=tag)
+        o.create(moved, tag)
+    elif op == "assign" and rows:
+        k = rng.choice(rows)
+        s.assign_layer(rev, k)
+        o.assign(moved, k)
+    elif op == "release":
+        s.assign_layer(rev, 0)
+        o.assign(moved, 0)
+    elif op == "members" and rows:
+        k = rng.choice(rows)
+        s.set_layer_members(rev, k)
+        o.set_members(k, moved)
+
+
+def delete_step_both(s, o, rev, sid):
+    if o.deletable(sid):
+        s.delete_step(rev, sid)
+        o.delete_step(sid)
+        return
+    with pytest.raises(EditError) as err:
+        s.delete_step(rev, sid)
+    assert err.value.code == "step_has_dependents"
+    assert not o.delete_step(sid)
+
+
 def run_sequence(tmp_path, seed, ops=OPS):
     rng = random.Random(seed)
     n = rng.randrange(200, 2001)
     rows, xyz = make_cloud(rng, n)
     mgr = open_cloud(tmp_path, rows)
-    s, o = mgr.require(), Oracle(n)
+    s, o = mgr.require(), StepOracle(n)
     try:
         for _ in range(ops):
             op = rng.choice(
@@ -130,6 +177,13 @@ def run_sequence(tmp_path, seed, ops=OPS):
                     "apply",
                     "apply",
                     "apply",
+                    "create",
+                    "create",
+                    "assign",
+                    "release",
+                    "members",
+                    "merge",
+                    "to_main",
                     "undo",
                     "redo",
                     "rollback",
@@ -140,24 +194,31 @@ def run_sequence(tmp_path, seed, ops=OPS):
             rev = s.clock.cloud
             if op == "apply":
                 do_apply(mgr, s, o, xyz, rng)
+            elif op in {
+                "create",
+                "assign",
+                "release",
+                "members",
+                "merge",
+                "to_main",
+            }:
+                do_layer(mgr, s, o, xyz, rng, op, f"L{seed}-{len(o.steps)}")
             elif op == "undo":
                 if o.cursor:
                     s.undo(rev)
-                    o.cursor -= 1
+                    o.undo()
             elif op == "redo":
                 if o.cursor < len(o.steps):
                     s.redo(rev)
-                    o.cursor += 1
+                    o.redo()
             elif op == "rollback":
                 k = rng.randrange(0, len(o.steps) + 1)
                 s.rollback(rev, k)
-                o.cursor = k
+                o.rollback(k)
             elif op == "delete" and o.steps:
-                sid = rng.choice(o.steps)[0]
-                s.delete_step(rev, sid)
-                o.delete(sid)
+                delete_step_both(s, o, rev, rng.choice(o.steps).sid)
             elif op == "rename" and o.steps:
-                sid = rng.choice(o.steps)[0]
+                sid = rng.choice(o.steps).sid
                 name = rng.choice(["  first  ", "cut", "", "x" * 80])
                 s.rename_step(sid, name)
                 o.names[sid] = name.strip() or None
@@ -176,12 +237,20 @@ def test_hst_20_property_against_oracle(tmp_path):
 
 def test_hst_20b_sequences_are_not_trivial(tmp_path):
     # the generator must really reach rolled-back and deleted-step states
-    reached = {"greyed": 0, "deleted_applied": 0}
+    reached = {
+        "greyed": 0,
+        "deleted_applied": 0,
+        "layer_undone": 0,
+        "refused": 0,
+    }
     for seed in range(40):
         mgr, _s, o = run_sequence(tmp_path / f"t{seed}", seed)
         mgr.jobs.shutdown()
+        reached["layer_undone"] += o.stats["layer_undone"]
+        reached["refused"] += o.stats["delete_refused"]
         if o.cursor < len(o.steps):
             reached["greyed"] += 1
         if o.next_sid > len(o.steps):
             reached["deleted_applied"] += 1
     assert reached["greyed"] > 3 and reached["deleted_applied"] > 3
+    assert reached["layer_undone"] > 3 and reached["refused"] > 3

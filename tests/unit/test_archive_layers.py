@@ -95,7 +95,7 @@ def test_lay_30_round_trip(env, tmp_path):
     s = with_layers(env)
     path = save(env)
     m = manifest_of(path)
-    assert m["version"] == 2 and "layers" in m
+    assert m["version"] == 3 and "layers" in m  # Part 19: a layer step is v3
     assert m["layers"]["items"] == [
         {"id": 1, "name": "Ghosts", "colour": 0, "visible": False}
     ]
@@ -232,7 +232,9 @@ def test_lay_37_an_orphan_id_is_refused(env, tmp_path):
 def test_lay_38_a_layer_step_survives_and_ids_are_reused(env, tmp_path):
     s = with_layers(env)
     s.delete_layer(s.clock.cloud, 1)
-    assert manifest_of(save(env))["version"] == 1  # no layer left
+    # Part 19: no layer left, but the create and the removal stay steps (v3)
+    m = manifest_of(save(env))
+    assert m["version"] == 3 and "layers" not in m
     select_box(env, box_all_ghost())
     s.create_layer(s.clock.cloud, name="Again")
     m = manifest_of(save(env))

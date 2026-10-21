@@ -19,6 +19,7 @@ import pytest
 from fixtures.memory import trim
 from fixtures.pcdgen import build_pcd, xyz_fields
 from fixtures.sessions import make_settings, select_box
+from fixtures.step_oracle import StepOracle
 from gr_pcd.editing.errors import EditError
 from gr_pcd.editing.layers import MAX_LAYERS
 from gr_pcd.geometry.box import BoxSpec
@@ -50,43 +51,29 @@ def open_cloud(tmp_path, rows):
     return mgr
 
 
-class Oracle:
-    """Deletion steps (as in HST-20) plus one id per point and one bool per layer."""
+class Oracle(StepOracle):
+    """The shared step oracle (deletion and layer steps, in-order flips) plus
+    the stored selection and hidden-layer rules this file checks."""
 
     def __init__(self, n):
-        self.n = n
-        self.steps: list[tuple[int, set]] = []
-        self.cursor = 0
-        self.next_sid = 0
-        self.lid = [0] * n  # 0 = main; never cleared by a deletion
-        self.layers: dict[int, dict] = {}
+        super().__init__(n)
         self.raw_sel: set = set()  # the stored selection (not masked by active)
 
+    @property
+    def layers(self):
+        return self.attrs
+
     # -- deletion steps
-    def active(self):
-        gone = set()
-        for _, ids in self.steps[: self.cursor]:
-            gone |= ids
-        return set(range(self.n)) - gone
-
     def apply(self, ids):
-        self.steps = self.steps[: self.cursor] + [(self.next_sid, set(ids))]
-        self.next_sid += 1
-        self.cursor = len(self.steps)
+        super().apply(ids)
         self.raw_sel = set()
-
-    def delete_step(self, sid):
-        idx = [s for s, _ in self.steps].index(sid)
-        self.steps.pop(idx)
-        if idx < self.cursor:
-            self.cursor -= 1
 
     # -- layers
     def hidden_pts(self):
         return {
             i
             for i, k in enumerate(self.lid)
-            if k and not self.layers[k]["visible"]
+            if k and not self.attrs[k]["visible"]
         }
 
     def selectable(self):
@@ -102,13 +89,6 @@ class Oracle:
     def moved(self):
         return self.effective_selection() & self.selectable()
 
-    def lowest_free(self):
-        return next(k for k in range(1, 256) if k not in self.layers)
-
-    def members(self, k, act=None):
-        act = self.active() if act is None else act
-        return {i for i in act if self.lid[i] == k}
-
 
 def check(s, o):
     active_o = o.active()
@@ -122,6 +102,8 @@ def check(s, o):
     )
     assert got.tolist() == o.lid
     assert sorted(lay.id for lay in s.layers) == sorted(o.layers)
+    # the row ORDER follows the oracle's in-order model (stored index, clamped)
+    assert [lay.id for lay in s.layers] == o.order
     assert len(o.layers) <= MAX_LAYERS
     for lay in s.layers:
         assert lay.visible == o.layers[lay.id]["visible"]
@@ -154,11 +136,26 @@ def check(s, o):
     assert drawn == active_o - hidden_o
     # export ignores visibility
     assert set(np.flatnonzero(s.export_mask("active")).tolist()) == active_o
-    # layer edits never touch the cloud revision or the timeline
+    # Part 19: the history equals the oracle's steps, layer steps included
     assert [e["sid"] for e in st["history"]["entries"]] == [
-        sid for sid, _ in o.steps
+        x.sid for x in o.steps
+    ]
+    assert [e["kind"] for e in st["history"]["entries"]] == [
+        x.kind for x in o.steps
     ]
     assert st["history"]["cursor"] == o.cursor
+    for e, x in zip(s.history.entries, o.steps, strict=True):
+        if x.kind == "delete":
+            assert set(e.ids.tolist()) == x.ids
+        else:
+            assert {
+                int(i): (int(a), int(b))
+                for i, a, b in zip(e.ids, e.frm, e.to, strict=True)
+            } == x.diff
+    for e in st["history"]["entries"]:
+        assert ("deletable" in e) == (e["kind"] == "layer")
+        if e["kind"] == "layer":
+            assert e["deletable"] == o.deletable(e["sid"])
 
 
 def random_box(rng):
@@ -216,11 +213,9 @@ def do_create(s, o, rng, name):
             visible=visible,
         )
         return
-    k = o.lowest_free()
+    moved = o.moved()
     s.create_layer(s.clock.cloud, name=name, visible=visible)
-    o.layers[k] = {"name": name, "visible": visible}
-    for i in o.moved():
-        o.lid[i] = k
+    o.create(moved, name, visible)
     o.strip()
 
 
@@ -236,11 +231,11 @@ def do_assign(s, o, rng):
             visible=visible,
         )
         return
+    moved = o.moved()
     s.assign_layer(s.clock.cloud, target, visible=visible)
-    for i in o.moved():
-        o.lid[i] = target
+    o.assign(moved, target)
     if visible is not None:
-        o.layers[target]["visible"] = visible
+        o.patch(target, visible=visible)
     o.strip()
 
 
@@ -256,10 +251,7 @@ def do_set_members(s, o, rng):
         return
     keep = o.moved()
     s.set_layer_members(s.clock.cloud, k)
-    for i in o.members(k) - keep:
-        o.lid[i] = 0
-    for i in keep:
-        o.lid[i] = k
+    o.set_members(k, keep)
     o.strip()
 
 
@@ -268,8 +260,26 @@ def do_delete_layer(s, o, rng):
         return
     k = rng.choice(sorted(o.layers))
     s.delete_layer(s.clock.cloud, k)
-    del o.layers[k]
-    o.lid = [0 if x == k else x for x in o.lid]
+    o.to_main(k)
+
+
+def do_merge(s, o, rng):
+    if len(o.layers) < 2:
+        return
+    a, b = rng.sample(sorted(o.layers), 2)
+    s.merge_layer(s.clock.cloud, a, b)
+    o.merge(a, b)
+    o.strip()
+
+
+def do_delete_step(s, o, rev, sid):
+    if o.deletable(sid):
+        s.delete_step(rev, sid)
+        o.delete_step(sid)
+    else:
+        expect_error("step_has_dependents", s.delete_step, rev, sid)
+        assert not o.delete_step(sid)
+    o.strip()
 
 
 def do_visibility(s, o, rng):
@@ -303,11 +313,14 @@ def run_sequence(tmp_path, seed, ops=OPS):
                     "select",
                     "create",
                     "create",
+                    "create",
                     "assign",
                     "set_members",
                     "delete_layer",
+                    "merge",
                     "visibility",
                     "visibility",
+                    "apply",
                     "apply",
                     "apply",
                     "undo",
@@ -330,6 +343,8 @@ def run_sequence(tmp_path, seed, ops=OPS):
                 do_set_members(s, o, rng)
             elif op == "delete_layer":
                 do_delete_layer(s, o, rng)
+            elif op == "merge":
+                do_merge(s, o, rng)
             elif op == "visibility":
                 do_visibility(s, o, rng)
             elif op == "apply":
@@ -337,19 +352,20 @@ def run_sequence(tmp_path, seed, ops=OPS):
             elif op == "undo":
                 if o.cursor:
                     s.undo(rev)
-                    o.cursor -= 1
+                    o.undo()
+                    o.strip()
             elif op == "redo":
                 if o.cursor < len(o.steps):
                     s.redo(rev)
-                    o.cursor += 1
+                    o.redo()
+                    o.strip()
             elif op == "rollback":
                 k = rng.randrange(0, len(o.steps) + 1)
                 s.rollback(rev, k)
-                o.cursor = k
+                o.rollback(k)
+                o.strip()
             elif op == "delete_step" and o.steps:
-                sid = rng.choice(o.steps)[0]
-                s.delete_step(rev, sid)
-                o.delete_step(sid)
+                do_delete_step(s, o, rev, rng.choice(o.steps).sid)
             check(s, o)
             if any(o.lid[i] for i in set(range(n)) - o.active()):
                 stats["layered_deleted"] += 1

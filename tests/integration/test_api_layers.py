@@ -84,7 +84,17 @@ def test_lay_40_create_answers_the_state_and_changes_no_revision(api):
         }
     ]
     assert out["revision"]["cloud"] == rev["cloud"]
-    assert out["history"] == before["history"]  # not a timeline step
+    # Part 19: the create is one more timeline step
+    assert out["history"]["cursor"] == before["history"]["cursor"] + 1
+    assert len(out["history"]["entries"]) == (
+        len(before["history"]["entries"]) + 1
+    )
+    step = out["history"]["entries"][-1]
+    assert (step["kind"], step["tool"], step["count"]) == (
+        "layer",
+        "layer",
+        100,
+    )
     assert out["counts"]["main"] == 27 and out["counts"]["hidden"] == 0
     assert out["unsaved"] is True
 

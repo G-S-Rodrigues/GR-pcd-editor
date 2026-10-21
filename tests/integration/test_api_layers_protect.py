@@ -119,13 +119,26 @@ def test_lay_94b_merge_keeps_deleted_points(api):
     assert api.apply(cid).status_code == 200
     assert post(api, f"{L}/{ghosts}/merge", into=floor).status_code == 200
     assert members(api, floor) == SCENE_FLOOR | SCENE_GHOST
-    assert (
-        api.client.post(
-            "/api/session/undo", json={"cloud_revision": api.cloud()}
-        ).status_code
-        == 200
+    # Part 19: a plain Undo now undoes the merge, so the deletion is removed
+    # with delete-step instead (a deletion step is independent of the merge)
+    deletion = next(
+        e["sid"]
+        for e in api.state()["history"]["entries"]
+        if e["kind"] == "delete"
     )
+    r = api.client.post(
+        "/api/session/history/delete-step",
+        json={"cloud_revision": api.cloud(), "sid": deletion},
+    )
+    assert r.status_code == 200, r.text
     assert members(api, floor) == SCENE_FLOOR | SCENE_GHOST
+    # and a plain Undo reverts the merge: the Ghosts layer is back
+    r = api.client.post(
+        "/api/session/undo", json={"cloud_revision": api.cloud()}
+    )
+    assert r.status_code == 200, r.text
+    assert members(api, floor) == SCENE_FLOOR
+    assert members(api, ghosts) == SCENE_GHOST
 
 
 def test_lay_95_merge_into_a_hidden_layer_leaves_the_selection(api):
@@ -155,7 +168,12 @@ def test_lay_96_floor_from_the_band(api):
     assert members(api, 1) == SCENE_FLOOR
     assert st["counts"]["selected"] == before["counts"]["selected"]
     assert st["revision"]["cloud"] == before["revision"]["cloud"]
-    assert st["history"] == before["history"]
+    # Part 19: the Floor create is one more (layer) timeline step
+    assert st["history"]["cursor"] == before["history"]["cursor"] + 1
+    assert (
+        len(st["history"]["entries"]) == len(before["history"]["entries"]) + 1
+    )
+    assert st["history"]["entries"][-1]["kind"] == "layer"
 
 
 def test_lay_97_floor_from_the_band_errors(api):
