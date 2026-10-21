@@ -59,6 +59,14 @@ export interface PanelActions {
   layerChoose: (id: number) => void;
   layerEdit: (id: number) => void;
   layerSet: () => void;
+  layerFromBand: () => void;
+  layerRename: (id: number, name: string) => void;
+  layerColour: (id: number, colour: number) => void;
+  layerFlag: (id: number, flag: "protected" | "locked", value: boolean) => void;
+  layerOp: (id: number, op: "replace" | "add" | "subtract" | "intersect") => void;
+  layerMove: (id: number, dir: -1 | 1) => void;
+  layerMerge: (from: number, into: number) => void;
+  layerDeletePoints: (id: number) => void;
   removeInvalid: () => void;
   removeInvalidVisible: () => boolean;
   removeInvalidLabel: () => string;

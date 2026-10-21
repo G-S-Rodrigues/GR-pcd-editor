@@ -5305,3 +5305,218 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
     expect(errors).toEqual([]);
   });
 }
+
+// Part 18: protected layers, the Floor layer from the height band, the per-layer menu
+const BAND = { min: -0.05, max: 0.05 };
+const inBand = (r: number[]) => r[2] >= BAND.min && r[2] <= BAND.max;
+const WALL18 = { c: [-1, 4.5, 2.5], d: [1, 10, 5] }; // the wall only: no floor point lies inside, so the Wall layer takes nothing from the Floor
+const ALL_BOX = { c: [8, 8, 2.5], d: [40, 40, 8] };
+const layerMenu = (page: Pg) => {
+  const t = layerHelpers(page);
+  const flags = () => hook(page, (e) => e.state().session!.layers.map((l: { id: number; name: string; colour: number; count: number; protected?: boolean; locked?: boolean }) => ({ id: l.id, name: l.name, colour: l.colour, count: l.count, protected: l.protected === true, locked: l.locked === true })));
+  const byName = async (name: string) => (await flags()).find((l) => l.name === name);
+  const m = (attr: string, id: number) => page.locator(`[data-layer-${attr}="${id}"]`);
+  const op = (id: number, o: string) => page.locator(`[data-layer-op="${o}"][data-layer-of="${id}"]`);
+  const bandOn = async () => {
+    await t.ctl("prot-enabled").check();
+    await t.setNum("prot-min", BAND.min);
+    await t.setNum("prot-max", BAND.max);
+  };
+  /** Opens the room, turns the band on and makes the Floor layer from it. */
+  const floorFromBand = async () => {
+    await openRoom(page, t.exact);
+    await bandOn();
+    await t.ctl("layer-from-band").click();
+    await expect.poll(async () => (await byName("Floor"))?.count, { timeout: 15000 }).toBe(finiteRows().filter(inBand).length);
+    return (await byName("Floor"))!;
+  };
+  const wallLayer = async () => {
+    await t.ctl("tool-box").click();
+    await t.setBox(WALL18.c, WALL18.d);
+    await t.exact("Selected", String(ROOM.wall));
+    return t.newLayer("Wall");
+  };
+  return { ...t, flags, byName, m, op, bandOn, floorFromBand, wallLayer };
+};
+
+test("E2E-170 18 New layer from protected points makes a protected Floor layer with exactly the points in the band, and leaves the selection alone", async ({ page }) => {
+  const t = layerMenu(page);
+  const asked: string[] = [];
+  await openRoom(page, t.exact);
+  page.on("dialog", (d) => asked.push(d.message()));
+  await expect(t.ctl("layer-from-band")).toHaveAttribute("aria-disabled", "true"); // band off
+  await t.bandOn();
+  const truth = finiteRows().filter(inBand).length;
+  expect(truth).toBe(ROOM.floor + ROOM.floorGhost);
+  await t.exact("Selected", "0");
+  await t.ctl("layer-from-band").click();
+  await expect.poll(async () => (await t.byName("Floor"))?.count, { timeout: 15000 }).toBe(truth);
+  const floor = (await t.byName("Floor"))!;
+  expect(floor.protected).toBe(true);
+  await expect(page.locator(`[data-layer-row="${floor.id}"] .chip`)).toHaveClass(/protected/);
+  await t.exact("Selected", "0");
+  await t.exact("Active", String(ROOM_TOTAL));
+  expect(asked).toEqual([]);
+});
+
+test("E2E-171 18 a protected Floor is never deleted: with the band off Kept by protection is the Floor count, Delete removes exactly the rest, Undo restores; an override of the band does not free the Floor", async ({ page }) => {
+  const t = layerMenu(page);
+  const floor = await t.floorFromBand();
+  await t.ctl("prot-enabled").uncheck();
+  await t.ctl("tool-box").click();
+  await t.setBox(ALL_BOX.c, ALL_BOX.d);
+  const selected = finiteRows().filter((r) => inBox(r, ALL_BOX.c, ALL_BOX.d)).length;
+  await t.exact("Selected", String(selected));
+  await t.exact("Candidates", String(selected - floor.count));
+  await expect(page.locator("#headline-kept")).toHaveText(`Kept by protection ${floor.count}`);
+  await expect(t.ctl("apply")).toBeEnabled();
+  await t.ctl("apply").click();
+  await t.exact("Active", String(ROOM_TOTAL - (selected - floor.count)));
+  expect((await t.byName("Floor"))!.count).toBe(floor.count);
+  await t.ctl("undo").click();
+  await t.exact("Active", String(ROOM_TOTAL));
+  await t.setBox(ALL_BOX.c, [ALL_BOX.d[0] + 1, ALL_BOX.d[1], ALL_BOX.d[2]]); // Apply cleared the selection and Undo does not bring it back: a slightly larger box holds the same points
+  await t.exact("Selected", String(selected));
+  // a band over the top of the wall protects those points too; Also delete the kept points frees the wall (the band) but never the Floor layer
+  await t.ctl("prot-enabled").check();
+  await t.setNum("prot-max", 5.1); // max first: min 3.5 above the old max 0.05 is not a valid band
+  await t.setNum("prot-min", 3.5);
+  const wallBand = finiteRows().filter((r) => inBox(r, ALL_BOX.c, ALL_BOX.d) && r[2] >= 3.5 && r[2] <= 5.1).length;
+  expect(wallBand).toBeGreaterThan(0);
+  await t.exact("Candidates", String(selected - floor.count - wallBand));
+  await t.ctl("sel-delete-kept").click();
+  await t.exact("Candidates", String(selected - floor.count));
+  await expect(page.locator("#headline-kept")).toHaveText(`Kept by protection ${floor.count}`);
+  await t.ctl("apply").click();
+  await t.exact("Active", String(ROOM_TOTAL - (selected - floor.count)));
+  expect((await t.byName("Floor"))!.count).toBe(floor.count);
+  await t.ctl("undo").click();
+  await t.exact("Active", String(ROOM_TOTAL));
+});
+
+test("E2E-172 18 the protected and locked flags and the layer order survive Save and reopen", async ({ page }, testInfo) => {
+  const t = layerMenu(page);
+  await t.floorFromBand();
+  const wallId = await t.wallLayer();
+  const floorId = (await t.byName("Floor"))!.id;
+  await t.openMore(wallId);
+  await t.m("lock", wallId).click();
+  await expect.poll(async () => (await t.byName("Wall"))?.locked, { timeout: 15000 }).toBe(true);
+  await t.m("up", wallId).click();
+  await expect.poll(async () => (await t.flags()).map((l) => l.name), { timeout: 15000 }).toEqual(["Wall", "Floor"]);
+  const before = await t.flags();
+  const [dl] = await Promise.all([page.waitForEvent("download"), t.ctl("save-session").click()]);
+  const path = testInfo.outputPath("flags.pcdsession");
+  await dl.saveAs(path);
+  await page.locator("#file-input").setInputFiles({ name: "other.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
+  await t.exact("Active", String(TOTAL));
+  expect(await t.flags()).toEqual([]);
+  await page.locator("#file-input").setInputFiles({ name: "flags.pcdsession", mimeType: "application/octet-stream", buffer: readFileSync(path) });
+  await t.exact("Original", String(ROOM_TOTAL));
+  const back = await t.flags();
+  expect(back).toEqual(before);
+  expect(back.map((l) => [l.name, l.protected, l.locked])).toEqual([["Wall", false, true], ["Floor", true, false]]);
+  await expect(page.locator("#layer-list [data-layer-row]:not(.main)").first()).toHaveAttribute("data-layer-row", String(back[0].id));
+  expect(floorId).toBe(back[1].id);
+});
+
+test("E2E-173 18 menu flows: rename with Enter, a colour swatch, lock refuses Edit layer, To main and Assign, merge folds Wall into Ground", async ({ page }) => {
+  const t = layerMenu(page);
+  const floor = await t.floorFromBand();
+  const wallId = await t.wallLayer();
+  await t.openMore(floor.id);
+  const rename = t.m("rename", floor.id);
+  await rename.fill("Ground");
+  await rename.press("Enter");
+  await expect.poll(async () => !!(await t.byName("Ground")), { timeout: 15000 }).toBe(true);
+  await page.locator(`[data-layer-colour="${floor.id}"][data-colour="3"]`).click();
+  await expect.poll(async () => (await t.byName("Ground"))?.colour, { timeout: 15000 }).toBe(3);
+  await expect(page.locator(`[data-layer-colour="${floor.id}"][data-colour="3"]`)).toHaveAttribute("aria-pressed", "true");
+  await t.m("lock", floor.id).click();
+  await expect.poll(async () => (await t.byName("Ground"))?.locked, { timeout: 15000 }).toBe(true);
+  await expect(t.m("edit", floor.id)).toHaveAttribute("aria-disabled", "true");
+  await expect(t.m("tomain", floor.id)).toHaveAttribute("aria-disabled", "true");
+  await t.pick(floor.id).click(); // choose Ground as the Assign target
+  await t.ctl("sel-clear").click();
+  await t.ctl("tool-box").click();
+  await t.setBox([9.5, 9.5, 2.5], [1, 1, 5]);
+  await expect(t.ctl("layer-assign")).toHaveAttribute("aria-disabled", "true");
+  await expect(t.ctl("layer-assign")).toHaveAttribute("title", /Ground is locked/);
+  await t.m("lock", floor.id).click();
+  await expect.poll(async () => (await t.byName("Ground"))?.locked, { timeout: 15000 }).toBe(false);
+  const wallCount = (await t.byName("Wall"))!.count;
+  expect(wallCount).toBe(ROOM.wall);
+  await t.openMore(wallId);
+  await t.m("merge-target", wallId).selectOption({ label: "Ground" });
+  await t.m("merge", wallId).click(); // the confirm is accepted by the helpers
+  await expect.poll(async () => (await t.byName("Wall")) === undefined, { timeout: 15000 }).toBe(true);
+  await expect.poll(async () => (await t.byName("Ground"))?.count, { timeout: 15000 }).toBe(floor.count + ROOM.wall);
+});
+
+test("E2E-174 18 Select, Add, Subtract and Intersect with a layer as the operand give exactly the set-algebra counts", async ({ page }) => {
+  const t = layerMenu(page);
+  const floor = await t.floorFromBand();
+  const wallId = await t.wallLayer();
+  await t.openMore(floor.id);
+  await t.openMore(wallId);
+  await t.setBox(ALL_BOX.c, ALL_BOX.d); // the Box is still armed from the Wall layer's selection
+  const S = finiteRows().filter((r) => inBox(r, ALL_BOX.c, ALL_BOX.d)).length;
+  await t.exact("Selected", String(S));
+  await t.op(floor.id, "subtract").click();
+  await t.exact("Selected", String(S - floor.count));
+  await t.op(wallId, "select").click();
+  await t.exact("Selected", String(ROOM.wall));
+  await t.op(floor.id, "add").click();
+  await t.exact("Selected", String(ROOM.wall + floor.count));
+  await t.op(floor.id, "intersect").click();
+  await t.exact("Selected", String(floor.count));
+  await t.op(floor.id, "subtract").click();
+  await t.exact("Selected", "0");
+});
+
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-175 18 eight layers with Floor's menu open at ${w}x${h}: nothing overlaps the ViewCube, the camera cluster, the legend or the timeline, and the left panel scrolls instead of overflowing`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const t = layerMenu(page);
+    await t.floorSelected();
+    await t.newLayer("L1");
+    for (let i = 2; i <= 8; i++) {
+      await t.ctl("sel-clear").click();
+      await t.ctl("tool-box").click();
+      await t.setBox([2 * i, 9.5, 0], [1.5, 22, 0.5]);
+      await t.newLayer(`L${i}`);
+    }
+    expect((await t.layers()).length).toBe(8);
+    await t.ctl("sel-clear").click();
+    await t.openMore((await t.layers())[0].id);
+    await page.waitForTimeout(400);
+    const r = await page.evaluate(() => {
+      const box = (e: Element) => {
+        const b = e.getBoundingClientRect();
+        return { l: b.left, t: b.top, r: b.right, b: b.bottom };
+      };
+      const q = (s: string) => document.querySelector(s)!;
+      const tools = q("#tools") as HTMLElement;
+      const menu = q("[data-layer-details]:not([hidden])") as HTMLElement;
+      return {
+        legend: box(q("#legend")),
+        tools: box(tools),
+        menu: box(menu),
+        others: ["#viewcube", "#camera-cluster", "#timeline"].map((s) => ({ s, ...box(q(s)) })),
+        scroll: [tools.scrollHeight, tools.clientHeight],
+        overflowY: getComputedStyle(tools).overflowY,
+        menuHeight: menu.getBoundingClientRect().height,
+        menuInside: menu.getBoundingClientRect().right <= tools.getBoundingClientRect().right + 1,
+      };
+    });
+    console.log(`LEFT-PANEL-MENU ${w}x${h} menu ${r.menuHeight.toFixed(1)} scroll ${r.scroll[0]}/${r.scroll[1]}`);
+    const hit = (a: { l: number; t: number; r: number; b: number }, c: { l: number; t: number; r: number; b: number }) => a.l < c.r && c.l < a.r && a.t < c.b && c.t < a.b;
+    for (const o of r.others) {
+      expect(hit(r.legend, o), `legend x ${o.s}`).toBe(false);
+      expect(hit(r.tools, o), `left panel x ${o.s}`).toBe(false);
+    }
+    expect(r.menuInside, "menu inside the left panel").toBe(true);
+    expect(["auto", "scroll"]).toContain(r.overflowY);
+    await checkLayout(page, w, h);
+  });
+}

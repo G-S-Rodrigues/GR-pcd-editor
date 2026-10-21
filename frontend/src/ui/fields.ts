@@ -37,6 +37,7 @@ export const FIELD_SPECS: FieldSpec[] = [
   f("sel-show-kept", "Show kept points", "tool", "Draw the selected points that protection keeps larger and bright cyan (view only; nothing is deleted)"),
   f("sel-delete-kept", "Also delete the kept points", "tool", "Delete the selected points that height protection keeps too: this operation ignores the protection slab (it comes back after Apply)"),
   f("layer-new", "New layer", "layer", "Move the selected points into a new layer with the name typed above (blank: the server names it); a layer edit is not a timeline step"),
+  f("layer-from-band", "New layer from protected points", "layer", "Snapshot the points inside the height-protection band into a new protected layer named Floor; the band stays on (turn on height protection first)"),
   f("layer-name", "Layer name", "layer", "Name for the next new layer, up to 40 characters"),
   f("layer-assign", "Assign selection", "layer", "Move the selected points into the layer chosen in the list (click a row first); points taken from other layers are confirmed first"),
   f("layer-release", "Release to main", "layer", "Move the selected points out of their layers back to main"),

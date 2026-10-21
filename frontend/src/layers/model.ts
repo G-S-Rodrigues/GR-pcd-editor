@@ -30,6 +30,8 @@ export interface LayerRow {
   id: number;
   name: string;
   colour: string;
+  /** The palette index 0..15 (the swatch that is pressed). */
+  colourIndex: number;
   count: number;
   visible: boolean;
   label: string;
@@ -72,6 +74,7 @@ export function layerRows(s: SessionState | null): LayerRow[] {
     id: l.id,
     name: l.name,
     colour: layerColour(l.colour),
+    colourIndex: ((l.colour % 16) + 16) % 16,
     count: l.count,
     visible: l.visible,
     label: `${l.name} (${fmt(l.count)})`,

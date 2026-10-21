@@ -13,9 +13,9 @@ import { TOOLTIPS } from "./tooltips";
 const dom = installFakeDom();
 afterAll(() => dom.restore());
 const store = createAppStore();
-const calls = { create: vi.fn(), assign: vi.fn(), release: vi.fn(), select: vi.fn(), toggle: vi.fn(), toMain: vi.fn(), choose: vi.fn(), edit: vi.fn(), set: vi.fn() };
+const calls = { create: vi.fn(), assign: vi.fn(), release: vi.fn(), select: vi.fn(), toggle: vi.fn(), toMain: vi.fn(), choose: vi.fn(), edit: vi.fn(), set: vi.fn(), fromBand: vi.fn(), rename: vi.fn(), colour: vi.fn(), flag: vi.fn(), op: vi.fn(), move: vi.fn(), merge: vi.fn(), delPoints: vi.fn() };
 const actions = new Proxy(
-  { layerCreate: calls.create, layerAssign: calls.assign, layerRelease: calls.release, layerSelect: calls.select, layerToggle: calls.toggle, layerToMain: calls.toMain, layerChoose: calls.choose, layerEdit: calls.edit, layerSet: calls.set } as Record<string, unknown>,
+  { layerCreate: calls.create, layerAssign: calls.assign, layerRelease: calls.release, layerSelect: calls.select, layerToggle: calls.toggle, layerToMain: calls.toMain, layerChoose: calls.choose, layerEdit: calls.edit, layerSet: calls.set, layerFromBand: calls.fromBand, layerRename: calls.rename, layerColour: calls.colour, layerFlag: calls.flag, layerOp: calls.op, layerMove: calls.move, layerMerge: calls.merge, layerDeletePoints: calls.delPoints } as Record<string, unknown>,
   { get: (t, k: string) => t[k] ?? (() => undefined) },
 ) as unknown as PanelActions;
 buildLayersPanel(dom.root as unknown as HTMLElement, store, actions);
@@ -161,4 +161,110 @@ test("UI-892 a layer row is one line (chip, name, count, eye, Select, chevron) w
   rowBtn(1, "more").fire("click");
   expect(details().getAttribute("hidden")).not.toBeNull();
   expect(rowBtn(1, "more").getAttribute("aria-expanded")).toBe("false");
+});
+
+const attrBtn = (attr: string, id: number) => section().all().find((e) => e.getAttribute(attr) === String(id)) as FakeEl;
+const opBtn = (id: number, op: string) => section().all().find((e) => e.getAttribute("data-layer-op") === op && e.getAttribute("data-layer-of") === String(id)) as FakeEl;
+const details = (id: number) => section().all().find((e) => e.getAttribute("data-layer-details") === String(id)) as FakeEl;
+const twoLayers = (over1: Partial<Layer> = {}, over2: Partial<Layer> = {}) => base([layer({ bounds: { min: [0, 0, 0], max: [1, 1, 1] }, ...over1 }), layer({ id: 2, name: "Wall", colour: 1, count: 20, ...over2 })]);
+
+test("UI-921 Floor's details are hidden by default and hold the 7 groups in order; each control fires its action with id 1", () => {
+  store.set({ session: twoLayers() });
+  expect(details(1).getAttribute("hidden")).not.toBeNull();
+  expect(details(1).children.map((g) => g.className.split(" ")[1])).toEqual(["g-rename", "g-colour", "g-flags", "g-ops", "g-member", "g-order", "g-delete"]);
+  const input = attrBtn("data-layer-rename", 1);
+  input.value = "Ground";
+  attrBtn("data-layer-rename-ok", 1).fire("click");
+  input.value = "Kerb";
+  input.fire("keydown", { key: "Enter" });
+  expect(calls.rename.mock.calls).toEqual([[1, "Ground"], [1, "Kerb"]]);
+  expect(section().all().filter((e) => e.getAttribute("data-layer-colour") === "1")).toHaveLength(16);
+  section().all().find((e) => e.getAttribute("data-layer-colour") === "1" && e.getAttribute("data-colour") === "3")?.fire("click");
+  expect(calls.colour).toHaveBeenCalledWith(1, 3);
+  expect(section().all().find((e) => e.getAttribute("data-layer-colour") === "1" && e.getAttribute("data-colour") === "0")?.getAttribute("aria-pressed")).toBe("true");
+  attrBtn("data-layer-protected", 1).fire("click");
+  attrBtn("data-layer-lock", 1).fire("click");
+  expect(calls.flag.mock.calls).toEqual([[1, "protected", true], [1, "locked", true]]);
+  attrBtn("data-layer-visible", 1).fire("click");
+  expect(calls.toggle).toHaveBeenCalledWith(1);
+  for (const op of ["select", "add", "subtract", "intersect"]) opBtn(1, op).fire("click");
+  expect(calls.op.mock.calls).toEqual([[1, "replace"], [1, "add"], [1, "subtract"], [1, "intersect"]]);
+  attrBtn("data-layer-edit", 1).fire("click");
+  attrBtn("data-layer-tomain", 1).fire("click");
+  attrBtn("data-layer-down", 1).fire("click");
+  expect(calls.edit).toHaveBeenCalledWith(1);
+  expect(calls.toMain).toHaveBeenCalledWith(1);
+  expect(calls.move).toHaveBeenCalledWith(1, 1);
+  attrBtn("data-layer-merge", 1).fire("click");
+  expect(calls.merge).toHaveBeenCalledWith(1, 2);
+  attrBtn("data-layer-delete-points", 1).fire("click");
+  expect(calls.delPoints).toHaveBeenCalledWith(1);
+  attrBtn("data-layer-up", 2).fire("click");
+  expect(calls.move).toHaveBeenCalledWith(2, -1);
+});
+
+test("UI-922 a protected layer's chip has class protected, a locked one locked; the row title names them and the row keeps its shape", () => {
+  store.set({ session: twoLayers({ protected: true }, { locked: true }) });
+  const chipOfRow = (id: number) => rows().find((r) => r.getAttribute("data-layer-row") === String(id))?.children[0] as FakeEl;
+  expect(chipOfRow(1).classList.contains("protected")).toBe(true);
+  expect(chipOfRow(1).classList.contains("locked")).toBe(false);
+  expect(chipOfRow(2).classList.contains("locked")).toBe(true);
+  const floor = rows().find((r) => r.getAttribute("data-layer-row") === "1") as FakeEl;
+  expect(floor.title).toContain("Protected");
+  expect(rows().find((r) => r.getAttribute("data-layer-row") === "2")?.title).toContain("Locked");
+  expect(floor.children).toHaveLength(6);
+  expect(floor.text()).toContain("Floor (30)");
+});
+
+test("UI-923 while a layer is edited its details are open and hold #layer-set exactly once, through rebuilds; afterwards it is back in the stack", () => {
+  store.set({ session: twoLayers(), layerUi: { editing: 1, active: 1 } });
+  const setIn = (el: FakeEl) => el.all().filter((e) => e.getAttribute("id") === "layer-set" || e.getAttribute("data-control") === "layer-set");
+  expect(details(1).getAttribute("hidden")).toBeNull();
+  expect(setIn(details(1))).toHaveLength(1);
+  expect(setIn(section())).toHaveLength(1);
+  store.set({ session: twoLayers({ count: 31 }) });
+  expect(setIn(details(1))).toHaveLength(1);
+  expect(setIn(section())).toHaveLength(1);
+  store.set({ layerUi: { editing: null, active: 1 } });
+  expect(setIn(details(1))).toHaveLength(0);
+  expect(setIn(section())).toHaveLength(1);
+  expect(ctl("layer-set").hidden).toBe(true);
+});
+
+test("UI-924 layer-from-band is described, has a tooltip and a field entry; its state follows layerButtons.fromBand", () => {
+  expect(describeControls().find((d) => d.id === "layer-from-band")?.label).toBeTruthy();
+  expect(TOOLTIPS["layer-from-band"]).toBeTruthy();
+  store.set({ session: twoLayers() });
+  expect(ctl("layer-from-band").getAttribute("aria-disabled")).toBe("true");
+  expect(ctl("layer-from-band").title).toContain("Turn on height protection first");
+  const s = twoLayers();
+  store.set({ session: { ...s, protection: { ...s.protection, global: { ...s.protection.global, enabled: true } } } });
+  expect(ctl("layer-from-band").getAttribute("aria-disabled")).toBe("false");
+  ctl("layer-from-band").fire("click");
+  expect(calls.fromBand).toHaveBeenCalledTimes(1);
+});
+
+test("UI-925 the merge target lists the other layers but not the layer itself; with one layer Merge is inactive with the reason", () => {
+  store.set({ session: twoLayers() });
+  const sel = attrBtn("data-layer-merge-target", 1);
+  expect(sel.children.map((o) => o.text())).toEqual(["Wall"]);
+  store.set({ session: base([layer({})]) });
+  expect(attrBtn("data-layer-merge", 1).getAttribute("aria-disabled")).toBe("true");
+  expect(attrBtn("data-layer-merge", 1).title).toContain("No other layer to merge into");
+});
+
+test("UI-926 a locked layer's Edit, To main and Merge are inactive with the reason; a protected layer's Delete points; Up on the first row and Down on the last", () => {
+  store.set({ session: twoLayers({ locked: true, protected: true }) });
+  for (const k of ["edit", "tomain", "merge"]) {
+    expect(attrBtn(`data-layer-${k}`, 1).getAttribute("aria-disabled")).toBe("true");
+    expect(attrBtn(`data-layer-${k}`, 1).title).toContain("The layer is locked");
+  }
+  expect(attrBtn("data-layer-delete-points", 1).getAttribute("aria-disabled")).toBe("true");
+  expect(attrBtn("data-layer-delete-points", 1).title).toContain("The layer is protected");
+  expect(attrBtn("data-layer-up", 1).getAttribute("aria-disabled")).toBe("true");
+  expect(attrBtn("data-layer-down", 1).getAttribute("aria-disabled")).toBe("false");
+  expect(attrBtn("data-layer-up", 2).getAttribute("aria-disabled")).toBe("false");
+  expect(attrBtn("data-layer-down", 2).getAttribute("aria-disabled")).toBe("true");
+  attrBtn("data-layer-edit", 1).fire("click");
+  expect(calls.edit).not.toHaveBeenCalled();
 });

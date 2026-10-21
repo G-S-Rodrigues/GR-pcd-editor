@@ -96,7 +96,18 @@
       .layer-row button svg { display: block; }
       .layer-row button.inactive { opacity: 0.5; }
       .layer-more[aria-expanded=true] svg { transform: rotate(180deg); }
-      .layer-details { display: flex; gap: 4px; padding: 0 4px 2px 18px; }
+      .layer-details { display: flex; flex-direction: column; gap: 3px; padding: 0 4px 3px 18px; }
+      .layer-group { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; }
+      .layer-group.g-colour { display: grid; grid-template-columns: repeat(8, 16px); gap: 2px; }
+      .layer-details .layer-swatch { width: 16px; height: 16px; min-width: 0; padding: 0; border: 1px solid transparent; }
+      .layer-details .layer-swatch[aria-pressed=true] { border-color: #fff; }
+      .layer-details input[data-layer-rename] { flex: 1 1 60px; min-width: 0; }
+      .layer-details select { flex: 1 1 60px; min-width: 0; }
+      .layer-details button[aria-pressed=true] { border-color: var(--accent, #6aa9ff); background: #26303c; }
+      .layer-details button.inactive { opacity: 0.5; }
+      .layer-details button.danger { color: #ff8a80; }
+      .layer-row .chip.protected { box-shadow: 0 0 0 2px #fff; }
+      .layer-row .chip.locked { outline: 1px dashed #fff; outline-offset: 1px; }
       .layer-details[hidden] { display: none; }
       .layer-details button { height: 22px; padding: 0 6px; font-size: 11px; }
       #tools h2 { margin: 6px 0 2px; }
