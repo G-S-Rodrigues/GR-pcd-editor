@@ -433,3 +433,21 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
   UI-300, UI-400, UI-513, UI-666, UI-816, UI-831..838, UI-863, UI-864, UI-890; E2E-10, E2E-13, E2E-16, E2E-20, E2E-24,
   E2E-25, E2E-30, E2E-35, E2E-35b, E2E-36, E2E-37, E2E-38, E2E-40, E2E-41, E2E-46, E2E-62, E2E-90, E2E-113..115,
   E2E-121, E2E-143, E2E-146. `E2E-143` is a known flake that also fails at 73870ad (open item).
+
+## Part 18 additions (protected layers, Floor from the band, per-layer menu)
+
+- Backend: `LAY-80..99` including `LAY-30b`, `LAY-94b` and `LAY-97b` (flags survive every `Layer` rebuild, one protected
+  set for candidate, state count, Cluster and Sparse eligibility and render flags, archive optional keys written only
+  when true and non-boolean refused, the flag PATCH, order, merge, Floor from band and the `layer_locked` 422). pytest
+  618 to 644. Changed existing tests: `LAY-17` and `LAY-40` (expected rows gain `protected` and `locked` false).
+- Frontend unit: `UI-910..927` (model, api, orchestration, the headline "in protected layers" split, `UI-927` the
+  override line "plus protected layers (N points)") and `UI-921..926` (the menu in `layerspanel.test.ts`). vitest 718 to
+  736. Changed existing tests, setup only: the `LayersDeps` literals in `orchestration/layers.test.ts` and
+  `orchestration/editlayer.test.ts` gain `selectLayerOp` and `apply`.
+- Smoke `E2E-170..176`. The test wall box for these tests is the `x = -1` column (`WALL18`): the older wall box also holds
+  12 floor points, which a new layer takes out of the Floor. `E2E-175` logs `LEFT-PANEL-MENU <w>x<h>`: Floor's open menu
+  is 242 px tall at 1280x720 (the left panel scrolls, 738/631) and 215 px at 1920x1080 (no scroll, 991/991); it asserts
+  no overlap, the menu inside the panel and `overflow-y` auto or scroll. `E2E-176` writes
+  `/out/part18-<w>x<h>-menu.png` and `-floor.png`; keep them with `SMOKE_SHOTS_DIR=<dir> bash scripts/smoke.sh ...`,
+  never commit them.
+- Changed existing smoke tests: none.

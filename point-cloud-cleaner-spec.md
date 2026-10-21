@@ -476,3 +476,20 @@ Initial targets, to be benchmarked on a documented desktop Linux reference PC wi
   before arrow before body; end-on arrows and edge-on rings are not picked. The angle is measured in the ring plane
   about the ring centre. Ctrl/Meta+drag over a handle orbits. The Axes select is removed (owner rulings 2026-10-20 and
   2026-10-21).
+
+## Part 18 addendum (layers: protection, Floor, menu)
+
+- Sections 10 and 11 and the layers (this also records the Part 15b layer model, which had no addendum): the protected
+  set P is the height band union the points of protected layers; candidate, counts, Cluster and Sparse "Exclude
+  protected" and the render flags all read P from one place. AC-17 stands and AC-15 is unchanged. A protected layer's
+  points are never deleted; they are kept and counted in Kept by protection.
+- AC-07 is refined by owner ruling 571: Override protection replaces only the height band; protected layers always
+  apply, so the effective protection line of an override preview adds "plus protected layers (N points)".
+- New layer from protected points snapshots the global band (it must be on) into a protected layer named Floor.
+- Each layer row has a fold-out menu: rename, 16 colours, visible, protected, lock, Select/Add/Subtract/Intersect with
+  the layer as operand (one shot, scope Active), Edit layer, To main, Up/Down (stored order), Merge, Delete points
+  (confirmed, a timeline step, refused for a protected layer). A locked layer refuses assignments, set-members, merge,
+  To main and Hide selected over its points with 422 `layer_locked`; Apply and Undo still delete and restore them.
+- The archive stays version 2: layer items carry optional `protected` and `locked` keys written only when true; an
+  older build opens such a file and drops them silently.
+

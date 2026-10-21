@@ -69,6 +69,16 @@
   user choices.
 - **Layer:** A named group of points (at most 32) with a colour and a visibility flag. A point is in at most one layer;
   Undoing a deletion puts the points back into their layer. Saved in the session (version 2).
+- **Protected layer:** A layer whose points are never deleted by any Delete or Apply. They count in Kept by protection
+  like the height band, are shown in the legend line "in protected layers", and are saved with the session. Override
+  protection frees only the height band, never a protected layer.
+- **Locked layer:** A layer whose membership is fixed: no points can be assigned into or out of it, and Edit layer, To
+  main and Merge are refused. Its points can still be deleted (unless it is also protected). Distinct from protected.
+- **Floor layer:** The layer made by New layer from protected points: a snapshot of the points inside the global height
+  band at that moment, named Floor, protected. The band stays on afterwards.
+- **Merge:** Layer A joins layer B and A goes away; B keeps its name, colour, visibility and flags. Confirmed first.
+- **Layer order:** The stored order of the layers (Up and Down in the layer menu); it is the legend and row order and is
+  saved with the session.
 - **Main:** The points that are in no layer. Always present, never hidden by itself.
 - **Hidden layer:** A layer whose visibility is off: its points are not drawn, picked or selected by any tool, and still
   count and export.

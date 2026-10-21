@@ -97,7 +97,11 @@ Concepts worth knowing:
   a live selection; resize it and press **Set layer to selection** to make the layer hold exactly those points (points
   taken from another layer are confirmed first; the selection stays). Layers are saved in the session (version 2, only
   when layers exist), restored on reopen, and the Export dialog can export a subset of layers. Layer edits are not
-  steps in the timeline. The colour control has a **Layers** entry (layer colours, main in grey) while layers exist.
+  steps in the timeline. **New layer from protected points** snapshots the height band into a protected layer called
+  Floor. The chevron on a row opens its menu: rename, 16 colours, Visible, **Protected** (its points are never deleted
+  by any Delete; Override protection frees only the band), **Lock** (no points move into or out of it), Select, Add,
+  Subtract and Intersect with the layer, Up and Down, Merge into another layer and **Delete points**. The colour
+  control has a **Layers** entry (layer colours, main in grey) while layers exist.
 - **Hide selected** (Selection section, after Clear selection) moves the selected points into the layer **Hidden** and
   hides it; the button then reads **Show hidden (N)** and a **N hidden - Show** chip appears in the legend. Hidden
   points are not drawn, picked or selected (Select displayed, Invert and Delete leave them alone), but they stay in the
