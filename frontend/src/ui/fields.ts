@@ -43,6 +43,8 @@ export const FIELD_SPECS: FieldSpec[] = [
   f("layer-release", "Release to main", "layer", "Move the selected points out of their layers back to main"),
   f("layer-set", "Set layer to selection", "layer", "While editing a layer: make the layer hold exactly the selected points (the others go to main); points taken from other layers are confirmed first. The selection stays"),
   f("export-all", "Export all layers", "layer", "Tick every layer again so the export holds the whole cloud"),
+  f("export-per-layer", "One file per layer", "layer", "Write each chosen layer to its own file, named after the layer; empty layers are skipped"),
+  f("export-close", "Close the export dialog", "layer", "Close this dialog after the files were prepared"),
   f("remove-invalid", "Remove invalid", "tool", "Remove points whose coordinates are NaN or infinite from the active cloud (undoable)"),
   ...AX.map((a) => f(`box-center-${a}`, `Centre ${up(a)}`, "box", `Box centre ${up(a)} coordinate in the file frame`)),
   ...AX.map((a) => f(`box-size-${a}`, `Size ${up(a)}`, "box", `Box size along its local ${up(a)} axis; must be greater than 0`)),

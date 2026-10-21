@@ -144,3 +144,39 @@ test("UI-844 without layers the call and the message are exactly as before, even
   expect(r.message).not.toMatch(/exported\./);
   expect(r.message).toBe("Export prepared; your browser decides where it is saved. Suggested name: a_cleaned.pcd. The source file is never overwritten.");
 });
+
+// ---- Part 19 (UI-951, UI-953)
+const perLayer = {
+  files: [
+    { url: "/api/exports/e1", filename: "a_main_cleaned.pcd", count: 50, layerName: "Main" },
+    { url: "/api/exports/e2", filename: "a_Floor_cleaned.pcd", count: 1, layerName: "Floor" },
+  ],
+  skipped: [{ layer_id: 2, layer_name: "Ghosts" }],
+};
+
+test("UI-951 the per-layer notice lists the names and exact counts, and skipped layers", async () => {
+  const store = createAppStore();
+  const startExportPerLayer = vi.fn(async () => perLayer);
+  const r = await runExport(store, { ...exportDefaults(), perLayer: true, layers: [0, 1] }, { startExport: vi.fn(), startExportPerLayer });
+  expect(startExportPerLayer).toHaveBeenCalledWith("binary", "active", [0, 1]);
+  expect(r.ok).toBe(true);
+  expect(r.files).toEqual(perLayer.files);
+  expect(r.skipped).toEqual(perLayer.skipped);
+  expect(r.message).toBe(
+    "Export prepared as 2 files; your browser decides where they are saved: a_main_cleaned.pcd (50 points), a_Floor_cleaned.pcd (1 point). Skipped, nothing in scope: Ghosts. The source file is never overwritten.",
+  );
+  expect(store.get().notices.at(-1)?.text).toBe(r.message);
+});
+
+test("UI-953 a failed per-layer export is an error notice with no files", async () => {
+  const store = createAppStore();
+  const r = await runExport(store, { ...exportDefaults(), perLayer: true }, {
+    startExport: vi.fn(),
+    startExportPerLayer: async () => {
+      throw new Error("disk full");
+    },
+  });
+  expect(r.ok).toBe(false);
+  expect(r.files).toBeUndefined();
+  expect(store.get().notices.at(-1)?.level).toBe("error");
+});

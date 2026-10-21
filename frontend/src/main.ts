@@ -2,7 +2,7 @@ import * as api from "./api/session";
 import * as layerApi from "./api/layers";
 import { getState } from "./api/session";
 import { postJson, setSessionChangedHandler, setSessionId } from "./files/http";
-import { startExport, startSave, markSaved } from "./files/downloads";
+import { startExport, startExportPerLayer, startSave, markSaved } from "./files/downloads";
 import { setCompare } from "./compare/model";
 import { runExport } from "./orchestration/export";
 import { runSave } from "./orchestration/session-save";
@@ -224,7 +224,7 @@ const deps = {
   onOpened,
 };
 
-const exportDialog = buildExportDialog(store, (o) => runExport(store, o, { startExport: (f, s, l) => startExport(f, s, {}, l) }));
+const exportDialog = buildExportDialog(store, (o) => runExport(store, o, { startExport: (f, s, l) => startExport(f, s, {}, l), startExportPerLayer: (f, s, l) => startExportPerLayer(f, s, {}, l) }));
 const persister = createPersister(store, api.putClientState, { dragging: () => tools.dragging() });
 window.addEventListener("beforeunload", beforeUnloadHandler(() => store.get()));
 

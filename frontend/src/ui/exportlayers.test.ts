@@ -90,3 +90,103 @@ test("UI-849 other scopes say the exact count comes after the export; the picker
   expect(describeControls().find((d) => d.id === "export-all")?.label).toBe("Export all layers");
   expect(TOOLTIPS["export-all"]).toBeTruthy();
 });
+
+// ---- Part 19: one file per layer (UI-946, 948, 950, 952, 953)
+const perLayerBox = () => el("export-per-layer");
+const fileRes = {
+  ok: true,
+  message: "m",
+  files: [
+    { url: "/api/exports/e1", filename: "a_main_cleaned.pcd", count: 50, layerName: "Main" },
+    { url: "/api/exports/e2", filename: "a_Floor_cleaned.pcd", count: 30, layerName: "Floor" },
+  ],
+  skipped: [{ layer_id: 2, layer_name: "Wall" }],
+};
+
+test("UI-946 the per-layer box exists only with layers and is off by default; off sends today's request", async () => {
+  store.set({ session: sessionFixture() });
+  dialog.open();
+  expect(perLayerBox().hidden).toBe(true);
+  store.set({ session: withLayers() });
+  dialog.open();
+  expect(perLayerBox().hidden).toBe(false);
+  expect(perLayerBox().checked).toBe(false);
+  el("export-go").fire("click");
+  await Promise.resolve();
+  expect(run).toHaveBeenCalledWith({ scope: "active", format: "binary" });
+});
+
+test("UI-947 on: the request carries perLayer, plus layers for a strict subset", async () => {
+  store.set({ session: withLayers() });
+  dialog.open();
+  perLayerBox().checked = true;
+  perLayerBox().fire("change");
+  el("export-go").fire("click");
+  await Promise.resolve();
+  expect(run).toHaveBeenLastCalledWith({ scope: "active", format: "binary", perLayer: true });
+  dialog.open();
+  perLayerBox().checked = true;
+  perLayerBox().fire("change");
+  pick("2", false);
+  el("export-go").fire("click");
+  await Promise.resolve();
+  expect(run).toHaveBeenLastCalledWith({ scope: "active", format: "binary", perLayer: true, layers: [0, 1] });
+});
+
+test("UI-948 the summary says one file per chosen layer, with per-file counts for Active", () => {
+  store.set({ session: withLayers() });
+  dialog.open();
+  perLayerBox().checked = true;
+  perLayerBox().fire("change");
+  expect(el("export-summary").text()).toContain("Exports 3 files, one per chosen layer");
+  expect(el("export-summary").text()).toContain("Main 50, Floor 30, Wall 20");
+  pick("2", false);
+  expect(el("export-summary").text()).toContain("Exports 2 files, one per chosen layer");
+  (el("export-scope") as unknown as { value: string }).value = "selected";
+  el("export-scope").fire("change");
+  expect(el("export-summary").text()).not.toContain("Main 50");
+});
+
+test("UI-950 after a per-layer export the dialog stays open and lists one link per file plus the skipped layers; Close closes it", async () => {
+  run.mockResolvedValueOnce(fileRes as never);
+  store.set({ session: withLayers() });
+  dialog.open();
+  perLayerBox().checked = true;
+  perLayerBox().fire("change");
+  const closed = vi.spyOn(all().find((e) => e.getAttribute("id") === "export-dialog") as never as { close(): void }, "close");
+  el("export-go").fire("click");
+  await new Promise((r) => setTimeout(r, 0));
+  const links = all().filter((e) => e.getAttribute("data-export-file") !== null);
+  expect(links.map((l) => [l.getAttribute("href"), l.getAttribute("download")])).toEqual([
+    ["/api/exports/e1", "a_main_cleaned.pcd"],
+    ["/api/exports/e2", "a_Floor_cleaned.pcd"],
+  ]);
+  expect(el("export-files").text()).toContain("Skipped, nothing in scope: Wall");
+  expect(closed).not.toHaveBeenCalled();
+  el("export-close").fire("click");
+  expect(closed).toHaveBeenCalled();
+});
+
+test("UI-952 nothing ticked: Export is disabled with NONE_TICKED, per-layer on or off", () => {
+  store.set({ session: withLayers() });
+  dialog.open();
+  perLayerBox().checked = true;
+  perLayerBox().fire("change");
+  for (const id of ["0", "1", "2"]) pick(id, false);
+  expect(el("export-go").disabled).toBe(true);
+  expect(el("export-go").title).toContain("Tick at least one layer to export");
+});
+
+test("UI-953 a failed per-layer export shows no link list and closes the dialog", async () => {
+  run.mockResolvedValueOnce({ ok: false, message: "x" } as never);
+  store.set({ session: withLayers() });
+  dialog.open();
+  perLayerBox().checked = true;
+  perLayerBox().fire("change");
+  const closed = vi.spyOn(all().find((e) => e.getAttribute("id") === "export-dialog") as never as { close(): void }, "close");
+  el("export-go").fire("click");
+  await new Promise((r) => setTimeout(r, 0));
+  expect(all().filter((e) => e.getAttribute("data-export-file") !== null)).toHaveLength(0);
+  expect(el("export-files").hidden).toBe(true);
+  expect(closed).toHaveBeenCalled();
+});
