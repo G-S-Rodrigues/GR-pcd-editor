@@ -3,7 +3,7 @@ import { resetOperation } from "../inspector/protection";
 import { type AppState, addNotice } from "../state/app";
 import type { Store } from "../state/store";
 import type { SessionState } from "../state/types";
-import { deleteStepText, discardCount, discardText, mergeStepNames, stepsOf } from "../timeline/model";
+import { DELETE_BLOCKED_TEXT, deleteLayerStepText, deleteStepText, discardCount, discardText, mergeStepNames, stepsOf } from "../timeline/model";
 import { emptyPolygon } from "../tools/polygon/model";
 import { canApply } from "./runner";
 
@@ -183,12 +183,22 @@ export function createEditor(store: Store<AppState>, api: EditApi, confirmFn: (m
       const step = stepsOf(s.session).find((x) => x.sid === sid);
       if (!step || !api.deleteStep) return;
       if (s.job.busy) return busyNotice();
-      if (!confirmFn(deleteStepText(step.label, step.count))) return;
+      if (!step.deletable) return addNotice(store, "info", "step_not_deletable", DELETE_BLOCKED_TEXT);
+      const text = step.tool === "layer" ? deleteLayerStepText(step.label, step.count) : deleteStepText(step.label, step.count);
+      if (!confirmFn(text)) return;
       const call = api.deleteStep;
       await serial(async () => {
         if (!stepsOf(store.get().session).some((x) => x.sid === sid)) return;
         if (store.get().job.busy) return busyNotice();
-        await guarded(async () => afterChange(await call(rev(), sid)), STALE_HISTORY_TEXT);
+        await guarded(async () => {
+          try {
+            await afterChange(await call(rev(), sid));
+          } catch (e) {
+            // a later layer step built on this one meanwhile: say what the server said, leave the strip as it is
+            if (e instanceof ApiError && e.code === "step_has_dependents") return addNotice(store, "warn", "step_has_dependents", e.message);
+            throw e;
+          }
+        }, STALE_HISTORY_TEXT);
       });
     },
     /** A name changes nothing in the cloud: the candidate and the render stay. '' clears the name. Only the names are taken from the answer, so a late answer cannot overwrite a newer snapshot. */

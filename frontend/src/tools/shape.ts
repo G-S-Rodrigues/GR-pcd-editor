@@ -5,6 +5,7 @@ import { boxFromShape } from "./box/model";
 import { type PolygonState, emptyPolygon } from "./polygon/model";
 import { validatePolygon } from "./polygon/validate";
 
+export const LAYER_EDIT_NO_SHAPE = "A layer edit has no shape to edit";
 export const EDIT_SHAPE_UNAVAILABLE = "This step was saved before shapes were stored; centre only";
 
 /** A selection step has no shape: it came from a layer's Select (or Select displayed or Invert). */
@@ -13,7 +14,10 @@ export const LAYER_STEP_TITLE = "This step was selected from a layer (or by Sele
 /** The Edit shape button for a step: whether it works, its accessible name and its tooltip. `n` is the step's 1-based position. */
 export function editShapeState(entry: HistoryEntry, n: number): { enabled: boolean; label: string; title: string } {
   const label = `Edit the shape of step ${n}`;
-  if (!entry.shape) return { enabled: false, label, title: entry.tool === "selection" ? LAYER_STEP_TITLE : EDIT_SHAPE_UNAVAILABLE };
+  if (!entry.shape) {
+    const title = entry.tool === "layer" ? LAYER_EDIT_NO_SHAPE : entry.tool === "selection" ? LAYER_STEP_TITLE : EDIT_SHAPE_UNAVAILABLE;
+    return { enabled: false, label, title };
+  }
   return { enabled: true, label, title: `${label}: clears the selection and reopens this step's shape as a live selection; applying it adds a new step` };
 }
 

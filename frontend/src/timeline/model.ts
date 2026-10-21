@@ -7,7 +7,10 @@ export const GAP = 8;
 export const PAD = 12;
 export const MARKER_W = 14;
 
-export type IconId = "box" | "polygon" | "cluster" | "filter" | "other" | "invalid";
+export type IconId = "box" | "polygon" | "cluster" | "filter" | "other" | "invalid" | "layer";
+
+/** The glyph on a step card. */
+export const STEP_GLYPH: Record<IconId, string> = { box: "▢", polygon: "⬠", cluster: "⁘", filter: "≡", invalid: "⊘", layer: "▤", other: "✂" };
 
 const TITLES: Record<string, string> = {
   box: "Box",
@@ -16,6 +19,7 @@ const TITLES: Record<string, string> = {
   filter: "Filter",
   selection: "Selection",
   invalid: "Remove invalid",
+  layer: "Layer edit",
 };
 export const toolTitle = (tool: string | undefined): string => (tool && TITLES[tool]) || "Selection";
 
@@ -26,6 +30,7 @@ export function iconFor(tool: string | undefined): IconId {
     case "cluster":
     case "filter":
     case "invalid":
+    case "layer":
       return tool;
     default:
       return "other";
@@ -42,14 +47,21 @@ export interface StepView {
   greyed: boolean;
   icon: IconId;
   tooltip: string;
+  /** False for a layer step a later layer step builds on (the server says so); deletion steps are always true. */
+  deletable: boolean;
 }
 
 const fmt = (n: number) => n.toLocaleString("en-US");
 
-export function stepTooltip(s: { tool: string; name: string | null; count: number; greyed: boolean }): string {
+export function stepTooltip(s: { tool: string; name: string | null; count: number; greyed: boolean; description?: string }): string {
+  const pts = `${fmt(s.count)} point${s.count === 1 ? "" : "s"}`;
+  if (s.tool === "layer") {
+    // the server's description often carries the count already: do not say it twice
+    const head = s.name ?? s.description ?? toolTitle(s.tool);
+    return `${head.includes(pts) ? head : `${head}, ${pts}`}${s.greyed ? " - rolled back" : ""}. Click to highlight; double-click the name to rename`;
+  }
   const head = s.name ?? toolTitle(s.tool);
   const verb = s.tool === "invalid" && !s.name ? head : `${head} delete`;
-  const pts = `${fmt(s.count)} point${s.count === 1 ? "" : "s"}`;
   return `${verb}, ${pts}${s.greyed ? " - rolled back" : ""}. Click to highlight; double-click the name to rename`;
 }
 
@@ -69,7 +81,8 @@ export function stepsOf(session: SessionState | null): StepView[] {
       count: e.count,
       greyed,
       icon: iconFor(tool),
-      tooltip: stepTooltip({ tool, name, count: e.count, greyed }),
+      tooltip: stepTooltip({ tool, name, count: e.count, greyed, description: e.description }),
+      deletable: e.deletable !== false,
     };
   });
 }
@@ -199,12 +212,20 @@ export function stripControlKey(key: string, where: "button" | "marker"): "delet
 
 // ---- confirmations
 
+/** The delete button of a step: layer steps that a later one builds on cannot be removed. */
+export const DELETE_BLOCKED_TEXT = "A later layer edit builds on this one; remove that one first";
+export const deleteState = (s: { deletable: boolean }): { enabled: boolean; title: string } =>
+  s.deletable ? { enabled: true, title: "Delete this step" } : { enabled: false, title: DELETE_BLOCKED_TEXT };
+
 export const discardCount = (session: SessionState | null): number =>
   session ? Math.max(0, session.history.entries.length - session.history.cursor) : 0;
 export const discardText = (n: number): string =>
   `Applying a new deletion discards the ${n} rolled-back step(s) after the marker (they cannot be redone). Continue?`;
 export const deleteStepText = (label: string, count: number): string =>
   `Remove step "${label}"? Its ${fmt(count)} points come back (or stay active if rolled back); later steps are kept. This cannot be undone. Continue?`;
+
+export const deleteLayerStepText = (label: string, count: number): string =>
+  `Remove step "${label}"? Its ${fmt(count)} points go back to their earlier layer; later steps are kept. This cannot be undone. Continue?`;
 
 // ---- view model
 
@@ -230,7 +251,7 @@ export function timelineView(session: SessionState | null, t: TimelineState): Ti
   return {
     hidden: session === null,
     empty: n === 0,
-    emptyText: "No deletions yet",
+    emptyText: "No steps yet",
     cards: steps.map((s) => ({ ...s, highlighted: t.highlight === s.sid, renaming: t.renaming === s.sid })),
     marker: { slot: cursor, max: n, now: cursor, valuetext, x: slotX(cursor) },
     trackWidth: PAD * 2 + n * PITCH - GAP,

@@ -33,3 +33,10 @@ test("UI-279 help lists the three timeline mouse rows and the key table has no t
     "polygon-close", "polygon-remove-vertex", "cancel", "apply", "undo", "redo", "box-nudge", "box-grow", "box-turn", "help",
   ]);
 });
+
+test("UI-934 the undo and redo texts say step, and the help row says deleted or moved", () => {
+  expect(KEY_DOCS.find((d) => d.id === "undo")?.label).toBe("Undo the last step");
+  expect(TOOLTIPS.undo).toBe("Undo the last step: a deletion or a layer edit (Ctrl+Z)");
+  expect(TOOLTIPS.redo).toBe("Redo the last undone step (Ctrl+Y)");
+  expect(MOUSE_DOCS.find((d) => d.keys === "Click a timeline step icon")?.label).toContain("that step deleted or moved");
+});

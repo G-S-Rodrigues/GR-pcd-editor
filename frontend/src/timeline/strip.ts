@@ -7,6 +7,8 @@ import { installTimelineStyle } from "./overlay";
 import {
   CARD_W,
   PAD,
+  STEP_GLYPH,
+  deleteState,
   PITCH,
   slotX,
   type CardView,
@@ -38,8 +40,6 @@ export interface TimelineActions {
   /** Edit shape: reopen the step's shape as a live selection (never changes the history). */
   editShape(sid: number): void;
 }
-
-const GLYPH: Record<string, string> = { box: "▢", polygon: "⬠", cluster: "⁘", filter: "≡", invalid: "⊘", other: "✂" };
 
 /**
  * The history strip under the viewport: one card per applied or rolled-back deletion, a marker between cards. It only
@@ -178,8 +178,13 @@ export function buildTimeline(root: HTMLElement, store: Store<AppState>, actions
       el.setAttribute("data-icon", c.icon);
       el.setAttribute("data-tool", c.tool);
       el.title = c.tooltip;
-      (el.querySelector(".step-icon") as HTMLElement).textContent = GLYPH[c.icon] ?? GLYPH.other;
+      (el.querySelector(".step-icon") as HTMLElement).textContent = STEP_GLYPH[c.icon] ?? STEP_GLYPH.other;
       (el.querySelector(".step-count") as HTMLElement).textContent = c.count.toLocaleString("en-US");
+      const del = el.querySelector('[data-act="delete"]') as HTMLButtonElement;
+      const d = deleteState(c);
+      del.disabled = !d.enabled;
+      del.title = d.title;
+      del.setAttribute("aria-label", d.title);
       patchLabel(el, c);
       if (c.highlighted && !c.renaming) {
         const entry = s.session?.history.entries.find((x) => (x.sid ?? x.index) === c.sid);

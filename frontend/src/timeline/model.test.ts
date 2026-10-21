@@ -15,7 +15,10 @@ import {
   dragStart,
   discardCount,
   discardText,
+  deleteLayerStepText,
   deleteStepText,
+  STEP_GLYPH,
+  deleteState,
   emptyTimeline,
   escapeKey,
   iconFor,
@@ -241,7 +244,7 @@ describe("view model and layer style", () => {
     expect(v.trackWidth).toBe(PAD * 2 + 3 * (CARD_W + GAP) - GAP);
     const e = timelineView(sess(0, []), emptyTimeline());
     expect(e.empty).toBe(true);
-    expect(e.emptyText).toBe("No deletions yet");
+    expect(e.emptyText).toBe("No steps yet"); // Part 19 (UI-933): layer edits are steps too
     expect(e.cards).toEqual([]);
     expect(timelineView(null, emptyTimeline()).hidden).toBe(true);
     expect(timelineView(sess(0), emptyTimeline()).marker.valuetext).toBe("Before the first step (3 steps rolled back)");
@@ -271,4 +274,66 @@ test("UI-280 reconcile with no session returns the very same empty state (the st
   const t = emptyTimeline();
   expect(reconcile(t, null)).toBe(t);
   expect(reconcile({ ...t, highlight: 2 }, null)).toEqual(emptyTimeline());
+});
+
+// ---- Part 19: layer edits are timeline steps (UI-928..937)
+const layerEntry = (i: number, count: number, extra: Partial<HistoryEntry> = {}): HistoryEntry => ({
+  index: i,
+  sid: i + 10,
+  kind: "layer",
+  tool: "layer",
+  name: null,
+  description: `New layer Floor, ${count.toLocaleString("en-US")} points`,
+  count,
+  shape: null,
+  deletable: true,
+  ...extra,
+});
+const layerSess = (entries: HistoryEntry[], cursor = entries.length) =>
+  sessionFixture({ history: { entries, cursor, can_undo: cursor > 0, can_redo: cursor < entries.length } });
+
+describe("layer steps", () => {
+  test("UI-928 iconFor layer is layer and the strip has its own glyph", () => {
+    expect(iconFor("layer")).toBe("layer");
+    expect(iconFor("selection")).toBe("other");
+    expect(STEP_GLYPH.layer).toBeTruthy();
+    expect(STEP_GLYPH.layer).not.toBe(STEP_GLYPH.other);
+  });
+
+  test("UI-929 an unnamed layer step reads Layer edit N with the server description in its tooltip", () => {
+    const v = stepsOf(layerSess([entry(0, "box", 5), layerEntry(1, 1234)], 1))[1];
+    expect(v.label).toBe("Layer edit 2");
+    expect(v.icon).toBe("layer");
+    expect(v.tooltip).toBe("New layer Floor, 1,234 points - rolled back. Click to highlight; double-click the name to rename");
+    // a description without the count gets it appended
+    const w = stepsOf(layerSess([layerEntry(0, 3, { description: "Floor set to the selection: 2 in, 1 out" })]))[0];
+    expect(w.tooltip).toBe("Floor set to the selection: 2 in, 1 out, 3 points. Click to highlight; double-click the name to rename");
+  });
+
+  test("UI-930 a named layer step uses its name; deletion tooltips are unchanged", () => {
+    const v = stepsOf(layerSess([layerEntry(0, 1, { name: "Mine" })]))[0];
+    expect(v.label).toBe("Mine");
+    expect(v.tooltip).toBe("Mine, 1 point. Click to highlight; double-click the name to rename");
+    expect(stepTooltip({ tool: "box", name: null, count: 2, greyed: false })).toBe(
+      "Box delete, 2 points. Click to highlight; double-click the name to rename",
+    );
+  });
+
+  test("UI-931 deleteLayerStepText is exact", () => {
+    expect(deleteLayerStepText("Layer edit 2", 1234)).toBe(
+      'Remove step "Layer edit 2"? Its 1,234 points go back to their earlier layer; later steps are kept. This cannot be undone. Continue?',
+    );
+  });
+
+  test("UI-932 a step that is not deletable disables delete with the reason; a missing flag reads as deletable", () => {
+    const [a, b, c] = stepsOf(layerSess([layerEntry(0, 1, { deletable: false }), layerEntry(1, 1), entry(2, "box", 1)]));
+    expect(a.deletable).toBe(false);
+    expect(b.deletable).toBe(true);
+    expect(c.deletable).toBe(true); // UI-937: a deletion row has no deletable key
+    expect(deleteState(a)).toEqual({
+      enabled: false,
+      title: "A later layer edit builds on this one; remove that one first",
+    });
+    expect(deleteState(b)).toEqual({ enabled: true, title: "Delete this step" });
+  });
 });

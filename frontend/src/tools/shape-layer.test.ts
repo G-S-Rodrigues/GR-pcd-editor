@@ -12,3 +12,9 @@ test("UI-865 a selection step with no shape says it was selected from a layer, n
   expect(editShapeState(e({ tool: "box", shape: null }) as never, 1).title).toBe(EDIT_SHAPE_UNAVAILABLE);
   expect(editShapeState(e({ shape: null }) as never, 1).title).toBe(EDIT_SHAPE_UNAVAILABLE);
 });
+
+test("UI-935 Edit shape on a layer step is disabled with its own title", () => {
+  const s = editShapeState(e({ tool: "layer", shape: null }) as never, 1);
+  expect(s.enabled).toBe(false);
+  expect(s.title).toBe("A layer edit has no shape to edit");
+});

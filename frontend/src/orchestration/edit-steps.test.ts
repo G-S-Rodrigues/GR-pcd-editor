@@ -297,3 +297,60 @@ describe("serialised history gestures", () => {
     expect(now.history.entries.map((e) => e.name)).toEqual([null, "Mirror", null]);
   });
 });
+
+describe("layer steps in the editor (Part 19)", () => {
+  const layerHist = (deletable: boolean[], cursor = deletable.length) => ({
+    entries: deletable.map(
+      (d, i): HistoryEntry => ({
+        index: i,
+        sid: i + 10,
+        tool: "layer",
+        name: null,
+        kind: "layer",
+        description: "New layer Floor, 5 points",
+        count: 5,
+        shape: null,
+        deletable: d,
+      }),
+    ),
+    cursor,
+    can_undo: cursor > 0,
+    can_redo: cursor < deletable.length,
+  });
+  const mk = (deletable: boolean[]) => {
+    const t = setup();
+    t.store.set({ session: sessionFixture({ history: layerHist(deletable) }) });
+    return t;
+  };
+
+  it("UI-931 deleteStep on a layer step asks the layer text", async () => {
+    const t = mk([true]);
+    await t.ed.deleteStep(10);
+    expect(t.confirm).toHaveBeenCalledWith(
+      'Remove step "Layer edit 1"? Its 5 points go back to their earlier layer; later steps are kept. This cannot be undone. Continue?',
+    );
+    expect(t.api.deleteStep).toHaveBeenCalledWith(3, 10);
+  });
+
+  it("UI-932 a step that is not deletable sends nothing and posts an info notice", async () => {
+    const t = mk([false, true]);
+    await t.ed.deleteStep(10);
+    expect(t.confirm).not.toHaveBeenCalled();
+    expect(t.api.deleteStep).not.toHaveBeenCalled();
+    const n = t.store.get().notices.find((x) => x.code === "step_not_deletable");
+    expect(n?.level).toBe("info");
+    expect(n?.text).toBe("A later layer edit builds on this one; remove that one first");
+  });
+
+  it("UI-936 a 422 step_has_dependents becomes a notice with the server message and the strip is unchanged", async () => {
+    const t = mk([true, true]);
+    t.api.deleteStep.mockRejectedValueOnce(new ApiError(422, "step_has_dependents", "a later step changes the same points"));
+    const before = t.store.get().session;
+    await t.ed.deleteStep(10);
+    const n = t.store.get().notices.find((x) => x.code === "step_has_dependents");
+    expect(n?.text).toBe("a later step changes the same points");
+    expect(n?.level).toBe("warn");
+    expect(t.store.get().session).toBe(before);
+    expect(t.store.get().notices.map((x) => x.code)).not.toContain("edit_failed");
+  });
+});

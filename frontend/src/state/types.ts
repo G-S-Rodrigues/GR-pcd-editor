@@ -75,7 +75,7 @@ export interface HistoryEntry {
   count: number;
   /** Stable step id (survives delete and reorder); absent only in old fixtures. */
   sid?: number;
-  /** box | polygon | cluster | filter | selection | invalid. */
+  /** box | polygon | cluster | filter | selection | invalid | layer (a layer edit, Part 19). */
   tool?: string;
   /** The user's name for the step, null when unnamed. */
   name?: string | null;
@@ -83,6 +83,8 @@ export interface HistoryEntry {
   shape?: StepShape | null;
   /** Exact min/max of the step's points; null when it has no finite point. */
   bounds?: Bounds | null;
+  /** Layer steps only: false while a later layer step builds on this one (it cannot be removed). Missing reads as true. */
+  deletable?: boolean;
 }
 
 /** A step's shape as the server stores it (the file frame, the same numbers the tool request carried). */
