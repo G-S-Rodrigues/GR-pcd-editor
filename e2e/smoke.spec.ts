@@ -5704,7 +5704,9 @@ test("E2E-182 19 One file per layer: one download per layer, each equal to fixtu
   await expect(page.locator("#export-summary")).toContainText("Exports 3 files, one per chosen layer");
   await t.ctl("export-go").click();
   await expect.poll(() => got.length, { timeout: 30000 }).toBe(3);
-  expect(got.map((g) => g.name)).toEqual(["room_main_cleaned.pcd", "room_Floor_cleaned.pcd", "room_Wall_cleaned.pcd"]);
+  // the browser fires the three download events in no fixed order: match each file by its name
+  expect(got.map((g) => g.name).sort()).toEqual(["room_Floor_cleaned.pcd", "room_Wall_cleaned.pcd", "room_main_cleaned.pcd"]);
+  const file = (name: string) => got.find((g) => g.name === name)!.path;
   const all = parsePcd(roomPcd()).rows;
   const floor = all.filter((r) => r.every(Number.isFinite) && inBand(r));
   const wall = all.filter((r) => r.every(Number.isFinite) && inBox(r, WALL18.c, WALL18.d) && !inBand(r));
@@ -5712,9 +5714,9 @@ test("E2E-182 19 One file per layer: one download per layer, each equal to fixtu
   const main = all.filter((r) => !inLayer.has(rowId(r)));
   const keys = (rows: number[][]) => rows.map(rowId).sort();
   await expect.poll(() => got.every((g) => existsSync(g.path)), { timeout: 15000 }).toBe(true);
-  expect(keys(parsePcd(readFileSync(got[0].path)).rows)).toEqual(keys(main));
-  expect(keys(parsePcd(readFileSync(got[1].path)).rows)).toEqual(keys(floor));
-  expect(keys(parsePcd(readFileSync(got[2].path)).rows)).toEqual(keys(wall));
+  expect(keys(parsePcd(readFileSync(file("room_main_cleaned.pcd"))).rows)).toEqual(keys(main));
+  expect(keys(parsePcd(readFileSync(file("room_Floor_cleaned.pcd"))).rows)).toEqual(keys(floor));
+  expect(keys(parsePcd(readFileSync(file("room_Wall_cleaned.pcd"))).rows)).toEqual(keys(wall));
   await expect(page.locator("#export-dialog")).toBeVisible();
   await expect(page.locator("[data-export-file]")).toHaveCount(3);
   await expect(page.locator("[data-export-file]").nth(1)).toHaveText(`room_Floor_cleaned.pcd (${floor.length})`);
