@@ -106,7 +106,8 @@ def _near_duplicates(
         token.check()
     if budget is not None:
         check_budget(
-            pairs * PAIR_BYTES,
+            min(pairs, max(PAIR_CHUNK_CAP, int(counts.max())))
+            * PAIR_BYTES,  # chunking bounds the peak
             budget,
             "the duplicate search",
             "Use a smaller distance, a region, or a coarser voxel grid.",

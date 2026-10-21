@@ -217,8 +217,12 @@ def test_thn_12_empty_and_single_point_select_nothing():
 
 def test_thn_15_many_small_chunks_equal_the_single_chunk_result(monkeypatch):
     rng = np.random.default_rng(15)
-    grid = rng.integers(0, 12, (900, 3)).astype(np.float64) * 0.01  # dense: many neighbours per row
-    blob = np.zeros((40, 3))  # one row alone holds more entries than the chunk limit
+    grid = (
+        rng.integers(0, 12, (900, 3)).astype(np.float64) * 0.01
+    )  # dense: many neighbours per row
+    blob = np.zeros(
+        (40, 3)
+    )  # one row alone holds more entries than the chunk limit
     xyz = np.vstack([grid, blob, grid[:200]])
     el = np.ones(len(xyz), bool)
     whole = [duplicate_mask(xyz, el, e) for e in (0.005, 0.015, 0.03)]
@@ -237,3 +241,30 @@ def test_thn_15_many_small_chunks_equal_the_single_chunk_result(monkeypatch):
         assert np.array_equal(got, want)
         assert len(cuts) > 10, cuts  # the full tree plus many chunk trees
         assert sum(cuts[1:]) == len(xyz)  # chunks tile the rows exactly once
+
+
+def test_thn_16_budget_charges_the_chunk_not_every_pair(monkeypatch):
+    g = np.arange(12) * 0.01
+    xyz = np.stack(np.meshgrid(g, g, g, indexing="ij"), axis=-1).reshape(
+        -1, 3
+    )  # 1728 points, ~100 near each
+    el = np.ones(len(xyz), bool)
+    eps = 0.03
+    want = duplicate_mask(xyz, el, eps)
+    tree = thin_module.cKDTree(xyz)
+    counts = tree.query_ball_point(
+        xyz, eps * (1.0 + thin_module.DEDUP_REL), return_length=True
+    )
+    pairs, row = int(counts.sum()), int(counts.max())
+    monkeypatch.setattr(thin_module, "PAIR_CHUNK_CAP", 5000)
+    charge = max(5000, row) * thin_module.PAIR_BYTES
+    assert (
+        pairs * thin_module.PAIR_BYTES > 4 * charge
+    )  # every-pair pricing would refuse this budget
+    got = duplicate_mask(xyz, el, eps, budget=2 * charge)
+    assert np.array_equal(got, want)
+    with pytest.raises(
+        PcdError
+    ) as ei:  # a budget under one chunk is still refused
+        duplicate_mask(xyz, el, eps, budget=charge // 2)
+    assert ei.value.code == "memory_budget_exceeded"
