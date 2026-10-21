@@ -143,8 +143,8 @@ def test_lay_33_a_v2_file_without_layers_is_refused(env, tmp_path):
     set_manifest(path, out4, lambda m: m.pop("layers"))
     rejects(tmp_path, out4)
     # a version nobody wrote stays unsupported
-    out3 = tmp_path / "v3.pcdsession"
-    set_manifest(path, out3, lambda m: m.update(version=3))
+    out3 = tmp_path / "v4.pcdsession"
+    set_manifest(path, out3, lambda m: m.update(version=4))
     rejects(tmp_path, out3, "unsupported_session_version")
 
 

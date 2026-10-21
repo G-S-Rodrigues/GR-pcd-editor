@@ -1,7 +1,9 @@
 """Session archive: a zip with the embedded source, selection and history.
 
 Layout (exactly these names): manifest.json, source.pcd, selection.bin
-(uint32 LE ids), history/<n>.bin (uint32 LE ids). Loading validates every
+(uint32 LE ids), history/<n>.bin (uint32 LE ids), and for a layer step
+(version 3) history/<n>.layer.bin (uint8 from values, then uint8 to values,
+one per id). Loading validates every
 entry name, declared size and the source hash before any state is built,
 and extracts only source.pcd, into the caller's destination.
 """
@@ -26,6 +28,7 @@ from gr_pcd.editing.history import (
     MAX_STEPS,
     TOOLS,
     HistoryEntry,
+    LayerRowChange,
     clean_name,
 )
 from gr_pcd.editing.layers import MAX_LAYERS, Layer, clean_layer_name
@@ -51,13 +54,14 @@ from gr_pcd.session.codec import (
 FORMAT = "gr-pcd-session"
 VERSION = 1
 LAYER_VERSION = 2  # written only when the session has layers
-ACCEPTED_VERSIONS = (VERSION, LAYER_VERSION)
+LAYER_STEP_VERSION = 3  # written only when the history holds a layer step
+ACCEPTED_VERSIONS = (VERSION, LAYER_VERSION, LAYER_STEP_VERSION)
 MAX_ENTRIES = 100_000
 MAX_MANIFEST = 16 * 1024 * 1024
 MAX_CLIENT_STATE = 1024 * 1024
 _OLD_TOOL = re.compile(r"\((box|polygon|prism|cluster|filter|selection)\)\s*$")
 _NAME = re.compile(
-    r"(manifest\.json|source\.pcd|selection\.bin|layers\.bin|history/(0|[1-9][0-9]*)\.bin)"
+    r"(manifest\.json|source\.pcd|selection\.bin|layers\.bin|history/(0|[1-9][0-9]*)\.(layer\.)?bin)"
 )
 
 
@@ -96,6 +100,20 @@ def _ids_bytes(ids: np.ndarray) -> bytes:
     return np.asarray(ids, dtype="<u4").tobytes()
 
 
+def _layer_entry_keys(i: int, e: HistoryEntry) -> dict:
+    return {
+        "layer_file": f"history/{i}.layer.bin",
+        "rows": [
+            {
+                "index": r.index,
+                "created": r.created,
+                "item": _layer_item(r.layer),
+            }
+            for r in e.rows
+        ],
+    }
+
+
 def save_archive(session, path: Path, token) -> dict:
     path = Path(path)
     with session.lock:
@@ -110,13 +128,20 @@ def save_archive(session, path: Path, token) -> dict:
         layer, layers = session.layer, list(session.layers)
     cloud = session.cloud
     has_layers = bool(layers) and layer is not None
+    has_layer_steps = any(e.kind == "layer" for e in entries)
     layer_bytes = (
         np.asarray(layer, dtype=np.uint8).tobytes() if has_layers else b""
     )
     sel_ids = np.flatnonzero(selection & active & session.valid)
     manifest = {
         "format": FORMAT,
-        "version": LAYER_VERSION if has_layers else VERSION,
+        "version": (
+            LAYER_STEP_VERSION
+            if has_layer_steps
+            else LAYER_VERSION
+            if has_layers
+            else VERSION
+        ),
         "source": {
             "filename": session.filename,
             "sha256": cloud.sha256,
@@ -149,6 +174,7 @@ def save_archive(session, path: Path, token) -> dict:
                     "name": e.name,
                     # additive and optional: older builds ignore the key
                     **({} if e.shape is None else {"shape": e.shape}),
+                    **(_layer_entry_keys(i, e) if e.kind == "layer" else {}),
                 }
                 for i, e in enumerate(entries)
             ],
@@ -197,6 +223,12 @@ def save_archive(session, path: Path, token) -> dict:
                 for i, e in enumerate(entries):
                     token.check()
                     zf.writestr(f"history/{i}.bin", _ids_bytes(e.ids))
+                    if e.kind == "layer":
+                        zf.writestr(
+                            f"history/{i}.layer.bin",
+                            np.asarray(e.frm, dtype=np.uint8).tobytes()
+                            + np.asarray(e.to, dtype=np.uint8).tobytes(),
+                        )
             fh.flush()
             os.fsync(fh.fileno())
         token.check()
@@ -438,6 +470,7 @@ def _load_open(zf, dest_source, budget, max_source_bytes) -> LoadedArchive:
         validate_protection(protection)
         version = manifest["version"]
         lay_meta = _layer_manifest(manifest, version, by_name)
+        layer_rows = _layer_steps_meta(hist_entries, version)
         ops = list(sel.get("ops", []))
         points = int(src["points"])
         filename = str(src["filename"])
@@ -460,9 +493,12 @@ def _load_open(zf, dest_source, budget, max_source_bytes) -> LoadedArchive:
     if not (0 <= cursor <= len(hist_entries)) or not (0 <= points < 2**32):
         raise _bad("invalid manifest values")
     expected_files = [f"history/{i}.bin" for i in range(len(hist_entries))]
-    if files != expected_files or {
-        n for n in by_name if n.startswith("history/")
-    } != set(expected_files):
+    expected_layer_files = {f"history/{i}.layer.bin" for i in layer_rows}
+    if (
+        files != expected_files
+        or {n for n in by_name if n.startswith("history/")}
+        != set(expected_files) | expected_layer_files
+    ):
         raise _bad("history entries do not match the manifest")
 
     sinfo = by_name["source.pcd"]
@@ -510,12 +546,32 @@ def _load_open(zf, dest_source, budget, max_source_bytes) -> LoadedArchive:
         if i == cursor:
             at_cursor = scratch.copy()
         ids = _read_ids(zf, by_name[fname], cloud.n)
+        if i in layer_rows:
+            frm, to = _read_diff(
+                zf, by_name[f"history/{i}.layer.bin"], len(ids)
+            )
+            entries.append(
+                HistoryEntry(
+                    kind,
+                    description,
+                    ids,
+                    sid,
+                    tool,
+                    name,
+                    shape,
+                    frm,
+                    to,
+                    layer_rows[i],
+                )
+            )
+            continue
         if not scratch[ids].all():
             raise _bad(f"history entry {i} deletes a point twice")
         scratch[ids] = False
         entries.append(
             HistoryEntry(kind, description, ids, sid, tool, name, shape)
         )
+    _check_layer_replay(entries, cursor, layer_arr, layer_list, cloud.n)
     if cursor == len(hist_entries):
         at_cursor = scratch
     selection = np.zeros(cloud.n, dtype=bool)
@@ -565,13 +621,16 @@ def _layer_manifest(manifest: dict, version: int, by_name: dict):
             raise _bad("a version 1 archive cannot carry layers")
         return None
     if not has_key and not has_file:
+        if version == LAYER_STEP_VERSION:
+            # every layer was removed by a later step; the steps stay undoable
+            return None
         # no layers at all: not a file this build writes (SES-25 pins this)
         raise _bad(
             f"unsupported session version {version}",
             "unsupported_session_version",
         )
     if not (has_key and has_file):
-        raise _bad("a version 2 archive needs its layers")
+        raise _bad(f"a version {version} archive needs its layers")
     block = manifest["layers"]
     if not isinstance(block, dict) or block.get("file") != "layers.bin":
         raise _bad("invalid layers block")
@@ -582,31 +641,130 @@ def _layer_manifest(manifest: dict, version: int, by_name: dict):
         raise _bad("invalid layer count")
     out, seen = [], set()
     for it in items:
-        if not isinstance(it, dict):
-            raise _bad("invalid layer")
-        lid, name, colour, vis = (
-            it.get("id"),
-            it.get("name"),
-            it.get("colour"),
-            it.get("visible"),
-        )
-        if type(lid) is not int or not 1 <= lid <= 255 or lid in seen:
+        lay = _parse_item(it)
+        if lay.id in seen:
             raise _bad("invalid or duplicate layer id")
-        if type(colour) is not int or not 0 <= colour <= 15:
-            raise _bad("invalid layer colour")
-        if type(vis) is not bool:
-            raise _bad("invalid layer visibility")
-        try:
-            if not isinstance(name, str) or clean_layer_name(name) != name:
-                raise _bad("invalid layer name")
-        except EditError:
-            raise _bad("invalid layer name")
-        prot, lock = it.get("protected", False), it.get("locked", False)
-        if type(prot) is not bool or type(lock) is not bool:
-            raise _bad("invalid layer flag")
-        seen.add(lid)
-        out.append(Layer(lid, name, colour, vis, prot, lock))
+        seen.add(lay.id)
+        out.append(lay)
     return sha, out
+
+
+def _parse_item(it) -> Layer:
+    """One validated layer item (the layers block and a step's rows)."""
+    if not isinstance(it, dict):
+        raise _bad("invalid layer")
+    lid, name, colour, vis = (
+        it.get("id"),
+        it.get("name"),
+        it.get("colour"),
+        it.get("visible"),
+    )
+    if type(lid) is not int or not 1 <= lid <= 255:
+        raise _bad("invalid or duplicate layer id")
+    if type(colour) is not int or not 0 <= colour <= 15:
+        raise _bad("invalid layer colour")
+    if type(vis) is not bool:
+        raise _bad("invalid layer visibility")
+    try:
+        if not isinstance(name, str) or clean_layer_name(name) != name:
+            raise _bad("invalid layer name")
+    except EditError:
+        raise _bad("invalid layer name")
+    prot, lock = it.get("protected", False), it.get("locked", False)
+    if type(prot) is not bool or type(lock) is not bool:
+        raise _bad("invalid layer flag")
+    return Layer(lid, name, colour, vis, prot, lock)
+
+
+def _layer_steps_meta(hist_entries: list, version: int) -> dict:
+    """Layer steps of the manifest: {index: rows}. Kind layer holds exactly
+    when tool is layer, and only in a version 3 file."""
+    out: dict = {}
+    for i, e in enumerate(hist_entries):
+        is_layer = e.get("kind") == "layer"
+        if is_layer != (e.get("tool") == "layer"):
+            raise _bad("a layer step has kind and tool layer")
+        if not is_layer:
+            continue
+        if version != LAYER_STEP_VERSION:
+            raise _bad("a layer step needs a version 3 archive")
+        if "sid" not in e:
+            raise _bad("a layer step needs its step id")
+        if e.get("layer_file") != f"history/{i}.layer.bin":
+            raise _bad("invalid layer step file")
+        raw = e.get("rows")
+        if not isinstance(raw, list) or len(raw) > 2 * MAX_LAYERS:
+            raise _bad("invalid layer step rows")
+        rows = []
+        for r in raw:
+            if not isinstance(r, dict):
+                raise _bad("invalid layer step row")
+            index, created = r.get("index"), r.get("created")
+            if type(index) is not int or not 0 <= index <= MAX_LAYERS:
+                raise _bad("invalid layer step row index")
+            if type(created) is not bool:
+                raise _bad("invalid layer step row")
+            rows.append(
+                LayerRowChange(index, _parse_item(r.get("item")), created)
+            )
+        out[i] = tuple(rows)
+    if version == LAYER_STEP_VERSION and not out:
+        # no file this build writes (the SES-25 / LAY-33 precedent)
+        raise _bad(
+            f"unsupported session version {version}",
+            "unsupported_session_version",
+        )
+    return out
+
+
+def _read_diff(zf, info, count: int):
+    if info.file_size != 2 * count:
+        raise _bad(f"{info.filename}: bad length")
+    raw = np.frombuffer(_read_all(zf, info, info.file_size), dtype=np.uint8)
+    frm, to = raw[:count].copy(), raw[count:].copy()
+    if (frm == to).any():
+        raise _bad(f"{info.filename}: a point does not change layer")
+    return frm, to
+
+
+def _check_layer_replay(entries, cursor, layer_arr, layer_list, n: int) -> None:
+    """Walk back over the applied layer steps from the stored state, then
+    forward over every step: each must find what it recorded."""
+    steps = [e for e in entries if e.kind == "layer"]
+    if not steps:
+        return
+    n_applied = sum(1 for e in entries[:cursor] if e.kind == "layer")
+    cur = np.zeros(n, dtype=np.uint8) if layer_arr is None else layer_arr.copy()
+    rows = {x.id for x in (layer_list or [])}
+
+    def check_ids(values, what: str) -> None:
+        bad = set(np.unique(values).tolist()) - rows - {0}
+        if bad:
+            raise _bad(f"{what} names a layer that does not exist")
+
+    def flip(e, back: bool) -> None:
+        want, put = (e.to, e.frm) if back else (e.frm, e.to)
+        if not np.array_equal(cur[e.ids], want):
+            raise _bad(f"layer step {e.sid} does not match the stored layers")
+        cur[e.ids] = put
+        for r in reversed(e.rows) if back else e.rows:
+            present = r.layer.id in rows
+            if (r.created == back) != present:
+                raise _bad(f"layer step {e.sid} does not match the layer rows")
+            if (r.created and not back) or (not r.created and back):
+                rows.add(r.layer.id)
+            else:
+                rows.discard(r.layer.id)
+            if len(rows) > MAX_LAYERS:
+                raise _bad("too many layers")
+        check_ids(put, f"layer step {e.sid}")
+
+    for e in reversed(steps[:n_applied]):
+        flip(e, True)
+    if n:
+        check_ids(np.unique(cur), "the layers before the first step")
+    for e in steps:
+        flip(e, False)
 
 
 def _read_layers(zf, by_name, meta, n: int):
