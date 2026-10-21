@@ -8,6 +8,7 @@ import math
 import numpy as np
 import pytest
 
+import gr_pcd.editing.thin as thin_module
 from gr_pcd.editing.cancel import Cancelled, CancelToken
 from gr_pcd.editing.errors import EditError
 from gr_pcd.editing.sparse import neighbourhood_counts
@@ -212,3 +213,27 @@ def test_thn_12_empty_and_single_point_select_nothing():
         assert not duplicate_mask(xyz, el, 0.0).any()
         assert not duplicate_mask(xyz, el, 0.1).any()
         assert not voxel_mask(xyz, el, 0.1).any()
+
+
+def test_thn_15_many_small_chunks_equal_the_single_chunk_result(monkeypatch):
+    rng = np.random.default_rng(15)
+    grid = rng.integers(0, 12, (900, 3)).astype(np.float64) * 0.01  # dense: many neighbours per row
+    blob = np.zeros((40, 3))  # one row alone holds more entries than the chunk limit
+    xyz = np.vstack([grid, blob, grid[:200]])
+    el = np.ones(len(xyz), bool)
+    whole = [duplicate_mask(xyz, el, e) for e in (0.005, 0.015, 0.03)]
+    cuts = []
+    real = thin_module.cKDTree
+
+    def counting(data, *a, **k):
+        cuts.append(len(data))
+        return real(data, *a, **k)
+
+    monkeypatch.setattr(thin_module, "PAIR_CHUNK_CAP", 50)
+    monkeypatch.setattr(thin_module, "cKDTree", counting)
+    for eps, want in zip((0.005, 0.015, 0.03), whole, strict=True):
+        cuts.clear()
+        got = duplicate_mask(xyz, el, eps)
+        assert np.array_equal(got, want)
+        assert len(cuts) > 10, cuts  # the full tree plus many chunk trees
+        assert sum(cuts[1:]) == len(xyz)  # chunks tile the rows exactly once
