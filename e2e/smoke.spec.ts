@@ -4572,6 +4572,224 @@ test("E2E-105 14 Esc during a body drag and during an arrow drag restores the bo
   await t.exact("Selected", String(finiteRows().filter((r) => inBox(r, b0.c, b0.d)).length));
 });
 
+// ---- Part 14b real-mouse ring tests against an independent rotation oracle
+type V3 = number[];
+const q14Mul = (a: number[], b: number[]) => [
+  a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
+  a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+  a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
+  a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2],
+];
+const q14Inv = (q: number[]) => [-q[0], -q[1], -q[2], q[3]];
+const q14Rot = (q: number[], v: V3): V3 => {
+  const t = q14Mul(q14Mul(q, [v[0], v[1], v[2], 0]), q14Inv(q));
+  return [t[0], t[1], t[2]];
+};
+const v14Dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const v14Cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const v14Norm = (a: V3): V3 => {
+  const l = Math.hypot(a[0], a[1], a[2]);
+  return [a[0] / l, a[1] / l, a[2] / l];
+};
+const wrapPi = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+/** ViewCube corner view: press 1 (top), then click the top-front-right corner; waits for the animated ortho camera to settle. */
+const cornerView = async (page: Pg) => {
+  await lookFrom(page, "top");
+  await page.locator('[data-control="corner-top-front-right"]').click();
+  let prev = "";
+  await expect
+    .poll(async () => {
+      const cam = await hook(page, (e) => ({ o: e.state().camera.orientation, ortho: e.state().camera.ortho }));
+      const key = JSON.stringify(cam);
+      const same = key === prev;
+      prev = key;
+      return same;
+    }, { timeout: 8000, intervals: [150] })
+    .toBe(true);
+  const cam = await cameraOf(page);
+  const look = q14Rot(cam.orientation, [0, 0, -1]);
+  const want = v14Norm([-1, 1, -1]);
+  for (let i = 0; i < 3; i++) expect(look[i]).toBeCloseTo(want[i], 5);
+  await appIdle(page);
+};
+/**
+ * Turns the ring `id` by `deg` degrees with the real mouse and returns what an independent plane-angle oracle says the
+ * box rotation should be (axis n, angle). The oracle maps the ring plane to the screen with the app's projectWorld.
+ */
+const ringTurn = async (page: Pg, id: string, deg: number) => {
+  const b0 = await boxState(page);
+  const i = Number(id[7]);
+  const s = id[8] === "+" ? 1 : -1;
+  const n = q14Rot(b0.q, [i === 0 ? 1 : 0, i === 1 ? 1 : 0, i === 2 ? 1 : 0]);
+  const anchor = await stableHandle(page, id);
+  const ring = (await hook(page, (e) => e.boxRings())).find((r) => r.id === id)!;
+  // the ring centre lies on the arrow's shaft, outside the face
+  const rel = ring.centreWorld.map((v, k) => v - b0.c[k]);
+  expect(Math.hypot(...v14Cross(rel, n))).toBeLessThan(1e-9);
+  expect(s * v14Dot(rel, n)).toBeGreaterThan(b0.d[i] / 2);
+  const helper: V3 = Math.abs(n[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+  const u = v14Norm(v14Cross(helper, n));
+  const w = v14Cross(n, u);
+  const proj = (d: V3) => page.evaluate((c) => (window as unknown as { __editor: EditorHook }).__editor.projectWorld(c), ring.centreWorld.map((v, k) => v + d[k]));
+  const S0 = (await proj([0, 0, 0]))!;
+  const su = (await proj(u))!;
+  const sw = (await proj(w))!;
+  const A = [[su.x - S0.x, sw.x - S0.x], [su.y - S0.y, sw.y - S0.y]];
+  const det = A[0][0] * A[1][1] - A[0][1] * A[1][0];
+  const toPlane = (p: { x: number; y: number }) => {
+    const dx = p.x - S0.x;
+    const dy = p.y - S0.y;
+    return [(A[1][1] * dx - A[0][1] * dy) / det, (-A[1][0] * dx + A[0][0] * dy) / det];
+  };
+  const toScreen = (a: number, b: number) => ({ x: Math.round(S0.x + A[0][0] * a + A[0][1] * b), y: Math.round(S0.y + A[1][0] * a + A[1][1] * b) });
+  const start = { x: Math.round(anchor.x), y: Math.round(anchor.y) };
+  const p0 = toPlane(start);
+  const r0 = Math.hypot(p0[0], p0[1]);
+  const ang0 = Math.atan2(p0[1], p0[0]);
+  const rad = (deg * Math.PI) / 180;
+  const at = (k: number, scale: number) => toScreen((Math.cos(ang0 + k * rad) * r0 * scale), (Math.sin(ang0 + k * rad) * r0 * scale));
+  const mid = at(0.5, 3);
+  const end = at(1, 5);
+  const pe = toPlane(end);
+  const oracle = wrapPi(Math.atan2(pe[1], pe[0]) - Math.atan2(p0[1], p0[0]));
+  await page.mouse.move(start.x, start.y);
+  await expect.poll(async () => hook(page, (e) => (e.state() as unknown as { boxHover: string | null }).boxHover)).toBe(id);
+  await page.mouse.down();
+  await page.mouse.move(mid.x, mid.y, { steps: 4 });
+  await page.mouse.move(end.x, end.y, { steps: 4 });
+  await page.mouse.up();
+  await appIdle(page);
+  return { n, oracle, b0, target: rad };
+};
+/** Rotation q_after * q_before^-1 as (axis component along n, perpendicular size, signed angle about n). */
+const deltaAbout = (before: number[], after: number[], n: V3) => {
+  let d = q14Mul(after, q14Inv(before));
+  if (d[3] < 0) d = d.map((v) => -v);
+  const v: V3 = [d[0], d[1], d[2]];
+  return { perp: Math.hypot(...v14Cross(v, n)), angle: 2 * Math.atan2(v14Dot(v, n), d[3]) };
+};
+
+const RING_TURNS: [string, number][] = [["rotate-0+", 25], ["rotate-0-", -20], ["rotate-1+", 30], ["rotate-1-", -15], ["rotate-2+", 20], ["rotate-2-", -25]];
+
+test("E2E-163 14b each of the six rings, dragged with the real mouse in the corner view, turns the box about that arrow's axis by exactly the angle an independent plane oracle gives", async ({ page }) => {
+  const t = await gizmoBox(page, "top");
+  await cornerView(page);
+  for (const [id, deg] of RING_TURNS) {
+    const r = await ringTurn(page, id, deg);
+    const a = await boxState(page);
+    const d = deltaAbout(r.b0.q, a.q, r.n);
+    expect(d.perp, `${id} axis`).toBeLessThan(1e-9);
+    expect(d.angle, `${id} angle`).toBeCloseTo(r.oracle, 6);
+    expect(Math.sign(d.angle), `${id} sign`).toBe(Math.sign(r.target));
+    expect(a.c, `${id} centre`).toEqual(r.b0.c);
+    expect(a.d, `${id} dims`).toEqual(r.b0.d);
+  }
+  const b = await boxState(page);
+  const rpy = rpyOf(b.q);
+  await t.exact("Selected", String(finiteRows().filter((r) => inTurnedBox(r, b.c, b.d, rpy)).length));
+  await t.ctl("box-reset-rotation").click();
+  const level = await boxState(page);
+  expect(level.q.map((v, i) => Math.abs(v - [0, 0, 0, 1][i])).every((v) => v < 1e-9)).toBe(true);
+  await t.exact("Selected", String(finiteRows().filter((r) => inBox(r, level.c, level.d)).length));
+});
+
+test("E2E-164 14b in the corner view on a turned box the arrows still resize one dimension, the body still moves it, and Ctrl+drag on a ring orbits", async ({ page }) => {
+  const t = await gizmoBox(page, "top");
+  await cornerView(page);
+  for (const id of ["rotate-0+", "rotate-1-", "rotate-2+"]) await ringTurn(page, id, 20);
+  const resizeCheck = async (id: string) => {
+    const i = Number(id[7]);
+    const s = id[8] === "+" ? 1 : -1;
+    const b0 = await boxState(page);
+    const n = q14Rot(b0.q, [i === 0 ? 1 : 0, i === 1 ? 1 : 0, i === 2 ? 1 : 0]);
+    const face = b0.c.map((v, k) => v + s * n[k] * (b0.d[i] / 2));
+    const opp = b0.c.map((v, k) => v - s * n[k] * (b0.d[i] / 2));
+    const h = await stableHandle(page, id);
+    const f = (await page.evaluate((c) => (window as unknown as { __editor: EditorHook }).__editor.projectWorld(c), face))!;
+    const len = Math.hypot(h.x - f.x, h.y - f.y);
+    const to = { x: h.x + ((h.x - f.x) / len) * 40, y: h.y + ((h.y - f.y) / len) * 40 };
+    await dragBetween(page, { x: Math.round(h.x), y: Math.round(h.y) }, { x: Math.round(to.x), y: Math.round(to.y) });
+    await appIdle(page);
+    const b = await boxState(page);
+    for (let k = 0; k < 3; k++) {
+      if (k === i) expect(b.d[k], id).toBeGreaterThan(b0.d[k] + 0.3);
+      else expect(b.d[k], id).toBe(b0.d[k]);
+    }
+    expect(b.q, id).toEqual(b0.q);
+    const opp1 = b.c.map((v, k) => v - s * n[k] * (b.d[i] / 2));
+    for (let k = 0; k < 3; k++) expect(opp1[k], id).toBeCloseTo(opp[k], 9);
+  };
+  for (const id of ["resize-0+", "resize-1-", "resize-2+"]) await resizeCheck(id);
+  // the body moves, size and rotation unchanged
+  const b1 = await boxState(page);
+  const p = await bodyPoint(page);
+  await dragBetween(page, p, { x: p.x + 40, y: p.y - 30 });
+  await appIdle(page);
+  const b2 = await boxState(page);
+  expect(Math.hypot(b2.c[0] - b1.c[0], b2.c[1] - b1.c[1], b2.c[2] - b1.c[2])).toBeGreaterThan(0.3);
+  expect(b2.d).toEqual(b1.d);
+  expect(b2.q).toEqual(b1.q);
+  // Ctrl+drag starting on a ring orbits: the box is untouched, the camera turns
+  const cam0 = await cameraOf(page);
+  const a = await stableHandle(page, "rotate-2+");
+  await page.keyboard.down("Control");
+  await dragBetween(page, { x: Math.round(a.x), y: Math.round(a.y) }, { x: Math.round(a.x) + 60, y: Math.round(a.y) + 30 });
+  await page.keyboard.up("Control");
+  expect(await boxState(page)).toEqual(b2);
+  expect((await cameraOf(page)).orientation).not.toEqual(cam0.orientation);
+  await t.exact("Selected", String(finiteRows().filter((r) => inTurnedBox(r, b2.c, b2.d, rpyOf(b2.q))).length));
+});
+
+test("E2E-165 14b Esc in the middle of a ring drag restores the box from before the drag", async ({ page }) => {
+  const t = await gizmoBox(page, "top");
+  await cornerView(page);
+  const b0 = await boxState(page);
+  const sel0 = await t.num("Selected");
+  const a = await stableHandle(page, "rotate-1+");
+  const c = (await hook(page, (e) => e.boxRings())).find((r) => r.id === "rotate-1+")!.centre!;
+  const [vx, vy] = [a.x - c.x, a.y - c.y];
+  const n = Math.hypot(vx, vy);
+  await page.mouse.move(Math.round(a.x), Math.round(a.y));
+  await page.mouse.down();
+  await page.mouse.move(Math.round(c.x - (vy / n) * 30 + (vx / n) * 10), Math.round(c.y + (vx / n) * 30 + (vy / n) * 10), { steps: 5 });
+  await page.mouse.move(Math.round(c.x - (vy / n) * 50 + (vx / n) * 20), Math.round(c.y + (vx / n) * 50 + (vy / n) * 20), { steps: 5 });
+  expect((await boxState(page)).q).not.toEqual(b0.q);
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  expect(await boxState(page)).toEqual(b0);
+  await appIdle(page);
+  expect(await t.num("Selected")).toBe(sel0);
+});
+
+test("E2E-166 14b a box turned by three ring drags deletes exactly the oracle count and its history step stores the turned shape, which Edit shape reopens", async ({ page }) => {
+  const t = await gizmoBox(page, "top");
+  await cornerView(page);
+  for (const [id, deg] of [["rotate-0+", 25], ["rotate-1+", 30], ["rotate-2-", -25]] as [string, number][]) await ringTurn(page, id, deg);
+  const b = await boxState(page);
+  const rpy = rpyOf(b.q);
+  const n = finiteRows().filter((r) => inTurnedBox(r, b.c, b.d, rpy)).length;
+  expect(n).toBeGreaterThan(0);
+  await t.exact("Selected", String(n));
+  const active0 = await t.num("Active");
+  await t.ctl("apply").click();
+  await t.exact("Active", String(active0 - n));
+  await appIdle(page);
+  const entries = await page.evaluate(() => (window as unknown as { __editor: { state: () => { session: { history: { entries: { shape: { center: number[]; dimensions: number[]; rpy_deg: number[] } | null }[] } } } } }).__editor.state().session.history.entries.map((e) => e.shape));
+  const shape = entries[entries.length - 1]!;
+  expect(shape.center).toEqual(b.c);
+  expect(shape.dimensions).toEqual(b.d);
+  shape.rpy_deg.forEach((v, k) => expect(Math.abs(v - rpy[k])).toBeLessThan(1e-9));
+  await page.locator("#timeline .step[data-step]").last().locator(".step-icon").click();
+  await t.ctl("step-edit-shape").click();
+  await expect(t.ctl("tool-box")).toHaveClass(/active/);
+  const re = await boxState(page);
+  const sign = Math.sign(re.q.reduce((acc, v, k) => acc + v * b.q[k], 0)) || 1;
+  re.q.forEach((v, k) => expect(Math.abs(sign * v - b.q[k])).toBeLessThan(1e-12));
+  const rr = rpyOf(re.q);
+  for (const [k, id] of ["box-roll", "box-pitch", "box-yaw"].entries()) expect(Math.abs(Number(await t.ctl(id).inputValue()) - rr[k])).toBeLessThan(0.01);
+  await t.exact("Selected", "0");
+});
+
 // ---- part 15a: Hide selected (client-side, view only)
 const FLOOR_BOX = { c: [9.5, 9.5, 0], d: [22, 22, 0.5] };
 const hideHelpers = (page: import("@playwright/test").Page) => {
