@@ -313,6 +313,7 @@ The box is an oriented volume with centre `c`, positive dimensions `(dx, dy, dz)
 - Support replacing, adding to and subtracting from the current selection.
 - Radius changes recompute the full component. Dense artefacts connected to real walls may be inseparable with this method; the preview must expose bridges rather than imply semantic recognition.
 - Long computations must be cancellable. A configurable warning threshold may pause a very large expansion, but a partial component must never be labelled complete or committed silently.
+- A Max points cap is exact: when the component is larger, exactly the Max points points nearest to the seed (hop count, then distance, then point index) are selected. A partial cluster is allowed and is always labelled "Stopped at limit N".
 
 ### 12. Selection, preview and deletion semantics
 

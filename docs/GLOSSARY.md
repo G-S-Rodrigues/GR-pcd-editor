@@ -73,3 +73,7 @@
 - **Hidden layer:** A layer whose visibility is off: its points are not drawn, picked or selected by any tool, and still
   count and export.
 - **Hidden points:** The points of hidden layers. Hide selected puts the selection in the layer named Hidden and hides it.
+- **Max points:** The cluster tool's exact cap: when the component is larger, the selection is the Max points points
+  nearest to the seed, ordered by (hop count, distance, point index). Empty means no limit.
+- **Show hidden:** Makes every hidden layer visible again and selects the members of the layer named Hidden, so Delete
+  works at once; a user layer hidden by its eye comes back visible and is not selected.

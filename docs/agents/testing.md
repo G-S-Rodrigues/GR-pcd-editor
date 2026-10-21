@@ -394,3 +394,26 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
   confirm, Edit layer with the steal confirm, export picker re-parsed with the independent reader, Undo restoring layer
   membership, eight-layer overlay sweep at 1280x720 and 1920x1080). `E2E-90` reads the layer Hidden. Run smoke with
   `bash scripts/smoke.sh npx playwright test --workers=1`.
+
+## Part 17 additions (cluster cap, panel and header polish)
+
+- Backend: `CLU-44..48` (exact cap oracle by brute-force pairwise distance on small clouds, ties by (hop, distance, index),
+  `invalid_max_points` for 0 and negative caps) and `API-100..102`. `CLU-47` has new bounds measured on the checks image
+  with 1.5x headroom: K=500 on the 331k room <= 0.25 s and 155 MiB (measured 0.10 to 0.15 s, 103 MiB); K=165k <= 11.4 s
+  and 400 MiB (measured 7.1 to 7.6 s, 260 MiB; the 4.5 s target was missed after one optimisation attempt); a 20k chain
+  with K=10k <= 11.7 s and 105 MiB (measured 7.8 s, 68 MiB). Peak RSS is read from `VmHWM` (`ru_maxrss` inherits the
+  pytest parent). The existing `CLU-22` and `CLU-40..43` thresholds are unchanged.
+- Frontend unit: `UI-872..893` (cluster block follows the pending preview, tool stays armed after Commit draft, why
+  Delete is off, Show hidden reselects, defaults 0.3 and 500, Scope row, filter boxes open collapsed, armed tool section
+  first, compact left panel in `leftpanel.test.ts` and `layerspanel.test.ts`).
+- Smoke `E2E-150..160`. `E2E-158` logs the left-panel content height (`LEFT-PANEL-CONTENT`) and does not assert a height
+  target: the target is pending an owner ruling. `E2E-160` writes `/out/part17-<w>x<h>-idle.png` and
+  `-cluster-armed.png` for owner review; keep them with `SMOKE_SHOTS_DIR=<dir> bash scripts/smoke.sh ...` and never
+  commit them.
+- Step-0 measurements at HEAD 73870ad (room open, no tool, no layers): `#toolbar` 45 px and `#viewbar` 51 px, one line
+  each; `#tools` content 385.7 px (369.7 like for like); stage 596.8 px at 720 and 956.8 px at 1080. After 17-10 the
+  `#tools` content is 345.4 px at both sizes; after 17-11 `#toolbar` is at most 33 px and `#viewbar` at most 29 px.
+- Changed existing tests (setup, selector, text or geometry only, nothing loosened): UI-62, UI-65, UI-202, UI-203,
+  UI-300, UI-400, UI-513, UI-666, UI-816, UI-831..838, UI-863, UI-864, UI-890; E2E-10, E2E-13, E2E-16, E2E-20, E2E-24,
+  E2E-25, E2E-30, E2E-35, E2E-35b, E2E-36, E2E-37, E2E-38, E2E-40, E2E-41, E2E-46, E2E-62, E2E-90, E2E-113..115,
+  E2E-121, E2E-143, E2E-146. `E2E-143` is a known flake that also fails at 73870ad (open item).
