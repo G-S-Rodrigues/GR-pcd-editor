@@ -512,7 +512,7 @@ test("UI-945 a layer reply's history appears in the strip without the editor's a
 });
 
 // ---- 22-1: layer actions that consume the selection disarm the tool (R22-1)
-function disarmSetup(o: { cursor?: number; confirm?: boolean; steal?: boolean; flush?: boolean; selectLayer?: () => void | Promise<boolean>; selectLayerOp?: () => Promise<boolean> } = {}) {
+function disarmSetup(o: { cursor?: number; confirm?: boolean; steal?: boolean; flush?: boolean; selectLayer?: () => void | Promise<boolean>; selectLayerOp?: () => Promise<boolean>; apply?: () => Promise<void> } = {}) {
   const store = createAppStore();
   const n = 3;
   store.set({
@@ -554,7 +554,7 @@ function disarmSetup(o: { cursor?: number; confirm?: boolean; steal?: boolean; f
     discardDraft: vi.fn(),
     openShape: async () => ({ ok: true as const }),
     selectLayerOp: o.selectLayerOp ?? (async () => true),
-    apply: async () => undefined,
+    apply: o.apply ?? (async () => undefined),
     flushProtection: async () => o.flush !== false,
   };
   return { store, api, confirm, toolAtHook, layers: createLayers(store, api as never, deps) };
@@ -593,18 +593,50 @@ test("UI-995 a refused or failed layer call keeps the tool armed", async () => {
   await keeps("refuse reason", noSel, (t) => t.layers.create("A"));
   await keeps("merge confirm No", disarmSetup({ confirm: false }), (t) => t.layers.merge(1, 2));
   await keeps("flushProtection false", disarmSetup({ flush: false }), (t) => t.layers.fromBand());
-  const assign409 = disarmSetup();
-  assign409.api.assignLayer.mockRejectedValueOnce(new ApiError(409, "stale_revision", "stale"));
-  await keeps("assign 409", assign409, (t) => t.layers.assign());
-  const locked = disarmSetup();
-  locked.api.assignLayer.mockRejectedValueOnce(new ApiError(422, "layer_locked", "locked"));
-  await keeps("assign 422 layer_locked", locked, (t) => t.layers.assign());
-  const big = disarmSetup();
-  big.api.createLayer.mockRejectedValueOnce(new ApiError(413, "memory_budget_exceeded", "too big"));
-  await keeps("create 413", big, (t) => t.layers.create("A"));
-  const hide409 = disarmSetup();
-  hide409.api.createLayer.mockRejectedValueOnce(new ApiError(409, "stale_revision", "stale"));
-  await keeps("hideSelected 409", hide409, (t) => t.layers.hideSelected());
+  // every consuming call x every failure the server can answer: the dry run (if any) lands, the real call is rejected
+  const calls: [string, keyof DisarmT["api"], (t: DisarmT) => Promise<void>][] = [
+    ["hideSelected", "createLayer", (t) => t.layers.hideSelected()],
+    ["create", "createLayer", (t) => t.layers.create("A")],
+    ["assign", "assignLayer", (t) => t.layers.assign()],
+    ["release", "assignLayer", (t) => t.layers.release()],
+    ["setMembers", "setMembers", (t) => t.layers.setMembers()],
+    ["fromBand", "layerFromProtection", (t) => t.layers.fromBand()],
+    ["merge", "mergeLayer", (t) => t.layers.merge(1, 2)],
+  ];
+  const failures: [number, string][] = [[409, "stale_revision"], [413, "memory_budget_exceeded"], [422, "layer_locked"]];
+  for (const [name, key, run] of calls) {
+    for (const [status, code] of failures) {
+      const t = disarmSetup();
+      let rejected = 0;
+      const fn = t.api[key] as unknown as ReturnType<typeof vi.fn>;
+      const ok = fn.getMockImplementation() as (...a: unknown[]) => Promise<unknown>;
+      fn.mockImplementation(async (...a: unknown[]) => {
+        if (a.some((x) => (x as { dry_run?: boolean } | undefined)?.dry_run === true)) return ok(...a);
+        rejected++;
+        throw new ApiError(status, code, code);
+      });
+      await run(t);
+      expect(rejected, `${name} ${status} reached the real call`).toBe(1);
+      expect(t.store.get().tool, `${name} ${status} ${code}`).toBe("box");
+      expect(t.toolAtHook, `${name} ${status} ${code}`).toEqual([]);
+    }
+  }
+});
+
+test("UI-995b a layer's Delete points keeps the tool when the Apply it runs is refused, and runs no Apply when the one-shot misses", async () => {
+  const refused = disarmSetup({ apply: vi.fn(async () => undefined) });
+  await refused.layers.deletePoints(1);
+  expect(refused.confirm).toHaveBeenCalledTimes(1);
+  expect(refused.store.get().tool).toBe("box");
+  const applySpy = vi.fn(async () => undefined);
+  const missed = disarmSetup({ selectLayerOp: async () => false, apply: applySpy });
+  await missed.layers.deletePoints(1);
+  expect(applySpy).not.toHaveBeenCalled();
+  expect(missed.store.get().tool).toBe("box");
+  const declined = disarmSetup({ confirm: false, apply: applySpy });
+  await declined.layers.deletePoints(1);
+  expect(applySpy).not.toHaveBeenCalled();
+  expect(declined.store.get().tool).toBe("box");
 });
 
 test("UI-996 layerOp and select disarm only when the one-shot lands", async () => {
