@@ -5,7 +5,7 @@ import { clusterPickState, pickText, pressPick } from "../tools/cluster/pick";
 import { setSeed } from "../tools/cluster/model";
 import { selectionDisabledReason } from "./selection";
 import { addVertex, closePolygon, emptyPolygon, setEditing, startDrawing } from "../tools/polygon/model";
-import { armTool, disarmed } from "./toolstate";
+import { armTool, disarmed, escTarget, type EscInput } from "./toolstate";
 
 const base = () => createAppStore().get();
 const seeded = () => {
@@ -89,4 +89,32 @@ test("UI-657 changing or disarming the tool leaves the polygon edit mode and kee
     expect(next.tools.polygon.editing).toBe(false);
     expect(next.tools.polygon.vertices).toHaveLength(3);
   }
+});
+
+test("UI-991 escTarget: what one Esc is for, most specific first; tool only when nothing else is pending", () => {
+  const none: EscInput = { field: false, dragging: false, overlay: false };
+  const armed = { ...base(), tool: "box" as const };
+  const withDraft = { ...armed, draft: true };
+  // a text field's own Escape wins over everything
+  const busy = {
+    ...withDraft,
+    interaction: "pick-seed" as const,
+    layerUi: { editing: 3, active: null },
+    tools: { ...armed.tools, polygon: startDrawing(emptyPolygon()) },
+  };
+  expect(escTarget(busy, { field: true, dragging: true, overlay: true })).toBeNull();
+  expect(escTarget(busy, { ...none, dragging: true, overlay: true })).toBe("drag");
+  expect(escTarget(busy, none)).toBe("polygon");
+  const editingPoly = setEditing(closePolygon({ ...startDrawing(emptyPolygon()), vertices: [[0, 0], [1, 0], [1, 1]] }).state, true);
+  expect(escTarget({ ...busy, tools: { ...armed.tools, polygon: editingPoly } }, none)).toBe("polygon");
+  for (const interaction of ["pick-seed", "pick-pivot", "pick-floor"] as const) {
+    expect(escTarget({ ...withDraft, interaction, layerUi: { editing: 3, active: null } }, { ...none, overlay: true })).toBe("pick");
+  }
+  expect(escTarget({ ...withDraft, layerUi: { editing: 3, active: null } }, { ...none, overlay: true })).toBe("layer");
+  expect(escTarget(withDraft, { ...none, overlay: true })).toBe("overlay");
+  expect(escTarget({ ...withDraft, timeline: { ...withDraft.timeline, highlight: 2 } }, none)).toBe("overlay");
+  expect(escTarget(withDraft, none)).toBe("draft");
+  expect(escTarget({ ...armed, preview: {} as never }, none)).toBe("draft");
+  expect(escTarget(armed, none)).toBe("tool");
+  expect(escTarget(base(), none)).toBeNull();
 });
