@@ -7,6 +7,8 @@ import { createAppStore, type AppState } from "../state/app";
 import type { Vec3 } from "../state/types";
 import { BACKDROPS, INDEX_HTML, SURFACES, blockAfter, declsOf, HEADS, onSurface, parseBlocks, parseColour, raw, solid, surface, type Theme } from "../testing/tokens";
 import { sessionFixture } from "../testing/fixtures";
+import { timelineCss } from "../timeline/overlay";
+import { cubeNavCss } from "./cube-arrows";
 import { boxOverlaySpec } from "../tools/box/overlay";
 import { type BoxModel, defaultBox, rpyToQuat } from "../tools/box/model";
 import { AXIS_COLOUR as TRIAD_AXIS } from "./triad";
@@ -143,5 +145,85 @@ describe("design tokens (part 22-4)", () => {
     }
     expect(arrows).toBeGreaterThan(10);
     expect(rings).toBeGreaterThan(10);
+  });
+});
+
+/** index.html's <style> text with the comments cut out. */
+const styleText = (): string => (INDEX_HTML.match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? "").replace(/\/\*[\s\S]*?\*\//g, "");
+interface Rule {
+  selector: string;
+  body: string;
+}
+/** Every `selector { body }` pair, at-rules flattened (their preludes are dropped). */
+const rules = (css: string): Rule[] => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({ selector: m[1].trim(), body: m[2] }));
+
+describe("stylesheet rules (part 22-4)", () => {
+  test("UI-1086 no colour literal outside the token blocks except the allow-list, and no var() that is never declared", () => {
+    const blocks = parseBlocks();
+    let rest = styleText();
+    for (const head of [HEADS.root, HEADS.media, HEADS.attr]) rest = rest.replace(blockAfter(rest, head), "");
+    const allowed: RegExp[] = [/dialog::backdrop/, /\.cube-face\b/, /\.ramp-bar\b/];
+    const literal = /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/;
+    const offenders = rules(rest)
+      .filter((r) => literal.test(r.body) && !allowed.some((a) => a.test(r.selector)))
+      .map((r) => `${r.selector} { ${r.body.trim()} }`);
+    expect(offenders).toEqual([]);
+    const declared = new Set([...Object.keys(blocks.root), ...Object.keys(blocks.media), ...Object.keys(declsOf(styleText()))]);
+    const sources: Record<string, string> = { "index.html": styleText(), timelineCss: timelineCss(), cubeNavCss: cubeNavCss() };
+    for (const [file, text] of Object.entries(sources)) {
+      for (const m of text.matchAll(/var\(--([a-z0-9-]+)/g)) expect(declared.has(m[1]), `${file} uses var(--${m[1]}), which no block declares`).toBe(true);
+      // a literal fallback inside var() would hide a missing token
+      expect(text, file).not.toMatch(/var\(--[a-z0-9-]+\s*,\s*#/);
+    }
+  });
+
+  test("UI-1087 one :focus-visible rule draws a 3px --focus outline; nothing else draws an outline except the locked-chip marker, and none sets outline none", () => {
+    const all = rules(styleText());
+    const focus = all.filter((r) => /:focus-visible/.test(r.selector));
+    expect(focus.map((r) => r.selector)).toEqual([":focus-visible"]);
+    expect(focus[0].body).toMatch(/outline:\s*3px solid var\(--focus\)/);
+    const others = all.filter((r) => !/:focus-visible/.test(r.selector) && /(^|[;\s])outline(-style|-width)?\s*:/.test(r.body));
+    expect(others.map((r) => r.selector)).toEqual([".layer-row .chip.locked"]);
+    expect(others[0].body).toMatch(/1px dashed var\(--label\)/);
+    for (const r of all) expect(r.body, r.selector).not.toMatch(/outline(-style)?\s*:\s*(none|0)\b/);
+  });
+
+  test("UI-1088 every transition lasts 120-250 ms and the reduced-motion block turns transitions and animations off for everything", () => {
+    const css = styleText();
+    const root = parseBlocks().root;
+    let n = 0;
+    for (const m of css.matchAll(/transition\s*:\s*([^;}]+)/g)) {
+      if (/^\s*none\b/.test(m[1])) continue; // the reduced-motion switch-off
+      const value = m[1].replace(/var\(--([a-z0-9-]+)\)/g, (_, name: string) => root[name] ?? "NaN");
+      const times = [...value.matchAll(/(\d*\.?\d+)(ms|s)\b/g)].map((t) => (t[2] === "s" ? Number(t[1]) * 1000 : Number(t[1])));
+      expect(times.length, m[0]).toBeGreaterThan(0);
+      for (const t of times) {
+        expect(t, m[0]).toBeGreaterThanOrEqual(120);
+        expect(t, m[0]).toBeLessThanOrEqual(250);
+      }
+      n++;
+    }
+    expect(n).toBeGreaterThan(1);
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\*, \*::before, \*::after\s*\{[^}]*transition:\s*none[^}]*animation:\s*none/);
+  });
+
+  test("UI-1089 the font stack, the type tokens and tabular numerals on the count selectors; no remote font", () => {
+    const { root } = parseBlocks();
+    expect(root.font).toBe('-apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif');
+    expect(root["t-title"]).toBe("600 15px/20px var(--font)");
+    expect(root["t-headline"]).toBe("600 13px/18px var(--font)");
+    expect(root["t-body"]).toBe("400 13px/18px var(--font)");
+    expect(root["t-callout"]).toBe("400 12px/16px var(--font)");
+    expect(root["t-caption"]).toBe("500 11px/14px var(--font)");
+    expect(root["t-section"]).toBe("600 11px/14px var(--font)");
+    expect(root["t-sheet"]).toBe("700 17px/22px var(--font)");
+    expect(INDEX_HTML).not.toMatch(/@import|@font-face|https?:\/\/|<link[^>]+stylesheet/);
+    const all = rules(styleText());
+    const tabular = all.filter((r) => /font-variant-numeric:\s*tabular-nums/.test(r.body)).map((r) => r.selector).join(", ");
+    for (const sel of ["#statusbar .item", ".layer-count", ".headline", ".step-count", ".triple input", ".fbox .fin", ".fbox .ftog"]) expect(tabular, sel).toContain(sel);
+    const h2 = all.find((r) => r.selector === "aside h2")!;
+    expect(h2.body).toMatch(/font:\s*var\(--t-section\)/);
+    expect(h2.body).not.toMatch(/uppercase|letter-spacing/);
+    expect(all.find((r) => r.selector === "body")!.body).toMatch(/font:\s*var\(--t-body\)/);
   });
 });

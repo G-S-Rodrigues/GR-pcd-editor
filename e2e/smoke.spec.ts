@@ -4214,7 +4214,8 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     const r = await page.evaluate(() => {
       const grow = (el: Element) => {
         const b = el.getBoundingClientRect();
-        return { l: b.left - 3, t: b.top - 3, r: b.right + 3, b: b.bottom + 3 };
+        // the focus ring is 3px wide and 1px off the edge (22-4): 4px
+        return { l: b.left - 4, t: b.top - 4, r: b.right + 4, b: b.bottom + 4 };
       };
       const sel = grow(document.querySelector('[data-control="scope-select"]')!);
       const sw = [...document.querySelectorAll('[data-control="sel-colour"] [data-control^="sel-colour-"]')].map(grow);
@@ -6630,3 +6631,136 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
     expect(errors).toEqual([]);
   });
 }
+
+// ---- part 22-4: design tokens, themes, type and focus (E2E-220..226)
+type Rgba = [number, number, number, number];
+/** A computed CSS colour (`rgb(...)` or `rgba(...)`) as numbers. */
+const cssRgba = (css: string): Rgba => {
+  const m = css.match(/rgba?\(\s*([\d.]+)[ ,]+([\d.]+)[ ,]+([\d.]+)(?:[ ,/]+([\d.]+))?\s*\)/);
+  if (!m) throw new Error(`not a computed colour: ${css}`);
+  return [Number(m[1]), Number(m[2]), Number(m[3]), m[4] === undefined ? 1 : Number(m[4])];
+};
+/** `fg` over an opaque `bg`. */
+const over = (fg: Rgba, bg: Rgba): Rgba => [0, 1, 2].map((i) => fg[i] * fg[3] + bg[i] * (1 - fg[3])).concat([1]) as Rgba;
+const lumOf = (c: Rgba): number => {
+  const f = (v: number) => {
+    const x = v / 255;
+    return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+};
+/** WCAG contrast of a (possibly translucent) text colour on an opaque background. */
+const contrastOf = (fg: Rgba, bg: Rgba): number => {
+  const [a, b] = [lumOf(over(fg, bg)), lumOf(bg)].sort((x, y) => y - x);
+  return (a + 0.05) / (b + 0.05);
+};
+const near = (a: Rgba, b: number[], tol = 2) => [0, 1, 2].every((i) => Math.abs(a[i] - b[i]) <= tol);
+type Scheme = "dark" | "light";
+const themeRead = (page: Pg) =>
+  page.evaluate(() => {
+    const cs = (sel: string) => getComputedStyle(document.querySelector(sel)!);
+    const root = getComputedStyle(document.documentElement);
+    return {
+      attr: document.documentElement.getAttribute("data-theme"),
+      body: cs("body").backgroundColor,
+      label: cs("body").color,
+      aside: cs("#tools").backgroundColor,
+      hud: cs("#legend").backgroundColor,
+      fbox: cs("#fbox-layer .fbox").backgroundColor,
+      canvas: root.getPropertyValue("--canvas").trim(),
+      accent: root.getPropertyValue("--accent").trim(),
+      family: cs("body").fontFamily,
+    };
+  });
+
+test("E2E-220 22-4 the default is the dark theme on the real cascade: body, aside, label, accent and font, no data-theme, and no request leaves the machine", async ({ page }) => {
+  const hosts = new Set<string>();
+  page.on("request", (r) => {
+    const u = new URL(r.url());
+    if (u.protocol === "http:" || u.protocol === "https:") hosts.add(u.hostname);
+  });
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  const { exact } = helpers(page);
+  await openRoom(page, exact);
+  const t = await themeRead(page);
+  expect(t.attr).toBeNull();
+  expect(cssRgba(t.body)).toEqual([12, 13, 16, 1]);
+  expect(cssRgba(t.label)).toEqual([245, 245, 247, 1]);
+  expect(cssRgba(t.aside)).toEqual([30, 31, 36, 0.7]);
+  expect(t.accent).toBe("#0a84ff");
+  expect(t.family).toMatch(/^-apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, sans-serif$/);
+  expect([...hosts].filter((h) => h !== "localhost" && h !== "127.0.0.1")).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test("E2E-221 22-4 chrome half: prefers-color-scheme light switches the aside, the body and the stage HUD to the light tokens, and data-theme overrides it both ways", async ({ page }) => {
+  const { exact } = helpers(page);
+  await openRoom(page, exact);
+  const expectTheme = async (want: Scheme) => {
+    const light = want === "light";
+    await expect
+      .poll(async () => {
+        const t = await themeRead(page);
+        const canvas = cssRgba(t.body);
+        const lumHud = lumOf(over(cssRgba(t.hud), canvas));
+        const lumFbox = lumOf(over(cssRgba(t.fbox), canvas));
+        return {
+          body: near(canvas, light ? [233, 235, 239] : [12, 13, 16]),
+          aside: cssRgba(t.aside).slice(0, 3).join(",") === (light ? "248,248,250" : "30,31,36"),
+          text: near(cssRgba(t.label), light ? [29, 29, 31] : [245, 245, 247]),
+          hud: light ? lumHud >= 0.8 : lumHud <= 0.02,
+          fbox: light ? lumFbox >= 0.8 : lumFbox <= 0.02,
+        };
+      }, { timeout: 5000 })
+      .toEqual({ body: true, aside: true, text: true, hud: true, fbox: true });
+  };
+  await expectTheme("dark");
+  await page.emulateMedia({ colorScheme: "light" });
+  await expectTheme("light");
+  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+  await expectTheme("dark");
+  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "light"));
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expectTheme("light");
+  await page.evaluate(() => document.documentElement.removeAttribute("data-theme"));
+  await expectTheme("dark");
+});
+
+test("E2E-222 22-4 a keyboard-focused toolbar button, side-panel field and stage control each get a 3px accent focus ring, in both themes", async ({ page }) => {
+  const { exact, ctl } = helpers(page);
+  await openRoom(page, exact);
+  await ctl("filter-x-min-toggle").click(); // expand one filter box so it has a field
+  for (const [scheme, accent] of [["dark", [10, 132, 255]], ["light", [0, 122, 255]]] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    for (const id of ["open-file", "scope-select", "filter-x-min-toggle"]) {
+      await page.locator("body").click({ position: { x: 1, y: 1 } });
+      await page.keyboard.press("Tab"); // keyboard modality, so focus() shows the ring
+      await ctl(id).focus();
+      await expect(ctl(id)).toBeFocused();
+      const o = await ctl(id).evaluate((e) => {
+        const s = getComputedStyle(e);
+        return { w: s.outlineWidth, st: s.outlineStyle, c: s.outlineColor };
+      });
+      expect(`${scheme} ${id} ${o.st} ${o.w}`).toBe(`${scheme} ${id} solid 3px`);
+      expect(near(cssRgba(o.c), accent, 1), `${scheme} ${id} ring colour ${o.c}`).toBe(true);
+    }
+  }
+});
+
+test("E2E-223 22-4 reduced motion gives 0s transitions; without it a button fades in 0.12-0.25 s", async ({ page }) => {
+  const { exact, ctl } = helpers(page);
+  await openRoom(page, exact);
+  const durations = () => ctl("open-file").evaluate((e) => getComputedStyle(e).transitionDuration.split(",").map((d) => parseFloat(d)));
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const normal = await durations();
+  expect(normal.length).toBeGreaterThan(0);
+  for (const d of normal) {
+    expect(d).toBeGreaterThanOrEqual(0.12);
+    expect(d).toBeLessThanOrEqual(0.25);
+  }
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  expect((await durations()).every((d) => d === 0)).toBe(true);
+  expect(await page.locator("#legend .legend-head svg").evaluate((e) => getComputedStyle(e).transitionDuration)).toBe("0s");
+});
+
