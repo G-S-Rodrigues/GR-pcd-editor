@@ -5352,7 +5352,8 @@ test("E2E-170 18 New layer from protected points makes a protected Floor layer w
   await expect.poll(async () => (await t.byName("Floor"))?.count, { timeout: 15000 }).toBe(truth);
   const floor = (await t.byName("Floor"))!;
   expect(floor.protected).toBe(true);
-  await expect(page.locator(`[data-layer-row="${floor.id}"] .chip`)).toHaveClass(/protected/);
+  await expect(page.locator(`[data-layer-row="${floor.id}"] [data-layer-shield]`)).toBeVisible(); // R22-3: the shield, not a chip ring
+  await expect(page.locator(`[data-layer-row="${floor.id}"] .chip`)).not.toHaveClass(/protected/);
   await t.exact("Selected", "0");
   await t.exact("Active", String(ROOM_TOTAL));
   expect(asked).toEqual([]);
@@ -5598,6 +5599,38 @@ test("E2E-201 22-2 recolouring a protected Floor layer changes the canvas in Lay
   await expect(page.locator(`[data-legend-layer="${floor.id}"] [data-legend-shield]`)).toBeVisible();
   expect(asked).toEqual([]);
 });
+
+// 22-2: owner screenshots of the shield on the row and the legend, and of the recoloured Floor
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-202 22-2 owner screenshots at ${w}x${h}: Floor protected with its menu open (the shield on row, menu and legend), then recoloured in Layers mode`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => {
+      if (m.type() === "error" && !/404/.test(m.text())) errors.push(m.text());
+    });
+    const t = layerMenu(page);
+    const floor = await t.floorFromBand();
+    await t.wallLayer();
+    await t.openMore(floor.id);
+    await expect(page.locator(`[data-layer-details="${floor.id}"]`)).toBeVisible();
+    await expect(page.locator(`[data-layer-row="${floor.id}"] [data-layer-shield]`)).toBeVisible();
+    await expect(page.locator(`[data-layer-protected="${floor.id}"] svg`)).toBeVisible();
+    await page.mouse.move(5, 5);
+    await steadyCanvas(page);
+    await page.screenshot({ path: `/out/part22-2-${w}x${h}-menu.png` });
+    await t.ctl("colour-mode").selectOption("layers");
+    await t.ctl("cube-top").click();
+    await page.mouse.move(5, 5);
+    await steadyCanvas(page);
+    await page.locator(`[data-layer-colour="${floor.id}"][data-colour="${(floor.colour + 4) % 16}"]`).click();
+    await expect.poll(async () => (await t.byName("Floor"))?.colour, { timeout: 15000 }).toBe((floor.colour + 4) % 16);
+    await page.mouse.move(5, 5);
+    await steadyCanvas(page);
+    await page.screenshot({ path: `/out/part22-2-${w}x${h}-floor.png` });
+    expect(errors).toEqual([]);
+  });
+}
 
 // ---- Part 19: layer edits are timeline steps, export each layer to its own file (E2E-177..185)
 const LAYER_CARDS = "#timeline .step[data-step]";
