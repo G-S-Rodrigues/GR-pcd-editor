@@ -513,3 +513,29 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
 - One job worker: a select queues behind a running detect, so the panel shows "Detecting planes..." as busy (`API-110`).
 - A pre-20 build refuses an archive holding a `plane` or `thin` step (`bad_archive`); documented, not tested.
 - Known load flakes unchanged: `test_pcd_61`, `E2E-57`, `test_nrm_07` timing.
+
+## Part 22-3 additions (the protection band with the Box handles, Show band)
+- Frontend unit: `UI-1060..1073`. `UI-1060..1062` (`tools/box/shared-handles.test.ts`) pin the helpers extracted from the Box
+  (`shaftRing`, `handleOverlaySpec`, `advanceRing`) to the Box's own output; `UI-1063..1066` (`inspector/bandgizmo.test.ts`)
+  the band's arrows, rings, visibility and the Show band off state; `UI-1067..1069` (`viewport/interact.test.ts`, describe
+  "band gizmo routing (22-3)") the arrow-tip drag, the ring drag and Esc, and the hidden band falling through to the camera;
+  `UI-1070` and `UI-1073` (`ui/bandswitch.test.ts`) the switch and the ring-colour tooltips; `UI-1071` (`ui/bandpill.test.ts`)
+  the pill; `UI-1072` (`state/persist.test.ts`) `ui.bandHidden`. vitest 824 to 838.
+- Changed existing tests (setup only, assertions kept): `UI-224` (the ring comes from `bandGizmo(..).rings`, id `tilt-y+`),
+  `E2E-39` (all three grabs are at the arrow tip), `E2E-44` (the upper arrow is grabbed at its tip; `dragYRing` finds
+  `tilt-y+`), `E2E-45` (only through `dragYRing`). Why: the band now uses the Box's part-14b handles, which are picked at
+  the arrow tip and the 8 px ring only, so "20 px past the anchor" and "halfway along the shaft" no longer grab. Box tests
+  (`tools/box/*.test.ts`, `UI-902`, `UI-563`, `E2E-163..167`) are unmodified.
+- Hooks: `__editor.tiltRings()` returns ids `tilt-x+`, `tilt-x-`, `tilt-y+`, `tilt-y-` with 32 points each (the old ids `x`
+  and `y` with 48 points are gone); `protectionArrows()` keeps its `{ key, base, tip }` shape, with the arrows now 72 px long
+  and grabbed only at the tip. Both return `[]` while Show band is off.
+- Smoke `E2E-215..217`: `E2E-215` real-mouse arrow tip and ring (Left view, where the X ring is a full circle);
+  `E2E-216` Show band off (hooks empty, pixels equal to protection off above the pill, a press at the old tip orbits, a box
+  Delete removes only the unprotected points, reload keeps hidden, Show restores); `E2E-217` writes
+  `/out/part22-3-<w>x<h>-band.png` and `-band-hidden.png` (keep with `SMOKE_SHOTS_DIR`, never commit). The full smoke
+  run with `--workers=1` is 196 tests (the four new ones are `E2E-215`, `E2E-216` and `E2E-217` at two sizes).
+- Lessons: after a `setNum` the Tab leaves focus in a number field, so a view key such as `3` is typed into it (the later
+  blur commits it): click the ViewCube face (`fitTiltedFloor` does). Client state is saved one second after the last change,
+  so a test that reloads must poll `/api/session` for `client_state.ui.bandHidden` first. The flag is not reset by opening
+  another file (like `previewLive`), so a test that ends hidden must leave the archive shown.
+

@@ -21,6 +21,7 @@
   when dragged (Alt: both opposite faces); it never moves the box.
 - **Rotation ring:** The small ring on each face arrow (six in all); dragging it turns the box about that arrow's box
   axis. A ring seen edge-on cannot be grabbed, and only its outline is grabbable: its inside still moves the box.
+  The protection band's tilt rings use the same look.
 - **Box body:** The inside of the box on the canvas: a plain left-drag there moves the box, Ctrl+drag orbits,
   Shift+drag pans, and an unmoved click still moves the box to the clicked point.
 - **Candidate:** The exact set of points a previewed selection would delete,
@@ -50,9 +51,13 @@
   collapse chip.
 - **Cut plane:** The plane drawn for an expanded filter side, with an arrow toward
   the hidden side; dragging the arrow sets that side's limit.
-- **Protection band:** The translucent slab drawn on the canvas while the Height
-  protection section is open, with an arrow per plane; points inside it are
-  drawn in the strong protected colour.
+- **Protection band:** The translucent slab drawn on the canvas with its outline,
+  the Box's face arrows (+Z and -Z on each protection plane) and, while the Height
+  protection section is open, four tilt rings on headless X and Y shafts at the
+  footprint's side faces; points inside it are drawn in the strong protected
+  colour while the section is open. **Show band** (a switch in the section) hides
+  the whole band on the canvas while protection stays on; a canvas pill then says
+  "Protection on - band hidden" and offers Show.
 - **Tilted slab:** The protected interval measured along a normal turned by
   rx and ry (each within 60 degrees) about a pivot at the active-bounds XY centre,
   instead of along Z. Level (both angles 0) is the plain Z slab.
