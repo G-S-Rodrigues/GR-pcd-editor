@@ -662,7 +662,7 @@ describe("band gizmo routing (22-3)", () => {
     return { store, tools, at, edits, g };
   };
 
-  it("UI-1067 a z arrow is grabbed at its tip and moves only its own edge by translateDelta along the normal; a press on the shaft away from the tip and the outlines grabs nothing", () => {
+  it("UI-1067 a z arrow is grabbed at its tip and moves only its own edge by translateDelta along the normal; a press on the shaft (away from the tip and clear of the outlines, which are a grab by design) grabs nothing", () => {
     for (const [rx, ry] of [[0, 0], [20, 30]] as const) {
       const t = bandSetup({ view: "corner", rx, ry });
       const m0 = t.store.get().tools.protection;
