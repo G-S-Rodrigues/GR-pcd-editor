@@ -1,9 +1,10 @@
 import { END_ON_DOT, type FilterDrag, beginFilterDrag, moveFilterDrag } from "../filterboxes/drag";
-import { ARROW_PX, filterPlanes } from "../filterboxes/plane";
+import { filterPlanes } from "../filterboxes/plane";
 import { type FilterEdit, type Side, sideValue } from "../inspector/filters";
+import { type PlaneAnchor, type PlaneKey, planeAnchors } from "../inspector/band";
 import { type ProtectionEdit, type ProtectionModel, dragPlane, rotateSlab } from "../inspector/protection";
 import { RING_EDGE_ON, pivotXY, tiltRings } from "../inspector/rings";
-import { normalOf, slabZ } from "../inspector/tilt";
+import { normalOf } from "../inspector/tilt";
 import { dot } from "../math/vec";
 import { pickPoint, project } from "../pick/ray";
 import { toWorld } from "../render/origin";
@@ -23,7 +24,6 @@ import { type Handle, RING_DEADZONE_PX, boxHandles, hitHandle } from "../tools/b
 import { addVertex, insertVertex, moveVertex, removeVertex } from "../tools/polygon/model";
 import type { Vec2 } from "../tools/polygon/validate";
 
-type PlaneKey = { which: "global" | "local"; edge: "min" | "max" };
 type Drag =
   | { kind: "box"; state: DragState }
   | { kind: "body"; box0: BoxModel; grab: Vec3; x0: number; y0: number; moved: boolean }
@@ -32,6 +32,9 @@ type Drag =
   | { kind: "filter"; d: FilterDrag; key: string; last: number; moved: boolean }
   | { kind: "plane"; key: PlaneKey; model0: ProtectionModel; anchor: Vec3; axis: Vec3; ray0: ReturnType<typeof screenRay> }
   | { kind: "ring"; which: "x" | "y"; model0: ProtectionModel; centre: Vec3; axis: Vec3; a0: number; pivot: [number, number] };
+
+/** The band geometry lives in inspector/band.ts; re-exported so the viewport tests keep their import. */
+export { planeAnchors };
 
 export interface ToolInteractionDeps {
   onToolChanged: () => void;
@@ -59,48 +62,6 @@ export const BODY_HINT = "Dragging the box moves it. Ctrl+drag, or start outside
 const PICK_PX = 10;
 /** Two presses on the same polygon vertex within this many ms (edit mode) remove it. */
 const DOUBLE_TAP_MS = 400;
-
-export interface PlaneAnchor {
-  key: PlaneKey;
-  /** Where the plane's arrow starts: the XY centre of the active bounds at the plane's height. */
-  anchor: Vec3;
-  /** Arrow tip, pointing away from the band (the lower plane down, the upper one up), ARROW_PX long on screen. */
-  tip: Vec3;
-  /** The footprint outline of the plane, four corners in order. */
-  corners: Vec3[];
-}
-
-/** The protection planes' arrows and outlines, at the XY centre and over the footprint of the active bounds. */
-export function planeAnchors(s: AppState, viewH = 720): PlaneAnchor[] {
-  const b = s.session?.active_bounds;
-  if (!b) return [];
-  const cx = (b.min[0] + b.max[0]) / 2;
-  const cy = (b.min[1] + b.max[1]) / 2;
-  const len = ARROW_PX / pxPerUnit(s.camera, Math.max(viewH, 1));
-  const p = s.tools.protection;
-  const n = normalOf(p.tilt);
-  const out: PlaneAnchor[] = [];
-  const add = (which: PlaneKey["which"], edge: PlaneKey["edge"], v: number) => {
-    const at = (x: number, y: number): Vec3 => [x, y, slabZ(p.tilt, v, x, y)];
-    const anchor = at(cx, cy);
-    const k = edge === "max" ? len : -len;
-    out.push({
-      key: { which, edge },
-      anchor,
-      tip: [anchor[0] + k * n[0], anchor[1] + k * n[1], anchor[2] + k * n[2]],
-      corners: [at(b.min[0], b.min[1]), at(b.max[0], b.min[1]), at(b.max[0], b.max[1]), at(b.min[0], b.max[1])],
-    });
-  };
-  if (p.global.enabled) {
-    add("global", "min", p.global.min);
-    add("global", "max", p.global.max);
-  }
-  if (p.mode !== "inherit" && p.local) {
-    add("local", "min", p.local.min);
-    add("local", "max", p.local.max);
-  }
-  return out;
-}
 
 /** Pointer handling for the editing tools: box handles, polygon drawing and vertex drags, protection planes. */
 export function createToolInteraction(
