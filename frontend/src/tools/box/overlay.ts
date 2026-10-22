@@ -3,7 +3,7 @@ import type { Vec3 } from "../../state/types";
 import { type Camera, lookDirection, rightVector } from "../../view/camera";
 import { pxPerUnit } from "../../view/pointsize";
 import { AXIS_COLOUR } from "../../filterboxes/plane";
-import { boxHandles } from "./handles";
+import { type Handle, boxHandles } from "./handles";
 import type { BoxModel } from "./model";
 
 /** Rings are drawn at this fraction of their axis colour (75%: contrast >= 3:1 against the clear colour); hovered, at the full colour. */
@@ -42,14 +42,14 @@ export interface RingSpec {
   width: number;
 }
 
-/** What the box gizmo draws: six arrows with heads and three rings, the hovered one heavier. Pure; the three.js group only draws it. */
-export function boxOverlaySpec(box: BoxModel, cam: Camera, hover: string | null, viewH: number): { arrows: ArrowSpec[]; rings: RingSpec[] } {
+/** What a set of 14b handles draws: arrows with heads and rings, the hovered one heavier. Pure; the three.js group only draws it. */
+export function handleOverlaySpec(handles: Handle[], cam: Camera, hover: string | null, viewH: number): { arrows: ArrowSpec[]; rings: RingSpec[] } {
   const head = ARROW_HEAD_LEN_PX / pxPerUnit(cam, Math.max(viewH, 1));
   const half = ARROW_HEAD_HALF_PX / pxPerUnit(cam, Math.max(viewH, 1));
   const look = lookDirection(cam);
   const arrows: ArrowSpec[] = [];
   const rings: RingSpec[] = [];
-  for (const h of boxHandles(box, cam, viewH)) {
+  for (const h of handles) {
     if (h.cls === "rotate") {
       rings.push({ id: h.id, pts: h.ring ?? [], colour: hover === h.id ? AXIS_COLOUR[AXES[h.axis]] : dim(AXIS_COLOUR[AXES[h.axis]], RING_TINT), width: hover === h.id ? RING_WIDTH_HOVER_PX : RING_WIDTH_PX });
       continue;
@@ -65,4 +65,9 @@ export function boxOverlaySpec(box: BoxModel, cam: Camera, hover: string | null,
     arrows.push({ id: h.id, base, tip: h.anchor, headBase, barbs: [barb(1), barb(-1)], colour: AXIS_COLOUR[AXES[h.axis]], width: hover === h.id ? ARROW_WIDTH_HOVER_PX : ARROW_WIDTH_PX });
   }
   return { arrows, rings };
+}
+
+/** What the box gizmo draws: six arrows with heads and six rings, the hovered one heavier. */
+export function boxOverlaySpec(box: BoxModel, cam: Camera, hover: string | null, viewH: number): { arrows: ArrowSpec[]; rings: RingSpec[] } {
+  return handleOverlaySpec(boxHandles(box, cam, viewH), cam, hover, viewH);
 }
