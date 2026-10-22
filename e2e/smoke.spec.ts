@@ -246,7 +246,6 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
     await ctl("compare-edited").click();
     await expect(page.locator("#modebar")).not.toContainText("View:");
     await exact("Active", String(activeBefore - GHOST));
-    await ctl("tool-box").click(); // leave the tool
   });
 
   await test.step("AC-17 view state: colouring is stored with the session", async () => {
@@ -390,6 +389,7 @@ test("E2E-10 7a filter redraws the canvas and a filter change never leaves a sta
   await exact("Active", String(activeBefore));
 
   // scope Active keeps the hidden floor selected and says so
+  await ctl("tool-box").click(); // Apply disarmed the Box (R22-1)
   await boxEverything();
   await page.locator('[data-control="scope-select"]').selectOption("active");
   await exact("Selected", String(FLOOR + GHOST));
@@ -1643,7 +1643,6 @@ test("E2E-44 10 the tilted slab is fitted to a tilted floor with the real mouse 
   await ctl("apply").click();
   await exact("Active", String(TILTED.floor));
   expect(await num("Original")).toBe(TILTED.floor + TILTED.ghost);
-  await ctl("tool-box").click(); // leave the tool
   await exact("Protected", String(TILTED.floor));
 
   // Level returns both angles to zero
@@ -1845,7 +1844,6 @@ function tl(page: Pg) {
     await base.exact("Active", String(ROOM_TOTAL - ROOM.ghost - ROOM.wall));
     await base.setNum("filter-z-min", 1);
     await base.exact("Displayed", String(ROOM.noise));
-    await base.ctl("tool-cluster").click(); // Select displayed is refused while a tool is armed
     await base.ctl("sel-select-displayed").click();
     await base.exact("Candidates", String(ROOM.noise));
     await base.ctl("apply").click();
@@ -1945,8 +1943,7 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     await t.boxAt(0, 0, 0, 0.5, 0.5, 0.5);
     await t.setNum("box-center-y", 0);
     for (let i = 0; i < 25; i++) {
-      await t.setNum("box-center-x", i % 20);
-      if (i >= 20) await t.setNum("box-center-y", 1);
+      await t.boxAt(i % 20, i >= 20 ? 1 : 0, 0, 0.5, 0.5, 0.5); // every Apply disarms the Box (R22-1): re-arm, same box
       await t.exact("Candidates", "1");
       await t.ctl("apply").click();
       await expect(t.cards).toHaveCount(i + 1);
@@ -5375,6 +5372,7 @@ test("E2E-171 18 a protected Floor is never deleted: with the band off Kept by p
   expect((await t.byName("Floor"))!.count).toBe(floor.count);
   await t.ctl("undo").click();
   await t.exact("Active", String(ROOM_TOTAL));
+  await t.ctl("tool-box").click(); // Apply disarmed the Box (R22-1)
   await t.setBox(ALL_BOX.c, [ALL_BOX.d[0] + 1, ALL_BOX.d[1], ALL_BOX.d[2]]); // Apply cleared the selection and Undo does not bring it back: a slightly larger box holds the same points
   await t.exact("Selected", String(selected));
   // a band over the top of the wall protects those points too; Also delete the kept points frees the wall (the band) but never the Floor layer
@@ -6125,4 +6123,43 @@ test("E2E-195 21 a newly opened file forgets the chosen layer and the open fold-
   await page.locator("#file-input").setInputFiles({ name: "other.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
   await expect.poll(() => hook(page, (e) => e.state().session?.filename), { timeout: 15000 }).toBe("other.pcd");
   expect(await ui()).toEqual({ active: null, editing: null });
+});
+
+// ---- part 22-1: tool disarm (R22-1)
+test("E2E-197 22-1 Box then Delete leaves no tool armed; a dismissed bulk confirm leaves it armed", async ({ page }) => {
+  const t = previewHelpers(page);
+  await openRoom(page, t.exact);
+  const asked: string[] = [];
+  page.removeAllListeners("dialog"); // the helpers accept every ask; this test answers by text
+  page.on("dialog", (d) => {
+    asked.push(d.message());
+    if (/^This deletes /.test(d.message())) void d.dismiss();
+    else void d.accept();
+  }); // after the open: the "unsaved edits" ask of a file left by an earlier test is not under test
+  await t.ctl("cube-top").click();
+  await t.ctl("tool-box").click();
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  await t.exact("Selected", String(ROOM.ghost));
+  await expect(t.ctl("apply")).toBeEnabled();
+  await t.ctl("apply").click();
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
+  await expect(t.ctl("tool-box")).not.toHaveClass(/active/);
+  await expect(page.locator("#box-center-x")).toBeHidden(); // the Box section shows only while armed
+  // Apply cleared the selection and Undo does not bring it back: arming the Box again is a live first selection
+  await t.ctl("undo").click();
+  await t.exact("Active", String(ROOM_TOTAL));
+  await t.ctl("tool-box").click();
+  await t.setBox(ALL_BOX.c, ALL_BOX.d);
+  await expect(t.ctl("apply")).toBeEnabled();
+  await t.ctl("apply").click();
+  await expect.poll(() => asked.filter((m) => /^This deletes /.test(m)).length, { timeout: 15000 }).toBe(1);
+  await t.exact("Active", String(ROOM_TOTAL));
+  await expect(t.ctl("tool-box")).toHaveClass(/active/);
+  // the Delete key does the same as the button
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  await t.exact("Selected", String(ROOM.ghost));
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("Delete");
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
+  await expect(t.ctl("tool-box")).not.toHaveClass(/active/);
 });
