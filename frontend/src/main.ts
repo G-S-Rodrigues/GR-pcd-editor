@@ -18,7 +18,7 @@ import { createEditor } from "./orchestration/edit";
 import { createRunner, deleteKeyOutcome } from "./orchestration/runner";
 import { createPlanesController } from "./orchestration/planes";
 import { emptyPlanes } from "./tools/plane/model";
-import { armTool, disarmed, escTarget } from "./orchestration/toolstate";
+import { armTool, disarmed, disarmedKeepingRegion, escTarget } from "./orchestration/toolstate";
 import { createUploadCanceller } from "./orchestration/upload-cancel";
 import { type UploadOptions, uploadFile } from "./files/upload";
 import { startBanner } from "./status/startbanner";
@@ -172,7 +172,7 @@ window.addEventListener("keydown", (e) => {
     overlay: help.isOpen() || document.querySelector("dialog[open]") !== null,
   });
   tools.cancel(); // an arrow drag in progress goes back to its start value
-  if (target === "tool") store.update(disarmed); // R22-1: nothing more specific was pending; the selection and its candidate stay
+  if (target === "tool") store.update(disarmedKeepingRegion); // R22-1: nothing more specific was pending; the selection and its candidate stay
 });
 installDebugHook(canvas, store, size, () => viewport?.drawnCount() ?? 0, () => viewport?.stepLayer() ?? { visible: false }, () => viewport?.previewLayer() ?? { id: null, add: 0, remove: 0 });
 if (viewport) {

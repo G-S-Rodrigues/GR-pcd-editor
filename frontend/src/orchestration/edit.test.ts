@@ -281,6 +281,22 @@ describe("Apply disarms the tool (22-1, R22-1)", () => {
     expect(g.store.get().tool).toBe("none");
     expect(g.store.get().tools.polygon).toEqual(emptyPolygon());
   });
+  it("UI-993 a Delete with Cluster, Sparse, Plane or Thin armed keeps the closed polygon they use as a region; the Polygon tool blanks it", async () => {
+    for (const tool of ["cluster", "sparse", "plane", "thin"] as const) {
+      const t = setup();
+      const poly = closedSquare();
+      t.store.update((s) => ({ ...s, tool, tools: { ...s.tools, polygon: poly } }));
+      t.store.set({ candidate: candidateFixture({ candidates: 42 }) });
+      await t.ed.apply();
+      expect(t.store.get().tool, tool).toBe("none");
+      expect(t.store.get().tools.polygon, tool).toEqual(poly);
+    }
+    const g = setup();
+    g.store.update((s) => ({ ...s, tool: "polygon" as const, tools: { ...s.tools, polygon: closedSquare() } }));
+    g.store.set({ candidate: candidateFixture({ candidates: 42 }) });
+    await g.ed.apply();
+    expect(g.store.get().tools.polygon).toEqual(emptyPolygon());
+  });
   it("UI-993 with no tool armed Apply still runs and leaves the tool none", async () => {
     const t = setup();
     t.store.set({ tool: "none", candidate: candidateFixture({ candidates: 42 }) });

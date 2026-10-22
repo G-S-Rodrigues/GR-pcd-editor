@@ -5,7 +5,7 @@ import { clusterPickState, pickText, pressPick } from "../tools/cluster/pick";
 import { setSeed } from "../tools/cluster/model";
 import { selectionDisabledReason } from "./selection";
 import { addVertex, closePolygon, emptyPolygon, setEditing, startDrawing } from "../tools/polygon/model";
-import { armTool, disarmed, escTarget, type EscInput } from "./toolstate";
+import { armTool, disarmed, disarmedKeepingRegion, escTarget, type EscInput } from "./toolstate";
 
 const base = () => createAppStore().get();
 const seeded = () => {
@@ -117,4 +117,21 @@ test("UI-991 escTarget: what one Esc is for, most specific first; tool only when
   expect(escTarget({ ...armed, preview: {} as never }, none)).toBe("draft");
   expect(escTarget(armed, none)).toBe("tool");
   expect(escTarget(base(), none)).toBeNull();
+});
+
+test("UI-997 disarmedKeepingRegion (Esc, Delete) keeps the polygon prism region unless the Polygon tool is armed; disarmed (Clear selection) blanks it", () => {
+  const poly = closePolygon({ ...startDrawing(emptyPolygon()), vertices: [[0, 0], [4, 0], [4, 4]] }).state;
+  const withPoly = (tool: "sparse" | "polygon" | "cluster") => {
+    const s = base();
+    return { ...s, tool, interaction: "pick-seed" as const, tools: { ...s.tools, polygon: poly, cluster: setSeed(s.tools.cluster, { id: 4, point: [1, 2, 3] }) } };
+  };
+  for (const tool of ["sparse", "cluster"] as const) {
+    const d = disarmedKeepingRegion(withPoly(tool));
+    expect(d.tool, tool).toBe("none");
+    expect(d.interaction, tool).toBe("orbit");
+    expect(d.tools.polygon, tool).toEqual(poly);
+    expect(d.tools.cluster.seed, tool).toBeNull();
+  }
+  expect(disarmedKeepingRegion(withPoly("polygon")).tools.polygon).toEqual(emptyPolygon());
+  expect(disarmed(withPoly("sparse")).tools.polygon).toEqual(emptyPolygon());
 });

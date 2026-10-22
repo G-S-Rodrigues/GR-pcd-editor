@@ -5,7 +5,7 @@ import type { Store } from "../state/store";
 import type { SessionState } from "../state/types";
 import { DELETE_BLOCKED_TEXT, deleteLayerStepText, deleteStepText, discardCount, discardText, mergeStepNames, stepsOf } from "../timeline/model";
 import { canApply } from "./runner";
-import { disarmed } from "./toolstate";
+import { disarmedKeepingRegion } from "./toolstate";
 
 export interface EditApi {
   apply(cloudRevision: number, candidateId: string, description: string): Promise<SessionState>;
@@ -111,8 +111,8 @@ export function createEditor(store: Store<AppState>, api: EditApi, confirmFn: (m
     await guarded(async () => {
       api.supersedePreview?.();
       const state = await api.apply(rev(), c.candidate_id, `Delete ${c.candidates} points (${tool})`);
-      // R22-1: a Delete consumes the selection, so the tool disarms (read after the await: edits made during the call are kept)
-      const d = disarmed(store.get());
+      // R22-1: a Delete consumes the selection, so the tool disarms and keeps the polygon region unless Polygon was armed (read after the await: edits made during the call are kept)
+      const d = disarmedKeepingRegion(store.get());
       await afterChange(state, {
         tool: d.tool,
         interaction: d.interaction,

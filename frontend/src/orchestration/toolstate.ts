@@ -28,6 +28,15 @@ export function disarmed(st: AppState): AppState {
   };
 }
 
+/**
+ * Esc and a successful Delete (R22-1): `disarmed`, except that a closed polygon survives unless the Polygon tool itself is armed,
+ * because Cluster, Sparse, Plane and Thin use it as their prism region (before 22-1 only a Polygon-tool Delete blanked it).
+ */
+export function disarmedKeepingRegion(st: AppState): AppState {
+  const d = disarmed(st);
+  return st.tool === "polygon" ? d : { ...d, tools: { ...d.tools, polygon: st.tools.polygon } };
+}
+
 export type EscTarget = "drag" | "polygon" | "pick" | "layer" | "overlay" | "draft" | "tool";
 /** What lives outside the store: the event target, drags held in closures, overlays drawn in the DOM. */
 export interface EscInput {
