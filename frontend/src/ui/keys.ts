@@ -47,7 +47,7 @@ export const KEY_DOCS: KeyDoc[] = [
   { id: "rect", keys: "R (hold)", label: "Rectangle select in a face view while held", probes: [{ key: "r" }, { key: "R" }] },
   { id: "polygon-close", keys: "Enter", label: "Close the polygon being drawn, or leave polygon edit mode", probes: [{ key: "Enter" }] },
   { id: "polygon-remove-vertex", keys: "Backspace", label: "Remove the polygon vertex under the pointer while the polygon pencil (edit mode) is on", probes: [{ key: "Backspace" }] },
-  { id: "cancel", keys: "Esc", label: "Leave pick mode, cancel polygon drawing, leave polygon edit mode, discard a pending draft, close help", probes: [{ key: "Escape" }] },
+  { id: "cancel", keys: "Esc", label: "Leave pick mode, cancel polygon drawing, leave polygon edit mode, close help, discard a pending draft; with none of these, disarm the armed tool", probes: [{ key: "Escape" }] },
   { id: "apply", keys: "Delete", label: "Apply: delete the previewed points (same as the Apply button)", probes: [{ key: "Delete" }] },
   { id: "undo", keys: "Ctrl+Z", label: "Undo the last step", probes: [{ key: "z", ctrlKey: true }, { key: "Z", metaKey: true }] },
   { id: "redo", keys: "Ctrl+Y", label: "Redo (also Ctrl+Shift+Z)", probes: [{ key: "y", ctrlKey: true }, { key: "Z", ctrlKey: true, shiftKey: true }] },
@@ -58,6 +58,13 @@ export const KEY_DOCS: KeyDoc[] = [
 ];
 
 const TYPING = ["INPUT", "TEXTAREA", "SELECT"];
+const NON_TEXT_INPUTS = ["checkbox", "radio", "range", "button", "submit", "reset", "color", "file", "image"];
+
+/** Escape typed in a text entry (text-like INPUT, TEXTAREA, SELECT) belongs to the field; on a checkbox, slider or button it does not (22-1, R22-1). */
+export function escapeInField(tag: string, type = ""): boolean {
+  if (tag === "INPUT") return !NON_TEXT_INPUTS.includes(type.toLowerCase());
+  return tag === "TEXTAREA" || tag === "SELECT";
+}
 
 /** Which documented key a keydown is, or null. Typing in a field only lets Escape through. */
 export function classifyKey(e: KeyEvent): KeyId | null {
