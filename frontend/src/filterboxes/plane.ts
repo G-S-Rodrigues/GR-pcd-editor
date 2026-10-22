@@ -1,6 +1,7 @@
 import { AXES, type Axis, type Side, sideActive, sideValue } from "../inspector/filters";
 import type { AppState } from "../state/app";
 import type { Bounds, Vec3 } from "../state/types";
+import type { RenderTheme } from "../colour/palette";
 import { pxPerUnit } from "../view/pointsize";
 import { boxKey, isBoxCollapsed } from "./model";
 
@@ -12,6 +13,10 @@ export const ARROW_PX = 40;
 export const PLANE_CAP = 0.3;
 /** Same colours as the ViewCube triad. */
 export const AXIS_COLOUR: Record<Axis, number> = { x: 0xff5555, y: 0x55ff55, z: 0x5599ff };
+/** The light theme's axis colours (R22-14, option B): arrows read at 3:1 on the light stage (3.73 / 3.03 / 3.99 on #e9ebef); the dimmed rings at 3:1 or more. */
+export const LIGHT_AXIS_COLOUR: Record<Axis, number> = { x: 0xe0352b, y: 0x1f9b3b, z: 0x1f6fe0 };
+/** The axis colours of a render theme; the dark ones are `AXIS_COLOUR` itself. */
+export const axisColours = (theme: RenderTheme): Record<Axis, number> => (theme === "light" ? LIGHT_AXIS_COLOUR : AXIS_COLOUR);
 
 export interface FilterPlane {
   /** `x-min` .. `z-max`. */

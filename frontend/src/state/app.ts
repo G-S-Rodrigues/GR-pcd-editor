@@ -1,5 +1,6 @@
 import type { SectionsOpen } from "../ui/sections";
 import type { ColourMode } from "../colour/modes";
+import type { RenderTheme } from "../colour/palette";
 import { DEFAULT_SELECTED, type SelectedColourId } from "../colour/selectcolour";
 import { type FilterModel, emptyFilter } from "../inspector/filters";
 import { DEFAULT_FLOOR_T, type ProtectionModel, emptyProtection } from "../inspector/protection";
@@ -105,6 +106,8 @@ export interface AppState {
   layerUi: LayerUi;
   /** Detected planes (client only, never saved) and the plane the Planes tool has chosen. */
   planes: PlanesState;
+  /** Which render palette is in force (point colours, axes, presets); set from the page's colour scheme, never saved. */
+  renderTheme: RenderTheme;
 }
 
 export function initialState(): AppState {
@@ -156,6 +159,7 @@ export function initialState(): AppState {
     timeline: emptyTimeline(),
     layerUi: { editing: null, active: null },
     planes: emptyPlanes(),
+    renderTheme: "dark",
   };
 }
 

@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import type { RenderTheme } from "../colour/palette";
 import type { AppState } from "../state/app";
 import type { Vec3 } from "../state/types";
 import { boxCorners } from "../tools/box/model";
@@ -13,6 +14,9 @@ const BAND_OPACITY = 0.12;
 /** Half-length of the vertex crosses of a polygon in edit mode, in pixels (the pointer pick radius is 10). */
 const POLY_EDIT_CROSS_PX = 8;
 const COL = { handle: 0xff9f1c, poly: 0x7be07b, plane: 0xc77dff /* = PALETTE.slab */, seed: 0xff4d6d };
+/** Light stage: each reads at 3:1 on #e9ebef (handle = LIGHT_PALETTE.selected, plane = its slab). */
+const LIGHT_COL = { handle: 0xbe7715, poly: 0x539653, plane: 0xab6bdb, seed: 0xf04967 };
+export const toolColours = (theme: RenderTheme): typeof COL => (theme === "light" ? LIGHT_COL : COL);
 
 /** Overlay for the editing tools: box wireframe and handles, polygon outline, protection planes, cluster seed. */
 export function createToolsOverlay(scene: THREE.Scene) {

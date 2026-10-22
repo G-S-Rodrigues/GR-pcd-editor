@@ -20,6 +20,29 @@ export const PALETTE = {
   previewRemove: hex(0x5b7cff),
 } as const;
 
+/** Which render palette is in force: set from the page's colour scheme (`state.renderTheme`), never saved. */
+export type RenderTheme = "dark" | "light";
+export type RenderPalette = Record<keyof typeof PALETTE, Rgb>;
+/**
+ * The light theme's point colours (R22-14, option A): each reads at 3:1 on the light stage (`--canvas` #e9ebef and `--canvas-vignette` #f6f7f9),
+ * the highlighted step and its hover preview as composited at .95 and .7. `deleted` and `previewRemove` already pass and are unchanged.
+ */
+export const LIGHT_PALETTE: RenderPalette = {
+  base: hex(0x878787),
+  selected: hex(0xbe7715),
+  protected: hex(0x0092be),
+  protectedStrong: hex(0x00969f),
+  slab: hex(0xab6bdb),
+  deleted: hex(0xe63946),
+  step: hex(0x528f5f),
+  stepHover: hex(0x535f54),
+  pivot: hex(0x1d1d1f),
+  previewAdd: hex(0xe246bf),
+  previewRemove: hex(0x5b7cff),
+};
+/** The palette for a render theme; the dark one is `PALETTE` itself. */
+export const paletteFor = (theme: RenderTheme): RenderPalette => (theme === "light" ? LIGHT_PALETTE : PALETTE);
+
 export const DELETED_OPACITY_DEFAULT = 0.35;
 
 export interface FaceColour {

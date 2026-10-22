@@ -8,6 +8,9 @@ export const LAYER_COLOURS: readonly string[] = [
   "#fabed4", "#469990", "#dcbeff", "#9a6324", "#fffac8", "#800000", "#aaffc3", "#808000",
 ];
 export const MAIN_COLOUR = "#9aa0a6";
+/** The Main layer's chip on the light stage (3:1 on #e9ebef). */
+export const LIGHT_MAIN_COLOUR = "#82888d";
+export const mainColour = (theme: "dark" | "light"): string => (theme === "light" ? LIGHT_MAIN_COLOUR : MAIN_COLOUR);
 export const MAX_LAYERS = 32;
 export const HIDDEN_LAYER_NAME = "Hidden";
 
