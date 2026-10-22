@@ -571,7 +571,7 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
 - The Playwright config pins `colorScheme: "dark"`. Playwright defaults to light, which would now switch the app, so every existing
   pixel test keeps the dark stage and a light test opts in with `page.emulateMedia({ colorScheme: "light" })`.
 - R22-13: the light theme has a light stage (`--canvas #e9ebef`) and light HUD glass. Part 22-4 pins no point, highlight or axis
-  contrast on it: the render colours stay the dark theme's until part 22-4b.
+  contrast on it; the render colours followed in part 22-4b (see "Part 22-4b additions").
 - The vignette is not drawn (E9). A transparent canvas over a `#stage` radial gradient changed `E2E-216` by one dither level, so the
   stage is the opaque clear colour, which follows `--canvas` (`viewport/canvastoken.ts`). `E2E-216` run in one `-g` selection straight
   after `E2E-201` times out, also at 7067cd7; it passes alone and in file order.
@@ -583,3 +583,31 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
 - 22-4 minors (part 22-4b, Block 1): `UI-1100` (a collapsed filter toggle's accessible name carries its chip text), `UI-1101`
   (`#webgl-notice` declares no border), `E2E-230` (the same in the browser's accessible name), and the changed `E2E-216`
   (capture style), `E2E-221` and `E2E-226` (shared `stageCorner`/`expectStageCorner` poll instead of a sleep; the legend height pin).
+
+## Part 22-4b additions (light-theme render palette)
+
+- Block 1, the 22-4 minors: `UI-1100`, `UI-1101`, `E2E-230` and the changed `E2E-216`, `E2E-221`, `E2E-226` (listed under part 22-4 above).
+- Block 2, the light render palette: `UI-1102` (light point palette = the R22-14 measured 3:1 set, step layers 3:1 as composited),
+  `UI-1103` (light presets, the White slot is Blue), `UI-1104` (light axes: arrows 3:1, dimmed rings 3:1, both light backdrops),
+  `UI-1105` (light tool overlay colours 3:1, live and draft outlines apart), `UI-1106` (`renderTheme` defaults to dark, is never
+  saved, follows the page colour scheme, a same-theme apply is a no-op), `UI-1107` (colouriser and colour cache key), `UI-1108`
+  (step and deleted overlay styles, legend entries), `UI-1109` (legend chips, Selected dots, Main chip recolour without a rebuild),
+  `UI-1110` (Box and band specs at the light floors), `UI-1111` (axis triad, letters 4.5:1), `UI-1112` (the light palette is
+  converted sRGB to linear where it enters three.js, so drawn pixels equal the hex; the dark path is the same objects). The
+  `LIGHT_FLOORS` constants live in `frontend/src/testing/floors.ts`.
+  Smoke `E2E-231` (a lone base point draws 135 in light, the dark 216 in dark, and light again, no reload), `E2E-232` (light Box
+  armed: arrows, a ring, a box edge, triad and legend chip in the light colours; `data-theme="dark"` gives back the exact dark values)
+  and `E2E-233` (owner shots `/out/part22-4b-<w>x<h>-{dark,dark-armed,light,light-armed}.png`, keep with `SMOKE_SHOTS_DIR`, never
+  commit; a screenshot test, green before and after by design; its stage-corner poll is bounded at 20 s because each read is a
+  full-page screenshot). The changed `UI-1084` (the light-block clause flips: both light blocks declare the `--pt-*` and `--ax-*` tokens).
+  The full smoke run with `--workers=1` is 209 tests (204 + 5).
+- R22-14: in the light theme the arrows are held to 3:1 (WCAG 1.4.11 graphics), the triad letters to 4.5:1 as text
+  (`LIGHT_TRIAD_LETTER`). The dark arrows stay at 4.5:1 (`UI-906`, `UI-1085`, unedited).
+- `renderTheme` is app state, never saved, set from `colorScheme`. The scene, the colour cache key and the overlays read it, so a theme
+  switch recolours without a reload. The White slot draws Blue `#0000f0` in the light theme and keeps the saved id `white`.
+- A light test opts in with `page.emulateMedia({ colorScheme: "light" })`. Read dark marks with `farthestFromStage`, not
+  `brightestPixel`, on the light stage.
+- Drawn colours: point colours are written as linear floats and sRGB-encoded on output, so the dark base `#b0b0b0` draws 216. Only the
+  light palette is converted (`gpuRgb`/`gpuPalette` in `colour/palette.ts`); ramps, normals and layer colours are unchanged.
+- Frontend unit checks need `frontend/index.html` mounted next to `frontend/src` (`UI-1084`, `UI-1101` read it). `npx` is absent in the
+  checks image: run tsc as `node node_modules/typescript/bin/tsc --noEmit`.
