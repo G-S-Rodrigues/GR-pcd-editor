@@ -1,10 +1,10 @@
 import { expect, test } from "vitest";
 import { contrastRatio } from "../colour/palette";
-import html from "../../index.html?raw";
+import { raw } from "../testing/tokens";
 const token = (name: string): string => {
-  const m = html.match(new RegExp(`--${name}:\\s*(#[0-9a-fA-F]{6})`));
-  if (!m) throw new Error(`token --${name} missing from index.html`);
-  return m[1];
+  const v = raw("dark", name);
+  if (!/^#[0-9a-fA-F]{6}$/.test(v)) throw new Error(`token --${name} is not a #rrggbb colour in index.html: ${v}`);
+  return v;
 };
 
 test("UI-306 text tokens read at 4.5:1 and icon, focus and pressed colours at 3:1 against the panel", () => {
