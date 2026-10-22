@@ -7,7 +7,7 @@ import { HIDDEN_LAYER_NAME, SHOW_FIRST, deletePointsText, findLayer, hiddenLayer
 import { discardCount, layerDiscardText } from "../timeline/model";
 import { makeGuard } from "./edit";
 import type { ParamsKind } from "./runner";
-import { disarmed } from "./toolstate";
+import { disarmedKeepingRegion } from "./toolstate";
 import type { SelectionRequest } from "./selection";
 
 export interface LayersApi {
@@ -73,8 +73,8 @@ export function createLayers(store: Store<AppState>, api: LayersApi, deps: Layer
     return why !== null;
   };
 
-  /** R22-1: a call that consumed the selection leaves no tool armed. Runs before `adopt`, so the params hook sees tool none. */
-  const disarm = (): void => store.update(disarmed);
+  /** R22-1: a call that consumed the selection leaves no tool armed (a closed polygon prism region survives unless the Polygon tool was armed, as for Esc and Delete). Runs before `adopt`, so the params hook sees tool none. */
+  const disarm = (): void => store.update(disarmedKeepingRegion);
 
   function adopt(reply: LayerReply): void {
     store.set({ session: reply.session });

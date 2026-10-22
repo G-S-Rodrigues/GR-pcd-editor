@@ -561,7 +561,7 @@ function disarmSetup(o: { cursor?: number; confirm?: boolean; steal?: boolean; f
 }
 type DisarmT = ReturnType<typeof disarmSetup>;
 
-test("UI-994 each successful layer call disarms the tool before the params hook runs", async () => {
+test("UI-994 each successful layer call disarms the tool before the params hook runs, keeps the polygon prism region for a non-Polygon tool and blanks it when the Polygon tool was armed", async () => {
   const calls: [string, (t: DisarmT) => Promise<void>][] = [
     ["hideSelected", (t) => t.layers.hideSelected()],
     ["create", (t) => t.layers.create("A")],
@@ -571,13 +571,22 @@ test("UI-994 each successful layer call disarms the tool before the params hook 
     ["fromBand", (t) => t.layers.fromBand()],
     ["merge", (t) => t.layers.merge(1, 2)],
   ];
-  for (const [name, run] of calls) {
-    const t = disarmSetup();
-    t.store.update((s) => ({ ...s, tools: { ...s.tools, polygon: { ...s.tools.polygon, phase: "closed" as const, vertices: [[0, 0], [1, 0], [1, 1]] as [number, number][] } } }));
-    await run(t);
-    expect(t.store.get().tool, name).toBe("none");
-    expect(t.store.get().tools.polygon.phase, name).toBe("idle");
-    expect(t.toolAtHook, name).toEqual(["none"]);
+  const verts: [number, number][] = [[0, 0], [1, 0], [1, 1]];
+  for (const armed of ["box", "polygon"] as const) {
+    for (const [name, run] of calls) {
+      const t = disarmSetup();
+      t.store.update((s) => ({ ...s, tool: armed, tools: { ...s.tools, polygon: { ...s.tools.polygon, phase: "closed" as const, vertices: verts } } }));
+      await run(t);
+      const label = `${name} (${armed})`;
+      expect(t.store.get().tool, label).toBe("none");
+      expect(t.toolAtHook, label).toEqual(["none"]);
+      if (armed === "polygon") {
+        expect(t.store.get().tools.polygon.phase, label).toBe("idle");
+      } else {
+        expect(t.store.get().tools.polygon.phase, label).toBe("closed");
+        expect(t.store.get().tools.polygon.vertices, label).toEqual(verts);
+      }
+    }
   }
 });
 
