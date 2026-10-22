@@ -48,3 +48,18 @@ test("UI-841 the layer rows are not rebuilt by an unrelated store change (a clic
   store.set({ legendOpen: false });
   expect(items()[0]).toBe(before);
 });
+
+test("UI-1015 a protected layer's legend entry carries layer.protected and a shield element; an unprotected one has none; a flag flip rebuilds the row", () => {
+  const rows = layerRows(sessionFixture({ layers: [layer({ protected: true }), layer({ id: 2, name: "Wall", colour: 1 })] }));
+  const entries = legendEntries(false, null, undefined, rows);
+  expect(entries.find((e) => e.id === "layer-1")?.layer?.protected).toBe(true);
+  expect(entries.find((e) => e.id === "layer-2")?.layer?.protected).toBe(false);
+  store.set({ session: sessionFixture({ layers: [layer({ protected: true }), layer({ id: 2, name: "Wall", colour: 1 })] }) });
+  const shields = (id: string) => items().find((e) => e.getAttribute("data-legend-layer") === id)!.all().filter((e) => e.getAttribute("data-legend-shield") !== null);
+  expect(shields("1")).toHaveLength(1);
+  expect(shields("1")[0].getAttribute("aria-label")).toBe("Protected");
+  expect(shields("1")[0].all().some((e) => e.tag === "svg")).toBe(true);
+  expect(shields("2")).toHaveLength(0);
+  store.set({ session: sessionFixture({ layers: [layer({ protected: false }), layer({ id: 2, name: "Wall", colour: 1 })] }) });
+  expect(shields("1")).toHaveLength(0);
+});

@@ -4,7 +4,7 @@ import { type RampLegend, cssGradient, rampLegend } from "../colour/ramps";
 import type { AppState } from "../state/app";
 import type { Store } from "../state/store";
 import type { PreviewState } from "../state/types";
-import { HIDDEN_CHIP_TEXT, type LayerRow, hiddenPointCount, layerRows } from "../layers/model";
+import { HIDDEN_CHIP_TEXT, type LayerRow, hiddenPointCount, layerRows, protectedTip } from "../layers/model";
 import { LEGEND_BOX } from "../view/layout";
 import { control } from "./controls";
 import { h } from "./dom";
@@ -16,8 +16,8 @@ export interface LegendEntry {
   id: "base" | "selected" | "protected" | "slab" | "deleted" | "step" | "preview-add" | "preview-remove" | `layer-${number}`;
   label: string;
   colour: Rgb;
-  /** Present on a layer row: which layer, whether it is drawn, and the eye button's label. */
-  layer?: { id: number; visible: boolean; eyeLabel: string };
+  /** Present on a layer row: which layer, its bare name, whether it is drawn, the eye button's label and whether it is protected (the shield). */
+  layer?: { id: number; name: string; visible: boolean; eyeLabel: string; protected: boolean };
 }
 
 const hexRgb = (hex: string): Rgb => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255) as unknown as Rgb;
@@ -35,7 +35,7 @@ export function legendEntries(stepActive = false, previewOp: PreviewState["op"] 
       ? [{ id: "preview-remove" as const, label: "Will be removed", colour: PALETTE.previewRemove }]
       : []),
     ...(stepActive ? [{ id: "step" as const, label: "Step highlight", colour: PALETTE.step }] : []),
-    ...layers.map((l) => ({ id: `layer-${l.id}` as const, label: l.label, colour: hexRgb(l.colour), layer: { id: l.id, visible: l.visible, eyeLabel: l.eyeLabel } })),
+    ...layers.map((l) => ({ id: `layer-${l.id}` as const, label: l.label, colour: hexRgb(l.colour), layer: { id: l.id, name: l.name, visible: l.visible, eyeLabel: l.eyeLabel, protected: l.protected } })),
   ];
 }
 
@@ -94,7 +94,8 @@ export function buildLegend(root: HTMLElement, store: Store<AppState>, modebar: 
           const chip = h("span", { class: "chip", "data-legend": e.id });
           chip.style.background = cssColour(e.colour);
           const eye = h("button", { type: "button", class: "legend-eye", "data-legend-eye": e.layer!.id, "aria-pressed": String(e.layer!.visible), "aria-label": e.layer!.eyeLabel, title: e.layer!.eyeLabel, onclick: () => onToggleLayer(e.layer!.id) }, iconSvg(e.layer!.visible ? "eye" : "eyeoff", 12));
-          return h("span", { class: `legend-item${e.layer!.visible ? "" : " off"}`, "data-legend-layer": e.layer!.id }, chip, e.label, eye);
+          const shield = e.layer!.protected ? [h("span", { class: "legend-shield", "data-legend-shield": e.layer!.id, role: "img", "aria-label": "Protected", title: protectedTip(e.layer!.name) }, iconSvg("shield", 12))] : [];
+          return h("span", { class: `legend-item${e.layer!.visible ? "" : " off"}`, "data-legend-layer": e.layer!.id }, chip, e.label, ...shield, eye);
         }),
     );
   };
