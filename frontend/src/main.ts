@@ -44,6 +44,7 @@ import { h } from "./ui/dom";
 import { control } from "./ui/controls";
 import { buildInspector } from "./ui/inspector-shell";
 import { buildStatusbar } from "./ui/statusbar";
+import { buildBandPill } from "./ui/bandpill";
 import { buildLegend } from "./ui/legend";
 import { createHide } from "./orchestration/hide";
 import { editEnded, layerModeFix } from "./layers/model";
@@ -345,6 +346,7 @@ const panelActions = {
 buildInspector($("fileinfo"), store);
 buildToolPalette($("tools"), store, panelActions);
 buildLayersPanel($("layers-slot"), store, panelActions);
+buildBandPill($("stage"), store);
 const legend = buildLegend($("legend"), store, $("modebar"), () => void hide.show(), (id) => void layers.toggle(id));
 store.subscribe((s) => legend.update(s.timeline.highlight !== null, s.preview?.op ?? null));
 const stepEdit = createEditShape(store, {

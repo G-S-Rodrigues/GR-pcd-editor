@@ -9,6 +9,7 @@ export const TOOLTIPS: Record<string, string> = {
   redo: "Redo the last undone step (Ctrl+Y)",
   preview: "Compute exact counts for the current selection without deleting",
   apply: "Delete the selected points from the active cloud (undoable, key Delete); enabled only for an up-to-date preview",
+  "band-pill-show": "Show the protection band on the canvas again; protection is on either way",
   "hidden-chip": "Points in hidden layers are not drawn or selectable; click to show every hidden layer again (they are still in the cloud and in the export)",
   "legend-menu": "Fold or unfold the legend and the mode line (tool, operation, scope, frame, unit); the choice is saved with the session",
   timeline: "History timeline: one card per deletion. Click a step icon to highlight its points, double-click a name to rename, hover for Roll back, Rename and Delete",

@@ -68,6 +68,9 @@
       #legend .legend-head:hover { background: #36404c; }
       #legend .hidden-chip { align-self: flex-start; height: 22px; padding: 0 8px; margin: 0 0 2px; pointer-events: auto; font-size: 12px; }
       #legend .hidden-chip[hidden] { display: none; }
+      #band-pill { position: absolute; left: 50%; bottom: 56px; transform: translateX(-50%); z-index: 4; display: flex; align-items: center; gap: 8px; padding: 3px 4px 3px 10px; font-size: 12px; background: rgba(21,24,29,0.85); border: 1px solid var(--line); border-radius: 14px; pointer-events: auto; white-space: nowrap; }
+      #band-pill[hidden] { display: none; }
+      #band-pill button { height: 22px; padding: 0 10px; font-size: 12px; }
       #legend .legend-shield { color: #00d1ff; margin-left: 3px; vertical-align: middle; }
       #legend .legend-head svg { transition: transform .15s; }
       #legend .legend-head.closed svg { transform: rotate(-90deg); }

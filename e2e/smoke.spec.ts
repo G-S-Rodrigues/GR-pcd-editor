@@ -6465,3 +6465,153 @@ test("E2E-215 22-3 with the real mouse the band's upper z arrow tip widens max o
   await expect.poll(async () => Math.abs(Number(await ctl("prot-tilt-x").inputValue()) - turned.rx)).toBeLessThan(1e-4); // the field shows the state value
   await exact("Protected", String(countInTiltedSlab(rows, turned.rx, turned.ry, turned.pivot, turned.min, turned.max)));
 });
+
+/** The tilted fixture with the slab fitted to the floor by typing (as E2E-44), in the Front view unless `front` is false. */
+const fitTiltedFloor = async (page: import("@playwright/test").Page, setNum: (id: string, v: number) => Promise<void>, ctl: (id: string) => import("@playwright/test").Locator, front = true) => {
+  await ctl("prot-enabled").check();
+  const ang = tiltedFloorAngles();
+  await setNum("prot-tilt-y", ang.ry);
+  await setNum("prot-tilt-x", ang.rx);
+  const t = await tiltNow(page);
+  const rx = (t.rx * Math.PI) / 180;
+  const ry = (t.ry * Math.PI) / 180;
+  const c = -(Math.cos(rx) * Math.sin(ry) * t.pivot[0] - Math.sin(rx) * t.pivot[1]);
+  const lo = c - TILTED.half;
+  const hi = c + TILTED.half;
+  const order = hi > t.min ? ["prot-max", "prot-min"] : ["prot-min", "prot-max"];
+  for (const id of order) await setNum(id, id === "prot-max" ? hi : lo);
+  if (front) await ctl("cube-front").click(); // not the "3" key: after the last field's Tab it would be typed into a number field
+  await appIdle(page);
+  return tiltNow(page);
+};
+const bandHidden = (page: import("@playwright/test").Page) => page.evaluate(() => !(window as unknown as { __editor: { state: () => { bandVisible: boolean } } }).__editor.state().bandVisible);
+
+test("E2E-216 22-3 Show band off: protection and counts stay, the band's handles and drawing go, a press where the arrow tip was grabs nothing, a box Delete removes exactly the unprotected points, the pill says so; Show and reload keep to the switch", async ({ page }) => {
+  const { exact, ctl, setNum, num } = helpers(page);
+  await openTilted(page, exact);
+  const rows = tiltedRows();
+  const fitted = await fitTiltedFloor(page, setNum, ctl);
+  await exact("Protected", String(TILTED.floor));
+  expect(countInTiltedSlab(rows, fitted.rx, fitted.ry, fitted.pivot, fitted.min, fitted.max)).toBe(TILTED.floor);
+  const hooks = () => page.evaluate(() => ({ arrows: (window as unknown as { __editor: TiltHook }).__editor.protectionArrows().length, rings: (window as unknown as { __editor: TiltHook }).__editor.tiltRings().length }));
+  expect(await hooks()).toEqual({ arrows: 2, rings: 4 });
+  const tip = await arrowTip(page, "global-max");
+  const pill = page.locator("#band-pill");
+  await expect(pill).toBeHidden();
+  // pixels: the viewport above the pill with the section folded, band shown
+  const summary = page.locator("details.panel > summary", { hasText: "Height protection" });
+  const fold = async (open: boolean) => {
+    if ((await protNow(page)).open !== open) await summary.click();
+    await expect.poll(async () => (await protNow(page)).open).toBe(open);
+  };
+  const clipOf = async () => {
+    const v = (await page.locator("#viewport").boundingBox())!;
+    return { x: v.x, y: v.y, width: v.width, height: v.height - 130 }; // the pill sits in the bottom 130 px (checked below)
+  };
+  const snap = async () => {
+    await page.mouse.move(5, 5);
+    await appIdle(page);
+    return page.screenshot({ clip: await clipOf() });
+  };
+  await fold(false); // folded: no strong colour, so only the band can differ
+  const shownShot = await snap();
+  await fold(true);
+
+  await ctl("prot-show-band").click();
+  await expect(ctl("prot-show-band")).toHaveAttribute("aria-checked", "false");
+  expect(await bandHidden(page)).toBe(true);
+  await expect(pill).toBeVisible();
+  await expect(pill).toContainText("Protection on · band hidden");
+  const pb = (await pill.boundingBox())!;
+  const vb = (await page.locator("#viewport").boundingBox())!;
+  expect(pb.y).toBeGreaterThan(vb.y + vb.height - 130); // inside the clip's complement
+  expect(pb.y + pb.height).toBeLessThanOrEqual(vb.y + vb.height);
+  expect(await hooks()).toEqual({ arrows: 0, rings: 0 });
+  await exact("Protected", String(TILTED.floor));
+  expect(await tiltNow(page)).toEqual(fitted); // protection untouched
+  await fold(false);
+  const hiddenShot = await snap();
+  await fold(true);
+  // protection off and folded draws the same canvas as the hidden band (above the pill), and shown differs
+  await ctl("prot-enabled").uncheck();
+  await expect(pill).toBeHidden();
+  await fold(false);
+  const offShot = await snap();
+  await fold(true);
+  expect(hiddenShot.equals(offShot)).toBe(true);
+  expect(shownShot.equals(hiddenShot)).toBe(false);
+  await ctl("prot-enabled").check();
+  await exact("Protected", String(TILTED.floor));
+  await expect(pill).toBeVisible();
+  // a real press and drag where the arrow tip was leaves min and max alone (the camera gets it and orbits)
+  await realDrag(page, tip, { x: tip.x, y: tip.y - 30 });
+  const after = await tiltNow(page);
+  expect(after.min).toBe(fitted.min);
+  expect(after.max).toBe(fitted.max);
+  await exact("Protected", String(TILTED.floor));
+
+  // a box over the floor and the ghosts: Delete removes exactly the unprotected points
+  await ctl("tool-box").click();
+  for (const [id, v] of [["box-center-x", 10], ["box-center-y", 10], ["box-center-z", 3], ["box-size-x", 30], ["box-size-y", 30], ["box-size-z", 20]] as const) await setNum(id, v);
+  await exact("Candidates", String(TILTED.ghost));
+  await ctl("apply").click();
+  await exact("Active", String(TILTED.floor));
+  expect(await num("Original")).toBe(TILTED.floor + TILTED.ghost);
+  await exact("Protected", String(TILTED.floor));
+
+  // reload keeps hidden (E1), and Show brings the handles and hides the pill
+  // the client state is saved a second after the last change: wait for the archive to hold the flag before reloading
+  await expect
+    .poll(() => page.evaluate(async () => (await (await fetch("/api/session")).json()).client_state?.ui?.bandHidden), { timeout: 15000 })
+    .toBe(true);
+  await page.reload();
+  await exact("Original", String(TILTED.floor + TILTED.ghost));
+  await expect.poll(() => bandHidden(page), { timeout: 15000 }).toBe(true);
+  await expect(pill).toBeVisible();
+  await pill.getByRole("button", { name: "Show" }).click();
+  await expect(pill).toBeHidden();
+  expect(await bandHidden(page)).toBe(false);
+  expect((await hooks()).arrows).toBe(2);
+  // leave the archive shown (the flag is absent while shown), so the next test's reopened session does not start hidden
+  await expect
+    .poll(() => page.evaluate(async () => (await (await fetch("/api/session")).json()).client_state?.ui?.bandHidden), { timeout: 15000 })
+    .toBeUndefined();
+});
+
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-217 22-3 owner screenshots at ${w}x${h}: the band shown (corner view, section open) and hidden with the pill; the pill sits in the canvas and overlaps nothing`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => {
+      if (m.type() === "error" && !/404/.test(m.text())) errors.push(m.text());
+    });
+    const { exact, ctl, setNum } = helpers(page);
+    await openTilted(page, exact);
+    await fitTiltedFloor(page, setNum, ctl, false); // the default corner view
+    expect(await bandHidden(page)).toBe(false); // the band starts shown
+    await page.mouse.move(5, 5);
+    await appIdle(page);
+    await page.screenshot({ path: `/out/part22-3-${w}x${h}-band.png` });
+    await ctl("prot-show-band").click();
+    const pill = page.locator("#band-pill");
+    await expect(pill).toBeVisible();
+    await page.mouse.move(5, 5);
+    await appIdle(page);
+    await page.screenshot({ path: `/out/part22-3-${w}x${h}-band-hidden.png` });
+    const pb = (await pill.boundingBox())!;
+    const stage = (await page.locator("#stage").boundingBox())!;
+    expect(pb.x).toBeGreaterThanOrEqual(stage.x);
+    expect(pb.x + pb.width).toBeLessThanOrEqual(stage.x + stage.width);
+    expect(pb.y).toBeGreaterThanOrEqual(stage.y);
+    expect(pb.y + pb.height).toBeLessThanOrEqual(stage.y + stage.height);
+    for (const id of ["#legend", "#timeline", "#viewcube", "#camera-cluster", "#triad", "#notices"]) {
+      const el = page.locator(id);
+      if (!(await el.isVisible())) continue;
+      const r = (await el.boundingBox())!;
+      const apart = pb.x + pb.width <= r.x || r.x + r.width <= pb.x || pb.y + pb.height <= r.y || r.y + r.height <= pb.y;
+      expect(apart, `${id} overlaps the pill`).toBe(true);
+    }
+    expect(errors).toEqual([]);
+  });
+}

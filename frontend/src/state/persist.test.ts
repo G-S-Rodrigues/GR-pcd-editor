@@ -269,3 +269,21 @@ test("UI-968 the saved client state holds only the existing keys: no plane or th
   const text = JSON.stringify(c);
   for (const needle of ["1.2345678", "0.4321", "0.7654321", "planes", "thin"]) expect(text).not.toContain(needle);
 });
+
+test("UI-1072 the Show band state: ui.bandHidden is written only while hidden (shown serialises as before), the round trip restores hidden, a non-boolean is ignored", () => {
+  const a = createAppStore();
+  expect(a.get().bandVisible).toBe(true);
+  expect(JSON.stringify(serialiseClientState(a.get()))).not.toMatch(/band/i);
+  a.set({ bandVisible: false });
+  const saved = JSON.parse(JSON.stringify(serialiseClientState(a.get())));
+  expect(saved.ui.bandHidden).toBe(true);
+  const patch = restoreClientState(saved);
+  expect(patch?.bandVisible).toBe(false);
+  const b = createAppStore();
+  expect(applyClientPatch(b.get(), patch!).bandVisible).toBe(false);
+  for (const bad of ["yes", 1, null, { a: 1 }, false]) {
+    const p = restoreClientState({ v: 1, ui: { bandHidden: bad } });
+    expect(p?.bandVisible, String(bad)).toBeUndefined();
+    expect(applyClientPatch(b.get(), p!).bandVisible).toBe(true);
+  }
+});

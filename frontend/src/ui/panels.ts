@@ -887,6 +887,16 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     ),
     tiltNote,
     button("prot-level", "Level", () => { tiltMsg(null); prot((m) => ({ ok: true, model: P.levelled(m) })); }),
+    (() => {
+      // "Show band": hides the whole band on the canvas (fill, outline, arrows, rings); protection stays on, so it is not a protection edit
+      const sw = control("button", { id: "prot-show-band", role: "switch", class: "toggle", onclick: () => store.update((s) => ({ ...s, bandVisible: !s.bandVisible })) }, iconSvg("eye", 16), " Show band");
+      syncs.push((s) => {
+        sw.setAttribute("aria-checked", String(s.bandVisible));
+        sw.setAttribute("aria-pressed", String(s.bandVisible));
+        sw.replaceChildren(iconSvg(s.bandVisible ? "eye" : "eyeoff", 16), " Show band");
+      });
+      return sw;
+    })(),
     select("prot-mode", "This operation", [["inherit", "Use global"], ["add_local", "Add local slab"], ["override", "Override global"]], (s) => s.tools.protection.mode, (v) => prot((m) => ({ ok: true, model: P.setOperationMode(m, v as P.OpMode) }))),
     row(
       field("prot-local-min", "Local min", (s) => s.tools.protection.local?.min ?? 0, (v) => { const r = a.protectionEdit((m) => P.setLocal(m, { min: v, max: m.local?.max ?? v })); return r.ok ? null : (r.error ?? "Invalid"); }, (s) => s.tools.protection.mode === "inherit"),
