@@ -1,4 +1,4 @@
-import { PALETTE, type Rgb } from "../colour/palette";
+import { PALETTE, type RenderPalette, type Rgb, paletteFor } from "../colour/palette";
 import { selectedRgb } from "../colour/selectcolour";
 import { type RampLegend, cssGradient, rampLegend } from "../colour/ramps";
 import type { AppState } from "../state/app";
@@ -23,18 +23,19 @@ export interface LegendEntry {
 const hexRgb = (hex: string): Rgb => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255) as unknown as Rgb;
 
 /** Legend rows; colours are the same constants the renderer uses. */
-export function legendEntries(stepActive = false, previewOp: PreviewState["op"] | null = null, selected: Rgb = PALETTE.selected, layers: readonly LayerRow[] = []): LegendEntry[] {
+export function legendEntries(stepActive = false, previewOp: PreviewState["op"] | null = null, selected: Rgb | undefined = undefined, layers: readonly LayerRow[] = [], P: RenderPalette = PALETTE): LegendEntry[] {
+  const candidate = selected ?? P.selected;
   return [
-    { id: "base", label: "Unselected", colour: PALETTE.base },
-    { id: "selected", label: "Candidate (will delete)", colour: selected },
-    { id: "protected", label: "Protected (kept)", colour: PALETTE.protected },
-    { id: "slab", label: "Protection slab", colour: PALETTE.slab },
-    { id: "deleted", label: "Deleted overlay", colour: PALETTE.deleted },
-    ...(previewOp === "add" ? [{ id: "preview-add" as const, label: "Will be added", colour: PALETTE.previewAdd }] : []),
+    { id: "base", label: "Unselected", colour: P.base },
+    { id: "selected", label: "Candidate (will delete)", colour: candidate },
+    { id: "protected", label: "Protected (kept)", colour: P.protected },
+    { id: "slab", label: "Protection slab", colour: P.slab },
+    { id: "deleted", label: "Deleted overlay", colour: P.deleted },
+    ...(previewOp === "add" ? [{ id: "preview-add" as const, label: "Will be added", colour: P.previewAdd }] : []),
     ...(previewOp === "subtract" || previewOp === "intersect"
-      ? [{ id: "preview-remove" as const, label: "Will be removed", colour: PALETTE.previewRemove }]
+      ? [{ id: "preview-remove" as const, label: "Will be removed", colour: P.previewRemove }]
       : []),
-    ...(stepActive ? [{ id: "step" as const, label: "Step highlight", colour: PALETTE.step }] : []),
+    ...(stepActive ? [{ id: "step" as const, label: "Step highlight", colour: P.step }] : []),
     ...layers.map((l) => ({ id: `layer-${l.id}` as const, label: l.label, colour: hexRgb(l.colour), layer: { id: l.id, name: l.name, visible: l.visible, eyeLabel: l.eyeLabel, protected: l.protected } })),
   ];
 }
@@ -74,7 +75,8 @@ export function buildLegend(root: HTMLElement, store: Store<AppState>, modebar: 
   root.append(header, chip, body);
   const draw = () => {
     rows.replaceChildren();
-    for (const e of legendEntries(shown, shownPreview, selectedRgb(store.get().selectedColour))) {
+    const { selectedColour, renderTheme } = store.get();
+    for (const e of legendEntries(shown, shownPreview, selectedRgb(selectedColour, renderTheme), [], paletteFor(renderTheme))) {
       const chip = h("span", { class: "chip", "data-legend": e.id });
       chip.style.background = e.id === "base" && current ? cssGradient(current.stops) : cssColour(e.colour);
       rows.append(h("span", { class: "legend-item" }, chip, e.label));
@@ -132,11 +134,13 @@ export function buildLegend(root: HTMLElement, store: Store<AppState>, modebar: 
     if (rampChanged) draw();
   };
   let shownSelected = store.get().selectedColour;
+  let shownTheme = store.get().renderTheme;
   const sync = (s: AppState) => {
     syncRamp(s);
     drawLayers(s);
-    if (s.selectedColour !== shownSelected) {
+    if (s.selectedColour !== shownSelected || s.renderTheme !== shownTheme) {
       shownSelected = s.selectedColour;
+      shownTheme = s.renderTheme;
       draw();
     }
     header.setAttribute("aria-expanded", String(s.legendOpen));

@@ -22,7 +22,7 @@ import { scopeNotice, selectionDisabledReason } from "../orchestration/selection
 import { hideState } from "../orchestration/hide";
 import { historyRows } from "../inspector/history";
 import { control } from "./controls";
-import { SELECTED_COLOURS, type SelectedColourId } from "../colour/selectcolour";
+import { SELECTED_COLOURS, type SelectedColourId, selectedPresets } from "../colour/selectcolour";
 import { cssColour } from "./legend";
 import { iconControl } from "./iconbutton";
 import { iconSvg } from "./icons";
@@ -263,8 +263,12 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     liveNote.textContent = liveNote.hidden ? "" : LIVE_NOTE;
     liveNote.title = liveNote.hidden ? "" : LIVE_NOTE_TITLE;
     scope.value = s.scope;
+    const presets = selectedPresets(s.renderTheme);
     SELECTED_COLOURS.forEach((p, i) => {
       const on = s.selectedColour === p.id;
+      // the dot follows the render theme (the White slot is Blue on the light stage): same element, so focus is kept
+      swatches[i].style.background = cssColour(presets[i].colour);
+      swatches[i].setAttribute("aria-label", `Selected colour ${presets[i].label}`);
       swatches[i].setAttribute("aria-checked", String(on));
       swatches[i].tabIndex = on ? 0 : -1;
       swatches[i].disabled = !open;

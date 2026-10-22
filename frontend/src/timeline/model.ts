@@ -1,4 +1,4 @@
-import { PALETTE, type Rgb } from "../colour/palette";
+import { type RenderTheme, type Rgb, paletteFor } from "../colour/palette";
 import type { SessionState } from "../state/types";
 
 /** Geometry of the strip (px): every step card is CARD_W wide, GAP apart; the track starts PAD in. */
@@ -274,10 +274,11 @@ export interface StepLayerStyle {
   hover: boolean;
 }
 /** How the highlight layer looks: null when no step is shown. Hovering another step previews it lighter. */
-export function stepLayerStyle(t: TimelineState): StepLayerStyle | null {
+export function stepLayerStyle(t: TimelineState, theme: RenderTheme = "dark"): StepLayerStyle | null {
+  const P = paletteFor(theme);
   if (t.hover !== null && t.hover !== t.highlight) {
-    return { sid: t.hover, colour: PALETTE.stepHover, opacity: 0.7, sizeDelta: 2, hover: true };
+    return { sid: t.hover, colour: P.stepHover, opacity: 0.7, sizeDelta: 2, hover: true };
   }
-  if (t.highlight !== null) return { sid: t.highlight, colour: PALETTE.step, opacity: 0.95, sizeDelta: 2, hover: false };
+  if (t.highlight !== null) return { sid: t.highlight, colour: P.step, opacity: 0.95, sizeDelta: 2, hover: false };
   return null;
 }

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
-import { MAIN_COLOUR } from "../layers/model";
-import { PALETTE, contrastRatio } from "../colour/palette";
-import { AXIS_COLOUR as PLANE_AXIS } from "../filterboxes/plane";
+import { LIGHT_MAIN_COLOUR, MAIN_COLOUR } from "../layers/model";
+import { LIGHT_PALETTE, PALETTE, contrastRatio } from "../colour/palette";
+import { AXIS_COLOUR as PLANE_AXIS, LIGHT_AXIS_COLOUR as LIGHT_AXIS } from "../filterboxes/plane";
 import { bandOverlaySpec } from "../inspector/bandgizmo";
 import { createAppStore, type AppState } from "../state/app";
 import type { Vec3 } from "../state/types";
@@ -60,7 +60,8 @@ describe("design tokens (part 22-4)", () => {
   };
   // Measured departures from mockup notes.md (plan E3): accent-text, on-accent, on-destructive, destructive-text, protected-ui are new;
   // focus is the opaque accent (the mockup's 55% ring measured 2.18 / 1.79); the light warning is #9a7300 (the mockup's #b58900 measured 2.94).
-  // The light --pt-protected and the light axes are deferred to 22-4b and are deliberately absent (UI-1084).
+  // The light data and axis tokens (R22-13, R22-14) are the light render palette: --pt-protected is #0092be (notes.md #0099c7 measured 2.76 on #e9ebef)
+  // and --ax-y is #1f9b3b (notes.md #1f9e3c measured 2.93); --ax-x and --ax-z are notes.md's own.
   const norm = (v: string): string => v.replace(/\s+/g, "").replace(/\d*\.?\d+/g, (n) => String(Number(n))).toLowerCase();
 
   test("UI-1081 token values equal notes.md in both themes, with the measured departures listed above", () => {
@@ -107,16 +108,23 @@ describe("design tokens (part 22-4)", () => {
   const hexOf = (c: readonly [number, number, number]): string => `#${c.map((v) => Math.round(v * 255).toString(16).padStart(2, "0")).join("")}`;
   const num = (n: number): string => `#${n.toString(16).padStart(6, "0")}`;
 
-  test("UI-1084 data and axis tokens live only in the dark :root and equal the render palette; neither light block declares one; the stage tokens are per theme", () => {
+  test("UI-1084 data and axis tokens: the dark :root equals the dark render palette and both light blocks declare the same names equal to the light render palette (R22-13, R22-14); the stage tokens are per theme", () => {
     const blocks = parseBlocks();
-    const want: Record<string, string> = {
-      "pt-candidate": hexOf(PALETTE.selected), "pt-protected": hexOf(PALETTE.protected), "pt-slab": hexOf(PALETTE.slab), "pt-deleted": hexOf(PALETTE.deleted),
-      "pt-step": hexOf(PALETTE.step), "pt-add": hexOf(PALETTE.previewAdd), "pt-remove": hexOf(PALETTE.previewRemove), "pt-main": MAIN_COLOUR,
-      "ax-x": num(PLANE_AXIS.x), "ax-y": num(PLANE_AXIS.y), "ax-z": num(PLANE_AXIS.z),
-    };
-    for (const [name, hex] of Object.entries(want)) expect(parseColour(blocks.root[name] ?? "").hex, `--${name}`).toBe(hex);
+    const wantFor = (pal: typeof PALETTE, main: string, axes: Record<"x" | "y" | "z", number>): Record<string, string> => ({
+      "pt-candidate": hexOf(pal.selected), "pt-protected": hexOf(pal.protected), "pt-slab": hexOf(pal.slab), "pt-deleted": hexOf(pal.deleted),
+      "pt-step": hexOf(pal.step), "pt-add": hexOf(pal.previewAdd), "pt-remove": hexOf(pal.previewRemove), "pt-main": main,
+      "ax-x": num(axes.x), "ax-y": num(axes.y), "ax-z": num(axes.z),
+    });
+    const dark = wantFor(PALETTE, MAIN_COLOUR, PLANE_AXIS);
+    for (const [name, hex] of Object.entries(dark)) expect(parseColour(blocks.root[name] ?? "").hex, `--${name}`).toBe(hex);
     expect([TRIAD_AXIS.x, TRIAD_AXIS.y, TRIAD_AXIS.z]).toEqual([blocks.root["ax-x"], blocks.root["ax-y"], blocks.root["ax-z"]]);
-    for (const block of [blocks.media, blocks.attr]) expect(Object.keys(block).filter((n) => /^(pt|ax)-/.test(n))).toEqual([]);
+    const light = wantFor(LIGHT_PALETTE, LIGHT_MAIN_COLOUR, LIGHT_AXIS);
+    const names = Object.keys(blocks.root).filter((n) => /^(pt|ax)-/.test(n));
+    expect(names.sort()).toEqual(Object.keys(dark).sort());
+    for (const [label, block] of [["media", blocks.media], ["attr", blocks.attr]] as const) {
+      expect(Object.keys(block).filter((n) => /^(pt|ax)-/.test(n)).sort(), `${label} block declares every pt-/ax- name`).toEqual(names);
+      for (const [name, hex] of Object.entries(light)) expect(parseColour(block[name] ?? "").hex, `${label} --${name}`).toBe(hex);
+    }
     expect(solid("dark", "canvas")).toBe("#0c0d10");
     expect(solid("dark", "canvas-vignette")).toBe("#16181d");
     expect(solid("light", "canvas")).toBe("#e9ebef");

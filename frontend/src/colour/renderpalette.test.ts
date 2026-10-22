@@ -1,5 +1,11 @@
 import { describe, expect, test } from "vitest";
+import { overlayStyle } from "../compare/model";
+import { legendEntries } from "../ui/legend";
 import { createAppStore } from "../state/app";
+import { sessionFixture } from "../testing/fixtures";
+import { emptyTimeline, stepLayerStyle } from "../timeline/model";
+import { layerColourKey } from "./key";
+import { colourizeMasked } from "./modes";
 import { serialiseClientState } from "../state/persist";
 import { AXIS_COLOUR, LIGHT_AXIS_COLOUR, axisColours } from "../filterboxes/plane";
 import { blend } from "../timeline/overlay";
@@ -108,5 +114,54 @@ describe("light render palette (part 22-4b, R22-14)", () => {
     apply("dark");
     expect(store.get().renderTheme).toBe("dark");
     expect(notified).toBe(2);
+  });
+
+  test("UI-1107 the colouriser paints the light palette when given it and today's colours when not; the colour cache key changes with the theme and with nothing else", () => {
+    const coords = new Float32Array(18);
+    coords[17] = 0.5; // the sixth point sits inside the region below
+    const flags = new Uint8Array([1, 2, 8, 16, 0, 0]);
+    const r = { coords, flags, count: 6, origin: [0, 0, 0] as [number, number, number] };
+    const ctx = { mode: "flat" as const, bounds: null, markDeleted: false };
+    const f32 = (c: readonly number[]) => c.map(Math.fround);
+    const px = (a: Float32Array, i: number) => [...a.slice(i * 3, i * 3 + 3)];
+    const P = LIGHT_PALETTE;
+    const lit = colourizeMasked(r, { ...ctx, palette: P }).colours;
+    expect([0, 1, 2, 3, 4].map((i) => px(lit, i))).toEqual([P.selected, P.protected, P.previewAdd, P.previewRemove, P.base].map(f32));
+    const withRegion = colourizeMasked(r, { ...ctx, palette: P, region: { intervals: [{ min: 0.25, max: 1 }] } }).colours;
+    expect(px(withRegion, 1)).toEqual(f32(P.protectedStrong));
+    expect(px(withRegion, 5)).toEqual(f32(P.protectedStrong));
+    expect(px(withRegion, 4)).toEqual(f32(P.base));
+    // omitted palette = the dark one, byte for byte
+    const dark = colourizeMasked(r, ctx).colours;
+    expect([0, 1, 2, 3, 4].map((i) => px(dark, i))).toEqual([PALETTE.selected, PALETTE.protected, PALETTE.previewAdd, PALETTE.previewRemove, PALETTE.base].map(f32));
+    expect(colourizeMasked(r, { ...ctx, palette: PALETTE }).colours).toEqual(dark);
+    // the cache key: the theme is in it, nothing else moved
+    const a = { ...createAppStore().get(), session: sessionFixture() };
+    expect(layerColourKey({ ...a, renderTheme: "light" }, false)).not.toBe(layerColourKey({ ...a, renderTheme: "dark" }, false));
+    expect(layerColourKey({ ...a, renderTheme: "light" }, true)).toBe(layerColourKey({ ...a, renderTheme: "light" }, true));
+    expect(layerColourKey({ ...a, renderTheme: "dark" }, false)).toBe(layerColourKey(a, false));
+  });
+
+  test("UI-1108 the step style, the overlay style and the legend entries take the theme; with no theme they equal today's output", () => {
+    const t = { ...emptyTimeline(), highlight: 3 };
+    expect(stepLayerStyle(t)).toEqual({ sid: 3, colour: PALETTE.step, opacity: 0.95, sizeDelta: 2, hover: false });
+    expect(stepLayerStyle(t, "dark")).toEqual(stepLayerStyle(t));
+    expect(stepLayerStyle(t, "light")).toEqual({ sid: 3, colour: LIGHT_PALETTE.step, opacity: 0.95, sizeDelta: 2, hover: false });
+    const hover = { ...t, hover: 4 };
+    expect(stepLayerStyle(hover)).toEqual({ sid: 4, colour: PALETTE.stepHover, opacity: 0.7, sizeDelta: 2, hover: true });
+    expect(stepLayerStyle(hover, "light")).toEqual({ sid: 4, colour: LIGHT_PALETTE.stepHover, opacity: 0.7, sizeDelta: 2, hover: true });
+    expect(stepLayerStyle(emptyTimeline(), "light")).toBeNull();
+    expect(overlayStyle(0.5)).toEqual({ colour: PALETTE.deleted, opacity: 0.5 });
+    expect(overlayStyle(0.5, "dark")).toEqual(overlayStyle(0.5));
+    expect(overlayStyle(0.5, "light")).toEqual({ colour: LIGHT_PALETTE.deleted, opacity: 0.5 });
+    const dark = legendEntries(true, "add", undefined, []);
+    expect(dark.find((e) => e.id === "base")?.colour).toEqual(PALETTE.base);
+    expect(legendEntries(true, "add", undefined, [], PALETTE)).toEqual(dark);
+    const light = legendEntries(true, "add", undefined, [], LIGHT_PALETTE);
+    expect(light.map((e) => e.id)).toEqual(dark.map((e) => e.id));
+    const want: Record<string, readonly number[]> = { base: LIGHT_PALETTE.base, selected: LIGHT_PALETTE.selected, protected: LIGHT_PALETTE.protected, slab: LIGHT_PALETTE.slab, deleted: LIGHT_PALETTE.deleted, "preview-add": LIGHT_PALETTE.previewAdd, step: LIGHT_PALETTE.step };
+    for (const [id, c] of Object.entries(want)) expect(light.find((e) => e.id === id)?.colour, id).toEqual(c);
+    // a chosen Selected colour still wins over the palette's candidate colour
+    expect(legendEntries(false, null, [0, 0, 1], [], LIGHT_PALETTE).find((e) => e.id === "selected")?.colour).toEqual([0, 0, 1]);
   });
 });

@@ -1,6 +1,6 @@
 import { type AppState } from "../state/app";
 import type { Store } from "../state/store";
-import { LAYER_COLOURS, MAIN_COLOUR, MAIN_LABEL, editingText, findLayer, layerButtons, layerRows, protectedTip } from "../layers/model";
+import { LAYER_COLOURS, MAIN_LABEL, editingText, findLayer, layerButtons, layerRows, mainColour, protectedTip } from "../layers/model";
 import { control } from "./controls";
 import { foldable } from "./fold";
 import { h } from "./dom";
@@ -53,6 +53,8 @@ export function buildLayersPanel(root: HTMLElement, store: Store<AppState>, a: P
   const withShield = ([name, count]: Node[], shield: Node | null): Node[] => (shield ? [name, shield, count] : [name, count]);
   const opened = new Set<number>();
   let layerKey = "";
+  /** The Main row's chip: recoloured in place when the render theme changes (the rows are not rebuilt for it). */
+  let mainChip: HTMLElement | null = null;
   let sessionId: string | null = null;
   const sync = (s: AppState) => {
     // a different file starts with every fold-out closed: layer ids repeat from file to file
@@ -76,12 +78,15 @@ export function buildLayersPanel(root: HTMLElement, store: Store<AppState>, a: P
     // rebuild the rows only when they change: a store update between mousedown and mouseup must not swallow a click
     const editingId = s.layerUi.editing;
     const key = JSON.stringify([rows, s.layerUi.active, s.session?.counts.main, [...opened], editingId]);
+    if (mainChip) mainChip.style.background = mainColour(s.renderTheme);
     if (key === layerKey) return;
     layerKey = key;
+    mainChip = null;
     const out: Node[] = [];
     if (rows.length > 0) {
       const main = MAIN_LABEL(s.session?.counts.main ?? 0);
-      out.push(h("li", { class: "layer-row main", "data-layer-row": "0" }, chipOf(MAIN_COLOUR), ...nameAndCount("Main", main)));
+      mainChip = chipOf(mainColour(s.renderTheme));
+      out.push(h("li", { class: "layer-row main", "data-layer-row": "0" }, mainChip, ...nameAndCount("Main", main)));
     }
     for (const r of rows) {
       const open = opened.has(r.id) || editingId === r.id;
