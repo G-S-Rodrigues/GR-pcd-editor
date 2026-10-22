@@ -102,9 +102,9 @@ const layerA = (colour: number) => layerPaletteRgb([{ id: 1, name: "A", colour, 
 
 test("UI-1010 Layers mode with a slab region: a layer point draws its layer colour, main and unknown-id points stay the strong slab colour, the kept, selected and preview flags still win", () => {
   const rgb = layerA(0);
-  const r = { ...PT(6), layer: new Uint8Array([0, 1, 9, 1, 1, 1]) }; // every z is 0, inside the slab
-  r.flags = new Uint8Array([0, 0, 0, 2, 1, 8]); // main, layer, unknown id, kept, selected, preview-add
-  const { colours, ovr } = colourizeMasked(r, { mode: "layers", bounds: null, markDeleted: false, layerRgb: rgb, region: SLAB });
+  const r = { ...PT(8), layer: new Uint8Array([0, 1, 9, 1, 1, 1, 1, 1]) }; // every z is 0, inside the slab
+  r.flags = new Uint8Array([0, 0, 0, 2, 1, 8, 16, 4]); // main, layer, unknown id, kept, selected, preview-add, preview-remove, deleted
+  const { colours, ovr } = colourizeMasked(r, { mode: "layers", bounds: null, markDeleted: true, layerRgb: rgb, region: SLAB });
   const at = (i: number) => [...colours.slice(3 * i, 3 * i + 3)];
   const f = (c: readonly number[]) => c.map(Math.fround);
   expect(at(0)).toEqual(f(PALETTE.protectedStrong));
@@ -113,7 +113,9 @@ test("UI-1010 Layers mode with a slab region: a layer point draws its layer colo
   expect(at(3)).toEqual(f(PALETTE.protectedStrong));
   expect(at(4)).toEqual(f(PALETTE.selected));
   expect(at(5)).toEqual(f(PALETTE.previewAdd));
-  expect([...ovr]).toEqual([1, 0, 1, 1, 1, 1]);
+  expect(at(6)).toEqual(f(PALETTE.previewRemove));
+  expect(at(7)).toEqual(f(PALETTE.deleted));
+  expect([...ovr]).toEqual([1, 0, 1, 1, 1, 1, 1, 1]);
 });
 
 test("UI-1011 a protected layer inside the slab follows its colour index, with and without a tilted slab", () => {
