@@ -538,4 +538,8 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
   blur commits it): click the ViewCube face (`fitTiltedFloor` does). Client state is saved one second after the last change,
   so a test that reloads must poll `/api/session` for `client_state.ui.bandHidden` first. The flag is not reset by opening
   another file (like `previewLive`), so a test that ends hidden must leave the archive shown.
-
+- Branch-review fixes (after 22-3): `UI-1074` (`filterboxes/placement.test.ts`) the filter boxes never cover the band-hidden
+  pill (`placeBoxes` takes extra reserved rectangles, `pillRect` is passed while `bandPillShown`; `PILL` in `view/layout.ts`
+  must stay at least as big as `#band-pill`, which `E2E-217` bounds at 260 x 34); `UI-1075` (`ui/bandswitch.test.ts`) the
+  Show band icon is rebuilt only when `bandVisible` changes. Changed: `E2E-217` (also scans the six `.fbox` chips against
+  the pill), `UI-1073` (also the mouse help row), `UI-1070` (no `aria-pressed` on the role=switch), `UI-1067` (title only).
