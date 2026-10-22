@@ -1,5 +1,7 @@
 import { afterAll, expect, test } from "vitest";
-import { LIGHT_PALETTE, PALETTE } from "../colour/palette";
+import { LIGHT_PALETTE, PALETTE, contrastRatio } from "../colour/palette";
+import { LIGHT_AXIS_COLOUR } from "../filterboxes/plane";
+import { LIGHT_FLOORS } from "../testing/floors";
 import { SELECTED_COLOURS, selectedPresets } from "../colour/selectcolour";
 import { LIGHT_MAIN_COLOUR, MAIN_COLOUR } from "../layers/model";
 import { createAppStore } from "../state/app";
@@ -9,6 +11,7 @@ import { sessionFixture } from "../testing/fixtures";
 import { buildLayersPanel } from "./layerspanel";
 import { buildLegend, cssColour } from "./legend";
 import { type PanelActions, buildToolPalette } from "./panels";
+import { AXIS_COLOUR as TRIAD_DARK, LIGHT_TRIAD_LETTER, buildTriad } from "./triad";
 
 // the control registry rejects a second build of the same ids: build once on one store, switch the theme per step
 const dom = installFakeDom();
@@ -63,4 +66,32 @@ test("UI-1109 the legend chips, the Selected colour dots (and the White slot's n
   expect(SELECTED_COLOURS.map((p) => dot(p.id).style.background)).toEqual(SELECTED_COLOURS.map((p) => cssColour(p.colour)));
   expect(dot("white").getAttribute("aria-label")).toBe("Selected colour White");
   expect(mainChip().style.background).toBe(MAIN_COLOUR);
+});
+
+test("UI-1111 the axis triad follows renderTheme: light lines are the light axis colours, light letters meet 4.5:1 on the light halo, dark is unchanged, and back", () => {
+  const t = installFakeDom();
+  const tstore = createAppStore();
+  buildTriad(t.root as unknown as HTMLElement, tstore);
+  const svg = t.root.children[0];
+  const lines = () => svg.all().filter((e) => e.tag === "line").map((e) => e.getAttribute("stroke"));
+  const texts = () => svg.all().filter((e) => e.tag === "text");
+  const hex = (n: number) => `#${n.toString(16).padStart(6, "0")}`;
+  const dark = [TRIAD_DARK.x, TRIAD_DARK.y, TRIAD_DARK.z];
+  expect(lines()).toEqual(dark);
+  expect(texts().map((e) => e.getAttribute("fill"))).toEqual(dark);
+  expect(texts().map((e) => e.getAttribute("stroke"))).toEqual(["#15181d", "#15181d", "#15181d"]);
+
+  tstore.set({ renderTheme: "light" });
+  expect(lines()).toEqual([hex(LIGHT_AXIS_COLOUR.x), hex(LIGHT_AXIS_COLOUR.y), hex(LIGHT_AXIS_COLOUR.z)]);
+  expect(lines()).toEqual(["#e0352b", "#1f9b3b", "#1f6fe0"]);
+  expect(texts().map((e) => e.getAttribute("fill"))).toEqual([LIGHT_TRIAD_LETTER.x, LIGHT_TRIAD_LETTER.y, LIGHT_TRIAD_LETTER.z]);
+  expect(texts().map((e) => e.getAttribute("stroke"))).toEqual(["#e9ebef", "#e9ebef", "#e9ebef"]);
+  // letters are text: 4.5 against the halo (the test pins the floor and the map, not the chosen shade)
+  for (const c of Object.values(LIGHT_TRIAD_LETTER)) expect(contrastRatio(c, "#e9ebef"), c).toBeGreaterThanOrEqual(LIGHT_FLOORS.triadLetters);
+
+  tstore.set({ renderTheme: "dark" });
+  expect(lines()).toEqual(dark);
+  expect(texts().map((e) => e.getAttribute("fill"))).toEqual(dark);
+  expect(texts().map((e) => e.getAttribute("stroke"))).toEqual(["#15181d", "#15181d", "#15181d"]);
+  t.restore();
 });
