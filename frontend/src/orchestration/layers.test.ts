@@ -684,4 +684,26 @@ test("UI-996 layerOp and select disarm only when the one-shot lands", async () =
   const none = disarmSetup({ selectLayer: () => undefined });
   none.layers.select(1);
   expect(none.store.get().tool).toBe("box");
+  // the landed legs keep a closed polygon (the prism region of the cluster and thin tools) unless the Polygon tool itself was armed (22-2 ruling)
+  const verts: [number, number][] = [[0, 0], [1, 0], [1, 1]];
+  const closed = (t: DisarmT, armed: "box" | "polygon") =>
+    t.store.update((s) => ({ ...s, tool: armed, tools: { ...s.tools, polygon: { ...s.tools.polygon, phase: "closed" as const, vertices: verts } } }));
+  for (const armed of ["box", "polygon"] as const) {
+    const op = disarmSetup({ selectLayerOp: async () => true });
+    closed(op, armed);
+    await op.layers.layerOp(1, "add");
+    const sel = disarmSetup({ selectLayer: async () => true });
+    closed(sel, armed);
+    sel.layers.select(1);
+    await vi.waitFor(() => expect(sel.store.get().tool, `select (${armed})`).toBe("none"));
+    for (const [name, t] of [["layerOp", op], ["select", sel]] as const) {
+      expect(t.store.get().tool, `${name} (${armed})`).toBe("none");
+      if (armed === "polygon") {
+        expect(t.store.get().tools.polygon.phase, `${name} (${armed})`).toBe("idle");
+      } else {
+        expect(t.store.get().tools.polygon.phase, `${name} (${armed})`).toBe("closed");
+        expect(t.store.get().tools.polygon.vertices, `${name} (${armed})`).toEqual(verts);
+      }
+    }
+  }
 });
