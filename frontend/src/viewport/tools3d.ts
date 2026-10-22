@@ -6,17 +6,18 @@ import { boxCorners } from "../tools/box/model";
 import { HANDLE_CROSS_PX } from "../tools/box/handles";
 import { bandOverlaySpec } from "../inspector/bandgizmo";
 import { boxOverlaySpec } from "../tools/box/overlay";
-import { DRAFT_OUTLINE, draftOutline } from "../tools/draft";
+import { axisColours } from "../filterboxes/plane";
+import { draftOutline } from "../tools/draft";
 import { pxPerUnit } from "../view/pointsize";
 import { clearGroup, drawHeavy, drawLines, drawThick, drawTriangles } from "./lines3d";
 
 const BAND_OPACITY = 0.12;
 /** Half-length of the vertex crosses of a polygon in edit mode, in pixels (the pointer pick radius is 10). */
 const POLY_EDIT_CROSS_PX = 8;
-const COL = { handle: 0xff9f1c, poly: 0x7be07b, plane: 0xc77dff /* = PALETTE.slab */, seed: 0xff4d6d };
+const DARK_COL = { handle: 0xff9f1c, poly: 0x7be07b, plane: 0xc77dff /* = PALETTE.slab */, seed: 0xff4d6d };
 /** Light stage: each reads at 3:1 on #e9ebef (handle = LIGHT_PALETTE.selected, plane = its slab). */
 const LIGHT_COL = { handle: 0xbe7715, poly: 0x539653, plane: 0xab6bdb, seed: 0xf04967 };
-export const toolColours = (theme: RenderTheme): typeof COL => (theme === "light" ? LIGHT_COL : COL);
+export const toolColours = (theme: RenderTheme): typeof DARK_COL => (theme === "light" ? LIGHT_COL : DARK_COL);
 
 /** Overlay for the editing tools: box wireframe and handles, polygon outline, protection planes, cluster seed. */
 export function createToolsOverlay(scene: THREE.Scene) {
@@ -34,6 +35,7 @@ export function createToolsOverlay(scene: THREE.Scene) {
       if (!s.session || s.compare !== "edited") return;
       const t = s.tools;
       const cz = s.camera.target[2];
+      const COL = toolColours(s.renderTheme);
       const outline = draftOutline(s).colour;
 
       if (s.tool === "box") {
@@ -41,7 +43,7 @@ export function createToolsOverlay(scene: THREE.Scene) {
         const pairs: [number, number][] = [];
         for (let i = 0; i < 8; i++) for (const bit of [1, 2, 4]) if (!(i & bit)) pairs.push([i, i | bit]);
         heavy(c, pairs, outline, origin, s, viewH);
-        const spec = boxOverlaySpec(t.box, s.camera, s.boxHover, viewH);
+        const spec = boxOverlaySpec(t.box, s.camera, s.boxHover, viewH, axisColours(s.renderTheme));
         for (const a of spec.arrows) {
           drawThick(group, [a.base, a.headBase], [[0, 1]], a.colour, origin, s, viewH, a.width);
           drawTriangles(group, [[a.tip, a.barbs[0], a.barbs[1]]], a.colour, origin);
@@ -55,7 +57,7 @@ export function createToolsOverlay(scene: THREE.Scene) {
         const v = t.polygon.vertices.map((p): Vec3 => [p[0], p[1], cz]);
         const pairs: [number, number][] = v.slice(1).map((_, i) => [i, i + 1]);
         if (t.polygon.phase === "closed" && v.length > 2) pairs.push([v.length - 1, 0]);
-        if (s.draft) heavy(v, pairs, DRAFT_OUTLINE, origin, s, viewH);
+        if (s.draft) heavy(v, pairs, outline, origin, s, viewH);
         else lines(v, pairs, COL.poly, origin);
         if (t.polygon.phase === "closed") {
           // vertex handles: small crosses always (they can be dragged), large ones in edit mode, drawn heavy so they stand out

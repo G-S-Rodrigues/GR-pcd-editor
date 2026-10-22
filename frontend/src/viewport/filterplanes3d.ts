@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { AXIS_COLOUR, filterPlanes } from "../filterboxes/plane";
+import { axisColours, filterPlanes } from "../filterboxes/plane";
 import type { AppState } from "../state/app";
 import type { Vec3 } from "../state/types";
 import { rightVector, upVector } from "../view/camera";
@@ -21,9 +21,10 @@ export function createFilterPlanesOverlay(scene: THREE.Scene) {
     update(s: AppState, origin: Vec3, viewH = 720): void {
       clearGroup(group);
       const planes = filterPlanes(s, viewH);
+      const axes = axisColours(s.renderTheme);
       const ppu = pxPerUnit(s.camera, Math.max(viewH, 1));
       for (const p of planes) {
-        const colour = AXIS_COLOUR[p.axis];
+        const colour = axes[p.axis];
         const pos = new Float32Array(18);
         [0, 1, 2, 0, 2, 3].forEach((ci, k) => {
           for (let c = 0; c < 3; c++) pos[k * 3 + c] = p.corners[ci][c] - origin[c];

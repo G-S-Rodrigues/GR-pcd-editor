@@ -1,4 +1,4 @@
-import { AXIS_COLOUR } from "../filterboxes/plane";
+import { axisColours } from "../filterboxes/plane";
 import type { AppState } from "../state/app";
 import type { Vec3 } from "../state/types";
 import { type Handle, RING_RADIUS_PX, handleLength, shaftRing } from "../tools/box/handles";
@@ -74,6 +74,7 @@ export function bandGizmo(s: AppState, viewH: number): { arrows: BandArrow[]; ri
   });
   const rings: BandRing[] = [];
   const shafts: ShaftSpec[] = [];
+  const axes = axisColours(s.renderTheme);
   const iv = protectionIntervals(s.tools.protection)[0];
   if (s.floorPanelOpen && iv) {
     const t = s.tools.protection.tilt;
@@ -100,7 +101,7 @@ export function bandGizmo(s: AppState, viewH: number): { arrows: BandArrow[]; ri
           id: `shaft-${which}${tag}`,
           base,
           tip: [base[0] + sign * len * dir[0], base[1] + sign * len * dir[1], base[2] + sign * len * dir[2]],
-          colour: AXIS_COLOUR[which],
+          colour: axes[which],
           width: ARROW_WIDTH_PX,
         });
       }
@@ -123,6 +124,6 @@ export function bandOverlaySpec(
     if (lo && hi) fills.push({ which, corners: [...lo.plane.corners, ...hi.plane.corners] });
   }
   const outlines = g.arrows.map((a): BandOutline => ({ id: a.id, corners: a.plane.corners }));
-  const { arrows, rings } = handleOverlaySpec(g.handles, s.camera, null, viewH);
+  const { arrows, rings } = handleOverlaySpec(g.handles, s.camera, null, viewH, axisColours(s.renderTheme));
   return { fills, outlines, arrows, rings, shafts: g.shafts };
 }

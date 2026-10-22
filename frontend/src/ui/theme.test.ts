@@ -1,15 +1,16 @@
 import { describe, expect, test } from "vitest";
 import { LIGHT_MAIN_COLOUR, MAIN_COLOUR } from "../layers/model";
 import { LIGHT_PALETTE, PALETTE, contrastRatio } from "../colour/palette";
-import { AXIS_COLOUR as PLANE_AXIS, LIGHT_AXIS_COLOUR as LIGHT_AXIS } from "../filterboxes/plane";
+import { AXIS_COLOUR as PLANE_AXIS, LIGHT_AXIS_COLOUR as LIGHT_AXIS, axisColours } from "../filterboxes/plane";
 import { bandOverlaySpec } from "../inspector/bandgizmo";
 import { createAppStore, type AppState } from "../state/app";
 import type { Vec3 } from "../state/types";
 import { BACKDROPS, INDEX_HTML, SURFACES, blockAfter, declsOf, HEADS, onSurface, parseBlocks, parseColour, raw, solid, surface, type Theme } from "../testing/tokens";
 import { sessionFixture } from "../testing/fixtures";
+import { LIGHT_FLOORS } from "../testing/floors";
 import { timelineCss } from "../timeline/overlay";
 import { cubeNavCss } from "./cube-arrows";
-import { boxOverlaySpec } from "../tools/box/overlay";
+import { RING_TINT, boxOverlaySpec, dim } from "../tools/box/overlay";
 import { type BoxModel, defaultBox, rpyToQuat } from "../tools/box/model";
 import { AXIS_COLOUR as TRIAD_AXIS } from "./triad";
 import { defaultCamera } from "../view/camera";
@@ -153,6 +154,43 @@ describe("design tokens (part 22-4)", () => {
     }
     expect(arrows).toBeGreaterThan(10);
     expect(rings).toBeGreaterThan(10);
+  });
+
+  test("UI-1110 the Box and band specs in the light theme read at the light floors (arrows 3:1, rings 3:1) on both light backdrops; the dark specs equal the no-argument ones", () => {
+    const cam = applyPreset({ ...defaultCamera(), distance: 10 }, "top");
+    const box: BoxModel = { ...defaultBox([1, 2, 3]), dimensions: [2, 3, 4], quat: rpyToQuat([10, 20, 30]) };
+    const store = createAppStore();
+    store.set({ session: sessionFixture(), camera: { ...defaultCamera(), distance: 30, target: [5, 5, 5] as Vec3 } });
+    store.update((s: AppState) => ({
+      ...s,
+      floorPanelOpen: true,
+      tools: { ...s.tools, protection: { ...s.tools.protection, global: { enabled: true, min: 2, max: 4 }, tilt: { rx: 20, ry: 30, pivot: [5, 5] as [number, number] } } },
+    }));
+    const lightAxes = axisColours("light");
+    const lightState = { ...store.get(), renderTheme: "light" as const };
+    const band = bandOverlaySpec(lightState, 600);
+    const specs = [boxOverlaySpec(box, cam, null, 720, lightAxes), boxOverlaySpec(box, cam, "rotate-0+", 720, lightAxes), band];
+    const lightColours = new Set(Object.values(lightAxes));
+    const ringColours = new Set(Object.values(lightAxes).map((c) => dim(c, RING_TINT)));
+    let arrows = 0;
+    let rings = 0;
+    for (const spec of specs) {
+      for (const back of BACKDROPS.map((b) => solid("light", b))) {
+        for (const a of spec.arrows) { arrows++; expect(lightColours.has(a.colour), a.id).toBe(true); expect(contrastRatio(num(a.colour), back), a.id).toBeGreaterThanOrEqual(LIGHT_FLOORS.arrows); }
+        for (const r of spec.rings) { rings++; expect(lightColours.has(r.colour) || ringColours.has(r.colour), r.id).toBe(true); expect(contrastRatio(num(r.colour), back), r.id).toBeGreaterThanOrEqual(LIGHT_FLOORS.rings); }
+      }
+    }
+    for (const sh of band.shafts) { expect(lightColours.has(sh.colour), sh.id).toBe(true); expect(contrastRatio(num(sh.colour), solid("light", "canvas")), sh.id).toBeGreaterThanOrEqual(LIGHT_FLOORS.arrows); }
+    expect(arrows).toBeGreaterThan(10);
+    expect(rings).toBeGreaterThan(10);
+    expect(band.shafts.length).toBeGreaterThan(0);
+    // dark: passing the dark axes, or nothing, or a dark store, changes nothing
+    expect(boxOverlaySpec(box, cam, null, 720, PLANE_AXIS)).toEqual(boxOverlaySpec(box, cam, null, 720));
+    expect(boxOverlaySpec(box, cam, "rotate-0+", 720, axisColours("dark"))).toEqual(boxOverlaySpec(box, cam, "rotate-0+", 720));
+    const dark = bandOverlaySpec(store.get(), 600);
+    expect(bandOverlaySpec({ ...store.get(), renderTheme: "dark" }, 600)).toEqual(dark);
+    for (const a of dark.arrows) expect(Object.values(PLANE_AXIS)).toContain(a.colour);
+    for (const sh of dark.shafts) expect(Object.values(PLANE_AXIS)).toContain(sh.colour);
   });
 });
 
