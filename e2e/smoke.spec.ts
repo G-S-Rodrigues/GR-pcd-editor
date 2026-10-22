@@ -6512,7 +6512,8 @@ test("E2E-216 22-3 Show band off: protection and counts stay, the band's handles
   const snap = async () => {
     await page.mouse.move(5, 5);
     await appIdle(page);
-    return page.screenshot({ clip: await clipOf() });
+    // the HUD glass blurs what is behind it, and the blur's edge pixels differ by one level between two identical frames (22-4): compare the canvas, not the blur
+    return page.screenshot({ clip: await clipOf(), style: "#legend, .fbox, #camera-cluster .ib, #band-pill, .notice { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }" });
   };
   await fold(false); // folded: no strong colour, so only the band can differ
   const shownShot = await snap();
