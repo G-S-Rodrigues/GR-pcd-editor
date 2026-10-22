@@ -575,5 +575,11 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
 - The vignette is not drawn (E9). A transparent canvas over a `#stage` radial gradient changed `E2E-216` by one dither level, so the
   stage is the opaque clear colour, which follows `--canvas` (`viewport/canvastoken.ts`). `E2E-216` run in one `-g` selection straight
   after `E2E-201` times out, also at 7067cd7; it passes alone and in file order.
-- Rule: part 4 keeps box geometry. Edges are inset shadows, state moves from outline to fill and border; no new border, padding,
-  margin, width or height.
+- Rule: part 4 adds no new border, padding, margin, width or height declaration; edges are inset shadows and state moves from
+  outline to fill and border. The type scale shrinks text-driven heights (inspector fields 26 to 24 px, `aside h2` 17 to 14 px,
+  status bar 27 to 23 px, stage 631 to 635 px at 1280x720), and the legend is pinned at <= 214 px (E2E-226).
+- `E2E-216`'s screenshots turn `backdrop-filter` off for everything in `#stage`; a new blurred element inside its clip needs no
+  test change.
+- 22-4 minors (part 22-4b, Block 1): `UI-1100` (a collapsed filter toggle's accessible name carries its chip text), `UI-1101`
+  (`#webgl-notice` declares no border), `E2E-230` (the same in the browser's accessible name), and the changed `E2E-216`
+  (capture style), `E2E-221` and `E2E-226` (shared `stageCorner`/`expectStageCorner` poll instead of a sleep; the legend height pin).
