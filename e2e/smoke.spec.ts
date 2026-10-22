@@ -6910,3 +6910,52 @@ test("E2E-224 22-4 every visible icon-only button has an aria-label and a title:
   states["export dialog"] = await offenders();
   expect(states).toEqual({ idle: [], "box armed with a layer": [], legend: [], "filter box": [], help: [], "export dialog": [] });
 });
+
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-226 22-4 owner screenshots at ${w}x${h}: dark and light, idle and the Box armed with its preview up; the page does not scroll, nothing throws, and the filter boxes overlap no other stage control`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => {
+      if (m.type() === "error" && !/404/.test(m.text())) errors.push(m.text());
+    });
+    const t = hideHelpers(page);
+    await t.floorSelected();
+    page.removeAllListeners("dialog");
+    page.on("dialog", (d) => void d.accept());
+    await t.ctl("sel-clear").click();
+    const shoot = async (scheme: Scheme, name: string) => {
+      await page.emulateMedia({ colorScheme: scheme });
+      await expect.poll(async () => (await themeRead(page)).canvas, { message: `${scheme} theme applied` }).toBe(scheme === "light" ? "#e9ebef" : "#0c0d10");
+      await page.mouse.move(5, 5);
+      await appIdle(page);
+      await page.waitForTimeout(300); // the clear colour follows the theme on the next frame
+      await page.screenshot({ path: `/out/part22-4-${w}x${h}-${name}.png` });
+      expect(await page.evaluate(() => document.scrollingElement!.scrollHeight <= window.innerHeight), `${scheme} ${name}: the page scrolls`).toBe(true);
+    };
+    await shoot("dark", "dark");
+    await shoot("light", "light");
+    await t.ctl("tool-box").click();
+    await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+    await t.exact("Selected", String(ROOM.ghost));
+    await expect(t.ctl("tool-box")).toHaveClass(/active/);
+    await shoot("dark", "dark-armed");
+    await shoot("light", "light-armed");
+    const boxes = page.locator("#fbox-layer .fbox");
+    let seen = 0;
+    for (let i = 0; i < (await boxes.count()); i++) {
+      if (!(await boxes.nth(i).isVisible())) continue;
+      seen++;
+      const r = (await boxes.nth(i).boundingBox())!;
+      for (const id of ["#legend", "#timeline", "#viewcube", "#camera-cluster", "#notices"]) {
+        const el = page.locator(id);
+        if (!(await el.isVisible())) continue;
+        const o = (await el.boundingBox())!;
+        const apart = r.x + r.width <= o.x || o.x + o.width <= r.x || r.y + r.height <= o.y || o.y + o.height <= r.y;
+        expect(apart, `filter box ${i} overlaps ${id}`).toBe(true);
+      }
+    }
+    expect(seen, "the six filter boxes are on the canvas").toBe(6);
+    expect(errors).toEqual([]);
+  });
+}
