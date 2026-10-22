@@ -4,6 +4,7 @@ import { sessionFixture } from "../testing/fixtures";
 import { type FakeEl, installFakeDom } from "../testing/fakedom";
 import { describeControls } from "./describe";
 import { FIELD_SPECS } from "./fields";
+import { MOUSE_DOCS } from "./keys";
 import { type PanelActions, buildEditPanels } from "./panels";
 import { TOOLTIPS } from "./tooltips";
 
@@ -46,7 +47,13 @@ test("UI-1070 the Show band switch: a role switch with the eye icon (eyeoff when
   expect(sw.children[0].getAttribute("data-icon")).toBe("eye");
 });
 
-test("UI-1073 the tilt fields' tooltips name the ring colours: red X ring and green Y ring", () => {
+test("UI-1073 the tilt fields' tooltips and the help row name the ring colours: red X ring and green Y ring", () => {
+  const row = MOUSE_DOCS.find((d) => /tilt/i.test(d.label) && /ring/i.test(d.keys));
+  expect(row, "the help overlay has a tilt-ring row").toBeDefined();
+  expect(row!.keys).toContain("red X");
+  expect(row!.keys).toContain("green Y");
+  expect(row!.keys).not.toContain("blue");
+  expect(row!.label).not.toContain("blue");
   expect(TOOLTIPS["prot-tilt-x"]).toContain("red X ring");
   expect(TOOLTIPS["prot-tilt-y"]).toContain("green Y ring");
   expect(TOOLTIPS["prot-tilt-x"]).not.toContain("blue");
