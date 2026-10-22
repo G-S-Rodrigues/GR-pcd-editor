@@ -6964,6 +6964,11 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
     await expect(t.ctl("tool-box")).toHaveClass(/active/);
     await shoot("dark", "dark-armed");
     await shoot("light", "light-armed");
+    // the type scale must not grow the legend: 214 px at 1280x720 before part 4 (review m4)
+    if (w === 1280) for (const scheme of ["dark", "light"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await expect.poll(async () => (await page.locator("#legend").boundingBox())!.height, { message: `${scheme} legend height, Box armed` }).toBeLessThanOrEqual(214);
+    }
     const boxes = page.locator("#fbox-layer .fbox");
     let seen = 0;
     for (let i = 0; i < (await boxes.count()); i++) {
