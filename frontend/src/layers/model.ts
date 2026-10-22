@@ -57,6 +57,8 @@ export const NO_POINTS = "The layer has no points";
 
 export const LOCKED_REASON = "The layer is locked";
 export const PROTECTED_REASON = "The layer is protected";
+/** The tooltip of the shield and of the menu's Protected flag. */
+export const protectedTip = (name: string): string => `Protected: the points of ${name} are never deleted by any Delete`;
 export const NO_BAND = "Turn on height protection first";
 export const NO_MERGE_TARGET = "No other layer to merge into";
 

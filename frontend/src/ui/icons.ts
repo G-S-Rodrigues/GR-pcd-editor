@@ -50,6 +50,8 @@ export const ICONS = {
   pencil: [p("M4 20l1-4L16 5l3 3L8 19z"), p("M14 7l3 3")],
   /** Not in the sheet: a dotted box with a point, for "select this layer's points" (part 17-10). */
   pick: [r(4, 4, 16, 16, 2), c(12, 12, 2)],
+  /** Not in the sheet: the protected-layer mark (22-2, R22-3), the mockup's shield outline with a tick. */
+  shield: [p("M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6z"), p("m9 12 2 2 4-4")],
 } as const satisfies Record<string, readonly IconNode[]>;
 
 export type IconName = keyof typeof ICONS;
