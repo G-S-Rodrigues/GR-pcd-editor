@@ -77,7 +77,8 @@ export function colourize(r: ColourInput, ctx: ColourContext): Float32Array {
 
 /**
  * `colours` as `colourize`; `ovr` is 1 for each point whose colour is a flag, protected or region colour and 0 for the
- * points the mode colours itself. The Distance shader recolours only the 0 points (the camera decides their colour).
+ * points the mode colours itself (a layer point in Layers mode draws its layer colour before the slab colour, R22-3). The Distance
+ * shader recolours only the 0 points (the camera decides their colour).
  */
 export function colourizeMasked(r: ColourInput, ctx: ColourContext): { colours: Float32Array; ovr: Float32Array } {
   const out = new Float32Array(r.count * 3);
@@ -104,6 +105,10 @@ export function colourizeMasked(r: ColourInput, ctx: ColourContext): { colours: 
     else if (f & 16) c = PALETTE.previewRemove;
     else if (f & 1) c = ctx.selected ?? PALETTE.selected;
     else if (f & 4 && ctx.markDeleted) c = PALETTE.deleted;
+    else if (lay && ctx.layerRgb![lay[i]] !== undefined) {
+      ovr[i] = 0;
+      c = ctx.layerRgb![lay[i]]!; // R22-3: a layer's colour wins over the slab colour, protected or not
+    }
     else if (region && inRegion(i)) c = PALETTE.protectedStrong;
     else {
       ovr[i] = 0;
