@@ -39,7 +39,7 @@ export function buildFilterBoxes(
   canvas: HTMLCanvasElement,
   store: Store<AppState>,
   actions: BoxActions,
-): void {
+): { dragging: () => boolean } {
   const boxes: Box[] = [];
   const setInteracting = (key: string | null) => {
     const cur = store.get().filterUi.interacting;
@@ -181,5 +181,7 @@ export function buildFilterBoxes(
   store.subscribe(sync);
   new ResizeObserver(() => sync(store.get())).observe(layer);
   sync(store.get());
+  // `filterUi.interacting` also marks keyboard focus, so Esc asks the grip drag itself
+  return { dragging: () => drag !== null };
 }
 

@@ -6297,6 +6297,25 @@ test("E2E-196 22-1 Esc disarms the armed tool only when nothing more specific is
   await expect(t.ctl("tool-cluster")).not.toHaveClass(/active/);
 });
 
+test("E2E-200 22-1 Esc disarms the armed tool while a filter grip has the keyboard focus (focus alone is not a drag)", async ({ page }) => {
+  const t = hideHelpers(page);
+  await t.floorSelected();
+  page.removeAllListeners("dialog"); // the helpers accept every ask; none is expected below
+  page.on("dialog", (d) => void d.accept());
+  await t.ctl("sel-clear").click();
+  await t.ctl("tool-box").click();
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  await t.exact("Selected", String(ROOM.ghost));
+  await expandFilterBox(page, "filter-x-min");
+  await page.locator("#filter-x-min-grip").focus();
+  await expect(page.locator("#filter-x-min-grip")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(t.ctl("tool-box")).not.toHaveClass(/active/);
+  await expect(page.locator("#modebar")).toContainText("Tool: None");
+  await t.exact("Selected", String(ROOM.ghost));
+  await t.exact("Candidates", String(ROOM.ghost));
+});
+
 for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
   test(`E2E-199 22-1 owner screenshots at ${w}x${h}: the Box armed over the ghosts, then the same view after Delete with no tool, gizmo or Box section`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: h });

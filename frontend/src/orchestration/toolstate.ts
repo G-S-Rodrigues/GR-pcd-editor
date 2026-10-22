@@ -42,7 +42,7 @@ export type EscTarget = "drag" | "polygon" | "pick" | "layer" | "overlay" | "dra
 export interface EscInput {
   /** Escape typed in a text entry (`escapeInField`, keys.ts): the field's own Escape wins. */
   field: boolean;
-  /** An arrow, ring or handle drag (tools.dragging()), a filter box in use (filterUi.interacting), a timeline marker drag. */
+  /** An arrow, ring or handle drag (tools.dragging()), a filter grip drag (buildFilterBoxes.dragging; `filterUi.interacting` also means keyboard focus), a timeline marker drag. */
   dragging: boolean;
   /** The help overlay or an open <dialog> (22-5 adds its popovers here). */
   overlay: boolean;

@@ -168,7 +168,7 @@ window.addEventListener("keydown", (e) => {
   const el = e.target as HTMLInputElement | null;
   const target = escTarget(st, {
     field: escapeInField(el?.tagName ?? "", el?.type ?? ""),
-    dragging: tools.dragging() || st.filterUi.interacting !== null || st.timeline.dragging !== null,
+    dragging: tools.dragging() || filterBoxes.dragging() || st.timeline.dragging !== null,
     overlay: help.isOpen() || document.querySelector("dialog[open]") !== null,
   });
   tools.cancel(); // an arrow drag in progress goes back to its start value
@@ -362,7 +362,7 @@ buildTimeline($("timeline"), store, {
 });
 buildViewCube($("viewcube"), store);
 buildTriad($("triad"), store);
-buildFilterBoxes($("fbox-layer"), canvas, store, {
+const filterBoxes = buildFilterBoxes($("fbox-layer"), canvas, store, {
   editSide: (axis, side, value, o) => filters.editSide(axis, side, value, o),
   resetSide: (axis, side) => filters.resetSide(axis, side),
 });
