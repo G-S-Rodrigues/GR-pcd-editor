@@ -2,7 +2,8 @@ import { cross, length, normalize, sub } from "../../math/vec";
 import type { Vec3 } from "../../state/types";
 import { type Camera, lookDirection, rightVector } from "../../view/camera";
 import { pxPerUnit } from "../../view/pointsize";
-import { AXIS_COLOUR, type Axis } from "../../filterboxes/plane";
+import { AXIS_COLOUR } from "../../filterboxes/plane";
+import type { Axis } from "../../inspector/filters";
 import { type Handle, boxHandles } from "./handles";
 import type { BoxModel } from "./model";
 
