@@ -5578,6 +5578,7 @@ test("E2E-178 19 dragging the marker across a layer step and a deletion step giv
   const t = layerHelpers(page);
   const { n } = await t.floorLayer();
   const k = tl(page);
+  await k.ctl("sel-clear").click(); // New layer disarmed the Box and kept the floor selection (R22-1): clear it, so the re-armed box is a live first selection
   await k.boxAt(3, 13, 2, 4, 4, 3);
   await k.exact("Candidates", String(ROOM.ghost));
   await k.ctl("apply").click();
@@ -5638,6 +5639,7 @@ test("E2E-180 19 with steps rolled back, New layer asks the discard text; No cha
   const t = layerHelpers(page);
   await t.floorLayer();
   const k = tl(page);
+  await k.ctl("sel-clear").click(); // New layer disarmed the Box and kept the floor selection (R22-1): clear it, so the re-armed box is a live first selection
   await k.boxAt(3, 13, 2, 4, 4, 3);
   await k.ctl("apply").click();
   await k.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
