@@ -3,7 +3,7 @@ import { defaultCamera, orbit } from "../view/camera";
 import { PRESETS, applyPreset } from "../view/presets";
 import { fromBasisLookUp } from "../view/basis";
 import { BAND, CUBE, TRIAD } from "../view/layout";
-import { LEGEND, type PlacedBox, type PlaceState, RESERVED, placeBoxes, spread1d, triadRect } from "./placement";
+import { LEGEND, type PlacedBox, type PlaceState, RESERVED, pillRect, placeBoxes, spread1d, spreadAround, triadRect } from "./placement";
 
 const SIZES = (_id: string) => ({ w: 156, h: 28 });
 const STAGE = { w: 780, h: 560 };
@@ -193,6 +193,68 @@ describe("filter box layout", () => {
     const many = spread1d([1, 2, 3].map((d) => ({ desired: d, size: 30 })), 0, 80, 6);
     expect(many.pos).toEqual([1, 37]);
     expect(many.overflow).toEqual([2]);
+  });
+});
+
+describe("filter boxes avoid the band-hidden pill", () => {
+  // The pill is centred on the stage, 56 px above its bottom edge, about 230 x 30 px (index.html #band-pill).
+  const pillAt = (stage: { w: number; h: number }) => ({ l: stage.w / 2 - 130, t: stage.h - 56 - 32, r: stage.w / 2 + 130, b: stage.h - BAND });
+  for (const stage of [
+    { w: 780, h: 560 },
+    { w: 1280, h: 720 },
+    { w: 1920, h: 1080 },
+  ]) {
+    it(`UI-1074 with the pill reserved no box touches it, the other reserved rectangles or each other at ${stage.w}x${stage.h}`, () => {
+      const pill = pillAt(stage);
+      let boxes = 0;
+      for (let yaw = 0; yaw < 36; yaw++) {
+        for (const pitch of [-80, -45, -20, 0, 20, 45, 80]) {
+          let cam = orbit(defaultCamera(), (Math.PI / 180) * yaw * 10, 0);
+          cam = orbit(cam, 0, (Math.PI / 180) * pitch);
+          const r = placeBoxes(cam.orientation, stage, null, SIZES, new Set(), [pill]);
+          expect(r.boxes).toHaveLength(6);
+          for (const [i, a] of r.boxes.entries()) {
+            boxes++;
+            const ra = rect(a);
+            const where = `yaw ${yaw * 10} pitch ${pitch} ${a.id}`;
+            expect(ra.l, where).toBeGreaterThanOrEqual(0);
+            expect(ra.r, where).toBeLessThanOrEqual(stage.w);
+            expect(ra.b, where).toBeLessThanOrEqual(stage.h);
+            expect(hit(ra, pill), `${where} vs the pill`).toBe(false);
+            for (const c of RESERVED(stage)) expect(hit(ra, c), `${where} vs reserved`).toBe(false);
+            for (const c of r.boxes.slice(i + 1)) expect(hit(ra, rect(c)), `${where} vs ${c.id}`).toBe(false);
+          }
+        }
+      }
+      expect(boxes).toBe(36 * 7 * 6);
+    });
+  }
+
+  it("UI-1074 pillRect covers the pill as drawn (240 x 28, 56 px above the bottom, centred) and stays above the timeline band", () => {
+    for (const stage of [STAGE, { w: 1920, h: 1080 }]) {
+      const pill = { l: stage.w / 2 - 120, t: stage.h - 56 - 28, r: stage.w / 2 + 120, b: stage.h - 56 };
+      const r = pillRect(stage);
+      expect(r.l).toBeLessThanOrEqual(pill.l);
+      expect(r.r).toBeGreaterThanOrEqual(pill.r);
+      expect(r.t).toBeLessThanOrEqual(pill.t);
+      expect(r.b).toBeGreaterThanOrEqual(pill.b);
+      expect(r.b).toBe(stage.h - BAND);
+    }
+  });
+
+  it("UI-1074 spreadAround is spread1d with no obstacle and otherwise splits the row around it, overflowing what cannot fit", () => {
+    const items = [{ desired: 10, size: 30 }, { desired: 200, size: 30 }, { desired: 380, size: 30 }];
+    expect(spreadAround(items, 0, 400, 6, [])).toEqual(spread1d(items, 0, 400, 6));
+    const r = spreadAround(items, 0, 400, 6, [[150, 250]]);
+    expect(r.overflow).toEqual([]);
+    for (const [i, p] of r.pos.entries()) expect(p + items[i].size <= 144 || p >= 256, `item ${i} at ${p}`).toBe(true);
+    const tight = spreadAround(items, 0, 100, 6, [[40, 60]]);
+    expect(tight.overflow.length).toBeGreaterThan(0);
+  });
+
+  it("UI-1074 without a pill the placement is unchanged", () => {
+    const o = defaultCamera().orientation;
+    expect(placeBoxes(o, STAGE, null, SIZES, new Set(), []).boxes).toEqual(put(o).boxes);
   });
 });
 

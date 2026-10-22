@@ -6612,6 +6612,21 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
       const apart = pb.x + pb.width <= r.x || r.x + r.width <= pb.x || pb.y + pb.height <= r.y || r.y + r.height <= pb.y;
       expect(apart, `${id} overlaps the pill`).toBe(true);
     }
+    // the box the placement reserves for the pill (PILL in view/layout.ts) must cover the pill as drawn
+    expect(pb.width).toBeLessThanOrEqual(260);
+    expect(pb.height).toBeLessThanOrEqual(34);
+    expect(stage.y + stage.height - (pb.y + pb.height)).toBeGreaterThanOrEqual(46);
+    const chips = page.locator("#fbox-layer .fbox");
+    let seen = 0;
+    for (let i = 0; i < (await chips.count()); i++) {
+      const chip = chips.nth(i);
+      if (!(await chip.isVisible())) continue;
+      seen++;
+      const r = (await chip.boundingBox())!;
+      const apart = pb.x + pb.width <= r.x || r.x + r.width <= pb.x || pb.y + pb.height <= r.y || r.y + r.height <= pb.y;
+      expect(apart, `filter box ${i} overlaps the pill`).toBe(true);
+    }
+    expect(seen, "the six filter boxes are on the canvas").toBe(6);
     expect(errors).toEqual([]);
   });
 }

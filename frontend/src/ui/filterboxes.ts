@@ -1,12 +1,13 @@
 import { beginFilterDrag, cancelFilterDrag, END_ON_DOT, type FilterDrag, moveFilterDrag } from "../filterboxes/drag";
 import { BOX_IDS, boxKey, isBoxCollapsed } from "../filterboxes/model";
-import { type PlaceState, placeBoxes } from "../filterboxes/placement";
+import { type PlaceState, pillRect, placeBoxes } from "../filterboxes/placement";
 import { boxView, nudgeValue, parseBoxInput } from "../filterboxes/view";
 import { type Axis, type FilterEdit, type Side, sideValue } from "../inspector/filters";
 import { screenRay } from "../pick/screenray";
 import { type AppState, addNotice } from "../state/app";
 import type { Store } from "../state/store";
 import { lookDirection } from "../view/camera";
+import { bandPillShown } from "./bandpill";
 import { control } from "./controls";
 import { h } from "./dom";
 
@@ -153,7 +154,7 @@ export function buildFilterBoxes(
     const sizes = (id: string) => (isBoxCollapsed(s.filterUi, id) ? COLLAPSED : EXPANDED);
     const stage = { w: layer.clientWidth, h: layer.clientHeight };
     const lock = new Set<string>(s.filterUi.interacting ? [s.filterUi.interacting] : []);
-    const placed = placeBoxes(s.camera.orientation, stage, place, sizes, lock);
+    const placed = placeBoxes(s.camera.orientation, stage, place, sizes, lock, bandPillShown(s) ? [pillRect(stage)] : []);
     place = placed.state;
     for (const box of boxes) {
       const collapsed = isBoxCollapsed(s.filterUi, box.key);

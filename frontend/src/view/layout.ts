@@ -19,3 +19,5 @@ export const LEGEND_BOX = { left: 8, top: 8, w: 224, maxH: 238, pad: 4 } as cons
 export const BAND = 46;
 /** The XYZ triad at the bottom-left, just above the timeline band. */
 export const TRIAD = { size: 56, left: 8, above: 6 } as const;
+/** The band-hidden pill (#band-pill, bottom centre, `bottom` px above the stage's edge): the box it reserves, a little larger than the pill itself (about 240 x 28). */
+export const PILL = { w: 260, h: 34, bottom: 56 } as const;
