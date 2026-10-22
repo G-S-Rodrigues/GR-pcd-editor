@@ -177,6 +177,15 @@ describe("stylesheet rules (part 22-4)", () => {
     }
   });
 
+  test("UI-1101 #webgl-notice declares no border (part 4 adds none), and draws its edge as an inset box-shadow in --destructive", () => {
+    const body = rules(styleText()).find((r) => r.selector === "#webgl-notice")?.body ?? "";
+    expect(body, "#webgl-notice rule").not.toBe("");
+    expect(body).not.toMatch(/(^|[\s;])border(-width|-top|-right|-bottom|-left)?\s*:/);
+    const shadow = body.match(/box-shadow:\s*([^;]+);/)?.[1] ?? "";
+    expect(shadow).toContain("inset");
+    expect(shadow).toContain("var(--destructive)");
+  });
+
   test("UI-1087 one :focus-visible rule draws a 3px --focus outline; nothing else draws an outline except the locked-chip marker, and none sets outline none", () => {
     const all = rules(styleText());
     const focus = all.filter((r) => /:focus-visible/.test(r.selector));
