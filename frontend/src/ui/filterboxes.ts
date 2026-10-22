@@ -86,8 +86,8 @@ export function buildFilterBoxes(
     const fid = `filter-${axis}-${side}`;
     const grip = control("div", { id: `${fid}-grip`, class: "fgrip", role: "slider", tabindex: "0", "aria-label": `${A} ${side} filter`, text: `${A} ${side}` });
     const input = control("input", { id: fid, class: "fin", type: "text", inputmode: "decimal", "aria-label": `${A} ${side} value` });
-    const reset = control("button", { id: `${fid}-reset`, class: "frst", onclick: () => actions.resetSide(axis, side) }, "↺");
-    const tog = control("button", { id: `${fid}-toggle`, class: "ftog", "aria-expanded": "false", onclick: () => toggle(key) }, "–");
+    const reset = control("button", { id: `${fid}-reset`, class: "frst", "aria-label": `Reset ${A} ${side} filter`, onclick: () => actions.resetSide(axis, side) }, "↺");
+    const tog = control("button", { id: `${fid}-toggle`, class: "ftog", "aria-expanded": "false", "aria-label": `${A} ${side} filter box`, onclick: () => toggle(key) }, "–");
     const el = h("div", { class: "fbox", "data-axis": axis, "data-side": side, "data-box": key }, grip, input, reset, tog);
     const box: Box = { axis, side, key, el, grip, input, reset, toggle: tog };
     boxes.push(box);

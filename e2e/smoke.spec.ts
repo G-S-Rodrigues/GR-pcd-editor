@@ -6872,3 +6872,41 @@ test("E2E-225 22-4 measured contrast on real elements, both themes: status count
     }
   }
 });
+
+
+test("E2E-224 22-4 every visible icon-only button has an aria-label and a title: idle, Box armed with a layer, the legend, a filter box, the export dialog and help", async ({ page }) => {
+  const t = helpers(page);
+  const { exact, ctl } = t;
+  await openRoom(page, exact);
+  const offenders = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll("button, [role=button], [role=switch], [role=radio]")]
+        .filter((e) => {
+          const r = e.getBoundingClientRect();
+          const cs = getComputedStyle(e);
+          return r.width > 0 && r.height > 0 && cs.visibility !== "hidden" && !/[A-Za-z0-9]/.test(e.textContent ?? "") && !e.querySelector("input");
+        })
+        .filter((e) => !(e.getAttribute("aria-label") ?? "").trim() || !(e.getAttribute("title") ?? "").trim())
+        .map((e) => `${e.id ? "#" + e.id : e.tagName.toLowerCase()}[${["data-control", "data-layer-eye", "data-layer-more", "data-layer-edit"].map((a) => (e.hasAttribute(a) ? `${a}=${e.getAttribute(a)}` : "")).join("")}] ${e.outerHTML.slice(0, 90)}`),
+    );
+  const states: Record<string, string[]> = {};
+  states.idle = await offenders();
+  await ctl("tool-box").click();
+  await t.boxEverything();
+  await page.locator('[data-control="layer-name"]').fill("Probe");
+  await ctl("layer-new").click();
+  await expect(page.locator("[data-layer-row]")).toHaveCount(2, { timeout: 15000 });
+  const more = page.locator("[data-layer-more]").last();
+  if ((await more.getAttribute("aria-expanded")) !== "true") await more.click();
+  states["box armed with a layer"] = await offenders();
+  if ((await ctl("legend-menu").getAttribute("aria-expanded")) === "false") await ctl("legend-menu").click();
+  states.legend = await offenders();
+  await t.setNum("filter-x-min", 0);
+  states["filter box"] = await offenders();
+  await ctl("help").click();
+  states.help = await offenders();
+  await ctl("help").click();
+  await ctl("export").click();
+  states["export dialog"] = await offenders();
+  expect(states).toEqual({ idle: [], "box armed with a layer": [], legend: [], "filter box": [], help: [], "export dialog": [] });
+});
