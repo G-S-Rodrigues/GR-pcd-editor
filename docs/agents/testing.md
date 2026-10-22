@@ -543,3 +543,37 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
   must stay at least as big as `#band-pill`, which `E2E-217` bounds at 260 x 34); `UI-1075` (`ui/bandswitch.test.ts`) the
   Show band icon is rebuilt only when `bandVisible` changes. Changed: `E2E-217` (also scans the six `.fbox` chips against
   the pill), `UI-1073` (also the mouse help row), `UI-1070` (no `aria-pressed` on the role=switch), `UI-1067` (title only).
+
+## Part 22-4 additions (design tokens, palette, type and themes)
+- Frontend unit: `UI-1080..1091`. `UI-1080..1085` (`ui/tokens.test.ts` parser, `ui/theme.test.ts`) pin the three token blocks (dark
+  `:root`, the `prefers-color-scheme: light` block and the `:root[data-theme="light"]` block must agree), the values from `notes.md`
+  (with the measured departures listed in the test's comment), the contrast of every text, icon and fill token over its own
+  theme's `--canvas` and `--canvas-vignette`, the data and axis tokens (dark `:root` only), and the Box and band arrows and rings
+  against the dark stage. `UI-1086` no colour literal outside the token blocks (small allow-list) and no `var(--x)` that nothing
+  declares, across `index.html`, `timelineCss()` and `cubeNavCss()`. `UI-1087` one `:focus-visible` rule (3 px `--focus`), no other
+  outline except the locked-chip dashed marker, and no `outline: none`. `UI-1088` every transition is 120-250 ms and a global
+  reduced-motion block. `UI-1089` the font stack, the type tokens and tabular numerals, no remote font. `UI-1090` the glass rules
+  (`blur(28px) saturate(170%)` with the `-webkit-` twin on the stage HUD and the sheets, none on the side panels or `#viewport`, and the
+  `@supports not` opaque fallback). `UI-1091` (`viewport/canvastoken.test.ts`) the clear colour follows `--canvas`.
+- Changed existing tests (setup only, thresholds kept): `UI-306` and `UI-620` read the new token names through `testing/tokens.ts`
+  (`glass` composited over `--canvas`, `label`, `label-2`, `destructive`, `on-destructive`); `UI-721` measures the presets against
+  the dark theme's `--canvas` and `--canvas-vignette` at the same floor of 100; `E2E-155` grows each rect by 4 px (the new 3 px ring
+  plus its 1 px offset) instead of 3. `UI-906` is deliberately not edited (R22-6): its `0x15181d` constant is stale, `UI-1085`
+  protects the same floors on the real dark stage.
+- `testing/tokens.ts` is a test-only reader: it parses the three token blocks out of `index.html`, resolves `var()` chains and
+  composites translucent tokens over their backdrop. It is not bundled.
+- Smoke `E2E-220..226`: `E2E-220` the dark default on the real cascade and no request leaves the machine; `E2E-221` the light theme
+  from `prefers-color-scheme` and `data-theme` both ways, for the chrome, the HUD and a clear stage corner (the 3D clear colour);
+  `E2E-222` the 3 px accent ring; `E2E-223` reduced motion; `E2E-224` every icon-only button has an `aria-label` and a title (the
+  filter box reset and toggle were missing the label); `E2E-225` measured text contrast on real elements in both themes, including
+  `#empty` on the stage; `E2E-226` writes `/out/part22-4-<w>x<h>-{dark,dark-armed,light,light-armed}.png` (keep with
+  `SMOKE_SHOTS_DIR`, never commit). The full smoke run with `--workers=1` is 204 tests (196 + 8).
+- The Playwright config pins `colorScheme: "dark"`. Playwright defaults to light, which would now switch the app, so every existing
+  pixel test keeps the dark stage and a light test opts in with `page.emulateMedia({ colorScheme: "light" })`.
+- R22-13: the light theme has a light stage (`--canvas #e9ebef`) and light HUD glass. Part 22-4 pins no point, highlight or axis
+  contrast on it: the render colours stay the dark theme's until part 22-4b.
+- The vignette is not drawn (E9). A transparent canvas over a `#stage` radial gradient changed `E2E-216` by one dither level, so the
+  stage is the opaque clear colour, which follows `--canvas` (`viewport/canvastoken.ts`). `E2E-216` run in one `-g` selection straight
+  after `E2E-201` times out, also at 7067cd7; it passes alone and in file order.
+- Rule: part 4 keeps box geometry. Edges are inset shadows, state moves from outline to fill and border; no new border, padding,
+  margin, width or height.
