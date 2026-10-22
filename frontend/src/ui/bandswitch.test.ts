@@ -32,13 +32,13 @@ test("UI-1070 the Show band switch: a role switch with the eye icon (eyeoff when
   expect(describeControls().find((d) => d.id === "prot-show-band")).toMatchObject({ label: "Show band", group: "protection" });
   expect(store.get().bandVisible).toBe(true);
   expect(sw.getAttribute("aria-checked")).toBe("true");
-  expect(sw.getAttribute("aria-pressed")).toBe("true");
+  expect(sw.getAttribute("aria-pressed"), "a role=switch carries aria-checked only").toBeNull();
   expect(sw.children[0].getAttribute("data-icon")).toBe("eye");
   const before = store.get().tools.protection;
   sw.fire("click");
   expect(store.get().bandVisible).toBe(false);
   expect(sw.getAttribute("aria-checked")).toBe("false");
-  expect(sw.getAttribute("aria-pressed")).toBe("false");
+  expect(sw.getAttribute("aria-pressed")).toBeNull();
   expect(sw.children[0].getAttribute("data-icon")).toBe("eyeoff");
   expect(protectionEdit).not.toHaveBeenCalled();
   expect(store.get().tools.protection).toBe(before);
@@ -58,4 +58,18 @@ test("UI-1073 the tilt fields' tooltips and the help row name the ring colours: 
   expect(TOOLTIPS["prot-tilt-y"]).toContain("green Y ring");
   expect(TOOLTIPS["prot-tilt-x"]).not.toContain("blue");
   expect(TOOLTIPS["prot-tilt-y"]).not.toContain("blue");
+});
+
+test("UI-1075 the Show band icon is rebuilt only when bandVisible changes, not on other store updates", () => {
+  const sw = ctl("prot-show-band");
+  const icon = sw.children[0];
+  store.update((s) => ({ ...s, previewLive: !s.previewLive }));
+  store.update((s) => ({ ...s, previewLive: !s.previewLive }));
+  expect(sw.children[0], "the same icon node after unrelated updates").toBe(icon);
+  store.update((s) => ({ ...s, bandVisible: false }));
+  expect(sw.children[0]).not.toBe(icon);
+  expect(sw.children[0].getAttribute("data-icon")).toBe("eyeoff");
+  const off = sw.children[0];
+  store.update((s) => ({ ...s, previewLive: !s.previewLive }));
+  expect(sw.children[0]).toBe(off);
 });

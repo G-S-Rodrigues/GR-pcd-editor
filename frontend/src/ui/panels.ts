@@ -890,9 +890,11 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     (() => {
       // "Show band": hides the whole band on the canvas (fill, outline, arrows, rings); protection stays on, so it is not a protection edit
       const sw = control("button", { id: "prot-show-band", role: "switch", class: "toggle", onclick: () => store.update((s) => ({ ...s, bandVisible: !s.bandVisible })) }, iconSvg("eye", 16), " Show band");
+      let drawn: boolean | null = null; // the icon is rebuilt only when bandVisible changes, not on every store update
       syncs.push((s) => {
+        if (drawn === s.bandVisible) return;
+        drawn = s.bandVisible;
         sw.setAttribute("aria-checked", String(s.bandVisible));
-        sw.setAttribute("aria-pressed", String(s.bandVisible));
         sw.replaceChildren(iconSvg(s.bandVisible ? "eye" : "eyeoff", 16), " Show band");
       });
       return sw;
