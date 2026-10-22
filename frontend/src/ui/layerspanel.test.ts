@@ -3,6 +3,7 @@ import { createAppStore } from "../state/app";
 import { sessionFixture } from "../testing/fixtures";
 import { type FakeEl, installFakeDom } from "../testing/fakedom";
 import type { Layer } from "../state/types";
+import { protectedTip } from "../layers/model";
 import type { PanelActions } from "./panels";
 import { buildLayersPanel } from "./layerspanel";
 import { describeControls } from "./describe";
@@ -205,17 +206,45 @@ test("UI-921 Floor's details are hidden by default and hold the 7 groups in orde
   expect(calls.move).toHaveBeenCalledWith(2, -1);
 });
 
-test("UI-922 a protected layer's chip has class protected, a locked one locked; the row title names them and the row keeps its shape", () => {
+test("UI-922 a protected layer's chip has no ring class (R22-3: the shield is the mark), a locked one has class locked; the row title names them and the row keeps its shape plus the shield", () => {
   store.set({ session: twoLayers({ protected: true }, { locked: true }) });
   const chipOfRow = (id: number) => rows().find((r) => r.getAttribute("data-layer-row") === String(id))?.children[0] as FakeEl;
-  expect(chipOfRow(1).classList.contains("protected")).toBe(true);
+  expect(chipOfRow(1).classList.contains("protected")).toBe(false);
   expect(chipOfRow(1).classList.contains("locked")).toBe(false);
   expect(chipOfRow(2).classList.contains("locked")).toBe(true);
   const floor = rows().find((r) => r.getAttribute("data-layer-row") === "1") as FakeEl;
   expect(floor.title).toContain("Protected");
   expect(rows().find((r) => r.getAttribute("data-layer-row") === "2")?.title).toContain("Locked");
-  expect(floor.children).toHaveLength(6);
+  expect(floor.children).toHaveLength(7);
   expect(floor.text()).toContain("Floor (30)");
+});
+
+test("UI-1013 a protected layer's row holds the shield after the name and before the count; unprotected rows hold none; the store flag adds and removes it", () => {
+  store.set({ session: twoLayers({ protected: true }) });
+  const row = (id: number) => rows().find((r) => r.getAttribute("data-layer-row") === String(id)) as FakeEl;
+  const shield = row(1).children[2];
+  expect(shield.getAttribute("data-layer-shield")).toBe("1");
+  expect(shield.getAttribute("role")).toBe("img");
+  expect(shield.getAttribute("aria-label")).toBe("Protected");
+  expect(shield.title).toBe(protectedTip("Floor"));
+  expect(shield.all().some((e) => e.tag === "svg")).toBe(true);
+  expect(row(1).children[1].className).toContain("layer-name");
+  expect(row(1).children[3].className).toContain("layer-count");
+  expect(row(2).all().some((e) => e.getAttribute("data-layer-shield") !== null)).toBe(false);
+  store.set({ session: twoLayers({ protected: false }) });
+  expect(row(1).all().some((e) => e.getAttribute("data-layer-shield") !== null)).toBe(false);
+  store.set({ session: twoLayers({ protected: true }) });
+  expect(row(1).all().some((e) => e.getAttribute("data-layer-shield") === "1")).toBe(true);
+});
+
+test("UI-1014 the menu's Protected flag holds the shield svg first, keeps its text and aria-pressed", () => {
+  store.set({ session: twoLayers({ protected: true }) });
+  const flag = attrBtn("data-layer-protected", 1);
+  expect(flag.children[0].tag).toBe("svg");
+  expect(flag.text()).toBe("Protected");
+  expect(flag.getAttribute("aria-pressed")).toBe("true");
+  store.set({ session: twoLayers({ protected: false }) });
+  expect(attrBtn("data-layer-protected", 1).getAttribute("aria-pressed")).toBe("false");
 });
 
 test("UI-923 while a layer is edited its details are open and hold #layer-set exactly once, through rebuilds; afterwards it is back in the stack", () => {

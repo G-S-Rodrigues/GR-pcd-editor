@@ -106,7 +106,8 @@
       .layer-details button[aria-pressed=true] { border-color: var(--accent, #6aa9ff); background: #26303c; }
       .layer-details button.inactive { opacity: 0.5; }
       .layer-details button.danger { color: #ff8a80; }
-      .layer-row .chip.protected { box-shadow: 0 0 0 2px #fff; }
+      .layer-row .layer-shield { flex: none; display: inline-grid; place-items: center; color: #00d1ff; }
+      .layer-details button[data-layer-protected] svg { vertical-align: -2px; margin-right: 3px; }
       .layer-row .chip.locked { outline: 1px dashed #fff; outline-offset: 1px; }
       .layer-details[hidden] { display: none; }
       .layer-details button { height: 22px; padding: 0 6px; font-size: 11px; }
