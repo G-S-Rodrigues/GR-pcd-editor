@@ -6694,9 +6694,24 @@ test("E2E-220 22-4 the default is the dark theme on the real cascade: body, asid
   expect(errors).toEqual([]);
 });
 
-test("E2E-221 22-4 chrome half: prefers-color-scheme light switches the aside, the body and the stage HUD to the light tokens, and data-theme overrides it both ways", async ({ page }) => {
+test("E2E-221 22-4 prefers-color-scheme light switches the aside, the body, the stage HUD and the 3D stage backdrop to the light tokens, and data-theme overrides it both ways", async ({ page }) => {
   const { exact } = helpers(page);
   await openRoom(page, exact);
+  await appIdle(page);
+  // a clear stage corner: the first #stage corner on the canvas, outside the legend and the triad (both are pointer-events: none)
+  const corner = await page.evaluate(() => {
+    const r = document.querySelector("#stage")!.getBoundingClientRect();
+    const out = ["#legend", "#triad"].map((q) => document.querySelector(q)?.getBoundingClientRect()).filter((x): x is DOMRect => !!x);
+    const spots = [[r.left + 4, r.top + 4], [r.right - 4, r.top + 4], [r.left + 4, r.bottom - 4], [r.right - 4, r.bottom - 4]];
+    for (const [x, y] of spots) {
+      const clear = out.every((o) => x < o.left || x > o.right || y < o.top || y > o.bottom);
+      if (clear && document.elementFromPoint(x, y)?.id === "viewport") return { x, y };
+    }
+    throw new Error("no clear stage corner");
+  });
+  const expectStage = async (want: Scheme) => {
+    await expect.poll(() => brightestPixel(page, corner, 1).then((p) => near([p[0], p[1], p[2], 1], want === "light" ? [233, 235, 239] : [12, 13, 16])), { timeout: 5000, message: `stage corner under ${want}` }).toBe(true);
+  };
   const expectTheme = async (want: Scheme) => {
     const light = want === "light";
     await expect
@@ -6714,6 +6729,7 @@ test("E2E-221 22-4 chrome half: prefers-color-scheme light switches the aside, t
         };
       }, { timeout: 5000 })
       .toEqual({ body: true, aside: true, text: true, hud: true, fbox: true });
+    await expectStage(want);
   };
   await expectTheme("dark");
   await page.emulateMedia({ colorScheme: "light" });

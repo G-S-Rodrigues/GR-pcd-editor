@@ -10,6 +10,7 @@ import { PALETTE } from "../colour/palette";
 import { type AppState } from "../state/app";
 import type { Store } from "../state/store";
 import { selectedRgb } from "../colour/selectcolour";
+import { followCanvasToken } from "./canvastoken";
 import { layerColourKey } from "../colour/key";
 import { colourRegion } from "../inspector/band";
 import { createFilterPlanesOverlay } from "./filterplanes3d";
@@ -43,7 +44,7 @@ export function createViewport(
     onUnavailable(e instanceof Error ? e.message : "WebGL could not start");
     return null;
   }
-  renderer.setClearColor(0x15181d, 1);
+  renderer.setClearColor(0x0c0d10, 1); // until the stylesheet's --canvas is read below
   renderer.localClippingEnabled = true;
   const scene = new THREE.Scene();
   // the Distance colour mode is a vertex shader on the two coloured layers; its range is a uniform, so a camera move recolours nothing on the CPU
@@ -305,6 +306,25 @@ export function createViewport(
   const ro = new ResizeObserver(requestRender);
   ro.observe(canvas);
   requestRender();
+  // the clear colour follows the theme's --canvas (prefers-color-scheme, or <html data-theme>); the on-demand loop needs a redraw to show it
+  const unfollow = followCanvasToken({
+    read: () => getComputedStyle(canvas).getPropertyValue("--canvas"),
+    subscribe: (onChange) => {
+      const mq = window.matchMedia("(prefers-color-scheme: light)");
+      mq.addEventListener("change", onChange);
+      const mo = new MutationObserver(onChange);
+      mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+      return () => {
+        mq.removeEventListener("change", onChange);
+        mo.disconnect();
+      };
+    },
+    apply: (v) => {
+      if (!v) return;
+      renderer.setClearColor(new THREE.Color(v), 1);
+      requestRender();
+    },
+  });
 
   return {
     size: () => ({ w: canvas.clientWidth, h: canvas.clientHeight }),
@@ -337,6 +357,7 @@ export function createViewport(
     drawnCount: () => (points.visible ? (points.geometry.index?.count ?? points.geometry.getAttribute("position")?.count ?? 0) : 0),
     dispose() {
       unsub();
+      unfollow();
       gate.dispose();
       ro.disconnect();
       cancelAnimationFrame(raf);

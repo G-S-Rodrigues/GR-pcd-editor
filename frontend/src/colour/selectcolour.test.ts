@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import { BACKDROPS, solid } from "../testing/tokens";
 import { createAppStore } from "../state/app";
 import { sessionFixture } from "../testing/fixtures";
 import { layerColourKey } from "./key";
@@ -24,7 +25,8 @@ test("UI-721 contrast floors: every preset against the other point colours, the 
   for (const p of SELECTED_COLOURS) {
     const c = hexOf(p.colour);
     for (const o of others) expect(rgbDistance(c, o), `${p.id} vs ${o}`).toBeGreaterThanOrEqual(60);
-    expect(rgbDistance(c, "#15181d"), `${p.id} vs background`).toBeGreaterThanOrEqual(100);
+    // the points draw on the dark theme's stage (the light stage is 22-4b's)
+    for (const b of BACKDROPS) expect(rgbDistance(c, solid("dark", b)), `${p.id} vs ${b}`).toBeGreaterThanOrEqual(100);
     if (p.id !== "orange") for (const o of stops) expect(rgbDistance(c, o), `${p.id} vs ramp ${o}`).toBeGreaterThanOrEqual(80);
   }
 });
