@@ -11,7 +11,12 @@ import { defaultCamera } from "../view/camera";
 import { applyPreset } from "../view/presets";
 import { filterPlanes } from "../filterboxes/plane";
 import type { ProtectionModel } from "../inspector/protection";
-import { tiltRings } from "../inspector/rings";
+import { bandGizmo } from "../inspector/bandgizmo";
+import { ringAxes, pivotXY } from "../inspector/rings";
+import { dragPlane, rotateSlab } from "../inspector/protection";
+import { hitHandle } from "../tools/box/handles";
+import { segDist } from "../math/seg2d";
+import { ringAngle, rotationDelta, translateDelta } from "../tools/box/gizmo-math";
 import { quatToRpy } from "../tools/box/model";
 import { normalOf } from "../inspector/tilt";
 import { createToolInteraction, planeAnchors } from "./interact";
@@ -315,7 +320,7 @@ describe("tilted protection band routing (10-6)", () => {
 
   it("UI-224 a ring drag tilts the slab live, Esc restores the start tilt, rings show only while the section is open", () => {
     const t = tiltSetup(0, 0);
-    const ring = tiltRings(t.store.get(), vp.h).find((r) => r.id === "y")!;
+    const ring = { pts: bandGizmo(t.store.get(), vp.h).rings.find((r) => r.id === "tilt-y+")!.handle.ring! };
     expect(ring.pts.length).toBeGreaterThan(8);
     const a = t.at(ring.pts[0]);
     const b = t.at(ring.pts[2]);
@@ -328,7 +333,7 @@ describe("tilted protection band routing (10-6)", () => {
     expect(t.store.get().tools.protection.tilt.ry).toBe(0);
     expect(t.tools.dragging()).toBe(false);
     t.store.update((s) => ({ ...s, floorPanelOpen: false }));
-    expect(tiltRings(t.store.get(), vp.h)).toEqual([]);
+    expect(bandGizmo(t.store.get(), vp.h).rings).toEqual([]);
   });
 
   describe("box click-to-centre (13-6)", () => {
@@ -620,5 +625,150 @@ describe("box gizmo modifiers (Part 14b)", () => {
     t.tools.pointerMove(evm(c.x, c.y - 40, { shift: true })); // a quarter turn at x0.1
     const z = quatToRpy(t.store.get().tools.box.quat)[2];
     expect(Math.abs(Math.abs(z) - 9)).toBeLessThan(1);
+  });
+});
+
+describe("band gizmo routing (22-3)", () => {
+  const evp = (x: number, y: number) => ({ button: 0, clientX: x, clientY: y, shiftKey: false, altKey: false, ctrlKey: false, metaKey: false }) as unknown as PointerEvent;
+  const bandSetup = (o: { view?: "front" | "corner"; tool?: "box" | "none"; hidden?: boolean; rx?: number; ry?: number; box?: Vec3 } = {}) => {
+    const store = createAppStore();
+    const base = { ...defaultCamera(), distance: 30, target: [5, 5, 5] as Vec3 };
+    const camera = o.view === "front" || o.view === undefined ? applyPreset(base, "front") : base;
+    store.set({ session: sessionFixture(), camera, tool: o.tool ?? "none" });
+    store.update((s) => ({
+      ...s,
+      bandVisible: o.hidden !== true,
+      tools: {
+        ...s.tools,
+        ...(o.box ? { box: { ...defaultBox([5, 5, 3]), dimensions: o.box } } : {}),
+        protection: { ...s.tools.protection, global: { enabled: true, min: 2, max: 4 }, tilt: { rx: o.rx ?? 0, ry: o.ry ?? 0, pivot: [5, 5] as [number, number] } },
+      },
+    }));
+    const edits: ProtectionModel[] = [];
+    const tools = createToolInteraction(canvas, store, () => vp, {
+      onToolChanged: () => undefined,
+      notify: () => undefined,
+      protectionEdit: (fn) => {
+        const r = fn(store.get().tools.protection);
+        if (r.ok) {
+          store.update((s) => ({ ...s, tools: { ...s.tools, protection: r.model } }));
+          edits.push(r.model);
+        }
+        return r;
+      },
+    });
+    const at = (p: Vec3) => project(store.get().camera, p, [0, 0, 0], vp)!;
+    const g = () => bandGizmo(store.get(), vp.h);
+    return { store, tools, at, edits, g };
+  };
+
+  it("UI-1067 a z arrow is grabbed at its tip and moves only its own edge by translateDelta along the normal; a press on the shaft away from the tip and the outlines grabs nothing", () => {
+    for (const [rx, ry] of [[0, 0], [20, 30]] as const) {
+      const t = bandSetup({ view: "corner", rx, ry });
+      const m0 = t.store.get().tools.protection;
+      const hi = t.g().arrows.find((a) => a.id === "band-global-max")!;
+      const tip = t.at(hi.handle.anchor);
+      const base = t.at(hi.handle.base!);
+      // a point on the drawn shaft 20..40 px from the tip (past the 16 px tip radius) that is also 12 px clear of every plane outline
+      // (an outline press is a grab by design, so the probe must not sit on one): 14b arrows are grabbed at the tip only
+      const L = Math.hypot(base.x - tip.x, base.y - tip.y);
+      const outlines = t.g().arrows.flatMap((a) => { const q = a.plane.corners.map((c) => t.at(c)); return q.map((c, i) => [c, q[(i + 1) % 4]] as const); });
+      let down: { x: number; y: number } | null = null;
+      for (let d = 20; d <= Math.min(40, L - 6) && !down; d++) {
+        const c = { x: tip.x + ((base.x - tip.x) * d) / L, y: tip.y + ((base.y - tip.y) * d) / L };
+        if (outlines.every(([a, b]) => segDist(c, a, b) > 12)) down = c;
+      }
+      expect(down, `a shaft probe clear of the outlines rx${rx}`).not.toBeNull();
+      expect(L).toBeGreaterThan(30); // foreshortened by the tilt, but longer than the tip radius plus the probe offset
+      expect(t.tools.pointerDown(evp(down!.x, down!.y)), `shaft rx${rx}`).toBe(false);
+      expect(t.tools.pointerDown(evp(tip.x, tip.y)), `tip rx${rx}`).toBe(true);
+      const to = { x: tip.x, y: tip.y - 40 };
+      t.tools.pointerMove(evp(to.x, to.y));
+      const cam = t.store.get().camera;
+      const delta = translateDelta(screenRay(cam, vp, tip.x, tip.y), screenRay(cam, vp, to.x, to.y), hi.plane.anchor, normalOf(m0.tilt));
+      expect(delta).not.toBe(0);
+      expect(t.store.get().tools.protection).toEqual(dragPlane(m0, "global", "max", delta));
+      expect(t.store.get().tools.protection.global.min).toBe(2);
+      t.tools.pointerUp();
+    }
+  });
+
+  it("UI-1068 a ring drag in the corner view turns rx by rotateSlab, clamps at 60 over a long sweep, Esc restores; in the Front view the overlapping tilt-y rings are picked by hitHandle and turn ry", () => {
+    const t = bandSetup({ view: "corner" });
+    const m0 = t.store.get().tools.protection;
+    const ring = t.g().rings.find((r) => r.id === "tilt-x+")!.handle;
+    const a = t.at(ring.ring![0]);
+    const b = t.at(ring.ring![3]);
+    const cam = t.store.get().camera;
+    expect(hitHandle(t.g().handles, cam, vp, a.x, a.y)?.id).toBe("tilt-x+");
+    expect(t.tools.pointerDown(evp(a.x, a.y))).toBe(true);
+    t.tools.pointerMove(evp(b.x, b.y));
+    const a0 = ringAngle(screenRay(cam, vp, a.x, a.y), ring.centre!, ring.dir, cam.ortho)!;
+    const a1 = ringAngle(screenRay(cam, vp, b.x, b.y), ring.centre!, ring.dir, cam.ortho)!;
+    const deg = (rotationDelta(a0, a1) * 180) / Math.PI;
+    expect(Math.abs(deg)).toBeGreaterThan(5);
+    expect(t.store.get().tools.protection).toEqual(rotateSlab(m0, "x", deg, pivotXY(t.store.get())!));
+    expect(t.store.get().tools.protection.tilt.ry).toBe(0);
+    // a long sweep round the ring (more than a turn in 11 degree steps) never leaves +-60
+    for (let k = 0; k < 40; k++) {
+      const q = t.at(ring.ring![(3 + k) % 32]);
+      t.tools.pointerMove(evp(q.x, q.y));
+      expect(Math.abs(t.store.get().tools.protection.tilt.rx)).toBeLessThanOrEqual(60);
+    }
+    expect(Math.abs(t.store.get().tools.protection.tilt.rx)).toBeGreaterThan(0);
+    expect(t.tools.cancel()).toBe(true);
+    expect(t.store.get().tools.protection).toEqual(m0);
+    expect(ringAxes(m0.tilt).x).toEqual(ring.dir);
+    // clamp: one drag well past 60 degrees ends at exactly 60
+    const c = bandSetup({ view: "corner" });
+    const r2 = c.g().rings.find((r) => r.id === "tilt-x+")!.handle;
+    const p0 = c.at(r2.ring![0]);
+    c.tools.pointerDown(evp(p0.x, p0.y));
+    for (let k = 1; k <= 24; k++) {
+      const q = c.at(r2.ring![k % 32]);
+      c.tools.pointerMove(evp(q.x, q.y));
+    }
+    expect(Math.abs(c.store.get().tools.protection.tilt.rx)).toBe(60);
+    c.tools.pointerUp();
+    // Front view: tilt-y+ and tilt-y- coincide on screen; hitHandle picks one of them, and the drag turns ry
+    const f = bandSetup({ view: "front" });
+    const fr = f.g().rings.find((r) => r.id === "tilt-y+")!.handle;
+    const fa = f.at(fr.ring![0]);
+    const fb = f.at(fr.ring![3]);
+    const hit = hitHandle(f.g().handles, f.store.get().camera, vp, fa.x, fa.y);
+    expect(["tilt-y+", "tilt-y-"]).toContain(hit?.id);
+    expect(f.tools.pointerDown(evp(fa.x, fa.y))).toBe(true);
+    f.tools.pointerMove(evp(fb.x, fb.y));
+    expect(Math.abs(f.store.get().tools.protection.tilt.ry)).toBeCloseTo((3 * 360) / 32, 3);
+    expect(f.store.get().tools.protection.tilt.rx).toBe(0);
+  });
+
+  it("UI-1069 with Show band off a press on the old arrow tip, ring or outline falls through to the camera, and with the Box armed hover is exactly what it is with no band", () => {
+    const shown = bandSetup({ view: "corner" });
+    const probes: Vec3[] = [];
+    const hi = shown.g().arrows.find((a) => a.id === "band-global-max")!;
+    probes.push(hi.handle.anchor, shown.g().rings.find((r) => r.id === "tilt-x+")!.handle.ring![0]);
+    const shownPx = probes.map((p) => shown.at(p));
+    const hidden = bandSetup({ view: "corner", hidden: true });
+    for (const q of shownPx) expect(hidden.tools.pointerDown(evp(q.x, q.y))).toBe(false);
+    const edge = hidden.at([2, 5, 2]);
+    expect(hidden.tools.pointerDown(evp(edge.x, edge.y))).toBe(false);
+    expect(hidden.tools.dragging()).toBe(false);
+    expect(hidden.edits).toEqual([]);
+    // the same pixels are real grabs while the band is shown (so the hidden misses are the switch, not a bad probe)
+    for (const q of shownPx) {
+      expect(shown.tools.pointerDown(evp(q.x, q.y))).toBe(true);
+      shown.tools.pointerUp();
+    }
+    // Box armed over the band's outline (Front view): shown, the band wins the pointer (no body cursor); hidden, the body does
+    const front = (hiddenBand: boolean, protectionOn: boolean) => {
+      const t = bandSetup({ view: "front", tool: "box", hidden: hiddenBand, box: [8, 8, 2] });
+      if (!protectionOn) t.store.update((s) => ({ ...s, tools: { ...s.tools, protection: { ...s.tools.protection, global: { enabled: false, min: 2, max: 4 } } } }));
+      const q = t.at([7, 5, 2]); // on the lower plane's outline, inside the body
+      return t.tools.hover(evp(q.x, q.y));
+    };
+    expect(front(false, true)).toBeNull();
+    expect(front(true, true)).toEqual(front(false, false));
+    expect(front(true, true)).toEqual({ cursor: "move", id: null });
   });
 });

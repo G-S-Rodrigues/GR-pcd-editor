@@ -1,9 +1,10 @@
 import { END_ON_DOT, type FilterDrag, beginFilterDrag, moveFilterDrag } from "../filterboxes/drag";
 import { filterPlanes } from "../filterboxes/plane";
 import { type FilterEdit, type Side, sideValue } from "../inspector/filters";
-import { type PlaneAnchor, type PlaneKey, planeAnchors } from "../inspector/band";
+import { type PlaneKey, planeAnchors } from "../inspector/band";
+import { type BandArrow, type BandRing, bandGizmo } from "../inspector/bandgizmo";
 import { type ProtectionEdit, type ProtectionModel, dragPlane, rotateSlab } from "../inspector/protection";
-import { RING_EDGE_ON, pivotXY, tiltRings } from "../inspector/rings";
+import { pivotXY } from "../inspector/rings";
 import { normalOf } from "../inspector/tilt";
 import { dot } from "../math/vec";
 import { pickPoint, project } from "../pick/ray";
@@ -13,12 +14,12 @@ import type { AppState } from "../state/app";
 import type { Store } from "../state/store";
 import type { Vec3 } from "../state/types";
 import { type Depth, narrowBox, rectAxis, rectDepth, rectToBox } from "../tools/box/rect";
-import { type DragState, beginDrag, dragBox } from "../tools/box/drag";
+import { type DragState, advanceRing, beginDrag, dragBox } from "../tools/box/drag";
 import type { BoxModel } from "../tools/box/model";
 import { pxPerUnit } from "../view/pointsize";
 import { lookDirection } from "../view/camera";
 import { segDist } from "../math/seg2d";
-import { ringAngle, rotationDelta, translateDelta } from "../tools/box/gizmo-math";
+import { type TurnState, ringAngle, translateDelta } from "../tools/box/gizmo-math";
 import { moveOnPlane, rayBoxHit } from "../tools/box/body";
 import { type Handle, RING_DEADZONE_PX, boxHandles, hitHandle } from "../tools/box/handles";
 import { addVertex, insertVertex, moveVertex, removeVertex } from "../tools/polygon/model";
@@ -31,7 +32,7 @@ type Drag =
   | { kind: "rect"; p0: { x: number; y: number }; depth: Depth; narrow: BoxModel | null }
   | { kind: "filter"; d: FilterDrag; key: string; last: number; moved: boolean }
   | { kind: "plane"; key: PlaneKey; model0: ProtectionModel; anchor: Vec3; axis: Vec3; ray0: ReturnType<typeof screenRay> }
-  | { kind: "ring"; which: "x" | "y"; model0: ProtectionModel; centre: Vec3; axis: Vec3; a0: number; pivot: [number, number] };
+  | { kind: "ring"; which: "x" | "y"; model0: ProtectionModel; centre: Vec3; axis: Vec3; turn: TurnState | null; deadzone: number; pivot: [number, number] };
 
 /** The band geometry lives in inspector/band.ts; re-exported so the viewport tests keep their import. */
 export { planeAnchors };
@@ -135,49 +136,41 @@ export function createToolInteraction(
     setInteracting(null);
   };
 
-  /** The protection plane's arrow or outline under p (not end-on), or null. */
-  const protectionHit = (s: AppState, vp: { w: number; h: number }, p: { x: number; y: number }): PlaneAnchor | null => {
-    const normal = normalOf(s.tools.protection.tilt);
-    if (Math.abs(dot(lookDirection(s.camera), normal)) > END_ON_DOT) return null;
-    let best: PlaneAnchor | null = null;
+  /**
+   * The band's handle under p (22-3): a tilt ring or a z arrow tip, picked like the Box's (rings first, then tips), else a protection
+   * plane's outline (not end-on). Null when nothing is there, and always null while "Show band" is off.
+   */
+  const bandHit = (
+    s: AppState,
+    vp: { w: number; h: number },
+    p: { x: number; y: number },
+  ): { kind: "arrow"; arrow: BandArrow } | { kind: "ring"; ring: BandRing } | { kind: "outline"; arrow: BandArrow } | null => {
+    const g = bandGizmo(s, vp.h);
+    if (g.handles.length === 0) return null;
+    const h = hitHandle(g.handles, s.camera, vp, p.x, p.y);
+    if (h) {
+      const ring = g.rings.find((r) => r.id === h.id);
+      if (ring) return { kind: "ring", ring };
+      const arrow = g.arrows.find((a) => a.id === h.id);
+      if (arrow) return { kind: "arrow", arrow };
+    }
+    if (Math.abs(dot(lookDirection(s.camera), normalOf(s.tools.protection.tilt))) > END_ON_DOT) return null;
+    let best: BandArrow | null = null;
     let bd = PICK_PX;
-    for (const a of planeAnchors(s, vp.h)) {
-      const base = project(s.camera, a.anchor, zero, vp);
-      const tip = project(s.camera, a.tip, zero, vp);
-      const q = a.corners.map((c) => project(s.camera, c, zero, vp));
-      let d = base && tip ? segDist(p, base, tip) : Number.POSITIVE_INFINITY;
+    for (const a of g.arrows) {
+      const q = a.plane.corners.map((c) => project(s.camera, c, zero, vp));
       for (let i = 0; i < 4; i++) {
         const c0 = q[i];
         const c1 = q[(i + 1) % 4];
-        if (c0 && c1) d = Math.min(d, segDist(p, c0, c1));
-      }
-      if (d <= bd) {
-        bd = d;
-        best = a;
-      }
-    }
-    return best;
-  };
-  /** The tilted slab's rotation ring under p (shown only while the protection section is open), or null. */
-  const tiltRingHit = (s: AppState, vp: { w: number; h: number }, p: { x: number; y: number }): { id: "x" | "y"; centre: Vec3; axis: Vec3 } | null => {
-    const look = lookDirection(s.camera);
-    let best: { id: "x" | "y"; centre: Vec3; axis: Vec3 } | null = null;
-    let bd = PICK_PX;
-    for (const r of tiltRings(s, vp.h)) {
-      if (Math.abs(dot(look, r.axis)) < RING_EDGE_ON) continue;
-      const q = r.pts.map((pt) => project(s.camera, pt, zero, vp));
-      for (let i = 0; i < q.length; i++) {
-        const c0 = q[i];
-        const c1 = q[(i + 1) % q.length];
         if (!c0 || !c1) continue;
         const d = segDist(p, c0, c1);
         if (d <= bd) {
           bd = d;
-          best = r;
+          best = a;
         }
       }
     }
-    return best;
+    return best ? { kind: "outline", arrow: best } : null;
   };
   /** The box handle (arrow tip or ring) under p with the Box tool armed, or null. */
   const boxHandleAt = (s: AppState, vp: { w: number; h: number }, p: { x: number; y: number }, e: { ctrlKey?: boolean; metaKey?: boolean }): Handle | null =>
@@ -200,7 +193,7 @@ export function createToolInteraction(
       const cursor = deg < 22.5 || deg >= 157.5 ? "ew-resize" : deg < 67.5 ? "nwse-resize" : deg < 112.5 ? "ns-resize" : "nesw-resize";
       return { cursor, id: hit.id };
     }
-    if (protectionHit(s, vp, p) || tiltRingHit(s, vp, p)) return null;
+    if (bandHit(s, vp, p)) return null;
     const ray = screenRay(s.camera, vp, p.x, p.y);
     return bodyHit(s, ray, e) ? { cursor: "move", id: null } : null;
   };
@@ -265,17 +258,19 @@ export function createToolInteraction(
           return true;
         }
       }
-      const prot = protectionHit(s, vp, p);
-      if (prot) {
-        drag = { kind: "plane", key: prot.key, model0: s.tools.protection, anchor: prot.anchor, axis: normalOf(s.tools.protection.tilt), ray0: ray };
+      const band = bandHit(s, vp, p);
+      if (band && band.kind !== "ring") {
+        const pl = band.arrow.plane;
+        drag = { kind: "plane", key: band.arrow.key, model0: s.tools.protection, anchor: pl.anchor, axis: normalOf(s.tools.protection.tilt), ray0: ray };
         return true;
       }
-      const ringHit = tiltRingHit(s, vp, p);
-      if (ringHit) {
-        const a0 = ringAngle(ray, ringHit.centre, ringHit.axis, s.camera.ortho);
+      if (band) {
+        const h = band.ring.handle;
+        const a0 = ringAngle(ray, h.centre!, h.dir, s.camera.ortho);
         const pv = pivotXY(s);
         if (a0 !== null && pv) {
-          drag = { kind: "ring", which: ringHit.id, model0: s.tools.protection, centre: ringHit.centre, axis: ringHit.axis, a0, pivot: pv };
+          const deadzone = RING_DEADZONE_PX / pxPerUnit(s.camera, Math.max(vp.h, 1));
+          drag = { kind: "ring", which: band.ring.which, model0: s.tools.protection, centre: h.centre!, axis: h.dir, turn: { prev: a0, total: 0 }, deadzone, pivot: pv };
           return true;
         }
       }
@@ -350,9 +345,9 @@ export function createToolInteraction(
         deps.protectionEdit(() => ({ ok: true, model: dragPlane(d.model0, d.key.which, d.key.edge, delta) }));
       } else if (drag.kind === "ring") {
         const d = drag;
-        const a = ringAngle(ray, d.centre, d.axis, s.camera.ortho);
-        if (a === null) return true;
-        const deg = (rotationDelta(d.a0, a) * 180) / Math.PI;
+        d.turn = advanceRing(d.turn, ray, d.centre, d.axis, d.deadzone, s.camera.ortho);
+        if (!d.turn) return true;
+        const deg = (d.turn.total * 180) / Math.PI;
         deps.protectionEdit(() => ({ ok: true, model: rotateSlab(d.model0, d.which, deg, d.pivot) }));
       }
       return true;

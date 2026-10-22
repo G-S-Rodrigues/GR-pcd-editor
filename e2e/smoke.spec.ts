@@ -1471,6 +1471,12 @@ const protNow = (page: import("@playwright/test").Page) =>
     const s = (window as unknown as { __editor: ProtHook }).__editor.state();
     return { g: s.tools.protection.global, floorT: s.floorT, open: s.floorPanelOpen };
   });
+/** The page position of a protection arrow's tip (the only place a 14b arrow is grabbed), by hook key such as "global-max". */
+const arrowTip = async (page: import("@playwright/test").Page, key: string) => {
+  const a = (await page.evaluate(() => (window as unknown as { __editor: TiltHook }).__editor.protectionArrows())).find((r) => r.key === key);
+  expect(a?.tip, `arrow ${key}`).toBeTruthy();
+  return a!.tip!;
+};
 const protSummary = (page: import("@playwright/test").Page) => page.locator("details.panel > summary", { hasText: "Height protection" });
 
 test("E2E-39 10 dragging the band's arrows with the real mouse sets the protected slab; counts equal fixture truth", async ({ page }) => {
@@ -1484,28 +1490,21 @@ test("E2E-39 10 dragging the band's arrows with the real mouse sets the protecte
   const inSlab = (lo: number, hi: number) => String(rows.filter((r) => r[2] >= lo && r[2] <= hi).length);
   await exact("Protected", inSlab(0.5, 1.5));
   await page.waitForTimeout(400);
-  // the arrows start at the XY centre of the active bounds
-  const centre = (z: number) =>
-    page.evaluate((zz) => {
-      const e = (window as unknown as { __editor: { projectWorld: (p: number[]) => { x: number; y: number } | null; state: () => { session: { active_bounds: { min: number[]; max: number[] } } } } }).__editor;
-      const b = e.state().session.active_bounds;
-      return e.projectWorld([(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, zz]);
-    }, z);
-  // the upper plane's arrow points up from the footprint centre: grab it 20 px above that point
-  const up = (await centre(1.5))!;
-  await page.mouse.move(up.x, up.y - 20);
+  // the upper plane's arrow points up from the footprint centre: grab it at its tip and drag it 20 px further up
+  const up = await arrowTip(page, "global-max");
+  await page.mouse.move(up.x, up.y);
   await page.mouse.down();
-  await page.mouse.move(up.x, up.y - 40, { steps: 6 });
+  await page.mouse.move(up.x, up.y - 20, { steps: 6 });
   await page.mouse.up();
   const after = await protNow(page);
   expect(after.g.min).toBe(0.5); // the lower edge is untouched
   expect(after.g.max).toBeGreaterThan(1.5);
   await exact("Protected", inSlab(0.5, after.g.max));
-  // the lower plane's arrow points down
-  const lo = (await centre(0.5))!;
-  await page.mouse.move(lo.x, lo.y + 20);
+  // the lower plane's arrow points down: its tip, 15 px further down
+  const lo = await arrowTip(page, "global-min");
+  await page.mouse.move(lo.x, lo.y);
   await page.mouse.down();
-  await page.mouse.move(lo.x, lo.y + 35, { steps: 5 });
+  await page.mouse.move(lo.x, lo.y + 15, { steps: 5 });
   await page.mouse.up();
   const after2 = await protNow(page);
   expect(after2.g.min).toBeLessThan(0.5);
@@ -1520,10 +1519,10 @@ test("E2E-39 10 dragging the band's arrows with the real mouse sets the protecte
   await expect(ctl("prot-min")).toHaveValue("-0.05", { timeout: 15000 });
   await page.keyboard.press("3");
   await page.waitForTimeout(400);
-  const top = (await centre(0.05))!;
-  await page.mouse.move(top.x, top.y - 20);
+  const top = await arrowTip(page, "global-max");
+  await page.mouse.move(top.x, top.y);
   await page.mouse.down();
-  await page.mouse.move(top.x, top.y - 35, { steps: 5 });
+  await page.mouse.move(top.x, top.y - 15, { steps: 5 });
   await page.mouse.up();
   const picked = await protNow(page);
   expect(picked.g.max).toBeGreaterThan(0.05);
@@ -1584,7 +1583,7 @@ const dragYRing = async (page: import("@playwright/test").Page, setNum: (id: str
   await setNum("prot-max", 0.5);
   await setNum("prot-min", -0.5);
   await page.waitForTimeout(400);
-  const ring = (await page.evaluate(() => (window as unknown as { __editor: TiltHook }).__editor.tiltRings())).find((r) => r.id === "y")!;
+  const ring = (await page.evaluate(() => (window as unknown as { __editor: TiltHook }).__editor.tiltRings())).find((r) => r.id === "tilt-y+")!;
   const a = ring.pts[0]!;
   const b = ring.pts[3]!;
   await realDrag(page, a, b);
@@ -1617,13 +1616,13 @@ test("E2E-44 10 the tilted slab is fitted to a tilted floor with the real mouse 
   expect(truth).toBe(TILTED.floor); // the fixture: the slab holds the floor and nothing else
   await exact("Protected", String(truth));
 
-  // the upper arrow, grabbed halfway along its shaft, widens the slab upwards
+  // the upper arrow, grabbed at its tip (14b arrows are picked only there), widens the slab upwards
   const arrows = await page.evaluate(() => (window as unknown as { __editor: TiltHook }).__editor.protectionArrows());
   const upper = arrows.filter((a) => a.base && a.tip).sort((p, q) => p.tip!.y - q.tip!.y)[0]!;
   const dx = upper.tip!.x - upper.base!.x;
   const dy = upper.tip!.y - upper.base!.y;
   const len = Math.hypot(dx, dy);
-  const g = { x: upper.base!.x + dx / 2, y: upper.base!.y + dy / 2 };
+  const g = { x: upper.tip!.x, y: upper.tip!.y };
   await realDrag(page, g, { x: g.x + (dx / len) * 25, y: g.y + (dy / len) * 25 });
   const widened = await tiltNow(page);
   expect(widened.max).toBeGreaterThan(hi);
@@ -6430,3 +6429,39 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
     expect(errors).toEqual([]);
   });
 }
+
+// ---- part 22-3: the protection band with the Box handles (E2E-215..217)
+test("E2E-215 22-3 with the real mouse the band's upper z arrow tip widens max only, and a tilt ring (X facing the camera) turns rx; #prot-tilt-x shows state; Protected equals fixture truth", async ({ page }) => {
+  const { exact, ctl, setNum } = helpers(page);
+  await openTilted(page, exact);
+  const rows = tiltedRows();
+  await ctl("prot-enabled").check();
+  await setNum("prot-max", 0.5);
+  await setNum("prot-min", -0.5);
+  await appIdle(page);
+  // the default corner view: grab the upper arrow at its tip and pull it 25 px further out
+  const upper = (await page.evaluate(() => (window as unknown as { __editor: TiltHook }).__editor.protectionArrows())).find((r) => r.key === "global-max")!;
+  const dx = upper.tip!.x - upper.base!.x;
+  const dy = upper.tip!.y - upper.base!.y;
+  const len = Math.hypot(dx, dy);
+  await realDrag(page, upper.tip!, { x: upper.tip!.x + (dx / len) * 25, y: upper.tip!.y + (dy / len) * 25 });
+  const widened = await tiltNow(page);
+  expect(widened.min).toBe(-0.5); // the lower edge is untouched
+  expect(widened.max).toBeGreaterThan(0.5);
+  expect(widened.rx).toBe(0);
+  expect(widened.ry).toBe(0);
+  await exact("Protected", String(countInTiltedSlab(rows, 0, 0, widened.pivot, widened.min, widened.max)));
+  // the Left view looks along +X, so the X rings are full circles there (ortho: tilt-x+ and tilt-x- coincide)
+  await page.keyboard.press("5");
+  await appIdle(page);
+  const ring = (await page.evaluate(() => (window as unknown as { __editor: TiltHook }).__editor.tiltRings())).find((r) => r.id === "tilt-x+")!;
+  expect(ring.pts).toHaveLength(32);
+  await realDrag(page, ring.pts[0]!, ring.pts[3]!);
+  const turned = await tiltNow(page);
+  expect(Math.abs(turned.rx)).toBeGreaterThan(5);
+  expect(Math.abs(turned.rx)).toBeLessThan(60);
+  expect(turned.ry).toBe(0);
+  expect(turned.max).toBe(widened.max);
+  await expect.poll(async () => Math.abs(Number(await ctl("prot-tilt-x").inputValue()) - turned.rx)).toBeLessThan(1e-4); // the field shows the state value
+  await exact("Protected", String(countInTiltedSlab(rows, turned.rx, turned.ry, turned.pivot, turned.min, turned.max)));
+});

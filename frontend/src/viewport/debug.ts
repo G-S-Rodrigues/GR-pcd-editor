@@ -1,6 +1,5 @@
 import { filterPlanes } from "../filterboxes/plane";
-import { tiltRings } from "../inspector/rings";
-import { planeAnchors } from "./interact";
+import { bandGizmo } from "../inspector/bandgizmo";
 import { project } from "../pick/ray";
 import type { AppState } from "../state/app";
 import type { Store } from "../state/store";
@@ -98,15 +97,15 @@ export function installDebugHook(canvas: HTMLCanvasElement, store: Store<AppStat
         const q = project(s.camera, p, [0, 0, 0], size());
         return q ? { x: r.left + q.x, y: r.top + q.y } : null;
       };
-      return planeAnchors(s, size().h).map((a) => ({ key: `${a.key.which}-${a.key.edge}`, base: at(a.anchor), tip: at(a.tip) }));
+      return bandGizmo(s, size().h).arrows.map((a) => ({ key: `${a.key.which}-${a.key.edge}`, base: at(a.plane.anchor), tip: at(a.plane.tip) }));
     },
-    /** Page positions of 48 points on each shown rotation ring (null while the section is folded). */
+    /** Page positions of the 32 points on each tilt ring, ids tilt-x+/tilt-x-/tilt-y+/tilt-y- (none while the section is folded or the band is hidden). */
     tiltRings: (): { id: string; pts: ({ x: number; y: number } | null)[] }[] => {
       const s = store.get();
       const r = canvas.getBoundingClientRect();
-      return tiltRings(s, size().h).map((g) => ({
+      return bandGizmo(s, size().h).rings.map((g) => ({
         id: g.id,
-        pts: g.pts.map((p) => {
+        pts: (g.handle.ring ?? []).map((p) => {
           const q = project(s.camera, p, [0, 0, 0], size());
           return q ? { x: r.left + q.x, y: r.top + q.y } : null;
         }),
