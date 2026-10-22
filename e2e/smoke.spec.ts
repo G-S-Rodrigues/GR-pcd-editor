@@ -2917,6 +2917,25 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
   });
 }
 
+/** A clear stage corner: the first #stage corner on the canvas, outside the legend and the triad (both are pointer-events: none). Call it after the state that sizes the legend. */
+async function stageCorner(page: import("@playwright/test").Page): Promise<{ x: number; y: number }> {
+  return page.evaluate(() => {
+    const r = document.querySelector("#stage")!.getBoundingClientRect();
+    const out = ["#legend", "#triad"].map((q) => document.querySelector(q)?.getBoundingClientRect()).filter((x): x is DOMRect => !!x);
+    const spots = [[r.left + 4, r.top + 4], [r.right - 4, r.top + 4], [r.left + 4, r.bottom - 4], [r.right - 4, r.bottom - 4]];
+    for (const [x, y] of spots) {
+      const clear = out.every((o) => x < o.left || x > o.right || y < o.top || y > o.bottom);
+      if (clear && document.elementFromPoint(x, y)?.id === "viewport") return { x, y };
+    }
+    throw new Error("no clear stage corner");
+  });
+}
+
+/** Polls until the 3D clear colour at a stage corner is the theme's --canvas (the renderer follows the theme on a later frame, so no sleep). */
+async function expectStageCorner(page: import("@playwright/test").Page, corner: { x: number; y: number }, want: "dark" | "light"): Promise<void> {
+  await expect.poll(() => brightestPixel(page, corner, 1).then((p) => near([p[0], p[1], p[2], 1], want === "light" ? [233, 235, 239] : [12, 13, 16])), { timeout: 5000, message: `stage corner under ${want}` }).toBe(true);
+}
+
 /** The brightest pixel of a (2r+1) square of the page around a screen point, read from a screenshot decoded in a blank tab (the app's CSP is not involved). */
 async function brightestPixel(page: import("@playwright/test").Page, at: { x: number; y: number }, r = 4): Promise<number[]> {
   const buf = await page.screenshot({ clip: { x: Math.round(at.x) - r, y: Math.round(at.y) - r, width: 2 * r + 1, height: 2 * r + 1 } });
@@ -6699,20 +6718,8 @@ test("E2E-221 22-4 prefers-color-scheme light switches the aside, the body, the 
   const { exact } = helpers(page);
   await openRoom(page, exact);
   await appIdle(page);
-  // a clear stage corner: the first #stage corner on the canvas, outside the legend and the triad (both are pointer-events: none)
-  const corner = await page.evaluate(() => {
-    const r = document.querySelector("#stage")!.getBoundingClientRect();
-    const out = ["#legend", "#triad"].map((q) => document.querySelector(q)?.getBoundingClientRect()).filter((x): x is DOMRect => !!x);
-    const spots = [[r.left + 4, r.top + 4], [r.right - 4, r.top + 4], [r.left + 4, r.bottom - 4], [r.right - 4, r.bottom - 4]];
-    for (const [x, y] of spots) {
-      const clear = out.every((o) => x < o.left || x > o.right || y < o.top || y > o.bottom);
-      if (clear && document.elementFromPoint(x, y)?.id === "viewport") return { x, y };
-    }
-    throw new Error("no clear stage corner");
-  });
-  const expectStage = async (want: Scheme) => {
-    await expect.poll(() => brightestPixel(page, corner, 1).then((p) => near([p[0], p[1], p[2], 1], want === "light" ? [233, 235, 239] : [12, 13, 16])), { timeout: 5000, message: `stage corner under ${want}` }).toBe(true);
-  };
+  const corner = await stageCorner(page);
+  const expectStage = (want: Scheme) => expectStageCorner(page, corner, want);
   const expectTheme = async (want: Scheme) => {
     const light = want === "light";
     await expect
@@ -6945,7 +6952,7 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
       await expect.poll(async () => (await themeRead(page)).canvas, { message: `${scheme} theme applied` }).toBe(scheme === "light" ? "#e9ebef" : "#0c0d10");
       await page.mouse.move(5, 5);
       await appIdle(page);
-      await page.waitForTimeout(300); // the clear colour follows the theme on the next frame
+      await expectStageCorner(page, await stageCorner(page), scheme); // the clear colour follows the theme on a later frame
       await page.screenshot({ path: `/out/part22-4-${w}x${h}-${name}.png` });
       expect(await page.evaluate(() => document.scrollingElement!.scrollHeight <= window.innerHeight), `${scheme} ${name}: the page scrolls`).toBe(true);
     };
