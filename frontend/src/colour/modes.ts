@@ -112,7 +112,7 @@ export function colourizeMasked(r: ColourInput, ctx: ColourContext): { colours: 
     else if (region && inRegion(i)) c = PALETTE.protectedStrong;
     else {
       ovr[i] = 0;
-      c = stops ? heightRamp(r.coords[3 * i + 2] + r.origin[2], lo, hi, stops) : nrm ? normalColour(decodeNormal(nrm[i], tmp)) : lay ? (ctx.layerRgb![lay[i]] ?? PALETTE.base) : PALETTE.base;
+      c = stops ? heightRamp(r.coords[3 * i + 2] + r.origin[2], lo, hi, stops) : nrm ? normalColour(decodeNormal(nrm[i], tmp)) : PALETTE.base;
     }
     out[3 * i] = c[0];
     out[3 * i + 1] = c[1];
