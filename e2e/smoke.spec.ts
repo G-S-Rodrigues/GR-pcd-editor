@@ -7121,3 +7121,55 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
     expect(errors).toEqual([]);
   });
 }
+
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-233 22-4b owner screenshots at ${w}x${h}: dark and light render palettes, idle and the Box armed; the render theme follows the page, the page does not scroll, nothing throws, and the legend and the filter boxes overlap nothing`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => {
+      if (m.type() === "error" && !/404/.test(m.text())) errors.push(m.text());
+    });
+    const t = hideHelpers(page);
+    await t.floorSelected();
+    page.removeAllListeners("dialog");
+    page.on("dialog", (d) => void d.accept());
+    await t.ctl("sel-clear").click();
+    const shoot = async (scheme: Scheme, name: string) => {
+      await page.emulateMedia({ colorScheme: scheme });
+      await expect.poll(async () => (await themeRead(page)).canvas, { message: `${scheme} theme applied` }).toBe(scheme === "light" ? "#e9ebef" : "#0c0d10");
+      await expect.poll(() => hook(page, (e) => e.state().renderTheme), { message: `${scheme} render theme` }).toBe(scheme);
+      await page.mouse.move(5, 5);
+      await appIdle(page);
+      // the same poll as expectStageCorner with a longer bound: each read is a full-page screenshot, slow at 1920x1080 under SwiftShader with the Box up
+      const corner = await stageCorner(page);
+      await expect.poll(() => brightestPixel(page, corner, 1).then((p) => near([p[0], p[1], p[2], 1], scheme === "light" ? [233, 235, 239] : [12, 13, 16])), { timeout: 20000, message: `stage corner under ${scheme}` }).toBe(true);
+      await page.screenshot({ path: `/out/part22-4b-${w}x${h}-${name}.png` });
+      expect(await page.evaluate(() => document.scrollingElement!.scrollHeight <= window.innerHeight), `${scheme} ${name}: the page scrolls`).toBe(true);
+    };
+    await shoot("dark", "dark");
+    await shoot("light", "light");
+    await t.ctl("tool-box").click();
+    await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+    await t.exact("Selected", String(ROOM.ghost));
+    await expect(t.ctl("tool-box")).toHaveClass(/active/);
+    await shoot("dark", "dark-armed");
+    await shoot("light", "light-armed");
+    const boxes = page.locator("#fbox-layer .fbox");
+    let seen = 0;
+    for (let i = 0; i < (await boxes.count()); i++) {
+      if (!(await boxes.nth(i).isVisible())) continue;
+      seen++;
+      const r = (await boxes.nth(i).boundingBox())!;
+      for (const id of ["#legend", "#timeline", "#viewcube", "#camera-cluster", "#notices"]) {
+        const el = page.locator(id);
+        if (!(await el.isVisible())) continue;
+        const o = (await el.boundingBox())!;
+        const apart = r.x + r.width <= o.x || o.x + o.width <= r.x || r.y + r.height <= o.y || o.y + o.height <= r.y;
+        expect(apart, `filter box ${i} overlaps ${id}`).toBe(true);
+      }
+    }
+    expect(seen, "the six filter boxes are on the canvas").toBe(6);
+    expect(errors).toEqual([]);
+  });
+}
