@@ -6,11 +6,11 @@ import { clampOpacity, overlayStyle } from "../compare/model";
 import { splitRects } from "../compare/split";
 import { LOD_INTERACT, createLodGate, lodIndex } from "../render/lod";
 import type { RenderData } from "../render/parse";
-import { PALETTE } from "../colour/palette";
+import { PALETTE, gpuPalette, gpuRgb } from "../colour/palette";
 import { type AppState } from "../state/app";
 import type { Store } from "../state/store";
 import { selectedRgb } from "../colour/selectcolour";
-import { followCanvasToken } from "./canvastoken";
+import { applyRenderTheme, followCanvasToken } from "./canvastoken";
 import { layerColourKey } from "../colour/key";
 import { colourRegion } from "../inspector/band";
 import { createFilterPlanesOverlay } from "./filterplanes3d";
@@ -116,6 +116,7 @@ export function createViewport(
       keptFor = d;
     }
     (keptPts.material as THREE.PointsMaterial).size = Math.max(6, s.colour.pointSize * 2.5);
+    (keptPts.material as THREE.PointsMaterial).color.setRGB(...gpuPalette(s.renderTheme).protected);
     keptPts.visible = true;
   }
 
@@ -175,7 +176,7 @@ export function createViewport(
       if (key !== st.key) {
         st.key = key;
         const attr = obj.geometry.getAttribute("color") as THREE.BufferAttribute;
-        const { colours, ovr } = colourizeMasked(data, { mode: s.colour.mode, bounds: s.session?.active_bounds ?? null, markDeleted: false, selected: selectedRgb(s.selectedColour), region: region ? colourRegion(s) : null, layerRgb: s.colour.mode === "layers" ? layerPaletteRgb(s.session?.layers ?? []) : undefined });
+        const { colours, ovr } = colourizeMasked(data, { mode: s.colour.mode, bounds: s.session?.active_bounds ?? null, markDeleted: false, selected: gpuRgb(selectedRgb(s.selectedColour, s.renderTheme), s.renderTheme), palette: gpuPalette(s.renderTheme), region: region ? colourRegion(s) : null, layerRgb: s.colour.mode === "layers" ? layerPaletteRgb(s.session?.layers ?? []) : undefined });
         attr.set(colours);
         attr.needsUpdate = true;
         const mask = obj.geometry.getAttribute("ovr") as THREE.BufferAttribute;
@@ -194,16 +195,17 @@ export function createViewport(
     for (const [obj, d] of [[deletedPts, s.render2], [rightPts, s.render2]] as const) {
       if (d) obj.position.set(d.origin[0] - o[0], d.origin[1] - o[1], d.origin[2] - o[2]);
     }
-    const stepStyle = s.compare === "split" ? null : stepLayerStyle(s.timeline);
+    const stepStyle = s.compare === "split" ? null : stepLayerStyle(s.timeline, s.renderTheme);
     syncLayer(stepPts, stepStyle ? s.stepRender : null, s, false);
     if (stepStyle && s.stepRender) {
       stepPts.position.set(s.stepRender.origin[0] - o[0], s.stepRender.origin[1] - o[1], s.stepRender.origin[2] - o[2]);
       const sm = stepPts.material as THREE.PointsMaterial;
-      sm.color.setRGB(...stepStyle.colour);
+      sm.color.setRGB(...gpuRgb(stepStyle.colour, s.renderTheme));
       sm.opacity = stepStyle.opacity;
       sm.size = s.colour.pointSize + stepStyle.sizeDelta;
     }
     const mat = deletedPts.material as THREE.PointsMaterial;
+    mat.color.setRGB(...gpuRgb(overlayStyle(s.overlayOpacity, s.renderTheme).colour, s.renderTheme));
     mat.opacity = clampOpacity(s.overlayOpacity);
     mat.size = s.colour.pointSize;
     (rightPts.material as THREE.PointsMaterial).size = s.colour.pointSize;
@@ -265,6 +267,7 @@ export function createViewport(
     pivot.position.set(cam.target[0] - origin[0], cam.target[1] - origin[1], cam.target[2] - origin[2]);
     pivot.scale.setScalar(Math.max(halfHeight(cam) * 0.03, 1e-9));
     pivot.visible = s.session !== null;
+    (pivot.material as THREE.LineBasicMaterial).color.setRGB(...gpuPalette(s.renderTheme).pivot);
     overlay.update(s, origin as [number, number, number], h, w);
     filterOverlay.update(s, origin as [number, number, number], h);
 
@@ -307,23 +310,30 @@ export function createViewport(
   ro.observe(canvas);
   requestRender();
   // the clear colour follows the theme's --canvas (prefers-color-scheme, or <html data-theme>); the on-demand loop needs a redraw to show it
+  const onThemeChange = (onChange: () => void) => {
+    const mq = window.matchMedia("(prefers-color-scheme: light)");
+    mq.addEventListener("change", onChange);
+    const mo = new MutationObserver(onChange);
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => {
+      mq.removeEventListener("change", onChange);
+      mo.disconnect();
+    };
+  };
   const unfollow = followCanvasToken({
     read: () => getComputedStyle(canvas).getPropertyValue("--canvas"),
-    subscribe: (onChange) => {
-      const mq = window.matchMedia("(prefers-color-scheme: light)");
-      mq.addEventListener("change", onChange);
-      const mo = new MutationObserver(onChange);
-      mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-      return () => {
-        mq.removeEventListener("change", onChange);
-        mo.disconnect();
-      };
-    },
+    subscribe: onThemeChange,
     apply: (v) => {
       if (!v) return;
       renderer.setClearColor(new THREE.Color(v), 1);
       requestRender();
     },
+  });
+  // the point and overlay palette follows the page's colour scheme (never saved): the store change re-runs the colouriser, the overlays, the triad and the legend
+  const unfollowScheme = followCanvasToken({
+    read: () => getComputedStyle(document.documentElement).colorScheme,
+    subscribe: onThemeChange,
+    apply: applyRenderTheme(store),
   });
 
   return {
@@ -331,7 +341,7 @@ export function createViewport(
     requestRender,
     stepLayer: () => {
       const m = stepPts.material as THREE.PointsMaterial;
-      const st = stepLayerStyle(store.get().timeline);
+      const st = stepLayerStyle(store.get().timeline, store.get().renderTheme);
       return {
         sid: st?.sid ?? null,
         visible: stepPts.visible,
@@ -358,6 +368,7 @@ export function createViewport(
     dispose() {
       unsub();
       unfollow();
+      unfollowScheme();
       gate.dispose();
       ro.disconnect();
       cancelAnimationFrame(raf);

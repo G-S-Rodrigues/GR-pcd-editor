@@ -6,6 +6,7 @@ import { sessionFixture } from "../testing/fixtures";
 import { emptyTimeline, stepLayerStyle } from "../timeline/model";
 import { layerColourKey } from "./key";
 import { colourizeMasked } from "./modes";
+import { LIGHT_PALETTE as LP, PALETTE as DP, gpuPalette, gpuRgb } from "./palette";
 import { serialiseClientState } from "../state/persist";
 import { AXIS_COLOUR, LIGHT_AXIS_COLOUR, axisColours } from "../filterboxes/plane";
 import { blend } from "../timeline/overlay";
@@ -163,5 +164,21 @@ describe("light render palette (part 22-4b, R22-14)", () => {
     for (const [id, c] of Object.entries(want)) expect(light.find((e) => e.id === id)?.colour, id).toEqual(c);
     // a chosen Selected colour still wins over the palette's candidate colour
     expect(legendEntries(false, null, [0, 0, 1], [], LIGHT_PALETTE).find((e) => e.id === "selected")?.colour).toEqual([0, 0, 1]);
+  });
+
+  test("UI-1112 the colours handed to three.js: the dark palette is passed through untouched, the light one is converted from sRGB to linear so the drawn pixel is the hex", () => {
+    // dark: the same object, so every dark value is byte-identical to today's
+    expect(gpuPalette("dark")).toBe(DP);
+    expect(gpuRgb(DP.base, "dark")).toBe(DP.base);
+    const lin = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+    expect(gpuRgb([0, 1, 0.5], "light")).toEqual([0, 1, lin(0.5)]);
+    const g = gpuPalette("light");
+    expect(Object.keys(g)).toEqual(Object.keys(LP));
+    for (const k of Object.keys(LP) as (keyof typeof LP)[]) expect([...g[k]], k).toEqual(LP[k].map(lin));
+    // three.js sRGB-encodes the linear value on output: 0x87 comes back as 0x87 (135), not 192
+    const enc = (c: number) => Math.round(255 * (c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055));
+    expect(g.base.map(enc)).toEqual([135, 135, 135]);
+    // the legend palette itself stays the sRGB hex
+    expect(LP.base.map((c) => Math.round(c * 255))).toEqual([135, 135, 135]);
   });
 });

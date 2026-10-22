@@ -520,7 +520,7 @@ test("E2E-14 7a first load logs no console errors or failed requests; a bad file
 });
 
 type EditorHook = {
-  state: () => { camera: { target: number[]; orientation: number[]; distance: number; ortho: boolean }; tools: { box: { center: number[]; dimensions: number[]; quat: number[] }; protection: { global: { enabled: boolean; min: number; max: number } } } };
+  state: () => { renderTheme: string; camera: { target: number[]; orientation: number[]; distance: number; ortho: boolean }; tools: { box: { center: number[]; dimensions: number[]; quat: number[] }; protection: { global: { enabled: boolean; min: number; max: number } } } };
   projectWorld: (p: number[]) => { x: number; y: number } | null;
   handlePositions: () => { id: string; x: number; y: number }[];
   boxBodyPoint: () => { x: number; y: number } | null;
@@ -2934,6 +2934,49 @@ async function stageCorner(page: import("@playwright/test").Page): Promise<{ x: 
 /** Polls until the 3D clear colour at a stage corner is the theme's --canvas (the renderer follows the theme on a later frame, so no sleep). */
 async function expectStageCorner(page: import("@playwright/test").Page, corner: { x: number; y: number }, want: "dark" | "light"): Promise<void> {
   await expect.poll(() => brightestPixel(page, corner, 1).then((p) => near([p[0], p[1], p[2], 1], want === "light" ? [233, 235, 239] : [12, 13, 16])), { timeout: 5000, message: `stage corner under ${want}` }).toBe(true);
+}
+
+/** Every pixel of a (2r+1) square of the page around a screen point (a screenshot decoded in a blank tab, as brightestPixel does). */
+async function pixelWindow(page: import("@playwright/test").Page, at: { x: number; y: number }, r: number): Promise<number[][]> {
+  const buf = await page.screenshot({ clip: { x: Math.round(at.x) - r, y: Math.round(at.y) - r, width: 2 * r + 1, height: 2 * r + 1 } });
+  const tab = await page.context().newPage();
+  try {
+    return await tab.evaluate(async (b64) => {
+      const img = new Image();
+      img.src = `data:image/png;base64,${b64}`;
+      await img.decode();
+      const c = document.createElement("canvas");
+      c.width = img.width;
+      c.height = img.height;
+      const g = c.getContext("2d")!;
+      g.drawImage(img, 0, 0);
+      const d = g.getImageData(0, 0, c.width, c.height).data;
+      const out: number[][] = [];
+      for (let i = 0; i < d.length; i += 4) out.push([d[i], d[i + 1], d[i + 2]]);
+      return out;
+    }, buf.toString("base64"));
+  } finally {
+    await tab.close();
+  }
+}
+
+/** The pixel of a window farthest from the stage colour: finds a dark mark on a light stage, where brightestPixel would return the stage. */
+async function farthestFromStage(page: import("@playwright/test").Page, at: { x: number; y: number }, stage: number[], r = 3): Promise<number[]> {
+  let best = stage;
+  let score = -1;
+  for (const p of await pixelWindow(page, at, r)) {
+    const d = Math.abs(p[0] - stage[0]) + Math.abs(p[1] - stage[1]) + Math.abs(p[2] - stage[2]);
+    if (d > score) {
+      score = d;
+      best = p;
+    }
+  }
+  return best;
+}
+
+/** How many pixels of a window are within `tol` per channel of a colour. */
+async function countNear(page: import("@playwright/test").Page, at: { x: number; y: number }, r: number, rgb: number[], tol = 3): Promise<number> {
+  return (await pixelWindow(page, at, r)).filter((p) => [0, 1, 2].every((i) => Math.abs(p[i] - rgb[i]) <= tol)).length;
 }
 
 /** The brightest pixel of a (2r+1) square of the page around a screen point, read from a screenshot decoded in a blank tab (the app's CSP is not involved). */
@@ -6932,6 +6975,97 @@ test("E2E-230 22-4b a collapsed filter box's accessible name contains the chip i
   await expect(page.locator("#filter-x-min-toggle")).toHaveAttribute("aria-expanded", "true");
   await expect(page.locator("#filter-x-min-toggle")).toHaveAttribute("aria-label", "X min filter box");
   await expect(page.getByRole("button", { name: "X min filter box", exact: true })).toBeVisible();
+});
+
+const LIGHT_STAGE = [233, 235, 239];
+const DARK_STAGE = [12, 13, 16];
+const rgbOf = (hex: string): number[] => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+
+test("E2E-231 22-4b light points on the real stage: a lone base point draws the light base colour under a light OS, the dark colour under data-theme dark, and light again, with no reload and no page error", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("console", (m) => {
+    if (m.type() === "error" && !/404/.test(m.text())) errors.push(m.text());
+  });
+  const { exact, ctl } = helpers(page);
+  await openRoom(page, exact);
+  await appIdle(page);
+  await ctl("colour-mode").selectOption("flat"); // Grey: the base colour, not a height ramp
+  await page.evaluate(() => ((window as unknown as { __mark: number }).__mark = 1));
+  const lone = await settledScreen(page, [16.5, 3.5, 3]);
+  const corner = await stageCorner(page);
+  const theme = () => hook(page, (e) => e.state().renderTheme);
+  const expectPoint = async (stage: number[], want: number[], label: string) => {
+    await expect.poll(async () => {
+      const px = await farthestFromStage(page, lone, stage, 3);
+      return near([...px, 1], want, 2) ? "ok" : `${label}: wanted ${want}, read ${px}`;
+    }, { timeout: 8000 }).toBe("ok");
+  };
+  expect(await theme()).toBe("dark");
+  await expectPoint(DARK_STAGE, [216, 216, 216], "dark base point");
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect.poll(theme, { message: "renderTheme under a light OS" }).toBe("light");
+  await expectStageCorner(page, corner, "light");
+  await expectPoint(LIGHT_STAGE, [135, 135, 135], "light base point");
+  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+  await expect.poll(theme, { message: "renderTheme under data-theme dark" }).toBe("dark");
+  await expectStageCorner(page, corner, "dark");
+  await expectPoint(DARK_STAGE, [216, 216, 216], "dark base point again");
+  await page.evaluate(() => document.documentElement.removeAttribute("data-theme"));
+  await expect.poll(theme, { message: "renderTheme once data-theme is gone" }).toBe("light");
+  await expectStageCorner(page, corner, "light");
+  await expectPoint(LIGHT_STAGE, [135, 135, 135], "light base point again");
+  expect(await page.evaluate(() => (window as unknown as { __mark?: number }).__mark), "the page was reloaded").toBe(1);
+  expect(errors).toEqual([]);
+});
+
+test("E2E-232 22-4b light Box armed: the arrows, a ring and an edge of the box draw in the light colours, the triad and the legend chip follow, and data-theme dark gives back the exact dark values", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("console", (m) => {
+    if (m.type() === "error" && !/404/.test(m.text())) errors.push(m.text());
+  });
+  const t = hideHelpers(page);
+  await openRoom(page, t.exact);
+  await t.ctl("tool-box").click();
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  await t.exact("Selected", String(ROOM.ghost));
+  await appIdle(page);
+  const readTriad = () =>
+    page.evaluate(() => [...document.querySelectorAll(".cube-triad line")].map((l) => l.getAttribute("stroke")));
+  const chip = () => page.locator('#legend [data-legend="selected"]');
+  const checks = async (axes: string[], outline: string, candidate: string, label: string) => {
+    for (const [i, axis] of axes.entries()) {
+      const arrows = (await hook(page, (e) => e.handlePositions())).filter((h) => h.id === `resize-${i}+`);
+      expect(arrows.length, `${label}: arrow resize-${i}+ is on screen`).toBe(1);
+      await expect.poll(() => countNear(page, arrows[0], 8, rgbOf(axis), 3), { timeout: 8000, message: `${label}: arrow resize-${i}+ in ${axis}` }).toBeGreaterThan(0);
+    }
+    const b = await hook(page, (e) => e.state().tools.box);
+    const edge = await settledScreen(page, [b.center[0], b.center[1] - b.dimensions[1] / 2, b.center[2] - b.dimensions[2] / 2]);
+    await expect.poll(() => countNear(page, edge, 4, rgbOf(outline), 3), { timeout: 8000, message: `${label}: box edge in ${outline}` }).toBeGreaterThan(0);
+    await expect(chip(), label).toHaveCSS("background-color", `rgb(${rgbOf(candidate).join(", ")})`);
+  };
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect.poll(() => hook(page, (e) => e.state().renderTheme)).toBe("light");
+  await expectStageCorner(page, await stageCorner(page), "light");
+  const lightAxes = ["#e0352b", "#1f9b3b", "#1f6fe0"];
+  await checks(lightAxes, "#34343d", "#be7715", "light");
+  // a ring: its dimmed axis colour (75%) near a sample of its outline
+  const rings = await hook(page, (e) => e.boxRings());
+  const ring = rings.find((r) => r.id === "rotate-2+") ?? rings[0];
+  const dim = (hex: string) => rgbOf(hex).map((v) => Math.round(v * 0.75));
+  const ringHex = lightAxes[Number(ring.id.match(/rotate-(\d)/)![1])];
+  let seen = 0;
+  for (const p of ring.pts.filter((_, i) => i % 3 === 0)) seen += await countNear(page, p, 3, dim(ringHex), 3);
+  expect(seen, `ring ${ring.id} in ${ringHex} at 75%`).toBeGreaterThan(0);
+  expect(await readTriad()).toEqual(lightAxes);
+  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+  await expect.poll(() => hook(page, (e) => e.state().renderTheme)).toBe("dark");
+  await expectStageCorner(page, await stageCorner(page), "dark");
+  const darkAxes = ["#ff5555", "#55ff55", "#5599ff"];
+  await checks(darkAxes, "#ffd23f", "#ff9f1c", "dark");
+  expect(await readTriad()).toEqual(darkAxes);
+  expect(errors).toEqual([]);
 });
 
 for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
