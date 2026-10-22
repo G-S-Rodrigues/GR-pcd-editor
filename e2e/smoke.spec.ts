@@ -6294,3 +6294,34 @@ test("E2E-196 22-1 Esc disarms the armed tool only when nothing more specific is
   await page.keyboard.press("Escape");
   await expect(t.ctl("tool-cluster")).not.toHaveClass(/active/);
 });
+
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-199 22-1 owner screenshots at ${w}x${h}: the Box armed over the ghosts, then the same view after Delete with no tool, gizmo or Box section`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => {
+      if (m.type() === "error" && !/404/.test(m.text())) errors.push(m.text());
+    });
+    const t = hideHelpers(page);
+    await t.floorSelected();
+    page.removeAllListeners("dialog"); // after the open: the helpers accept every ask
+    page.on("dialog", (d) => void d.accept());
+    await t.ctl("sel-clear").click();
+    await t.ctl("tool-box").click();
+    await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+    await t.exact("Selected", String(ROOM.ghost));
+    await expect(t.ctl("tool-box")).toHaveClass(/active/);
+    await page.mouse.move(5, 5);
+    await appIdle(page);
+    await page.screenshot({ path: `/out/part22-1-${w}x${h}-armed.png` });
+    await t.ctl("apply").click();
+    await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
+    await expect(t.ctl("tool-box")).not.toHaveClass(/active/);
+    await expect(page.locator("#box-center-x")).toBeHidden();
+    await page.mouse.move(5, 5);
+    await appIdle(page);
+    await page.screenshot({ path: `/out/part22-1-${w}x${h}-after-delete.png` });
+    expect(errors).toEqual([]);
+  });
+}
