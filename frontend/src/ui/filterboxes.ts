@@ -166,6 +166,8 @@ export function buildFilterBoxes(
       box.reset.disabled = v.disabled || !v.active;
       box.toggle.textContent = collapsed ? v.chipText : "–";
       box.toggle.setAttribute("aria-expanded", String(!collapsed));
+      // WCAG 2.5.3: the collapsed toggle shows the chip text, so its name must contain it
+      box.toggle.setAttribute("aria-label", `${box.axis.toUpperCase()} ${box.side} filter box${collapsed ? `: ${v.chipText}` : ""}`);
       const endOn = Math.abs(look[AXIS_I[box.axis]]) > END_ON_DOT;
       box.grip.setAttribute("aria-valuemin", String(v.min));
       box.grip.setAttribute("aria-valuemax", String(v.max));

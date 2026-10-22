@@ -6912,6 +6912,21 @@ test("E2E-224 22-4 every visible icon-only button has an aria-label and a title:
   expect(states).toEqual({ idle: [], "box armed with a layer": [], legend: [], "filter box": [], help: [], "export dialog": [] });
 });
 
+test("E2E-230 22-4b a collapsed filter box's accessible name contains the chip it shows (WCAG 2.5.3): the X>= button is the X min toggle, and expanded it is the plain box name", async ({ page }) => {
+  const t = helpers(page);
+  await openRoom(page, t.exact);
+  const chip = page.getByRole("button", { name: /X>=/ });
+  await expect(chip).toHaveCount(1);
+  await expect(chip).toBeVisible();
+  await expect(chip).toHaveAttribute("id", "filter-x-min-toggle");
+  const visible = ((await chip.textContent()) ?? "").trim();
+  expect((await chip.getAttribute("aria-label")) ?? "").toContain(visible);
+  await chip.click();
+  await expect(page.locator("#filter-x-min-toggle")).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator("#filter-x-min-toggle")).toHaveAttribute("aria-label", "X min filter box");
+  await expect(page.getByRole("button", { name: "X min filter box", exact: true })).toBeVisible();
+});
+
 for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
   test(`E2E-226 22-4 owner screenshots at ${w}x${h}: dark and light, idle and the Box armed with its preview up; the page does not scroll, nothing throws, and the filter boxes overlap no other stage control`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: h });
