@@ -402,6 +402,14 @@
       #help-overlay td { padding: 1px 10px 1px 0; vertical-align: top; }
       #help-overlay td.k { white-space: nowrap; color: var(--accent-text); }
       #statusbar .item, .layer-count, .headline, .step-count, .triple input, .fbox .fin, .fbox .ftog { font-variant-numeric: tabular-nums; }
+      /* Glass. The side panels, rows and status bar sit on the flat page, so they are translucent without a blur. The stage HUD and the sheets blur what is behind them. #viewport never blurs. */
+      #legend, .fbox, #camera-cluster .ib, #band-pill, .notice { -webkit-backdrop-filter: blur(28px) saturate(170%); backdrop-filter: blur(28px) saturate(170%); }
+      dialog, #help-overlay, #progress { -webkit-backdrop-filter: blur(28px) saturate(170%); backdrop-filter: blur(28px) saturate(170%); }
+      @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+        aside, .row, #statusbar { background: var(--glass-solid); }
+        #legend, .fbox, #camera-cluster .ib, #band-pill, .notice { background: var(--glass-hud-solid); }
+        dialog, #help-overlay, #progress { background: var(--glass-strong-solid); }
+      }
       @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
     </style>
   </head>

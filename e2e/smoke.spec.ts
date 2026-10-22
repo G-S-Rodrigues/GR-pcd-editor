@@ -6780,3 +6780,95 @@ test("E2E-223 22-4 reduced motion gives 0s transitions; without it a button fade
   expect(await page.locator("#legend .legend-head svg").evaluate((e) => getComputedStyle(e).transitionDuration)).toBe("0s");
 });
 
+
+/** Every visible element under `scope` that carries its own text, with its colour and the translucent layers behind it (innermost first), up to the first opaque one. `stage` is true inside #stage, whose backdrop is the clear colour (--canvas, with --canvas-vignette as the other end of the stage gradient the approved mockup draws). */
+const textBackdrops = (page: Pg, scope: string, max = 40) =>
+  page.evaluate(
+    ([sel, limit]) => {
+      const probe = document.createElement("i");
+      document.body.appendChild(probe);
+      const norm = (v: string) => {
+        probe.style.color = v;
+        return getComputedStyle(probe).color;
+      };
+      const root = getComputedStyle(document.documentElement);
+      const canvas = norm(root.getPropertyValue("--canvas").trim());
+      const vignette = norm(root.getPropertyValue("--canvas-vignette").trim());
+      const out: { what: string; fg: string; layers: string[]; stage: boolean; canvas: string; vignette: string }[] = [];
+      for (const el of Array.from(document.querySelectorAll(sel as string)).slice(0, limit as number)) {
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0 || getComputedStyle(el).visibility === "hidden") continue;
+        const layers: string[] = [];
+        let stage = false;
+        for (let n: Element | null = el; n; n = n.parentElement) {
+          if (n.id === "stage") stage = true;
+          const bg = getComputedStyle(n).backgroundColor;
+          if (bg !== "rgba(0, 0, 0, 0)") {
+            layers.push(bg);
+            if (/^rgb\(/.test(bg)) break;
+          }
+        }
+        out.push({ what: `${el.tagName.toLowerCase()}${el.id ? "#" + el.id : ""}.${(el as HTMLElement).className || ""} "${(el.textContent ?? "").trim().slice(0, 24)}"`, fg: getComputedStyle(el).color, layers, stage, canvas, vignette });
+      }
+      probe.remove();
+      return out;
+    },
+    [scope, max] as const,
+  );
+/** The worst WCAG ratio of one element's text over its backdrop: the layers composited over each possible stage colour (both ends of the stage) when the element is inside #stage. */
+const worstContrast = (t: Awaited<ReturnType<typeof textBackdrops>>[number]): number => {
+  const solidBase = t.layers.length && /^rgb\(/.test(t.layers[t.layers.length - 1]) ? [cssRgba(t.layers[t.layers.length - 1])] : [];
+  const bases = t.stage || !solidBase.length ? [cssRgba(t.canvas), cssRgba(t.vignette)] : solidBase;
+  const layers = (solidBase.length && !t.stage ? t.layers.slice(0, -1) : t.layers).map(cssRgba);
+  const ordered = [...layers].reverse();
+  return Math.min(
+    ...bases.map((base) => {
+      let bg: Rgba = [base[0], base[1], base[2], 1];
+      for (const l of ordered) bg = over(l, bg);
+      return contrastOf(cssRgba(t.fg), bg);
+    }),
+  );
+};
+
+test("E2E-225 22-4 measured contrast on real elements, both themes: status count, aside h2, a note, a layer count, the help key, Delete, the legend rows and a filter-box label over the stage, and #empty straight on the stage", async ({ page }) => {
+  const t = layerMenu(page);
+  const { ctl } = t;
+  // #empty is on the stage before any file is opened
+  // a session left by an earlier test would be reopened and hide it: answer "no session" for this first load only
+  await page.route("**/api/session", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ no_session: true }) }), { times: 1 });
+  await page.goto("/");
+  await expect(page.locator("#empty")).toBeVisible();
+  const checkEmpty = async (scheme: Scheme) => {
+    await page.emulateMedia({ colorScheme: scheme });
+    await expect.poll(async () => (await textBackdrops(page, "#empty")).length).toBe(1);
+    const [e] = await textBackdrops(page, "#empty");
+    expect(worstContrast(e), `${scheme} #empty`).toBeGreaterThanOrEqual(4.5);
+  };
+  await checkEmpty("dark");
+  await checkEmpty("light");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await t.floorFromBand(); // opens the room and makes a protected Floor layer, so a layer row and its count exist
+  await ctl("help").click();
+  await expect(page.locator("#help-overlay")).toBeVisible();
+  const scopes: [string, string][] = [
+    ["status count", "#statusbar .item"],
+    ["aside h2", "aside h2"],
+    ["a note", "#tools .note"],
+    ["layer count", ".layer-row .layer-count"],
+    ["help key", "#help-overlay td.k"],
+    ["Delete", "#apply"],
+    ["legend", "#legend, #legend *"],
+    ["filter box", "#fbox-layer .fbox, #fbox-layer .fbox *"],
+  ];
+  for (const scheme of ["dark", "light"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    for (const [name, sel] of scopes) {
+      // elements that carry their own text only: the others have no glyphs to read
+      await expect.poll(async () => (await textBackdrops(page, sel)).length, { message: name }).toBeGreaterThan(0);
+      for (const t of await textBackdrops(page, sel)) {
+        if (!/"[^"]+"$/.test(t.what) && !/input/.test(t.what)) continue;
+        expect(worstContrast(t), `${scheme} ${name}: ${t.what}`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  }
+});

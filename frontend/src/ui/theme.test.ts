@@ -226,4 +226,36 @@ describe("stylesheet rules (part 22-4)", () => {
     expect(h2.body).not.toMatch(/uppercase|letter-spacing/);
     expect(all.find((r) => r.selector === "body")!.body).toMatch(/font:\s*var\(--t-body\)/);
   });
+
+  test("UI-1090 the stage glass and the sheets carry blur(28px) saturate(170%) with the -webkit- twin, the page glass carries none, #viewport never blurs, and @supports not swaps in the opaque composites", () => {
+    const css = styleText();
+    const all = rules(css);
+    const filter = "blur(28px) saturate(170%)";
+    const blurred = all.filter((r) => /backdrop-filter/.test(r.body));
+    for (const r of blurred) {
+      expect(r.body, r.selector).toContain(`backdrop-filter: ${filter}`);
+      expect(r.body, r.selector).toContain(`-webkit-backdrop-filter: ${filter}`);
+      expect(r.selector, "no blur on the canvas").not.toMatch(/#viewport|canvas/);
+    }
+    const inside = (selector: string) => blurred.filter((r) => r.selector.split(",").map((x) => x.trim()).includes(selector));
+    const hud = ["#legend", ".fbox", "#camera-cluster .ib", "#band-pill", ".notice"];
+    const strong = ["dialog", "#help-overlay", "#progress"];
+    for (const sel of [...hud, ...strong]) expect(inside(sel).length, sel).toBeGreaterThan(0);
+    for (const sel of ["aside", ".row", "#statusbar"]) expect(inside(sel), sel).toEqual([]);
+    const supports = css.match(/@supports not \(\(backdrop-filter: blur\(1px\)\) or \(-webkit-backdrop-filter: blur\(1px\)\)\)\s*\{([\s\S]*?\})\s*\}/);
+    expect(supports, "@supports not block").not.toBeNull();
+    const fallback = rules(supports![1] + "}");
+    const bgOf = (sel: string) => fallback.find((r) => r.selector.split(",").map((x) => x.trim()).includes(sel))?.body ?? "";
+    for (const sel of hud) expect(bgOf(sel), sel).toContain("background: var(--glass-hud-solid)");
+    for (const sel of strong) expect(bgOf(sel), sel).toContain("background: var(--glass-strong-solid)");
+    for (const sel of ["aside", ".row", "#statusbar"]) expect(bgOf(sel), sel).toContain("background: var(--glass-solid)");
+    // the opaque composites are what the translucent glass reads over the theme's stage, so the fallback keeps the contrast
+    for (const theme of ["dark", "light"] as const) {
+      for (const [glass, solidName] of [["glass", "glass-solid"], ["glass-hud", "glass-hud-solid"], ["glass-strong", "glass-strong-solid"]] as const) {
+        const want = surface(theme, glass, "canvas");
+        const got = solid(theme, solidName);
+        for (let i = 1; i <= 5; i += 2) expect(Math.abs(parseInt(got.slice(i, i + 2), 16) - parseInt(want.slice(i, i + 2), 16)), `${theme} ${solidName}`).toBeLessThanOrEqual(6);
+      }
+    }
+  });
 });
