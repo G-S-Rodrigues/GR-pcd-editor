@@ -18,7 +18,7 @@ import { createEditor } from "./orchestration/edit";
 import { createRunner, deleteKeyOutcome } from "./orchestration/runner";
 import { createPlanesController } from "./orchestration/planes";
 import { emptyPlanes } from "./tools/plane/model";
-import { armTool, disarmed } from "./orchestration/toolstate";
+import { armTool, disarmed, escTarget } from "./orchestration/toolstate";
 import { createUploadCanceller } from "./orchestration/upload-cancel";
 import { type UploadOptions, uploadFile } from "./files/upload";
 import { startBanner } from "./status/startbanner";
@@ -53,7 +53,7 @@ import { buildTimeline } from "./timeline/strip";
 import { createStepCentre } from "./timeline/centre";
 import { createEditShape } from "./orchestration/editshape";
 import { buildHelp } from "./ui/help";
-import { classifyKey } from "./ui/keys";
+import { classifyKey, escapeInField } from "./ui/keys";
 import { buildViewCube } from "./ui/viewcube";
 import { buildTriad } from "./ui/triad";
 import { buildFilterBoxes } from "./ui/filterboxes";
@@ -160,8 +160,19 @@ const tools = createToolInteraction(canvas, store, size, {
   hint: (text) => addNotice(store, "info", "box_body_hint", text),
   filterEdit: (axis, side, value, o) => filters.editSide(axis, side, value, o),
 });
+// The first global keydown listener: it reads the state before controls3d, the timeline, the filter boxes and the one below act.
+// A popover added later must report itself through `overlay` (22-5).
 window.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") tools.cancel(); // an arrow drag in progress goes back to its start value
+  if (e.key !== "Escape") return;
+  const st = store.get();
+  const el = e.target as HTMLInputElement | null;
+  const target = escTarget(st, {
+    field: escapeInField(el?.tagName ?? "", el?.type ?? ""),
+    dragging: tools.dragging() || st.filterUi.interacting !== null || st.timeline.dragging !== null,
+    overlay: help.isOpen() || document.querySelector("dialog[open]") !== null,
+  });
+  tools.cancel(); // an arrow drag in progress goes back to its start value
+  if (target === "tool") store.update(disarmed); // R22-1: nothing more specific was pending; the selection and its candidate stay
 });
 installDebugHook(canvas, store, size, () => viewport?.drawnCount() ?? 0, () => viewport?.stepLayer() ?? { visible: false }, () => viewport?.previewLayer() ?? { id: null, add: 0, remove: 0 });
 if (viewport) {

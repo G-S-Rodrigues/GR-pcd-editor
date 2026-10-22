@@ -6223,3 +6223,74 @@ test("E2E-198 22-1 layer actions that consume the selection disarm; a declined o
   expect((await t.flags()).some((l) => l.protected)).toBe(true);
   await armed(false);
 });
+
+test("E2E-196 22-1 Esc disarms the armed tool only when nothing more specific is pending, keeps the candidate, and stays out of fields, help, dialogs and drafts", async ({ page }) => {
+  const t = hideHelpers(page);
+  await t.floorSelected();
+  page.removeAllListeners("dialog"); // the helpers accept every ask; none is expected below
+  page.on("dialog", (d) => void d.accept());
+  const armed = (on: boolean) => (on ? expect(t.ctl("tool-box")).toHaveClass(/active/) : expect(t.ctl("tool-box")).not.toHaveClass(/active/));
+  const blur = () => page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await t.ctl("sel-clear").click();
+  await t.ctl("tool-box").click();
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  await t.exact("Selected", String(ROOM.ghost));
+  await t.exact("Candidates", String(ROOM.ghost));
+  // 2: Escape in a filter box field is the field's own
+  await expandFilterBox(page, "filter-x-min");
+  await page.locator("#filter-x-min").focus();
+  await page.keyboard.press("Escape");
+  await armed(true);
+  // 3: Escape closes the help overlay and leaves the tool
+  await blur();
+  await page.keyboard.press("?");
+  await expect(page.locator("#help-overlay")).toHaveClass(/on/);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#help-overlay")).not.toHaveClass(/on/);
+  await armed(true);
+  // 4: Escape in the export dialog closes it and leaves the tool; the page probe proves the dialog still reads open during keydown
+  await page.evaluate(() => {
+    const w = window as unknown as { __escDialog: boolean | null };
+    w.__escDialog = null;
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") w.__escDialog = document.querySelector("dialog[open]") !== null;
+    });
+  });
+  await t.ctl("export").click();
+  await expect(page.locator("dialog[open]")).toHaveCount(1);
+  await t.ctl("export-cancel").focus(); // a BUTTON: the dialog's first control is a SELECT, a field
+  await page.keyboard.press("Escape");
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as { __escDialog: boolean | null }).__escDialog)).toBe(true);
+  await armed(true);
+  // 5: nothing pending (a checkbox has the focus, not a text field): Escape disarms and keeps the selection and its candidate
+  await t.ctl("gizmo-snap").focus();
+  await page.keyboard.press("Escape");
+  await armed(false);
+  await expect(page.locator("#modebar")).toContainText("Tool: None");
+  await expect(page.locator("#box-center-x")).toBeHidden();
+  await t.exact("Selected", String(ROOM.ghost));
+  await expect(t.ctl("apply")).toBeEnabled();
+  await t.ctl("apply").click();
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
+  // 6: a pending draft takes the Escape: the draft goes, the selection and the tool stay
+  await t.ctl("tool-box").click();
+  await t.setBox(WALL18.c, WALL18.d);
+  await t.exact("Selected", String(ROOM.wall));
+  await t.ctl("op-add").click();
+  await t.setBox(FLOOR_BOX.c, FLOOR_BOX.d);
+  await expect(t.ctl("sel-discard")).toBeEnabled();
+  await blur();
+  await page.keyboard.press("Escape");
+  await expect(t.ctl("sel-discard")).toBeDisabled();
+  await t.exact("Selected", String(ROOM.wall));
+  await armed(true);
+  // 7: Cluster in pick mode: the first Escape leaves pick mode, the second disarms
+  await t.ctl("tool-cluster").click();
+  await expect(t.ctl("cluster-pick-seed")).toHaveAttribute("data-state", "waiting");
+  await page.keyboard.press("Escape");
+  await expect(t.ctl("cluster-pick-seed")).toHaveAttribute("data-state", "paused");
+  await expect(t.ctl("tool-cluster")).toHaveClass(/active/);
+  await page.keyboard.press("Escape");
+  await expect(t.ctl("tool-cluster")).not.toHaveClass(/active/);
+});
