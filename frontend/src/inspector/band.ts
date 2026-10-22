@@ -1,7 +1,6 @@
-import { ARROW_PX } from "../filterboxes/plane";
 import type { AppState } from "../state/app";
 import type { Vec3 } from "../state/types";
-import { pxPerUnit } from "../view/pointsize";
+import { handleLength } from "../tools/box/handles";
 import type { Interval, ProtectionModel } from "./protection";
 import { type Tilt, isLevel, normalOf, slabZ } from "./tilt";
 
@@ -38,7 +37,7 @@ export interface PlaneAnchor {
   key: PlaneKey;
   /** Where the plane's arrow starts: the XY centre of the active bounds at the plane's height. */
   anchor: Vec3;
-  /** Arrow tip, pointing away from the band (the lower plane down, the upper one up), ARROW_PX long on screen. */
+  /** Arrow tip, pointing away from the band (the lower plane down, the upper one up), as long as a Box arrow (`handleLength`, 72 px on screen). */
   tip: Vec3;
   /** The footprint outline of the plane, four corners in order. */
   corners: Vec3[];
@@ -50,7 +49,7 @@ export function planeAnchors(s: AppState, viewH = 720): PlaneAnchor[] {
   if (!b) return [];
   const cx = (b.min[0] + b.max[0]) / 2;
   const cy = (b.min[1] + b.max[1]) / 2;
-  const len = ARROW_PX / pxPerUnit(s.camera, Math.max(viewH, 1));
+  const len = handleLength(s.camera, viewH);
   const p = s.tools.protection;
   const n = normalOf(p.tilt);
   const out: PlaneAnchor[] = [];

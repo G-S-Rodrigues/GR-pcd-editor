@@ -93,6 +93,8 @@ export interface AppState {
   filterUi: FilterUi;
   /** The "Height protection" panel section is expanded (protected points are drawn stronger while it is). */
   floorPanelOpen: boolean;
+  /** "Show band" (22-3): false hides the whole protection band on the canvas (fill, outline, arrows, rings); protection stays on. */
+  bandVisible: boolean;
   /** Inspector sections the user folded (missing = open); see ui/sections.ts. */
   sectionsOpen: SectionsOpen;
   /** The legend and mode-line menu on the canvas is unfolded (only a folded menu is saved). */
@@ -148,6 +150,7 @@ export function initialState(): AppState {
     notices: [],
     filterUi: { collapsed: {}, interacting: null },
     floorPanelOpen: true,
+    bandVisible: true,
     sectionsOpen: {},
     legendOpen: true,
     timeline: emptyTimeline(),
