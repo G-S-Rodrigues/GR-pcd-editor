@@ -5548,6 +5548,57 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
   });
 }
 
+// ---- 22-2: layer colour on the points, the protected shield (R22-3)
+/** The canvas bytes once two consecutive shots are equal (the legend is masked: in Layers mode its chips recolour too; so is the timeline strip, whose current-step marker pulses over the canvas bottom). */
+const steadyCanvas = async (page: Pg): Promise<Buffer> => {
+  const shot = () => page.locator("#viewport").screenshot({ mask: [page.locator("#legend"), page.locator("#timeline")] });
+  let prev = await shot();
+  await expect
+    .poll(async () => {
+      const next = await shot();
+      const same = Buffer.compare(prev, next) === 0;
+      prev = next;
+      return same;
+    }, { timeout: 15000 })
+    .toBe(true);
+  return prev;
+};
+
+test("E2E-201 22-2 recolouring a protected Floor layer changes the canvas in Layers mode with the protection section open, and the shield sits on its row and its legend entry", async ({ page }) => {
+  const t = layerMenu(page);
+  const floor = await t.floorFromBand();
+  const asked: string[] = [];
+  page.on("dialog", (d) => asked.push(d.message())); // registered after the open (E2E-90 rule)
+  await t.ctl("colour-mode").selectOption("layers");
+  await t.ctl("cube-top").click();
+  await page.mouse.move(5, 5);
+  await expect(t.ctl("prot-min")).toBeVisible(); // the section is open: the region colour is live
+  expect(floor.protected).toBe(true);
+  await t.openMore(floor.id);
+  const swatch = (c: number) => page.locator(`[data-layer-colour="${floor.id}"][data-colour="${c}"]`);
+  const recolour = async (c: number) => {
+    await swatch(c).click();
+    await expect.poll(async () => (await t.byName("Floor"))?.colour, { timeout: 15000 }).toBe(c);
+    await page.mouse.move(5, 5);
+  };
+  const other = (floor.colour + 4) % 16;
+  const a = await steadyCanvas(page);
+  await recolour(other);
+  await expect.poll(async () => Buffer.compare(a, await steadyCanvas(page)) !== 0, { timeout: 15000 }).toBe(true);
+  await recolour(floor.colour);
+  expect(Buffer.compare(a, await steadyCanvas(page))).toBe(0); // back to the first colour: the same pixels
+  // control leg: with the section folded there is no region colour, and the recolour shows too
+  await protSummary(page).click();
+  await expect(t.ctl("prot-min")).not.toBeVisible();
+  const b = await steadyCanvas(page);
+  await recolour(other);
+  await expect.poll(async () => Buffer.compare(b, await steadyCanvas(page)) !== 0, { timeout: 15000 }).toBe(true);
+  // R22-3: the shield is the protection mark, on the row and on the legend entry
+  await expect(page.locator(`[data-layer-row="${floor.id}"] [data-layer-shield]`)).toBeVisible();
+  await expect(page.locator(`[data-legend-layer="${floor.id}"] [data-legend-shield]`)).toBeVisible();
+  expect(asked).toEqual([]);
+});
+
 // ---- Part 19: layer edits are timeline steps, export each layer to its own file (E2E-177..185)
 const LAYER_CARDS = "#timeline .step[data-step]";
 const layerCards = (page: Pg) => page.locator(LAYER_CARDS);
