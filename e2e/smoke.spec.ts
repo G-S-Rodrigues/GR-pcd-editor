@@ -4822,9 +4822,8 @@ test("E2E-90 15a Hide selected: the drawn count drops by exactly the hidden coun
   await expect(t.hideBtn).toHaveText(`Show hidden (${n})`);
   await expect(t.hideBtn).toHaveAttribute("aria-pressed", "true");
   await expect(t.chip).toHaveText(`${n} hidden - Show`);
-  await expect(t.ctl("tool-box")).toHaveClass(/active/); // hiding never disarms the tool
-  // Select displayed and Invert are not refused: the server leaves the hidden floor out (disarm the tool first)
-  await t.ctl("tool-box").click();
+  await expect(t.ctl("tool-box")).not.toHaveClass(/active/); // Hide selected disarms the tool (R22-1)
+  // Select displayed and Invert are not refused: the server leaves the hidden floor out (Hide selected already disarmed the tool)
   const visible = finiteRows().length - n;
   await t.ctl("sel-select-displayed").click();
   await t.exact("Selected", String(visible));
@@ -4881,6 +4880,7 @@ test("E2E-154 17 Show hidden also reselects the hidden points: the union with th
     await t.hideBtn.click();
     await expect.poll(t.drawn, { timeout: 15000 }).toBe(drawn0 - n);
     await t.exact("Selected", "0");
+    await t.ctl("tool-box").click(); // Hide selected disarmed the Box (R22-1)
     await t.setBox(WALL.c, WALL.d);
     await t.exact("Selected", String(ROOM.wall));
     await (via === "button" ? t.hideBtn : t.chip).click();
@@ -5007,9 +5007,11 @@ test("E2E-142 15b with the floor layer hidden, a ghost box with Apply deletes on
   const t = layerHelpers(page);
   const asked: string[] = [];
   const { id } = await t.floorLayer();
+  await t.ctl("sel-clear").click(); // New layer disarmed the Box and kept the floor selected (R22-1): clear, then re-arm below so the ghost box is a live first selection
   page.on("dialog", (d) => asked.push(d.message())); // after the open: the "unsaved edits" ask of an earlier test's file is not under test
   await t.eye(id).click();
   await expect.poll(async () => (await t.layers()).find((l) => l.id === id)?.visible, { timeout: 15000 }).toBe(false);
+  await t.ctl("tool-box").click();
   await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
   await t.exact("Selected", String(ROOM.ghost));
   await expect(t.ctl("apply")).toBeEnabled();
@@ -5457,7 +5459,9 @@ test("E2E-174 18 Select, Add, Subtract and Intersect with a layer as the operand
   const wallId = await t.wallLayer();
   await t.openMore(floor.id);
   await t.openMore(wallId);
-  await t.setBox(ALL_BOX.c, ALL_BOX.d); // the Box is still armed from the Wall layer's selection
+  await t.ctl("sel-clear").click(); // New layer disarmed the Box and kept the Wall selected (R22-1): clear, re-arm, the box is a live first selection
+  await t.ctl("tool-box").click();
+  await t.setBox(ALL_BOX.c, ALL_BOX.d);
   const S = finiteRows().filter((r) => inBox(r, ALL_BOX.c, ALL_BOX.d)).length;
   await t.exact("Selected", String(S));
   await t.op(floor.id, "subtract").click();
@@ -5732,8 +5736,7 @@ test("E2E-183 19 Hide selected then Undo: the points are drawn and selectable ag
   await t.ctl("undo").click();
   await expect.poll(t.drawn, { timeout: 15000 }).toBe(drawn0);
   await expect(t.hideBtn).toHaveText("Hide selected");
-  await t.ctl("tool-box").click(); // disarm: Select displayed is refused while a tool is armed
-  await t.ctl("sel-select-displayed").click();
+  await t.ctl("sel-select-displayed").click(); // Hide selected already disarmed the Box (R22-1)
   await t.exact("Selected", String(finiteRows().length));
 });
 
@@ -6162,4 +6165,61 @@ test("E2E-197 22-1 Box then Delete leaves no tool armed; a dismissed bulk confir
   await page.keyboard.press("Delete");
   await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
   await expect(t.ctl("tool-box")).not.toHaveClass(/active/);
+});
+
+test("E2E-198 22-1 layer actions that consume the selection disarm; a declined one keeps the tool armed", async ({ page }) => {
+  const t = layerMenu(page);
+  // the helpers accept every ask and each leaves an unsaved session; the listener below replaces them after the open
+  const { id: floor, n } = await t.floorLayer();
+  const asked: string[] = [];
+  const mode = { answer: "accept" as "accept" | "dismiss" };
+  page.removeAllListeners("dialog");
+  page.on("dialog", (d) => {
+    asked.push(d.message());
+    void (mode.answer === "accept" ? d.accept() : d.dismiss());
+  });
+  const armed = (on: boolean) => (on ? expect(t.ctl("tool-box")).toHaveClass(/active/) : expect(t.ctl("tool-box")).not.toHaveClass(/active/));
+  // 1: New layer consumed the selection
+  await armed(false);
+  // 2: Hide selected disarms; Show hidden is not a consumer
+  await t.ctl("sel-clear").click();
+  await t.ctl("tool-box").click();
+  await t.setBox(WALL18.c, WALL18.d);
+  await t.exact("Selected", String(ROOM.wall));
+  await t.ctl("sel-hide").click();
+  await expect(t.chip).toHaveText(`${ROOM.wall} hidden - Show`);
+  await t.exact("Selected", "0");
+  await armed(false);
+  await t.ctl("sel-hide").click();
+  await t.exact("Selected", String(ROOM.wall));
+  await armed(false);
+  // 3: a declined steal confirm keeps the Box armed
+  await t.ctl("sel-clear").click();
+  await t.ctl("tool-box").click();
+  await t.setBox(FLOOR_BOX.c, FLOOR_BOX.d);
+  await t.exact("Selected", String(n));
+  mode.answer = "dismiss";
+  const before = asked.length;
+  await page.locator('[data-control="layer-name"]').fill("Steal");
+  await t.ctl("layer-new").click();
+  await expect.poll(() => asked.length, { timeout: 15000 }).toBe(before + 1);
+  expect(asked[before]).toMatch(/out of other layers/);
+  expect((await t.layers()).some((l) => l.name === "Steal")).toBe(false);
+  await armed(true);
+  // 4: a layer menu Subtract consumes the selection
+  await t.openMore(floor);
+  await t.op(floor, "subtract").click();
+  await t.exact("Selected", "0");
+  await armed(false);
+  // 5: New layer from protected points disarms
+  mode.answer = "accept";
+  const layersBefore = (await t.layers()).length;
+  await t.bandOn();
+  await t.ctl("tool-box").click();
+  await armed(true);
+  await t.exact("Selected", "0");
+  await t.ctl("layer-from-band").click();
+  await expect.poll(async () => (await t.layers()).length, { timeout: 15000 }).toBe(layersBefore + 1);
+  expect((await t.flags()).some((l) => l.protected)).toBe(true);
+  await armed(false);
 });

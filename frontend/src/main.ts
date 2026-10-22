@@ -131,7 +131,7 @@ const layers = createLayers(
     paramsHook,
     flushProtection: () => protection.flush(),
     confirm: (m) => window.confirm(m),
-    selectLayer: (id) => void runner.oneShot((rev) => layerSelectBody(rev, id, store.get().scope)),
+    selectLayer: (id) => runner.oneShot((rev) => layerSelectBody(rev, id, store.get().scope)),
     selectLayerAdd: (id) => runner.oneShot((rev) => layerAddBody(rev, id)),
     selectLayerOp: (id, op) => runner.oneShot((rev) => layerOpBody(rev, id, op)),
     apply: () => editor.apply(),

@@ -510,3 +510,137 @@ test("UI-945 a layer reply's history appears in the strip without the editor's a
   expect(stepsOf(t.store.get().session)).toHaveLength(4);
   expect(t.store.get().draft).toBe(false);
 });
+
+// ---- 22-1: layer actions that consume the selection disarm the tool (R22-1)
+function disarmSetup(o: { cursor?: number; confirm?: boolean; steal?: boolean; flush?: boolean; selectLayer?: () => void | Promise<boolean>; selectLayerOp?: () => Promise<boolean> } = {}) {
+  const store = createAppStore();
+  const n = 3;
+  store.set({
+    session: sessionFixture({
+      revision: { cloud: 7, params: 4 },
+      selection: { count: 5, ops: [] },
+      layers: [lay(), lay({ id: 2, name: "Wall" })],
+      protection: { global: { enabled: true, min: 0, max: 1 }, operation: { mode: "inherit", local: null, acknowledge_override: false } },
+      history: hist(n, o.cursor ?? n),
+    }),
+    layerUi: { active: 1, editing: 1 },
+    draft: false,
+    preview: null,
+    tool: "box",
+    interaction: "orbit",
+    liveFirst: false,
+  } as never);
+  const reply = (stealing = false): LayerReply => ({ session: store.get().session!, op: stealing ? { ...OP, from_other_layers: 3 } : OP });
+  const dry = (a: unknown) => (a as { dry_run?: boolean } | undefined)?.dry_run === true;
+  const api = {
+    createLayer: vi.fn(async (_r: number, a?: unknown) => reply(o.steal === true && dry(a))),
+    assignLayer: vi.fn(async (_r: number, _i: number, a?: unknown) => reply(o.steal === true && dry(a))),
+    deleteLayer: vi.fn(async () => reply()),
+    setMembers: vi.fn(async (_r: number, _i: number, a?: unknown) => reply(o.steal === true && dry(a))),
+    patchLayer: vi.fn(async () => reply()),
+    mergeLayer: vi.fn(async () => reply()),
+    setOrder: vi.fn(async () => reply()),
+    layerFromProtection: vi.fn(async (_r: number, a?: unknown) => reply(o.steal === true && dry(a))),
+    setVisibility: vi.fn(async () => reply()),
+    refreshState: vi.fn(async () => undefined),
+  };
+  const toolAtHook: string[] = [];
+  const confirm = vi.fn((_m: string) => o.confirm !== false);
+  const deps = {
+    paramsHook: vi.fn(() => void toolAtHook.push(store.get().tool)),
+    confirm,
+    selectLayer: o.selectLayer ?? (() => undefined),
+    selectLayerAdd: async () => true,
+    discardDraft: vi.fn(),
+    openShape: async () => ({ ok: true as const }),
+    selectLayerOp: o.selectLayerOp ?? (async () => true),
+    apply: async () => undefined,
+    flushProtection: async () => o.flush !== false,
+  };
+  return { store, api, confirm, toolAtHook, layers: createLayers(store, api as never, deps) };
+}
+type DisarmT = ReturnType<typeof disarmSetup>;
+
+test("UI-994 each successful layer call disarms the tool before the params hook runs", async () => {
+  const calls: [string, (t: DisarmT) => Promise<void>][] = [
+    ["hideSelected", (t) => t.layers.hideSelected()],
+    ["create", (t) => t.layers.create("A")],
+    ["assign", (t) => t.layers.assign()],
+    ["release", (t) => t.layers.release()],
+    ["setMembers", (t) => t.layers.setMembers()],
+    ["fromBand", (t) => t.layers.fromBand()],
+    ["merge", (t) => t.layers.merge(1, 2)],
+  ];
+  for (const [name, run] of calls) {
+    const t = disarmSetup();
+    t.store.update((s) => ({ ...s, tools: { ...s.tools, polygon: { ...s.tools.polygon, phase: "closed" as const, vertices: [[0, 0], [1, 0], [1, 1]] as [number, number][] } } }));
+    await run(t);
+    expect(t.store.get().tool, name).toBe("none");
+    expect(t.store.get().tools.polygon.phase, name).toBe("idle");
+    expect(t.toolAtHook, name).toEqual(["none"]);
+  }
+});
+
+test("UI-995 a refused or failed layer call keeps the tool armed", async () => {
+  const keeps = async (name: string, t: DisarmT, run: (t: DisarmT) => Promise<void>) => {
+    await run(t);
+    expect(t.store.get().tool, name).toBe("box");
+  };
+  await keeps("stepGate No", disarmSetup({ cursor: 1, confirm: false }), (t) => t.layers.create("A"));
+  await keeps("steal confirm No", disarmSetup({ steal: true, confirm: false }), (t) => t.layers.create("A"));
+  const noSel = disarmSetup();
+  noSel.store.update((s) => ({ ...s, session: { ...s.session!, selection: { count: 0, ops: [] } } }));
+  await keeps("refuse reason", noSel, (t) => t.layers.create("A"));
+  await keeps("merge confirm No", disarmSetup({ confirm: false }), (t) => t.layers.merge(1, 2));
+  await keeps("flushProtection false", disarmSetup({ flush: false }), (t) => t.layers.fromBand());
+  const assign409 = disarmSetup();
+  assign409.api.assignLayer.mockRejectedValueOnce(new ApiError(409, "stale_revision", "stale"));
+  await keeps("assign 409", assign409, (t) => t.layers.assign());
+  const locked = disarmSetup();
+  locked.api.assignLayer.mockRejectedValueOnce(new ApiError(422, "layer_locked", "locked"));
+  await keeps("assign 422 layer_locked", locked, (t) => t.layers.assign());
+  const big = disarmSetup();
+  big.api.createLayer.mockRejectedValueOnce(new ApiError(413, "memory_budget_exceeded", "too big"));
+  await keeps("create 413", big, (t) => t.layers.create("A"));
+  const hide409 = disarmSetup();
+  hide409.api.createLayer.mockRejectedValueOnce(new ApiError(409, "stale_revision", "stale"));
+  await keeps("hideSelected 409", hide409, (t) => t.layers.hideSelected());
+});
+
+test("UI-996 layerOp and select disarm only when the one-shot lands", async () => {
+  const landed = disarmSetup({ selectLayerOp: async () => true });
+  await landed.layers.layerOp(1, "add");
+  expect(landed.store.get().tool).toBe("none");
+  const missed = disarmSetup({ selectLayerOp: async () => false });
+  await missed.layers.layerOp(1, "add");
+  expect(missed.store.get().tool).toBe("box");
+  // refused: a draft is pending, the layer is hidden, empty, or Subtract has no selection
+  const draft = disarmSetup();
+  draft.store.set({ draft: true });
+  await draft.layers.layerOp(1, "add");
+  expect(draft.store.get().tool).toBe("box");
+  const hidden = disarmSetup();
+  hidden.store.update((s) => ({ ...s, session: { ...s.session!, layers: [lay({ visible: false })] } }));
+  await hidden.layers.layerOp(1, "add");
+  expect(hidden.store.get().tool).toBe("box");
+  const empty = disarmSetup();
+  empty.store.update((s) => ({ ...s, session: { ...s.session!, layers: [lay({ count: 0 })] } }));
+  await empty.layers.layerOp(1, "add");
+  expect(empty.store.get().tool).toBe("box");
+  const noSel = disarmSetup();
+  noSel.store.update((s) => ({ ...s, session: { ...s.session!, selection: { count: 0, ops: [] } } }));
+  await noSel.layers.layerOp(1, "subtract");
+  expect(noSel.store.get().tool).toBe("box");
+  // select(id): the one-shot answers true, false or nothing
+  const yes = disarmSetup({ selectLayer: async () => true });
+  yes.layers.select(1);
+  await vi.waitFor(() => expect(yes.store.get().tool).toBe("none"));
+  const no = disarmSetup({ selectLayer: async () => false });
+  no.layers.select(1);
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(no.store.get().tool).toBe("box");
+  const none = disarmSetup({ selectLayer: () => undefined });
+  none.layers.select(1);
+  expect(none.store.get().tool).toBe("box");
+});

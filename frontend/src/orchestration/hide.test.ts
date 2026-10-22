@@ -76,7 +76,7 @@ test("UI-512 nothing about hidden or layers is in the serialised client state, a
   expect(patch && ("hidden" in patch || "layerUi" in patch)).toBeFalsy();
 });
 
-test("UI-513 hide makes one hideSelected call, raises no hide_partial notice and leaves the armed tool armed; refused cases call nothing", async () => {
+test("UI-513 hide makes one hideSelected call, raises no hide_partial notice and leaves the tool to the layer call (R22-1: hideSelected disarms on success, UI-994); refused cases call nothing", async () => {
   const store = withSel({ tool: "box" });
   const hideSelected = vi.fn(async () => undefined);
   const showHidden = vi.fn(async () => undefined);
