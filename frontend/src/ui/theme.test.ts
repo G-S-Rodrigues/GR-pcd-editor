@@ -359,3 +359,20 @@ describe("stylesheet rules (part 22-4)", () => {
     }
   });
 });
+
+describe("palette and inspector chrome (part 22-6)", () => {
+  test("UI-1172a --on-accent-icon is white in both themes and mapped in all three blocks; the armed palette button draws it on --accent at 3:1", () => {
+    const blocks = parseBlocks();
+    expect(blocks.root["dk-on-accent-icon"]).toBe("#ffffff");
+    expect(blocks.root["lt-on-accent-icon"]).toBe("#ffffff");
+    for (const [name, decls] of [["root", blocks.root], ["media", blocks.media], ["attr", blocks.attr]] as const) expect(decls["on-accent-icon"], name).toBeDefined();
+    for (const theme of THEMES) {
+      expect(raw(theme, "on-accent-icon", blocks), theme).toBe("#ffffff");
+      expect(contrastRatio(solid(theme, "on-accent-icon", undefined, blocks), solid(theme, "accent", undefined, blocks)), `${theme} white on accent`).toBeGreaterThanOrEqual(3);
+    }
+    const active = rules(styleText()).find((r) => r.selector.split(",").map((x) => x.trim()).some((x) => /\.tb\.active$/.test(x)));
+    expect(active, ".tb.active rule").toBeDefined();
+    expect(active!.body).toContain("background: var(--accent)");
+    expect(active!.body).toContain("color: var(--on-accent-icon)");
+  });
+});

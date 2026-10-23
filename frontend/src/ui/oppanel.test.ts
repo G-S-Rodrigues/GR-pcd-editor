@@ -3,6 +3,7 @@ import { createAppStore } from "../state/app";
 import { candidateFixture, sessionFixture } from "../testing/fixtures";
 import { type FakeEl, installFakeDom } from "../testing/fakedom";
 import { type PanelActions, buildToolPalette } from "./panels";
+import { buildPalette } from "./palette";
 import { describeControls } from "./describe";
 import { TOOLTIPS } from "./tooltips";
 import { applyClientPatch, restoreClientState, serialiseClientState } from "../state/persist";
@@ -17,7 +18,9 @@ const invert = vi.fn();
 const setTool = vi.fn();
 const actions = new Proxy({ toolChanged, selectDisplayed, invert, setTool } as Record<string, unknown>, { get: (t, k: string) => t[k] ?? (() => undefined) }) as unknown as PanelActions;
 buildToolPalette(dom.root as unknown as HTMLElement, store, actions);
-const ctl = (id: string) => dom.root.control(id) as FakeEl;
+const paletteRoot = new (dom.root.constructor as new (t: string) => FakeEl)("div");
+buildPalette(paletteRoot as unknown as HTMLElement, store, actions);
+const ctl = (id: string) => (dom.root.control(id) ?? paletteRoot.control(id)) as FakeEl;
 beforeEach(() => {
   toolChanged.mockClear();
   selectDisplayed.mockClear();
@@ -131,11 +134,11 @@ test("UI-639 Select displayed and Invert are aria-disabled with the reason while
   expect(ctl("sel-clear").hasAttribute("aria-disabled")).toBe(false); // Clear selection stays usable
 });
 
-test("UI-682 Sparse points is a text tool button beside the other tools: it arms the tool, a second press disarms it", () => {
+test("UI-682 Sparse points is an icon button in the tool palette: it arms the tool, a second press disarms it", () => {
   const { ctl, store } = build();
   const b = ctl("tool-sparse");
-  expect(b.text()).toBe("Sparse points");
-  expect(b.children.some((c) => c.tag === "svg")).toBe(false); // no icon on the approved sheet: a text button
+  expect(b.getAttribute("aria-label")).toBe("Sparse points");
+  expect(b.children.map((c) => c.getAttribute("data-icon"))).toEqual(["sparse"]); // the approved 22 mockup supersedes the part-17 text button
   expect(describeControls().find((d) => d.id === "tool-sparse")?.label).toBe("Sparse points");
   expect(TOOLTIPS["tool-sparse"]).toMatch(/isolated/);
   store.set({ tool: "none" });

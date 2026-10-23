@@ -3,7 +3,8 @@ import { createAppStore } from "../state/app";
 import { sessionFixture } from "../testing/fixtures";
 import { type FakeEl, installFakeDom } from "../testing/fakedom";
 import { type DetectedPlane } from "../tools/plane/model";
-import { type PanelActions, buildEditPanels, buildToolPalette } from "./panels";
+import { type PanelActions, buildEditPanels } from "./panels";
+import { buildPalette } from "./palette";
 import { TOOLTIPS } from "./tooltips";
 import { SECTION_IDS } from "./sections";
 
@@ -16,7 +17,7 @@ const actions = new Proxy({} as Record<string, unknown>, {
 }) as unknown as PanelActions;
 const toolRoot = new (dom.root.constructor as new (t: string) => FakeEl)("div");
 const palette = new (dom.root.constructor as new (t: string) => FakeEl)("div");
-buildToolPalette(palette as unknown as HTMLElement, store, actions);
+buildPalette(palette as unknown as HTMLElement, store, actions);
 buildEditPanels(dom.root as unknown as HTMLElement, store, actions, { toolRoot: toolRoot as unknown as HTMLElement, scroller: { scrollTop: 5 } });
 const ctl = (id: string) => palette.control(id) ?? (toolRoot.all().find((e) => e.getAttribute("id") === id || e.getAttribute("data-control") === id) as FakeEl);
 const section = (id: string) => toolRoot.children.find((c) => c.getAttribute("data-section") === id) as FakeEl;
@@ -30,7 +31,7 @@ beforeEach(() => {
 test("UI-969 the Planes and Thin buttons exist with labels and tooltips; arming one makes its section visible and opens a folded one", () => {
   for (const [id, label] of [["tool-plane", "Planes"], ["tool-thin", "Thin"]] as const) {
     const b = ctl(id);
-    expect(b.text()).toBe(label);
+    expect(b.getAttribute("aria-label")).toBe(label);
     expect(b.title).toBe(TOOLTIPS[id]);
     expect(b.disabled).toBe(false);
   }
@@ -108,7 +109,7 @@ test("UI-975 Thin: the Method select shows the field of the chosen method only; 
   expect(calls.toolChanged).toHaveBeenCalledTimes(2);
 });
 
-test("UI-983 the left panel head holds the two new tool buttons and every Planes and Thin control has a tooltip", () => {
+test("UI-983 the tool palette holds the two new tool buttons and every Planes and Thin control has a tooltip", () => {
   for (const id of ["tool-plane", "tool-thin"]) expect(palette.control(id), id).toBeDefined();
   for (const id of ["plane-distance", "plane-max-tilt", "plane-max", "plane-region", "plane-exclude-protected", "plane-detect", "plane-cancel", "plane-list", "thin-method", "thin-distance", "thin-edge", "thin-region", "thin-exclude-protected"]) {
     expect(TOOLTIPS[id]?.trim(), id).toBeTruthy();

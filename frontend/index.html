@@ -30,6 +30,7 @@
         --dk-accent-soft: rgba(10, 132, 255, 0.20);
         --dk-accent-text: #409cff;
         --dk-on-accent: #0c0d10;
+        --dk-on-accent-icon: #ffffff;
         --dk-on-destructive: #0c0d10;
         --dk-destructive: #ff453a;
         --dk-destructive-soft: rgba(255, 69, 58, 0.16);
@@ -61,6 +62,7 @@
         --lt-accent-soft: rgba(0, 122, 255, 0.14);
         --lt-accent-text: #0066d6;
         --lt-on-accent: #0c0d10;
+        --lt-on-accent-icon: #ffffff;
         --lt-on-destructive: #0c0d10;
         --lt-destructive: #ff3b30;
         --lt-destructive-soft: rgba(255, 59, 48, 0.12);
@@ -93,6 +95,7 @@
         --accent-soft: var(--dk-accent-soft);
         --accent-text: var(--dk-accent-text);
         --on-accent: var(--dk-on-accent);
+        --on-accent-icon: var(--dk-on-accent-icon);
         --on-destructive: var(--dk-on-destructive);
         --destructive: var(--dk-destructive);
         --destructive-soft: var(--dk-destructive-soft);
@@ -164,6 +167,7 @@
           --accent-soft: var(--lt-accent-soft);
           --accent-text: var(--lt-accent-text);
           --on-accent: var(--lt-on-accent);
+          --on-accent-icon: var(--lt-on-accent-icon);
           --on-destructive: var(--lt-on-destructive);
           --destructive: var(--lt-destructive);
           --destructive-soft: var(--lt-destructive-soft);
@@ -212,6 +216,7 @@
         --accent-soft: var(--lt-accent-soft);
         --accent-text: var(--lt-accent-text);
         --on-accent: var(--lt-on-accent);
+        --on-accent-icon: var(--lt-on-accent-icon);
         --on-destructive: var(--lt-on-destructive);
         --destructive: var(--lt-destructive);
         --destructive-soft: var(--lt-destructive-soft);
@@ -298,6 +303,12 @@
       #legend .legend-head:hover { background: var(--fill-2); }
       #legend .hidden-chip { align-self: flex-start; height: 22px; padding: 0 8px; margin: 0 0 2px; pointer-events: auto; font-size: 12px; }
       #legend .hidden-chip[hidden] { display: none; }
+      #palette { position: absolute; left: 8px; top: 8px; z-index: 4; display: flex; flex-direction: column; gap: 2px; padding: 4px; border-radius: 13px; background: var(--glass-hud); }
+      #palette .tb { width: 36px; height: 36px; }
+      .tb:hover:not(:disabled) { background: var(--fill-1); }
+      .tb.active, .tb.active:hover:not(:disabled) { background: var(--accent); color: var(--on-accent-icon); border-color: transparent; }
+      #arm-pill { position: absolute; left: 60px; top: 8px; z-index: 4; max-width: 180px; height: 26px; box-sizing: border-box; display: flex; align-items: center; gap: 4px; padding: 0 10px; font-size: 12px; white-space: nowrap; background: var(--glass-hud); border-radius: var(--r-panel); }
+      #arm-pill[hidden] { display: none; }
       #band-pill { position: absolute; left: 50%; bottom: 56px; transform: translateX(-50%); z-index: 4; display: flex; align-items: center; gap: 8px; padding: 3px 4px 3px 10px; font-size: 12px; background: var(--glass-hud); border: 1px solid var(--separator); border-radius: var(--r-panel); pointer-events: auto; white-space: nowrap; }
       #band-pill[hidden] { display: none; }
       #band-pill button { height: 22px; padding: 0 10px; font-size: 12px; }
@@ -463,11 +474,11 @@
       #help-overlay td.k { white-space: nowrap; padding-right: 14px; width: 1%; color: var(--accent-text); }
       #statusbar .item, .layer-count, #apply, #kept-chip, .step-count, .triple input, .fbox .fin, .fbox .ftog { font-variant-numeric: tabular-nums; }
       /* Glass. The side panels, rows and status bar sit on the flat page, so they are translucent without a blur. The stage HUD and the sheets blur what is behind them. #viewport never blurs. */
-      #legend, .fbox, #camera-cluster .ib, #band-pill, .notice { -webkit-backdrop-filter: blur(28px) saturate(170%); backdrop-filter: blur(28px) saturate(170%); }
+      #legend, #palette, #arm-pill, .fbox, #camera-cluster .ib, #band-pill, .notice { -webkit-backdrop-filter: blur(28px) saturate(170%); backdrop-filter: blur(28px) saturate(170%); }
       dialog, .pop, #help-overlay, #progress { -webkit-backdrop-filter: blur(28px) saturate(170%); backdrop-filter: blur(28px) saturate(170%); }
       @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
         aside, .row, #statusbar, #footer { background: var(--glass-solid); }
-        #legend, .fbox, #camera-cluster .ib, #band-pill, .notice { background: var(--glass-hud-solid); }
+        #legend, #palette, #arm-pill, .fbox, #camera-cluster .ib, #band-pill, .notice { background: var(--glass-hud-solid); }
         dialog, .pop, #help-overlay, #progress { background: var(--glass-strong-solid); }
       }
       @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
@@ -486,6 +497,8 @@
         <div id="triad"></div>
         <div id="camera-cluster" role="group" aria-label="Camera"></div>
         <div id="legend"></div>
+        <div id="palette" class="hud" role="toolbar" aria-label="Tools" aria-orientation="vertical"></div>
+        <div id="arm-pill" class="hud" role="status" hidden></div>
         <div id="empty">Open a .pcd file to begin.<br />Drop one anywhere, or use “Open from this computer”.</div>
         <div id="progress"></div>
         <div id="webgl-notice" hidden></div>

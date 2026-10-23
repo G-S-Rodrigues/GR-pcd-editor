@@ -30,6 +30,7 @@ import { polygonKeyAction } from "./tools/polygon/edit";
 import { boxForOpen } from "./tools/box/model";
 import { applyPreset } from "./view/presets";
 import { buildEditPanels, buildToolPalette } from "./ui/panels";
+import { buildPalette } from "./ui/palette";
 import { buildLayersPanel } from "./ui/layerspanel";
 import { createToolInteraction } from "./viewport/interact";
 import { attachDropZone } from "./files/dragdrop";
@@ -382,6 +383,7 @@ const panelActions = {
   }),
 };
 buildCloudDetails($("cloud-details"), store, { removeInvalid: () => void editor.removeInvalid(), removeInvalidVisible: () => editor.removeInvalidVisible(), removeInvalidLabel: () => editor.removeInvalidLabel() });
+buildPalette($("palette"), store, panelActions, $("arm-pill"));
 buildToolPalette($("tools"), store, panelActions);
 buildLayersPanel($("layers-slot"), store, panelActions);
 buildBandPill($("stage"), store);

@@ -4,7 +4,7 @@ import { installFakeDom } from "../testing/fakedom";
 
 test("UI-300 ICONS holds the sheet names, every node is a path, circle or rect with attributes on a 24 grid", () => {
   expect([...ICON_NAMES].sort()).toEqual(
-    ["open", "save", "exp", "undo", "redo", "orig", "edit", "ovl", "split", "persp", "ortho", "fit", "rpiv", "ppiv", "help", "chev", "arrow", "add", "sub", "int", "trash", "eye", "eyeoff", "pencil", "pick", "shield", "box", "sliders", "info", "keyboard", "list", "invalid"].sort(),
+    ["open", "save", "exp", "undo", "redo", "orig", "edit", "ovl", "split", "persp", "ortho", "fit", "rpiv", "ppiv", "help", "chev", "arrow", "add", "sub", "int", "trash", "eye", "eyeoff", "pencil", "pick", "shield", "box", "sliders", "info", "keyboard", "list", "invalid", "poly", "cluster", "sparse", "plane", "thin", "rect", "level", "close", "chevr"].sort(),
   );
   for (const name of ICON_NAMES) {
     expect(ICONS[name].length, name).toBeGreaterThan(0);

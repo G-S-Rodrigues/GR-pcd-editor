@@ -850,7 +850,7 @@ test("E2E-20 7b2 the ? key and the ? button open a help overlay listing every ke
   await expect(help).not.toBeVisible();
 });
 
-const OVERFLOW_SELECTORS = ["#toolbar", "#tools", "#inspector", "#toolpanels", "#editpanels", "#statusbar", "#modebar"];
+const OVERFLOW_SELECTORS = ["#toolbar", "#tools", "#inspector", "#toolpanels", "#editpanels", "#statusbar", "#modebar", "#palette"];
 
 async function checkLayout(page: import("@playwright/test").Page, w: number, h: number) {
   const scan = () =>
@@ -4150,7 +4150,7 @@ test("E2E-121 13 Sparse points selects only the floating artifacts of a dense fl
   await page.goto("/");
   await page.locator("#file-input").setInputFiles({ name: "sparse.pcd", mimeType: "application/octet-stream", buffer: sparseRoomPcd() });
   await t.exact("Original", SPARSE_TOTAL.toLocaleString("en-US"));
-  await expect(t.ctl("tool-sparse")).toHaveText("Sparse points");
+  await expect(t.ctl("tool-sparse")).toHaveAttribute("aria-label", "Sparse points");
   await t.ctl("tool-sparse").click();
   await expect(t.ctl("tool-sparse")).toHaveClass(/active/);
   await expect(page.locator("#inspector")).toContainText("fewer than 8 points");
@@ -7699,5 +7699,69 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
       await expect(page.locator("#export-dialog")).toBeHidden();
     }
     expect(errors).toEqual([]);
+  });
+}
+
+// ---- part 22-6: floating tool palette and right inspector
+const TOOL_NAMES: [string, string][] = [["tool-box", "Box"], ["tool-polygon", "Polygon"], ["tool-cluster", "Cluster"], ["tool-sparse", "Sparse points"], ["tool-plane", "Planes"], ["tool-thin", "Thin"]];
+const SIZES: [number, number][] = [[1280, 720], [1920, 1080]];
+/** The computed colour of a custom property resolved through a probe element (so `var()` chains and colour spaces settle). */
+const resolvedToken = (page: Pg, token: string, prop = "backgroundColor") =>
+  page.evaluate(
+    ([tk, pr]) => {
+      const el = document.createElement("div");
+      el.style.setProperty(pr === "color" ? "color" : "background-color", `var(${tk})`);
+      document.body.append(el);
+      const v = getComputedStyle(el).getPropertyValue(pr === "color" ? "color" : "background-color");
+      el.remove();
+      return v;
+    },
+    [token, prop],
+  );
+/** Visible stage rectangles a palette or pill must not touch. */
+const STAGE_NEIGHBOURS = ["#legend", "#viewcube", "#camera-cluster", "#triad", "#timeline", "#band-pill", "#fbox-layer .fbox", "#notices > *"];
+const visibleRects = (page: Pg, selector: string) =>
+  page.evaluate((sel) => {
+    return [...document.querySelectorAll(sel)]
+      .filter((e) => {
+        const r = e.getBoundingClientRect();
+        const cs = getComputedStyle(e);
+        return r.width > 0 && r.height > 0 && cs.visibility !== "hidden" && cs.display !== "none";
+      })
+      .map((e) => {
+        const r = e.getBoundingClientRect();
+        return { l: r.left, t: r.top, r: r.right, b: r.bottom, what: e.id || e.className.toString() };
+      });
+  }, selector);
+const apart = (a: { l: number; t: number; r: number; b: number }, b: { l: number; t: number; r: number; b: number }) =>
+  a.r <= b.l + 1 || b.r <= a.l + 1 || a.b <= b.t + 1 || b.b <= a.t + 1;
+
+for (const [w, h] of SIZES) {
+  test(`E2E-266 22-6 the tool palette at ${w}x${h}: six buttons stacked on the stage's left edge, the armed one filled with the accent, the pill names it, Esc disarms, and the palette and pill overlap no other stage control for any tool`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const t = hideHelpers(page);
+    await openRoom(page, t.exact);
+    const pal = (await visibleRects(page, "#palette"))[0];
+    expect(pal, "the palette is on the stage").toBeDefined();
+    const stage = (await page.locator("#stage").boundingBox())!;
+    expect(pal.l - stage.x).toBeLessThanOrEqual(12);
+    const tops = await Promise.all(TOOL_NAMES.map(([id]) => t.ctl(id).boundingBox()));
+    for (let i = 1; i < tops.length; i++) expect(tops[i]!.y, `${TOOL_NAMES[i][0]} is below ${TOOL_NAMES[i - 1][0]}`).toBeGreaterThan(tops[i - 1]!.y + tops[i - 1]!.height - 1);
+    for (const [id, name] of TOOL_NAMES) {
+      await t.ctl(id).click();
+      await expect(t.ctl(id)).toHaveClass(/active/);
+      const accent = await resolvedToken(page, "--accent");
+      await expect.poll(() => t.ctl(id).evaluate((e) => getComputedStyle(e).backgroundColor), { message: `${id} fill` }).toBe(accent);
+      await expect(page.locator("#arm-pill")).toBeVisible();
+      await expect(page.locator("#arm-pill")).toHaveText(`${name} · Esc to exit`);
+      const mine = [...(await visibleRects(page, "#palette")), ...(await visibleRects(page, "#arm-pill"))];
+      for (const sel of STAGE_NEIGHBOURS) {
+        for (const o of await visibleRects(page, sel)) for (const m of mine) expect(apart(m, o), `${id}: ${m.what} overlaps ${sel} (${o.what})`).toBe(true);
+      }
+      // Esc closes the most specific thing first (R22-1): Polygon is drawing and Cluster is picking a seed when armed, so their first Esc ends that
+      for (let i = 0; i < 3 && (await page.locator("#arm-pill").isVisible()); i++) await page.keyboard.press("Escape");
+      for (const [other] of TOOL_NAMES) await expect(t.ctl(other)).not.toHaveClass(/active/);
+      await expect(page.locator("#arm-pill")).toBeHidden();
+    }
   });
 }

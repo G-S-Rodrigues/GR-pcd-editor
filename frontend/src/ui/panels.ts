@@ -86,16 +86,6 @@ type Sync = (s: AppState) => void;
 const fmt = (v: number) => String(Math.round(v * 1e6) / 1e6);
 
 export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: PanelActions): void {
-  const toolBtn = (id: string, tool: AppState["tool"], label: string) =>
-    control("button", { id, onclick: () => a.setTool(store.get().tool === tool ? "none" : tool) }, label);
-  const btns = {
-    box: toolBtn("tool-box", "box", "Box"),
-    polygon: toolBtn("tool-polygon", "polygon", "Polygon"),
-    cluster: toolBtn("tool-cluster", "cluster", "Cluster"),
-    sparse: toolBtn("tool-sparse", "sparse", "Sparse points"),
-    plane: toolBtn("tool-plane", "plane", "Planes"),
-    thin: toolBtn("tool-thin", "thin", "Thin"),
-  };
   // Operation: three icon radios (none pressed while the first selection is live). Replace is not offered.
   const OPS = [
     ["add", "op-add", "add"],
@@ -211,8 +201,6 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
   };
   const keptToggle = control("button", { id: "sel-show-kept", onclick: () => store.update((s) => ({ ...s, showKept: !s.showKept })) }, "Show kept points");
   root.append(
-    h("h2", { text: "Tools" }),
-    h("div", { class: "stack" }, btns.box, btns.polygon, btns.cluster, btns.sparse, btns.plane, btns.thin),
     h("h2", { text: "Selection" }),
     h("div", { class: "oprow" }, h("span", { text: "Operation" }), op, previewLive),
     liveNote,
@@ -236,13 +224,8 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     h("div", { id: "layers-slot" }),
   );
   const sync: Sync = (s) => {
-    for (const k of ["box", "polygon", "cluster", "sparse", "plane", "thin"] as const) btns[k].classList.toggle("active", s.tool === k);
     const open = s.session !== null;
     const ro = s.compare !== "edited";
-    for (const [k, b] of Object.entries(btns)) {
-      b.disabled = !open || ro;
-      b.title = `${TOOLTIPS[`tool-${k}`]}${ro ? " (disabled: return to the edited view to edit)" : ""}`;
-    }
     OPS.forEach(([value], i) => {
       const on = !s.liveFirst && s.op === value;
       opBtns[i].setAttribute("aria-checked", String(on));

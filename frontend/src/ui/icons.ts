@@ -11,6 +11,10 @@ const r = (x: number, y: number, w: number, h: number, rx: number): IconNode => 
   attrs: { x: String(x), y: String(y), width: String(w), height: String(h), rx: String(rx) },
 });
 
+/** A filled dot (the mockup sheet's `fill="currentColor"` circles). */
+const cf = (cx: number, cy: number, r: number): IconNode => ({ tag: "circle", attrs: { cx: String(cx), cy: String(cy), r: String(r), fill: "currentColor" } });
+const dashed = (n: IconNode, dash: string): IconNode => ({ tag: n.tag, attrs: { ...n.attrs, "stroke-dasharray": dash } });
+
 const pa = (d: string, extra: Record<string, string>): IconNode => ({ tag: "path", attrs: { d, ...extra } });
 
 export const ICONS = {
@@ -64,6 +68,16 @@ export const ICONS = {
   list: [p("M9 6h11M9 12h11M9 18h11"), c(4.5, 6, 0.9), c(4.5, 12, 0.9), c(4.5, 18, 0.9)],
   /** Not in the sheet (22-5, mockup-22): invalid points. */
   invalid: [c(12, 12, 8.5), p("m6 6 12 12")],
+  /** Not in the sheet (22-6, mockup-22): the tool palette glyphs and the inspector controls. */
+  poly: [p("M12 3.5 20 9l-3 10.5H7L4 9z"), cf(12, 3.5, 1.6), cf(20, 9, 1.6), cf(17, 19.5, 1.6), cf(7, 19.5, 1.6), cf(4, 9, 1.6)],
+  cluster: [cf(9, 9, 1.4), cf(13, 7, 1.4), cf(12, 11.5, 1.4), cf(8, 13, 1.4), cf(15.5, 11, 1.4), dashed(c(12, 10, 7.5), "2.2 2.2"), p("m17.5 16 3.5 3.5")],
+  sparse: [cf(5, 6, 1.3), cf(18, 5, 1.3), cf(11, 12, 1.3), cf(4, 18, 1.3), cf(19, 17, 1.3), pa("M14.5 19.5 20 14", { opacity: ".55" })],
+  plane: [p("M3 15.5 9 9h12l-6 6.5z"), p("M12 9V3.5m0 0-2 2m2-2 2 2")],
+  thin: [cf(5, 5, 1.2), cf(12, 5, 1.2), cf(19, 5, 1.2), cf(5, 12, 1.2), cf(12, 12, 1.2), cf(19, 12, 1.2), cf(5, 19, 1.2), cf(19, 19, 1.2), dashed(r(9, 16, 6, 6, 1.4), "1.6 1.6")],
+  rect: [dashed(r(4, 6, 16, 12, 1.5), "2.5 2")],
+  level: [r(2.5, 8.5, 19, 7, 3.5), r(9.5, 10.5, 5, 3, 1.5)],
+  close: [p("M6 6l12 12M18 6 6 18")],
+  chevr: [p("m9 6 6 6-6 6")],
 } as const satisfies Record<string, readonly IconNode[]>;
 
 export type IconName = keyof typeof ICONS;
