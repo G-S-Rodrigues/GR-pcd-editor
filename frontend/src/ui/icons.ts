@@ -52,6 +52,18 @@ export const ICONS = {
   pick: [r(4, 4, 16, 16, 2), c(12, 12, 2)],
   /** Not in the sheet: the protected-layer mark (22-2, R22-3), the mockup's shield outline with a tick. */
   shield: [p("M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6z"), p("m9 12 2 2 4-4")],
+  /** Not in the sheet (22-5, mockup-22): the app mark, a cube. */
+  box: [p("M12 3 4 7.5v9L12 21l8-4.5v-9z"), p("M4 7.5 12 12l8-4.5M12 12v9")],
+  /** Not in the sheet (22-5, mockup-22): the Display popover anchor. */
+  sliders: [p("M4 7h9m4 0h3M4 17h3m4 0h9"), c(15, 7, 2), c(9, 17, 2)],
+  /** Not in the sheet (22-5, mockup-22): the Cloud details anchor; the dot has no fill, as the orig icon's. */
+  info: [c(12, 12, 9), p("M12 11v5.5"), c(12, 7.8, 0.6)],
+  /** Not in the sheet (22-5, mockup-22): the Keyboard popover anchor. */
+  keyboard: [r(3, 6, 18, 12, 2), p("M7 10h.01M11 10h.01M15 10h.01M7 14h10")],
+  /** Not in the sheet (22-5, mockup-22): the History popover anchor. */
+  list: [p("M9 6h11M9 12h11M9 18h11"), c(4.5, 6, 0.9), c(4.5, 12, 0.9), c(4.5, 18, 0.9)],
+  /** Not in the sheet (22-5, mockup-22): invalid points. */
+  invalid: [c(12, 12, 8.5), p("m6 6 12 12")],
 } as const satisfies Record<string, readonly IconNode[]>;
 
 export type IconName = keyof typeof ICONS;
