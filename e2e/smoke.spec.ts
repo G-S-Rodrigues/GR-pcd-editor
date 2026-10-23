@@ -7509,6 +7509,25 @@ test("E2E-246 22-5 (Display and Keyboard) opening one popover closes the other, 
   await page.keyboard.press("Escape");
   await expect(help).toBeHidden();
   await armed();
+  // every anchor opens its popover with aria-expanded true, opening another closes the first, each box keeps an 8 px margin, a click on the stage closes it
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const vp = page.viewportSize()!;
+  const all: [string, string][] = [["display-open", "#display-pop"], ["details-open", "#cloud-details"], ["help", "#help-overlay"], ["history-open", "#history-pop"]];
+  let prev: string | null = null;
+  for (const [anchor, sel] of all) {
+    await t.ctl(anchor).click();
+    await expect(page.locator(sel)).toBeVisible();
+    await expect(t.ctl(anchor)).toHaveAttribute("aria-expanded", "true");
+    if (prev) await expect(page.locator(prev)).toBeHidden();
+    const b = (await page.locator(sel).boundingBox())!;
+    expect(b.x, `${sel} left margin`).toBeGreaterThanOrEqual(7.5);
+    expect(b.y, `${sel} top margin`).toBeGreaterThanOrEqual(7.5);
+    expect(b.x + b.width, `${sel} right margin`).toBeLessThanOrEqual(vp.width - 7.5);
+    expect(b.y + b.height, `${sel} bottom margin`).toBeLessThanOrEqual(vp.height - 7.5);
+    prev = sel;
+  }
+  await page.locator("#viewport").click({ position: { x: 40, y: 200 } });
+  await expect(page.locator(prev!)).toBeHidden();
 });
 
 test("E2E-247 22-5 the Display popover lists the colour modes, changes the budget, and its Theme group sets, persists and clears data-theme and the canvas follows", async ({ page }) => {
@@ -7546,3 +7565,99 @@ test("E2E-247 22-5 the Display popover lists the colour modes, changes the budge
   await expect.poll(async () => (await state()).renderTheme).toBe("dark");
   await t.ctl("theme-system").click(); // leave no stored choice behind for the next test
 });
+
+test("E2E-251 22-5 measured contrast on the new surfaces in both themes: the document title, the kept chip, the footer items and mode line, Cloud details, Display, History and the Export sheet are at least 4.5", async ({ page }) => {
+  const t = hideHelpers(page);
+  await t.floorSelected();
+  page.removeAllListeners("dialog");
+  page.on("dialog", (d) => void d.accept());
+  await t.ctl("prot-enabled").check();
+  await t.setNum("prot-min", -0.05);
+  await t.setNum("prot-max", 0.05);
+  await t.ctl("sel-clear").click();
+  await t.ctl("tool-box").click();
+  for (const [id, v] of [["box-center-x", 9], ["box-center-y", 9], ["box-center-z", 2], ["box-size-x", 30], ["box-size-y", 30], ["box-size-z", 10]] as const) await t.setNum(id, v);
+  await expect(page.locator("#kept-chip")).toBeVisible();
+  const check = async (scheme: Scheme, name: string, sel: string) => {
+    await expect.poll(async () => (await textBackdrops(page, sel)).length, { message: `${scheme} ${name}` }).toBeGreaterThan(0);
+    for (const e of await textBackdrops(page, sel)) {
+      if (!/"[^"]+"$/.test(e.what) && !/input/.test(e.what)) continue;
+      expect(worstContrast(e), `${scheme} ${name}: ${e.what}`).toBeGreaterThanOrEqual(4.5);
+    }
+  };
+  const bars: [string, string][] = [["title", "#toolbar .doc, #toolbar .doc *"], ["kept chip", "#kept-chip"], ["status", "#statusbar .item"], ["mode line", "#modebar"]];
+  const popovers: [string, string, string][] = [
+    ["details-open", "Cloud details", "#cloud-details dt, #cloud-details dd"],
+    ["display-open", "Display", "#display-pop label, #display-pop .plabel"],
+  ];
+  for (const scheme of ["dark", "light"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    for (const [name, sel] of bars) await check(scheme, name, sel);
+    for (const [anchor, name, sel] of popovers) {
+      await t.ctl(anchor).click();
+      await check(scheme, name, sel);
+      await page.keyboard.press("Escape");
+    }
+    await t.ctl("export").click();
+    await check(scheme, "export", "#export-dialog p, #export-dialog label");
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#export-dialog")).toBeHidden();
+  }
+  await t.ctl("apply").click();
+  await expect(page.locator("#kept-chip")).toBeHidden();
+  for (const scheme of ["dark", "light"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await t.ctl("history-open").click();
+    await check(scheme, "history", "#history-list li");
+    await page.keyboard.press("Escape");
+  }
+});
+
+for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-252 22-5 owner screenshots at ${w}x${hgt}: Display, Cloud details, Keyboard, History and Export in dark and light; no scroll, no page error, every open popover inside the viewport`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: hgt });
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => {
+      if (m.type() === "error" && !/404/.test(m.text())) errors.push(m.text());
+    });
+    const t = hideHelpers(page);
+    await t.floorSelected();
+    page.removeAllListeners("dialog");
+    page.on("dialog", (d) => void d.accept());
+    await t.ctl("sel-clear").click();
+    await t.ctl("tool-box").click();
+    await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+    await t.exact("Selected", String(ROOM.ghost));
+    await t.ctl("apply").click();
+    await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
+    const shots: [string, string, string][] = [
+      ["display-open", "#display-pop", "display"],
+      ["details-open", "#cloud-details", "details"],
+      ["help", "#help-overlay", "keyboard"],
+      ["history-open", "#history-pop", "history"],
+    ];
+    for (const scheme of ["dark", "light"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await expect.poll(() => hook(page, (e) => e.state().renderTheme), { message: `${scheme} render theme` }).toBe(scheme);
+      for (const [anchor, sel, name] of shots) {
+        await t.ctl(anchor).click();
+        await expect(page.locator(sel)).toBeVisible();
+        await page.mouse.move(5, 5);
+        await appIdle(page);
+        const b = (await page.locator(sel).boundingBox())!;
+        expect(b.x >= 0 && b.y >= 0 && b.x + b.width <= w && b.y + b.height <= hgt, `${scheme} ${name} inside the viewport`).toBe(true);
+        await page.screenshot({ path: `/out/part22-5-${w}x${hgt}-${scheme}-${name}.png` });
+        expect(await page.evaluate(() => document.scrollingElement!.scrollHeight <= window.innerHeight && document.scrollingElement!.scrollWidth <= window.innerWidth), `${scheme} ${name}: the page scrolls`).toBe(true);
+        await page.keyboard.press("Escape");
+        await expect(page.locator(sel)).toBeHidden();
+      }
+      await t.ctl("export").click();
+      await expect(page.locator("#export-dialog")).toBeVisible();
+      await page.screenshot({ path: `/out/part22-5-${w}x${hgt}-${scheme}-export.png` });
+      await page.keyboard.press("Escape");
+      await expect(page.locator("#export-dialog")).toBeHidden();
+    }
+    expect(errors).toEqual([]);
+  });
+}

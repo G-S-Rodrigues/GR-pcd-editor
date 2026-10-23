@@ -37,6 +37,7 @@
         --dk-success: #30d158;
         --dk-warning: #ffd60a;
         --dk-protected-ui: #00d1ff;
+        --dk-protected-text: #00d1ff;
         --lt-canvas: #e9ebef;
         --lt-canvas-vignette: #f6f7f9;
         --lt-glass: rgba(248, 248, 250, 0.74);
@@ -67,6 +68,7 @@
         --lt-success: #248a3d;
         --lt-warning: #9a7300;
         --lt-protected-ui: #00789c;
+        --lt-protected-text: #006585;
         color-scheme: dark;
         --canvas: var(--dk-canvas);
         --canvas-vignette: var(--dk-canvas-vignette);
@@ -98,6 +100,7 @@
         --success: var(--dk-success);
         --warning: var(--dk-warning);
         --protected-ui: var(--dk-protected-ui);
+        --protected-text: var(--dk-protected-text);
         --focus: var(--accent);
         /* Data and axis colours: the render palette, dark only until 22-4b adds the light versions together with the renderer. */
         --pt-candidate: #ff9f1c;
@@ -168,6 +171,7 @@
           --success: var(--lt-success);
           --warning: var(--lt-warning);
           --protected-ui: var(--lt-protected-ui);
+          --protected-text: var(--lt-protected-text);
           --focus: var(--accent);
           /* Data and axis colours: the light render palette (R22-13, R22-14); each reads at 3:1 on --canvas. */
           --pt-candidate: #be7715;
@@ -215,6 +219,7 @@
         --success: var(--lt-success);
         --warning: var(--lt-warning);
         --protected-ui: var(--lt-protected-ui);
+        --protected-text: var(--lt-protected-text);
         --focus: var(--accent);
         /* Data and axis colours: the light render palette (R22-13, R22-14); each reads at 3:1 on --canvas. */
         --pt-candidate: #be7715;
@@ -361,7 +366,7 @@
       .doc-sub { display: inline-flex; align-items: center; gap: 4px; font: var(--t-caption); color: var(--label-2); }
       .doc-sub[hidden], #kept-chip[hidden] { display: none; }
       .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--warning); flex: none; }
-      #kept-chip { display: inline-flex; align-items: center; gap: 4px; height: var(--ctl-h); padding: 0 10px; box-sizing: border-box; border-radius: 13px; background: var(--fill-1); color: var(--protected-ui); font: var(--t-callout); white-space: nowrap; }
+      #kept-chip { display: inline-flex; align-items: center; gap: 4px; height: var(--ctl-h); padding: 0 10px; box-sizing: border-box; border-radius: 13px; background: var(--fill-1); color: var(--protected-text); font: var(--t-callout); white-space: nowrap; }
       #toolbar .ib { width: 30px; height: 30px; }
       #toolbar button:not(.ib), #toolbar select, #toolbar input { height: 24px; padding: 1px 6px; box-sizing: border-box; }
       .note.warn { color: var(--protected-ui); }
