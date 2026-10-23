@@ -344,7 +344,9 @@
       .layer-row .layer-act { opacity: 0; transition: opacity var(--dur); }
       .layer-row:hover .layer-act, .layer-row.active .layer-act, .layer-row:focus-within .layer-act, .layer-act[aria-expanded="true"] { opacity: 1; }
       .layer-row .layer-lock { flex: none; display: inline-grid; place-items: center; color: var(--label-2); }
-      .layer-details { display: flex; flex-direction: column; gap: 3px; padding: 0 4px 3px 18px; }
+      .layer-details { display: flex; flex-direction: column; gap: 3px; }
+      #layer-menu { width: 248px; min-width: 0; padding: 8px; gap: 6px; }
+      #layer-menu .layer-group + .layer-group { border-top: 1px solid var(--separator); padding-top: 6px; }
       .layer-group { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; }
       .layer-group.g-colour { display: grid; grid-template-columns: repeat(8, 16px); gap: 2px; }
       .layer-details .layer-swatch { width: 16px; height: 16px; min-width: 0; padding: 0; border: 1px solid transparent; }
@@ -543,7 +545,7 @@
   </head>
   <body data-app="gr-pcd-editor">
     <div id="toolbar" class="row"></div>
-    <div id="popovers"><div id="cloud-details" class="pop" role="dialog" aria-label="Cloud details" hidden tabindex="-1"></div><div id="display-pop" class="pop" role="dialog" aria-label="Display" hidden tabindex="-1"></div><div id="history-pop" class="pop" role="dialog" aria-label="History" hidden tabindex="-1"></div><div id="help-overlay" class="pop" role="dialog" aria-label="Controls help" hidden tabindex="-1"></div></div>
+    <div id="popovers"><div id="cloud-details" class="pop" role="dialog" aria-label="Cloud details" hidden tabindex="-1"></div><div id="display-pop" class="pop" role="dialog" aria-label="Display" hidden tabindex="-1"></div><div id="history-pop" class="pop" role="dialog" aria-label="History" hidden tabindex="-1"></div><div id="help-overlay" class="pop" role="dialog" aria-label="Controls help" hidden tabindex="-1"></div><div id="layer-menu" class="pop menu layer-details" role="dialog" aria-label="Layer options" hidden tabindex="-1"></div></div>
         <div id="body">
       <aside id="tools"><div id="start-banner" class="banner" hidden></div></aside>
       <div id="centre">

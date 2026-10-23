@@ -1,3 +1,4 @@
+import { fakeLayerMenu } from "../testing/layermenu";
 import { afterAll, beforeEach, expect, test, vi } from "vitest";
 import { createAppStore } from "../state/app";
 import { sessionFixture } from "../testing/fixtures";
@@ -19,12 +20,20 @@ const actions = new Proxy(
   { layerCreate: calls.create, layerAssign: calls.assign, layerRelease: calls.release, layerSelect: calls.select, layerToggle: calls.toggle, layerToMain: calls.toMain, layerChoose: calls.choose, layerEdit: calls.edit, layerSet: calls.set, layerFromBand: calls.fromBand, layerRename: calls.rename, layerColour: calls.colour, layerFlag: calls.flag, layerOp: calls.op, layerMove: calls.move, layerMerge: calls.merge, layerDeletePoints: calls.delPoints } as Record<string, unknown>,
   { get: (t, k: string) => t[k] ?? (() => undefined) },
 ) as unknown as PanelActions;
-buildLayersPanel(dom.root as unknown as HTMLElement, store, actions);
+const menu = fakeLayerMenu(new (dom.root.constructor as new (t: string) => FakeEl)("div"));
+buildLayersPanel(dom.root as unknown as HTMLElement, store, actions, menu.host);
+const panel = menu.host.panel as unknown as FakeEl;
 const ctl = (id: string) => dom.root.control(id) as FakeEl;
 const byId = (id: string) => dom.root.all().find((e) => e.getAttribute("id") === id) as FakeEl;
 const section = () => dom.root.all().find((e) => e.getAttribute("data-section") === "layers") as FakeEl;
 const rows = () => section().all().filter((e) => e.getAttribute("data-layer-row") !== null);
 const rowBtn = (id: number, kind: string) => section().all().find((e) => e.getAttribute(`data-layer-${kind}`) === String(id)) as FakeEl;
+/** 22-7: the row menu is the popover panel; opening it for a layer is a click on that row's more button. */
+const openMenu = (id: number) => {
+  if (menu.isOpen() && panel.getAttribute("data-layer-details") === String(id)) return;
+  rowBtn(id, "more").fire("click");
+};
+const menuBtn = (id: number, kind: string) => (openMenu(id), panel.all().find((e) => e.getAttribute(`data-layer-${kind}`) === String(id)) as FakeEl);
 
 const layer = (over: Partial<Layer>): Layer => ({ id: 1, name: "Floor", colour: 0, visible: true, count: 30, bounds: null, ...over });
 const base = (layers: Layer[], selected = 4) =>
@@ -32,6 +41,10 @@ const base = (layers: Layer[], selected = 4) =>
 
 beforeEach(() => {
   for (const c of Object.values(calls)) c.mockClear();
+  menu.closeFromOutside();
+  panel.setAttribute("data-layer-details", "");
+  menu.calls.toggleAt.length = menu.calls.reanchor.length = 0;
+  menu.calls.close = 0;
   store.set({ ...createAppStore().get(), session: base([layer({}), layer({ id: 2, name: "Wall", colour: 1, visible: false, count: 20 })]) });
 });
 
@@ -53,7 +66,7 @@ test("UI-832 one row per layer: colour chip, name with count, eye with aria-pres
   expect(rowBtn(2, "eye").getAttribute("aria-label")).toBe("Show layer Wall");
   rowBtn(1, "eye").fire("click");
   rowBtn(1, "select").fire("click");
-  rowBtn(1, "tomain").fire("click");
+  menuBtn(1, "tomain").fire("click");
   expect(calls.toggle).toHaveBeenCalledWith(1);
   expect(calls.select).toHaveBeenCalledWith(1);
   expect(calls.toMain).toHaveBeenCalledWith(1);
@@ -120,10 +133,10 @@ test("UI-838 a layer-less session shows only Main-less empty state: no rows and 
 
 test("UI-863 each row has an Edit button: inactive for a hidden layer (Show the layer first) and a click on a working one asks to edit that layer", () => {
   store.set({ session: base([layer({ bounds: { min: [0, 0, 0], max: [1, 1, 1] } }), layer({ id: 2, name: "Wall", colour: 1, visible: false, count: 20 })]) });
-  expect(rowBtn(1, "edit").getAttribute("aria-disabled")).toBe("false");
-  expect(rowBtn(2, "edit").getAttribute("aria-disabled")).toBe("true");
-  expect(rowBtn(2, "edit").title).toContain("Show the layer first");
-  rowBtn(1, "edit").fire("click");
+  expect(menuBtn(1, "edit").getAttribute("aria-disabled")).toBe("false");
+  expect(menuBtn(2, "edit").getAttribute("aria-disabled")).toBe("true");
+  expect(menuBtn(2, "edit").title).toContain("Show the layer first");
+  menuBtn(1, "edit").fire("click");
   expect(calls.edit).toHaveBeenCalledWith(1);
 });
 
@@ -152,41 +165,43 @@ test("UI-892 a layer row is one line (chip, name, count, eye, Select, chevron) w
   expect(acts.children.map((c) => c.tag)).toEqual(["button", "button", "button"]);
   expect(["data-layer-eye", "data-layer-select", "data-layer-more"].map((k, i) => acts.children[i].getAttribute(k))).toEqual(["1", "1", "1"]);
   expect(floor.text()).toBe("Floor (30)");
-  const details = () => section().all().find((e) => e.getAttribute("data-layer-details") === "1") as FakeEl;
-  expect(details().getAttribute("hidden")).not.toBeNull();
   expect(rowBtn(1, "more").getAttribute("aria-expanded")).toBe("false");
-  expect(rowBtn(1, "edit").text()).toBe("Edit layer");
-  expect(rowBtn(1, "tomain").text()).toBe("To main");
+  expect(rowBtn(1, "more").getAttribute("aria-haspopup")).toBe("menu");
+  expect(section().all().some((e) => e.getAttribute("data-layer-details") !== null)).toBe(false); // no inline details area any more
+  expect(menu.isOpen()).toBe(false);
   rowBtn(1, "more").fire("click");
-  expect(details().getAttribute("hidden")).toBeNull();
-  expect(rowBtn(1, "more").getAttribute("aria-expanded")).toBe("true");
-  expect(calls.choose).not.toHaveBeenCalled(); // the chevron does not choose the row
-  store.set({ layerUi: { editing: null, active: 2 } }); // a rebuild keeps the row open
-  expect(details().getAttribute("hidden")).toBeNull();
-  rowBtn(1, "more").fire("click");
-  expect(details().getAttribute("hidden")).not.toBeNull();
-  expect(rowBtn(1, "more").getAttribute("aria-expanded")).toBe("false");
+  expect(menu.calls.toggleAt).toEqual([rowBtn(1, "more")]);
+  expect(menu.isOpen()).toBe(true);
+  expect(panel.getAttribute("data-layer-details")).toBe("1");
+  expect(menuBtn(1, "edit").text()).toBe("Edit layer");
+  expect(menuBtn(1, "tomain").text()).toBe("To main");
+  expect(calls.choose).not.toHaveBeenCalled(); // the more button does not choose the row
+  store.set({ layerUi: { editing: null, active: 2 } }); // a rebuild keeps the menu open on the same layer, at the new button
+  expect(menu.isOpen()).toBe(true);
+  expect(menu.calls.reanchor.at(-1)).toBe(rowBtn(1, "more"));
+  rowBtn(1, "more").fire("click"); // the same button again closes it
+  expect(menu.isOpen()).toBe(false);
 });
 
-const attrBtn = (attr: string, id: number) => section().all().find((e) => e.getAttribute(attr) === String(id)) as FakeEl;
-const opBtn = (id: number, op: string) => section().all().find((e) => e.getAttribute("data-layer-op") === op && e.getAttribute("data-layer-of") === String(id)) as FakeEl;
-const details = (id: number) => section().all().find((e) => e.getAttribute("data-layer-details") === String(id)) as FakeEl;
+const attrBtn = (attr: string, id: number) => (openMenu(id), panel.all().find((e) => e.getAttribute(attr) === String(id)) as FakeEl);
+const opBtn = (id: number, op: string) => (openMenu(id), panel.all().find((e) => e.getAttribute("data-layer-op") === op && e.getAttribute("data-layer-of") === String(id)) as FakeEl);
 const twoLayers = (over1: Partial<Layer> = {}, over2: Partial<Layer> = {}) => base([layer({ bounds: { min: [0, 0, 0], max: [1, 1, 1] }, ...over1 }), layer({ id: 2, name: "Wall", colour: 1, count: 20, ...over2 })]);
 
-test("UI-921 Floor's details are hidden by default and hold the 7 groups in order; each control fires its action with id 1", () => {
+test("UI-921 Floor's menu is closed by default and holds the 7 groups in order; each control fires its action with id 1", () => {
   store.set({ session: twoLayers() });
-  expect(details(1).getAttribute("hidden")).not.toBeNull();
-  expect(details(1).children.map((g) => g.className.split(" ")[1])).toEqual(["g-rename", "g-colour", "g-flags", "g-ops", "g-member", "g-order", "g-delete"]);
+  expect(menu.isOpen()).toBe(false);
+  openMenu(1);
+  expect(panel.children.map((g) => g.className.split(" ")[1])).toEqual(["g-rename", "g-colour", "g-flags", "g-ops", "g-member", "g-order", "g-delete"]);
   const input = attrBtn("data-layer-rename", 1);
   input.value = "Ground";
   attrBtn("data-layer-rename-ok", 1).fire("click");
   input.value = "Kerb";
   input.fire("keydown", { key: "Enter" });
   expect(calls.rename.mock.calls).toEqual([[1, "Ground"], [1, "Kerb"]]);
-  expect(section().all().filter((e) => e.getAttribute("data-layer-colour") === "1")).toHaveLength(16);
-  section().all().find((e) => e.getAttribute("data-layer-colour") === "1" && e.getAttribute("data-colour") === "3")?.fire("click");
+  expect(panel.all().filter((e) => e.getAttribute("data-layer-colour") === "1")).toHaveLength(16);
+  panel.all().find((e) => e.getAttribute("data-layer-colour") === "1" && e.getAttribute("data-colour") === "3")?.fire("click");
   expect(calls.colour).toHaveBeenCalledWith(1, 3);
-  expect(section().all().find((e) => e.getAttribute("data-layer-colour") === "1" && e.getAttribute("data-colour") === "0")?.getAttribute("aria-pressed")).toBe("true");
+  expect(panel.all().find((e) => e.getAttribute("data-layer-colour") === "1" && e.getAttribute("data-colour") === "0")?.getAttribute("aria-pressed")).toBe("true");
   attrBtn("data-layer-protected", 1).fire("click");
   attrBtn("data-layer-lock", 1).fire("click");
   expect(calls.flag.mock.calls).toEqual([[1, "protected", true], [1, "locked", true]]);
@@ -249,17 +264,17 @@ test("UI-1014 the menu's Protected flag holds the shield svg first, keeps its te
   expect(attrBtn("data-layer-protected", 1).getAttribute("aria-pressed")).toBe("false");
 });
 
-test("UI-923 while a layer is edited its details are open and hold #layer-set exactly once, through rebuilds; afterwards it is back in the stack", () => {
+test("UI-923 while a layer is edited #layer-set is in the section exactly once, through rebuilds; the menu never holds it; afterwards it is hidden", () => {
   store.set({ session: twoLayers(), layerUi: { editing: 1, active: 1 } });
   const setIn = (el: FakeEl) => el.all().filter((e) => e.getAttribute("id") === "layer-set" || e.getAttribute("data-control") === "layer-set");
-  expect(details(1).getAttribute("hidden")).toBeNull();
-  expect(setIn(details(1))).toHaveLength(1);
   expect(setIn(section())).toHaveLength(1);
+  expect(ctl("layer-set").hidden).toBe(false);
+  openMenu(1);
+  expect(setIn(panel)).toHaveLength(0);
   store.set({ session: twoLayers({ count: 31 }) });
-  expect(setIn(details(1))).toHaveLength(1);
   expect(setIn(section())).toHaveLength(1);
+  expect(setIn(panel)).toHaveLength(0);
   store.set({ layerUi: { editing: null, active: 1 } });
-  expect(setIn(details(1))).toHaveLength(0);
   expect(setIn(section())).toHaveLength(1);
   expect(ctl("layer-set").hidden).toBe(true);
 });
@@ -302,11 +317,13 @@ test("UI-926 a locked layer's Edit, To main and Merge are inactive with the reas
   expect(calls.edit).not.toHaveBeenCalled();
 });
 
-test("UI-984 a different session forgets the open fold-outs: layer 1 of the next file starts closed", () => {
+test("UI-984 a different session closes the open menu: the host close is called and the next file starts with none", () => {
   rowBtn(1, "more").fire("click");
-  expect(rowBtn(1, "more").getAttribute("aria-expanded")).toBe("true");
+  expect(menu.isOpen()).toBe(true);
+  const before = menu.calls.close;
   store.set({ session: { ...(store.get().session as NonNullable<ReturnType<typeof sessionFixture>>), session_id: "s2" } });
-  expect(rowBtn(1, "more").getAttribute("aria-expanded")).toBe("false");
+  expect(menu.calls.close).toBe(before + 1);
+  expect(menu.isOpen()).toBe(false);
 });
 
 test("UI-1208 a row holds chip, name, shield, lock, count and .layer-acts (eye, select, more); the lock only on locked layers; more is a menu button; the eye is revealed only when its layer is visible", () => {
@@ -336,4 +353,56 @@ test("UI-1208 a row holds chip, name, shield, lock, count and .layer-acts (eye, 
   const eyeOf = (id: number) => row(id).all().find((e) => e.getAttribute("data-layer-eye") !== null) as FakeEl;
   expect(eyeOf(1).className).toContain("layer-act");
   expect(eyeOf(3).className).not.toContain("layer-act");
+});
+
+const B = { min: [0, 0, 0] as [number, number, number], max: [1, 1, 1] as [number, number, number] };
+test("UI-1210 the more button opens the layer menu in the popover at that button: seven groups, the same data-layer hooks, actions with id 2, a re-render keeps it open and reanchors, four actions close it", () => {
+  store.set({ session: twoLayers({}, { bounds: B }) });
+  const more2 = rowBtn(2, "more");
+  more2.fire("click");
+  expect(menu.calls.toggleAt).toHaveLength(1);
+  expect(menu.calls.toggleAt[0]).toBe(more2);
+  expect(panel.getAttribute("data-layer-details")).toBe("2");
+  expect(panel.children.map((g) => g.className.split(" ")[1])).toEqual(["g-rename", "g-colour", "g-flags", "g-ops", "g-member", "g-order", "g-delete"]);
+  expect(panel.all().filter((e) => e.getAttribute("data-layer-colour") === "2")).toHaveLength(16);
+  const pressed = () => panel.all().find((e) => e.getAttribute("data-layer-colour") === "2" && e.getAttribute("aria-pressed") === "true")?.getAttribute("data-colour");
+  expect(pressed()).toBe("1");
+  panel.all().find((e) => e.getAttribute("data-layer-colour") === "2" && e.getAttribute("data-colour") === "5")?.fire("click");
+  expect(calls.colour).toHaveBeenCalledWith(2, 5);
+  attrBtn("data-layer-lock", 2).fire("click");
+  expect(calls.flag).toHaveBeenCalledWith(2, "locked", true);
+  // the store applies the colour: the rows rebuild, the menu stays open and follows the new button
+  const before = menu.calls.reanchor.length;
+  store.set({ session: twoLayers({}, { colour: 5, bounds: B }) });
+  expect(menu.isOpen()).toBe(true);
+  expect(menu.calls.close).toBe(0);
+  expect(pressed()).toBe("5");
+  expect(menu.calls.reanchor.length).toBeGreaterThan(before);
+  expect(menu.calls.reanchor.at(-1)).toBe(rowBtn(2, "more"));
+  // Edit layer, To main, Merge and Delete points close it after firing; Rename, Up and Visible do not
+  attrBtn("data-layer-up", 2).fire("click");
+  expect(menu.calls.close).toBe(0);
+  attrBtn("data-layer-edit", 2).fire("click");
+  expect(calls.edit).toHaveBeenCalledWith(2);
+  expect(menu.calls.close).toBe(1);
+  attrBtn("data-layer-tomain", 2).fire("click");
+  expect(menu.calls.close).toBe(2);
+  attrBtn("data-layer-merge", 2).fire("click");
+  expect(calls.merge).toHaveBeenCalledWith(2, 1);
+  expect(menu.calls.close).toBe(3);
+  attrBtn("data-layer-delete-points", 2).fire("click");
+  expect(menu.calls.close).toBe(4);
+});
+
+test("UI-1211 the open menu closes when its layer leaves the rows and when the session changes", () => {
+  store.set({ session: twoLayers() });
+  rowBtn(2, "more").fire("click");
+  expect(menu.isOpen()).toBe(true);
+  store.set({ session: base([layer({})]) }); // layer 2 is gone
+  expect(menu.calls.close).toBe(1);
+  expect(menu.isOpen()).toBe(false);
+  store.set({ session: twoLayers() });
+  rowBtn(1, "more").fire("click");
+  store.set({ session: { ...(store.get().session as NonNullable<ReturnType<typeof sessionFixture>>), session_id: "s9" } });
+  expect(menu.calls.close).toBe(2);
 });

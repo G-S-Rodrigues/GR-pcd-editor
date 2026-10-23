@@ -1,3 +1,4 @@
+import { fakeLayerMenu } from "../testing/layermenu";
 import { afterAll, expect, test } from "vitest";
 import { LIGHT_PALETTE, PALETTE, contrastRatio } from "../colour/palette";
 import { LIGHT_AXIS_COLOUR } from "../filterboxes/plane";
@@ -23,7 +24,7 @@ const panelRoot = new (dom.root.constructor as new (t: string) => FakeEl)("div")
 const layersRoot = new (dom.root.constructor as new (t: string) => FakeEl)("div");
 buildLegend(legendRoot as unknown as HTMLElement, store);
 buildToolPalette(panelRoot as unknown as HTMLElement, store, actions);
-buildLayersPanel(layersRoot as unknown as HTMLElement, store, actions);
+buildLayersPanel(layersRoot as unknown as HTMLElement, store, actions, fakeLayerMenu(new (dom.root.constructor as new (t: string) => FakeEl)("div")).host);
 const layer = (over: Partial<Layer>): Layer => ({ id: 1, name: "Floor", colour: 0, visible: true, count: 30, bounds: null, ...over });
 
 test("UI-1109 the legend chips, the Selected colour dots (and the White slot's name) and the Main chip recolour when renderTheme changes, with no rebuild, and back", () => {

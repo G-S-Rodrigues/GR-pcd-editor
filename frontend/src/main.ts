@@ -385,7 +385,15 @@ const panelActions = {
 buildCloudDetails($("cloud-details"), store, { removeInvalid: () => void editor.removeInvalid(), removeInvalidVisible: () => editor.removeInvalidVisible(), removeInvalidLabel: () => editor.removeInvalidLabel() });
 buildPalette($("palette"), store, panelActions, $("arm-pill"));
 buildToolPalette($("tools"), store, panelActions);
-buildLayersPanel($("layers-slot"), store, panelActions);
+// The row menu is one document-level popover whose anchor is the open row's ... button (moved by toggleAt).
+pops.add({ id: "layer", anchor: document.createElement("span"), panel: $("layer-menu"), where: "beside", movable: true });
+buildLayersPanel($("layers-slot"), store, panelActions, {
+  panel: $("layer-menu"),
+  toggleAt: (el) => pops.toggleAt("layer", el),
+  reanchor: (el) => pops.reanchor("layer", el),
+  close: () => pops.closeIf("layer"),
+  openId: () => pops.openId(),
+});
 buildBandPill($("stage"), store);
 const legend = buildLegend($("legend"), store, () => void hide.show(), (id) => void layers.toggle(id));
 store.subscribe((s) => legend.update(s.timeline.highlight !== null, s.preview?.op ?? null));

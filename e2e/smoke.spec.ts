@@ -5076,6 +5076,40 @@ test("E2E-287 22-7 the row's actions are revealed: the more button is 0 at rest,
   await page.locator(wallMore).focus();
   await transitionsSettled(page);
   expect(await opacity(wallMore)).toBe("1");
+  await page.keyboard.press("Enter"); // the keyboard opens the menu
+  await expect(page.locator("#layer-menu")).toBeVisible();
+});
+
+test("E2E-288 22-7 the layer menu is a popover beside the row's more button, inside the window, keeps the lock mark on the row, and Esc closes it to the button without disarming the tool; a second Esc does", async ({ page }) => {
+  const t = layerMenu(page);
+  const floor = await t.floorFromBand();
+  const wallId = await t.wallLayer();
+  const tool = () => hook(page, (e) => e.state().tool);
+  await t.ctl("sel-clear").click(); // New layer disarmed the Box (R22-1) and kept the Wall selected: clear it so the re-armed box holds no draft
+  if ((await tool()) !== "box") await t.ctl("tool-box").click();
+  expect(await tool()).toBe("box");
+  await t.openMore(wallId);
+  await t.m("lock", wallId).click();
+  await expect.poll(async () => (await t.byName("Wall"))?.locked, { timeout: 15000 }).toBe(true);
+  await expect(page.locator(`[data-layer-row="${wallId}"] [data-layer-lock]`)).toBeVisible();
+  const floorMore = page.locator(`[data-layer-more="${floor.id}"]`);
+  await floorMore.click();
+  const menu = page.locator("#layer-menu");
+  await expect(menu).toBeVisible();
+  await expect(floorMore).toHaveAttribute("aria-expanded", "true");
+  const box = (await menu.boundingBox())!;
+  const mb = (await floorMore.boundingBox())!;
+  const vp = page.viewportSize()!;
+  expect(box.x).toBeGreaterThanOrEqual(mb.x + mb.width + 8 - 1);
+  expect(box.x + box.width).toBeLessThanOrEqual(vp.width - 8 + 1);
+  expect(box.y).toBeGreaterThanOrEqual(8 - 1);
+  expect(box.y + box.height).toBeLessThanOrEqual(vp.height - 8 + 1);
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(floorMore).toBeFocused();
+  expect(await tool()).toBe("box");
+  await page.keyboard.press("Escape");
+  await expect.poll(tool).toBe("none");
 });
 
 // ---- part 15b: named sub layers (E2E-140..146)
@@ -5085,7 +5119,7 @@ const layerHelpers = (page: Pg) => {
   const eye = (id: number) => page.locator(`[data-layer-eye="${id}"]`);
   const edit = (id: number) => page.locator(`[data-layer-edit="${id}"]`);
   const more = (id: number) => page.locator(`[data-layer-more="${id}"]`);
-  /** 17: Edit layer and To main sit in the row's details area; open it first. */
+  /** 22-7: the row's options (Edit layer, To main, flags, operations) live in the #layer-menu popover; open it first. */
   const openMore = async (id: number) => {
     if ((await more(id).getAttribute("aria-expanded")) !== "true") await more(id).click();
   };
@@ -5585,6 +5619,7 @@ test("E2E-173 18 menu flows: rename with Enter, a colour swatch, lock refuses Ed
   await t.setBox([9.5, 9.5, 2.5], [1, 1, 5]);
   await expect(t.ctl("layer-assign")).toHaveAttribute("aria-disabled", "true");
   await expect(t.ctl("layer-assign")).toHaveAttribute("title", /Ground is locked/);
+  await t.openMore(floor.id); // a click elsewhere closed the menu
   await t.m("lock", floor.id).click();
   await expect.poll(async () => (await t.byName("Ground"))?.locked, { timeout: 15000 }).toBe(false);
   const wallCount = (await t.byName("Wall"))!.count;
@@ -5600,17 +5635,18 @@ test("E2E-174 18 Select, Add, Subtract and Intersect with a layer as the operand
   const t = layerMenu(page);
   const floor = await t.floorFromBand();
   const wallId = await t.wallLayer();
-  await t.openMore(floor.id);
-  await t.openMore(wallId);
   await t.ctl("sel-clear").click(); // New layer disarmed the Box and kept the Wall selected (R22-1): clear, re-arm, the box is a live first selection
   await t.ctl("tool-box").click();
   await t.setBox(ALL_BOX.c, ALL_BOX.d);
   const S = finiteRows().filter((r) => inBox(r, ALL_BOX.c, ALL_BOX.d)).length;
   await t.exact("Selected", String(S));
+  await t.openMore(floor.id); // one menu at a time: open the layer whose operation is next
   await t.op(floor.id, "subtract").click();
   await t.exact("Selected", String(S - floor.count));
+  await t.openMore(wallId);
   await t.op(wallId, "select").click();
   await t.exact("Selected", String(ROOM.wall));
+  await t.openMore(floor.id);
   await t.op(floor.id, "add").click();
   await t.exact("Selected", String(ROOM.wall + floor.count));
   await t.op(floor.id, "intersect").click();
@@ -5642,7 +5678,7 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
       };
       const q = (s: string) => document.querySelector(s)!;
       const tools = q("#tools") as HTMLElement;
-      const menu = q("[data-layer-details]:not([hidden])") as HTMLElement;
+      const menu = q("#layer-menu") as HTMLElement;
       return {
         legend: box(q("#legend")),
         tools: box(tools),
@@ -5651,7 +5687,9 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
         scroll: [tools.scrollHeight, tools.clientHeight],
         overflowY: getComputedStyle(tools).overflowY,
         menuHeight: menu.getBoundingClientRect().height,
-        menuInside: menu.getBoundingClientRect().right <= tools.getBoundingClientRect().right + 1,
+        menuInWindow: [menu.getBoundingClientRect().left, menu.getBoundingClientRect().top, window.innerWidth - menu.getBoundingClientRect().right, window.innerHeight - menu.getBoundingClientRect().bottom],
+        menuLeftOfInspector: menu.getBoundingClientRect().right <= q("#inspector").getBoundingClientRect().left + 1,
+        menuVisible: !menu.hidden,
       };
     });
     console.log(`LEFT-PANEL-MENU ${w}x${h} menu ${r.menuHeight.toFixed(1)} scroll ${r.scroll[0]}/${r.scroll[1]}`);
@@ -5660,7 +5698,10 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
       expect(hit(r.legend, o), `legend x ${o.s}`).toBe(false);
       expect(hit(r.tools, o), `left panel x ${o.s}`).toBe(false);
     }
-    expect(r.menuInside, "menu inside the left panel").toBe(true);
+    expect(r.menuVisible, "the menu is open").toBe(true);
+    for (const m of r.menuInWindow) expect(m, "menu inside the window with 8 px margins").toBeGreaterThanOrEqual(8 - 1);
+    expect(r.menuLeftOfInspector, "menu left of the right inspector").toBe(true);
+    expect(r.scroll[0], "the left panel does not scroll while the menu is open").toBeLessThanOrEqual(r.scroll[1]);
     expect(["auto", "scroll"]).toContain(r.overflowY);
     await checkLayout(page, w, h);
   });
@@ -5737,6 +5778,7 @@ test("E2E-201 22-2 recolouring a protected Floor layer changes the canvas in Lay
   // control leg: with the section folded there is no region colour, and the recolour shows too
   await protSummary(page).click();
   await expect(t.ctl("prot-min")).not.toBeVisible();
+  await t.openMore(floor.id); // the click on the section summary closed the menu
   const b = await steadyCanvas(page);
   await recolour(other);
   await expect.poll(async () => Buffer.compare(b, await steadyCanvas(page)) !== 0, { timeout: 15000 }).toBe(true);
@@ -5770,6 +5812,7 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
     await closePop(page, "display");
     await t.ctl("cube-top").click();
     await page.mouse.move(5, 5);
+    await t.openMore(floor.id); // the Display popover replaced the menu (one popover at a time)
     await steadyCanvas(page);
     await page.locator(`[data-layer-colour="${floor.id}"][data-colour="${(floor.colour + 4) % 16}"]`).click();
     await expect.poll(async () => (await t.byName("Floor"))?.colour, { timeout: 15000 }).toBe((floor.colour + 4) % 16);

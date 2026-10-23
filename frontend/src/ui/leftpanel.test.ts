@@ -1,3 +1,4 @@
+import { fakeLayerMenu } from "../testing/layermenu";
 import { afterAll, beforeEach, expect, test } from "vitest";
 import { createAppStore } from "../state/app";
 import { candidateFixture, sessionFixture } from "../testing/fixtures";
@@ -12,7 +13,7 @@ const store = createAppStore();
 const actions = new Proxy({} as Record<string, unknown>, { get: (t, k: string) => t[k] ?? (() => undefined) }) as unknown as PanelActions;
 buildToolPalette(dom.root as unknown as HTMLElement, store, actions);
 const slot = dom.root.all().find((e) => e.getAttribute("id") === "layers-slot") as FakeEl;
-buildLayersPanel(slot as unknown as HTMLElement, store, actions);
+buildLayersPanel(slot as unknown as HTMLElement, store, actions, fakeLayerMenu(new (dom.root.constructor as new (t: string) => FakeEl)("div")).host);
 const byId = (id: string) => dom.root.all().find((e) => e.getAttribute("id") === id) as FakeEl;
 beforeEach(() => {
   store.set({ ...createAppStore().get(), session: sessionFixture(), tool: "box", liveFirst: true });
