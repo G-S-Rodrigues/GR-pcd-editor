@@ -6968,6 +6968,8 @@ const textBackdrops = (page: Pg, scope: string, max = 40) =>
     [scope, max] as const,
   );
 /** The worst WCAG ratio of one element's text over its backdrop: the layers composited over each possible stage colour (both ends of the stage) when the element is inside #stage. */
+/** Wait until no CSS transition is running: a colour read mid-transition after a theme switch is neither theme's colour. */
+const transitionsSettled = (page: Pg) => expect.poll(() => page.evaluate(() => document.getAnimations().length), { message: "CSS transitions finished" }).toBe(0);
 const worstContrast = (t: Awaited<ReturnType<typeof textBackdrops>>[number]): number => {
   const solidBase = t.layers.length && /^rgb\(/.test(t.layers[t.layers.length - 1]) ? [cssRgba(t.layers[t.layers.length - 1])] : [];
   const bases = t.stage || !solidBase.length ? [cssRgba(t.canvas), cssRgba(t.vignette)] : solidBase;
@@ -7014,6 +7016,7 @@ test("E2E-225 22-4 measured contrast on real elements, both themes: status count
   ];
   for (const scheme of ["dark", "light"] as const) {
     await page.emulateMedia({ colorScheme: scheme });
+    await transitionsSettled(page);
     for (const [name, sel] of scopes) {
       // elements that carry their own text only: the others have no glyphs to read
       await expect.poll(async () => (await textBackdrops(page, sel)).length, { message: name }).toBeGreaterThan(0);
@@ -7580,6 +7583,7 @@ test("E2E-251 22-5 measured contrast on the new surfaces in both themes: the doc
   await expect(page.locator("#kept-chip")).toBeVisible();
   const check = async (scheme: Scheme, name: string, sel: string) => {
     await expect.poll(async () => (await textBackdrops(page, sel)).length, { message: `${scheme} ${name}` }).toBeGreaterThan(0);
+    await transitionsSettled(page);
     for (const e of await textBackdrops(page, sel)) {
       if (!/"[^"]+"$/.test(e.what) && !/input/.test(e.what)) continue;
       expect(worstContrast(e), `${scheme} ${name}: ${e.what}`).toBeGreaterThanOrEqual(4.5);
