@@ -136,3 +136,29 @@ test("UI-1146 replace() places the open popover again after its content changed 
   pops.replace();
   expect(a.panel.style.top).toBe("172px");
 });
+
+test("UI-1160 add(entry) wires a late popover: aria-controls, toggle, one-open with the old entries, Esc refocuses its anchor, a pointerdown inside keeps it", () => {
+  const s = setup();
+  const late = { anchor: new FakeEl("button"), panel: new FakeEl("div") };
+  late.panel.setAttribute("id", "pl");
+  late.panel.hidden = true;
+  const inner = new FakeEl("span");
+  late.panel.append(inner);
+  s.pops.add({ id: "late", anchor: late.anchor as unknown as HTMLElement, panel: late.panel as unknown as HTMLElement });
+  expect(late.anchor.getAttribute("aria-controls")).toBe("pl");
+  expect(late.panel.hidden).toBe(true);
+  late.anchor.fire("click");
+  expect(s.pops.openId()).toBe("late");
+  expect(late.panel.hidden).toBe(false);
+  s.down(inner);
+  expect(s.pops.openId()).toBe("late");
+  // one open at a time with the old entries
+  s.a.anchor.fire("click");
+  expect(s.pops.openId()).toBe("a");
+  expect(late.panel.hidden).toBe(true);
+  late.anchor.fire("click");
+  expect(s.a.panel.hidden).toBe(true);
+  s.key("Escape");
+  expect(s.pops.isOpen()).toBe(false);
+  expect(late.anchor.focused).toBe(1);
+});

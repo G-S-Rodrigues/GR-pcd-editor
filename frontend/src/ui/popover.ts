@@ -86,10 +86,11 @@ export function bindPopovers(entries: PopEntry[], deps: PopDeps) {
     }
   };
   const apply = (ev: PopEvent) => sync(popoverReducer(open, ev));
-  for (const e of entries) {
+  const wire = (e: PopEntry) => {
     e.anchor.setAttribute("aria-controls", e.panel.getAttribute("id") ?? "");
     e.anchor.addEventListener("click", () => apply({ type: "toggle", id: e.id }));
-  }
+  };
+  for (const e of entries) wire(e);
   sync(null);
   deps.listenPointerDown((ev) => {
     const t = ev.target as Node | null;
@@ -106,6 +107,12 @@ export function bindPopovers(entries: PopEntry[], deps: PopDeps) {
   });
   deps.listenResize(place);
   return {
+    /** Registers a popover after the manager was built (the tool panels, the Fit menu). */
+    add: (e: PopEntry) => {
+      entries.push(e);
+      wire(e);
+      sync(open);
+    },
     isOpen: () => open !== null,
     openId: () => open,
     open: (id: string) => sync(id),
