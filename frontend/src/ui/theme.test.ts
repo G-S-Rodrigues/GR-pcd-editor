@@ -375,4 +375,30 @@ describe("palette and inspector chrome (part 22-6)", () => {
     expect(active!.body).toContain("background: var(--accent)");
     expect(active!.body).toContain("color: var(--on-accent-icon)");
   });
+
+  test("UI-1172b the right column is --rs-w (280 / 296 from 1440 / 332 from 1700, R22-16), the .switch look uses tokens, and the new chrome rules use no colour literal and no data colour", () => {
+    const css = styleText();
+    const body = rules(css).find((r) => r.selector === "#body");
+    expect(body!.body).toContain("var(--rs-w)");
+    expect(css).toMatch(/#body \{ grid-template-columns: 240px minmax\(0, 1fr\) var\(--rs-w\)/);
+    expect(parseBlocks().root["rs-w"]).toBe("280px");
+    expect(css).toMatch(/@media \(min-width: 1440px\) \{ :root \{ --rs-w: 296px/);
+    expect(css).toMatch(/@media \(min-width: 1700px\) \{ :root \{[^}]*--rs-w: 332px/);
+    const all = rules(css);
+    const track = all.find((r) => r.selector.includes(".switch") && !/::|:checked|aria-checked/.test(r.selector));
+    expect(track, ".switch rule").toBeDefined();
+    expect(track!.body).toContain("var(--fill-3)");
+    const on = all.find((r) => r.selector.includes("input.switch:checked") && !r.selector.includes("::"));
+    expect(on, ".switch on rule").toBeDefined();
+    expect(on!.body).toContain("var(--success)");
+    const knob = all.find((r) => /\.switch::(before|after)/.test(r.selector));
+    expect(knob, ".switch knob").toBeDefined();
+    expect(knob!.body).toContain("var(--on-accent-icon)");
+    const chrome = all.filter((r) => /#palette|\.tb\b|#arm-pill|\.ticon|\.kbd|\.disc|\.switch|\.qm|\.menu|\.help-pop/.test(r.selector));
+    expect(chrome.length).toBeGreaterThan(8);
+    for (const r of chrome) {
+      expect(r.body, r.selector).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/);
+      expect(r.body, r.selector).not.toMatch(/--(pt|ax)-/);
+    }
+  });
 });
