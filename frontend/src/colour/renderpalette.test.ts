@@ -17,6 +17,7 @@ import { BACKDROPS, solid } from "../testing/tokens";
 import { applyRenderTheme, renderThemeOf } from "../viewport/canvastoken";
 import { toolColours } from "../viewport/tools3d";
 import { LIGHT_PALETTE, PALETTE, contrastRatio, paletteFor, rgbDistance } from "./palette";
+import { LIGHT_MAIN_COLOUR } from "../layers/model";
 import { RAMP_STOPS } from "./ramps";
 import { SELECTED_COLOURS, selectedPresets, selectedRgb } from "./selectcolour";
 
@@ -40,6 +41,9 @@ describe("light render palette (part 22-4b, R22-14)", () => {
       expect(contrastRatio(blend(hexOf(LIGHT_PALETTE.step), 0.95, back), back), `step on ${back}`).toBeGreaterThanOrEqual(LIGHT_FLOORS.points);
       expect(contrastRatio(blend(hexOf(LIGHT_PALETTE.stepHover), 0.7, back), back), `stepHover on ${back}`).toBeGreaterThanOrEqual(LIGHT_FLOORS.points);
     }
+    // the light Main layer chip colour is a ruled point colour too: pinned literally and held to the point floor on both backdrops
+    expect(LIGHT_MAIN_COLOUR).toBe("#82888d");
+    for (const back of lightBacks) expect(contrastRatio(LIGHT_MAIN_COLOUR, back), `main on ${back}`).toBeGreaterThanOrEqual(LIGHT_FLOORS.points);
     expect(rgbDistance(hexOf(LIGHT_PALETTE.protectedStrong), hexOf(LIGHT_PALETTE.protected))).toBeGreaterThanOrEqual(25);
   });
 
