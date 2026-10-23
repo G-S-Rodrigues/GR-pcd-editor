@@ -413,7 +413,7 @@ const filterBoxes = buildFilterBoxes($("fbox-layer"), canvas, store, {
   editSide: (axis, side, value, o) => filters.editSide(axis, side, value, o),
   resetSide: (axis, side) => filters.resetSide(axis, side),
 });
-buildEditPanels($("editpanels"), store, panelActions, { toolRoot: $("toolpanels"), scroller: $("inspector") });
+buildEditPanels($("editpanels"), store, panelActions, { toolRoot: $("toolpanels"), scroller: $("inspector"), pops, popRoot: $("popovers") });
 
 window.addEventListener("keyup", (e) => {
   if (e.key.toLowerCase() === "r") rectHeld = false;

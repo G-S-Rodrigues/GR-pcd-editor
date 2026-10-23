@@ -1,3 +1,7 @@
+import { BOX_NOTE, CLUSTER_HELP, PLANE_HELP, SPARSE_HELP, THIN_HELP } from "./copy";
+import { PROTECTION_COPY } from "../inspector/protection";
+import { POLYGON_DEPTH_NOTE } from "../tools/polygon/model";
+
 export type FieldGroup = "tool" | "box" | "polygon" | "cluster" | "sparse" | "plane" | "thin" | "filter" | "protection" | "history" | "layer";
 
 export interface FieldSpec {
@@ -123,5 +127,18 @@ export const FIELD_SPECS: FieldSpec[] = [
   f("prot-level", "Level slab", "protection", "Make the protected slab horizontal again (tilt 0 and 0); the Min and Max numbers keep their values"),
   f("prot-show-band", "Show band", "protection", "Show band on canvas"),
   f("prot-ack", "Acknowledge override", "protection", "Confirm that this operation ignores the global protection"),
+  f("box-help", "Box help", "box", BOX_NOTE),
+  f("box-exit", "Exit Box", "box", "Exit the Box tool (Esc); the selection and the shape stay"),
+  f("polygon-help", "Polygon help", "polygon", POLYGON_DEPTH_NOTE),
+  f("polygon-exit", "Exit Polygon", "polygon", "Exit the Polygon tool (Esc); the selection and the shape stay"),
+  f("cluster-help", "Cluster help", "cluster", CLUSTER_HELP),
+  f("cluster-exit", "Exit Cluster", "cluster", "Exit the Cluster tool (Esc); the selection and the shape stay"),
+  f("sparse-help", "Sparse points help", "sparse", SPARSE_HELP),
+  f("sparse-exit", "Exit Sparse points", "sparse", "Exit the Sparse points tool (Esc); the selection and the shape stay"),
+  f("plane-help", "Planes help", "plane", PLANE_HELP),
+  f("plane-exit", "Exit Planes", "plane", "Exit the Planes tool (Esc); the selection and the shape stay"),
+  f("thin-help", "Thin help", "thin", THIN_HELP),
+  f("thin-exit", "Exit Thin", "thin", "Exit the Thin tool (Esc); the selection and the shape stay"),
+  f("prot-help", "Height protection help", "protection", PROTECTION_COPY),
   f("step-edit-shape", "Edit shape", "history", "Reopen the highlighted step as a live selection of its own tool and numbers: clears the selection first, changes no history, and applying it afterwards adds a new step"),
 ];

@@ -25,8 +25,8 @@ export function foldSyncer(el: { open: boolean }, read: (s: AppState) => boolean
 }
 
 /** A native details/summary panel section whose open state lives in `AppState.sectionsOpen`. `sync` pulls the state onto the element. */
-export function foldable(store: Store<AppState>, id: SectionId, title: Node, ...kids: (Node | null)[]) {
-  const el = h("details", { class: "panel", "data-section": id, open: true }, h("summary", { title: FOLD_TOOLTIP }, title), ...kids);
+export function foldable(store: Store<AppState>, id: SectionId, title: Node | Node[], ...kids: (Node | null)[]) {
+  const el = h("details", { class: "panel", "data-section": id, open: true }, h("summary", { title: FOLD_TOOLTIP }, ...(Array.isArray(title) ? title : [title])), ...kids);
   el.addEventListener("toggle", () => {
     if (el.open !== isSectionOpen(store.get().sectionsOpen, id)) store.update((s) => ({ ...s, sectionsOpen: setSectionOpen(s.sectionsOpen, id, el.open) }));
   });

@@ -24,7 +24,9 @@ import { control } from "./controls";
 import { SELECTED_COLOURS, type SelectedColourId, selectedPresets } from "../colour/selectcolour";
 import { cssColour } from "./legend";
 import { iconControl } from "./iconbutton";
-import { iconSvg } from "./icons";
+import { type IconName, iconSvg } from "./icons";
+import type { PopEntry } from "./popover";
+import { BOX_NOTE, CLUSTER_HELP, PLANE_HELP, SPARSE_HELP, THIN_HELP } from "./copy";
 import { commitNumber } from "./numfield";
 import { TOOLTIPS } from "./tooltips";
 import { h } from "./dom";
@@ -36,9 +38,7 @@ export const LIVE_NOTE = "First selection: edits are live.";
 export const LIVE_NOTE_TITLE = "First selection: edits are live. Choose Add, Subtract or Intersect to preview changes instead.";
 
 /** What the panels need from the rest of the app. */
-/** The Box tool hint under the Gizmo fields. */
-export const BOX_NOTE =
-  "Drag an arrow to resize that face (Alt: both sides), drag the box to move it, drag the small ring on an arrow to rotate about that axis. Shift is fine, Ctrl+drag orbits. Arrow keys nudge.";
+export { BOX_NOTE } from "./copy";
 
 export interface PanelActions {
   toolChanged: () => void;
@@ -295,6 +295,10 @@ export interface EditPanelSlots {
   toolRoot?: HTMLElement;
   /** The scrolling panel (the inspector); its `scrollTop` is set to 0 once per arming. */
   scroller?: { scrollTop: number };
+  /** The popover manager: the `?` helps register through it, so the one-open and Esc rules cover them (22-6). */
+  pops?: { add(e: PopEntry): void; close(): void };
+  /** The document-level popover container the help panels hang off (a folded `details` does not render its body). */
+  popRoot?: HTMLElement;
 }
 
 export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: PanelActions, slots: EditPanelSlots = {}): void {
@@ -339,8 +343,37 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     return h("label", { class: "f" }, label, el);
   };
   const button = (id: string, label: string, onclick: () => void) => control("button", { id, onclick }, label);
-  const section = (id: SectionId, title: string, visible: (s: AppState) => boolean, ...kids: (Node | null)[]) => {
-    const f = foldable(store, id, h("h2", { text: title }), ...kids);
+  /** The `?` help for one header: the anchor sits in the summary, the panel in the popover container, never inside the section. */
+  const helpButton = (sec: string, name: string, copy: string) => {
+    const anchor = control("button", { id: `${sec}-help`, class: "qm", type: "button" }, "?");
+    if (slots.popRoot && slots.pops) {
+      const panel = h("div", { class: "pop help-pop", id: `${sec}-help-pop`, role: "dialog", "aria-label": `${name} help`, tabindex: "-1", hidden: true }, h("p", { text: copy }));
+      slots.popRoot.append(panel);
+      slots.pops.add({ id: `help-${sec}`, anchor, panel });
+    }
+    return anchor;
+  };
+  const TOOL_HEAD: Record<string, { name: string; icon: IconName; help: string }> = {
+    box: { name: "Box", icon: "box", help: BOX_NOTE },
+    polygon: { name: "Polygon", icon: "poly", help: POLYGON_DEPTH_NOTE },
+    cluster: { name: "Cluster", icon: "cluster", help: CLUSTER_HELP },
+    sparse: { name: "Sparse points", icon: "sparse", help: SPARSE_HELP },
+    plane: { name: "Planes", icon: "plane", help: PLANE_HELP },
+    thin: { name: "Thin", icon: "thin", help: THIN_HELP },
+  };
+  /** The shared tool header (the section's summary): icon tile, name, `?`, the Esc hint and a close button that disarms. */
+  const toolHead = (id: string): Node[] => {
+    const t = TOOL_HEAD[id];
+    return [
+      h("span", { class: "ticon" }, iconSvg(t.icon)),
+      h("h2", { text: t.name }),
+      helpButton(id, t.name, t.help),
+      h("span", { class: "kbd", text: "Esc to exit" }),
+      iconControl(`${id}-exit`, "close", { class: "sm", onclick: () => a.setTool("none") }),
+    ];
+  };
+  const section = (id: SectionId, _title: string, visible: (s: AppState) => boolean, ...kids: (Node | null)[]) => {
+    const f = foldable(store, id, toolHead(id), ...kids);
     syncs.push((s) => {
       f.el.hidden = !visible(s);
       f.sync(s);
@@ -349,7 +382,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
   };
   /** A panel section the user can fold; its open state is `floorPanelOpen` (also drives the strong protected colour). */
   const collapsible = (title: string, visible: (s: AppState) => boolean, ...kids: (Node | null)[]) => {
-    const el = h("details", { class: "panel", open: true }, h("summary", { title: "Fold or unfold this section; while it is open the protected slab is drawn in a stronger colour" }, h("h2", { text: title })), ...kids);
+    const el = h("details", { class: "panel", open: true }, h("summary", { title: "Fold or unfold this section; while it is open the protected slab is drawn in a stronger colour" }, h("h2", { text: title }), helpButton("prot", title, PROTECTION_COPY)), ...kids);
     el.addEventListener("toggle", () => {
       if (el.open !== store.get().floorPanelOpen) store.update((s) => ({ ...s, floorPanelOpen: el.open }));
     });
@@ -483,7 +516,6 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
         return null;
       }),
     ),
-    h("p", { class: "note", text: BOX_NOTE }),
   );
 
   // ---- polygon
@@ -580,7 +612,6 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
       store.update((s) => ({ ...s, tools: { ...s.tools, polygon: { ...s.tools.polygon, mode: v as "inside" | "outside" } } }));
       a.toolChanged();
     }),
-    h("p", { class: "note", text: POLYGON_DEPTH_NOTE }),
   );
 
   // arming a tool opens its section if it was folded (through the store, like a click on its summary) and scrolls the panel to the
@@ -845,7 +876,6 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
   const protPanel = collapsible(
     "Height protection",
     (s) => s.session !== null,
-    h("p", { class: "note", text: PROTECTION_COPY }),
     h(
       "div",
       { class: "stack" },
@@ -894,8 +924,10 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     text((s) => effectiveText(s.candidate)),
   );
 
+  const idle = h("p", { class: "idle-tool", text: "Pick a tool on the canvas to start a selection." });
+  syncs.push((s) => (idle.hidden = !(s.session !== null && s.tool === "none")));
   root.append(errors);
-  toolRoot.append(boxPanel, polyPanel, clusterPanelEl, sparsePanel, planePanel, thinPanel);
+  toolRoot.append(idle, boxPanel, polyPanel, clusterPanelEl, sparsePanel, planePanel, thinPanel);
   root.append(filterPanel, protPanel);
   const syncAll = (s: AppState) => {
     for (const f of syncs) f(s);

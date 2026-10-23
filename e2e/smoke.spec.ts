@@ -7765,3 +7765,74 @@ for (const [w, h] of SIZES) {
     }
   });
 }
+
+const SECTION_OF: [string, string][] = [["tool-box", "box"], ["tool-polygon", "polygon"], ["tool-cluster", "cluster"], ["tool-sparse", "sparse"], ["tool-plane", "plane"], ["tool-thin", "thin"]];
+/** The element at the centre of a locator's box, as a tag name plus whether a button or input sits there. */
+const hitAtCentre = async (page: Pg, loc: ReturnType<Pg["locator"]>) => {
+  const b = (await loc.boundingBox())!;
+  return page.evaluate(([x, y]) => {
+    const e = document.elementFromPoint(x, y);
+    return { tag: e?.tagName ?? "none", control: !!e?.closest("button, input, select, a") };
+  }, [b.x + b.width / 2, b.y + b.height / 2]);
+};
+const clickCentre = async (page: Pg, loc: ReturnType<Pg["locator"]>) => {
+  const b = (await loc.boundingBox())!;
+  await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
+};
+
+for (const [w, h] of SIZES) {
+  test(`E2E-265 22-6 at ${w}x${h} the ?, close and switch inside a section header act on themselves and never fold it, the header centre folds and is no button, and a folded section still shows its help`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const t = hideHelpers(page);
+    await openRoom(page, t.exact);
+    for (const [tool, sec] of SECTION_OF) {
+      await t.ctl(tool).click();
+      const det = page.locator(`details[data-section="${sec}"]`);
+      const sum = det.locator("> summary");
+      await expect(det).toBeVisible();
+      expect((await hitAtCentre(page, sum)).control, `${sec}: the header centre is no button`).toBe(false);
+      await t.ctl(`${sec}-help`).click();
+      await expect(det).toHaveJSProperty("open", true);
+      await expect(page.locator(`#${sec}-help-pop`)).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.locator(`#${sec}-help-pop`)).toBeHidden();
+      await expect(t.ctl(tool)).toHaveClass(/active/);
+      await clickCentre(page, sum);
+      await expect(det).toHaveJSProperty("open", false);
+      await t.ctl(`${sec}-help`).click();
+      await expect(page.locator(`#${sec}-help-pop`)).toBeVisible();
+      expect(await page.locator(`#${sec}-help-pop`).boundingBox(), `${sec}: help has a box while folded`).not.toBeNull();
+      await page.keyboard.press("Escape");
+      await expect(page.locator(`#${sec}-help-pop`)).toBeHidden();
+      await clickCentre(page, sum);
+      await expect(det).toHaveJSProperty("open", true);
+      await t.ctl(`${sec}-exit`).click();
+      await expect(t.ctl(tool)).not.toHaveClass(/active/);
+    }
+    expect((await hitAtCentre(page, protSummary(page))).control, "protection: the header centre is no button").toBe(false);
+  });
+}
+
+test("E2E-267 22-6 the inspector shows one line while idle and only the armed tool's section otherwise, Height protection below it, and the ? help closes before the tool does", async ({ page }) => {
+  const t = hideHelpers(page);
+  await openRoom(page, t.exact);
+  await expect(page.locator("#toolpanels .idle-tool")).toBeVisible();
+  await expect(page.locator("#toolpanels details[data-section]:visible")).toHaveCount(0);
+  await t.ctl("tool-box").click();
+  await expect(page.locator("#toolpanels .idle-tool")).toBeHidden();
+  await expect(page.locator("#toolpanels details[data-section]:visible")).toHaveCount(1);
+  await expect(page.locator('#toolpanels details[data-section="box"]')).toBeVisible();
+  const order = await page.evaluate(() => {
+    const box = document.querySelector('details[data-section="box"]')!;
+    const prot = [...document.querySelectorAll("details.panel")].find((d) => d.querySelector("h2")?.textContent === "Height protection")!;
+    return !!(box.compareDocumentPosition(prot) & Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+  expect(order, "Height protection follows the tool section").toBe(true);
+  await t.ctl("box-help").click();
+  await expect(page.locator("#box-help-pop")).toContainText(/small ring on an arrow/);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#box-help-pop")).toBeHidden();
+  await expect(t.ctl("tool-box")).toHaveClass(/active/);
+  await page.keyboard.press("Escape");
+  await expect(t.ctl("tool-box")).not.toHaveClass(/active/);
+});
