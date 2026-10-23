@@ -24,7 +24,7 @@ export function buildTriad(root: HTMLElement, store: Store<AppState>): void {
   const labels = new Map<string, SVGTextElement>();
   for (const axis of ["x", "y", "z"] as const) {
     const l = document.createElementNS(SVG_NS, "line");
-        l.setAttribute("stroke-width", "2");
+    l.setAttribute("stroke-width", "2");
     l.setAttribute("stroke-linecap", "round");
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("font-size", "10");
