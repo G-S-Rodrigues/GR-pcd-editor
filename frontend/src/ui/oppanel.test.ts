@@ -130,7 +130,7 @@ test("UI-639 Select displayed and Invert are aria-disabled with the reason while
   expect(selectDisplayed).toHaveBeenCalledTimes(1);
   expect(invert).toHaveBeenCalledTimes(1);
   expect(sd.getAttribute("aria-disabled")).toBe("false");
-  expect(sd.title).toBe(TOOLTIPS["sel-select-displayed"]);
+  expect(sd.title).toBe(`Select displayed: ${TOOLTIPS["sel-select-displayed"]}`);
   expect(ctl("sel-clear").hasAttribute("aria-disabled")).toBe(false); // Clear selection stays usable
 });
 

@@ -102,3 +102,58 @@ test("UI-1204 the Scope radios: a click sets scope and calls scopeChanged once, 
   expect([d.getAttribute("aria-checked"), a.getAttribute("aria-checked")]).toEqual(["true", "false"]);
   expect(scopeChanged).not.toHaveBeenCalled();
 });
+
+test("UI-1205 the actions are a 2x2 .actions grid (Select shown, Invert, Clear, Hide) with icons, short texts and the full field label in the title; the guarded state is unchanged", () => {
+  const ids = ["sel-select-displayed", "sel-invert", "sel-clear", "sel-hide"];
+  const grid = dom.root.all().find((e) => e.className === "actions") as FakeEl;
+  expect(grid.children.map((c) => c.getAttribute("data-control"))).toEqual(ids);
+  expect(grid.children.map((c) => c.text())).toEqual(["Select shown", "Invert", "Clear", "Hide selected"]);
+  for (const b of grid.children) expect(b.children[0].tag).toBe("svg");
+  expect(ctl("sel-select-displayed").title.startsWith("Select displayed")).toBe(true);
+  expect(ctl("sel-clear").title.startsWith("Clear selection")).toBe(true);
+  expect(ctl("sel-invert").title.length).toBeGreaterThan(5);
+  // tool armed: the guarded ones are aria-disabled and say why
+  expect(ctl("sel-select-displayed").getAttribute("aria-disabled")).toBe("true");
+  expect(ctl("sel-select-displayed").title).toMatch(/Disarm the tool first/);
+  store.set({ tool: "none" });
+  expect(ctl("sel-select-displayed").getAttribute("aria-disabled")).toBe("false");
+  expect(ctl("sel-clear").hasAttribute("aria-disabled")).toBe(false);
+});
+
+test("UI-1206 the draft callout is hidden iff there is no draft or preview, and holds draft-note, then a row with Discard and Commit", () => {
+  const callout = byId("draft-callout");
+  expect(callout.hidden).toBe(true);
+  expect(callout.children[0]).toBe(byId("draft-note"));
+  expect(callout.children[1].children.map((c) => c.getAttribute("data-control"))).toEqual(["sel-discard", "sel-commit"]);
+  const preview = { id: "p1", op: "add" as const, selected_after: 120, base_selected: 100, added: 20, removed: 0 };
+  store.set({ draft: true });
+  expect(callout.hidden).toBe(false);
+  expect(ctl("sel-commit").text()).toMatch(/^Commit: add tool shape/);
+  store.set({ preview, candidate: candidateFixture() });
+  expect(callout.hidden).toBe(false);
+  expect(ctl("sel-commit").text()).toMatch(/^Commit: add /);
+  expect(ctl("sel-commit").disabled).toBe(false);
+  expect(byId("draft-note").text()).toContain("Preview, not applied");
+  store.set({ draft: false, preview: null });
+  expect(callout.hidden).toBe(true);
+  expect(ctl("sel-discard").disabled).toBe(true);
+});
+
+test("UI-1207 the kept callout is hidden iff its warning and both buttons are hidden; scope-note, delete-blocked and cluster-limit are hidden when empty", () => {
+  const callout = byId("kept-callout");
+  expect(callout.children.map((c) => c.getAttribute("id") ?? c.getAttribute("data-control"))).toEqual(["kept-warning", "sel-delete-kept", "sel-show-kept"]);
+  const kids = () => callout.children.map((c) => c.hidden);
+  expect(kids()).toEqual([true, true, true]);
+  expect(callout.hidden).toBe(true);
+  store.set({ candidate: candidateFixture({ protected_retained: 7 }) });
+  expect(callout.children[0].hidden).toBe(false);
+  expect(callout.children[1].hidden).toBe(false);
+  expect(callout.hidden).toBe(false);
+  expect(ctl("sel-show-kept").hidden).toBe(false);
+  store.set({ candidate: candidateFixture({ protected_retained: 0 }) });
+  expect(callout.hidden).toBe(true);
+  for (const id of ["scope-note", "delete-blocked", "cluster-limit"]) {
+    const n = byId(id);
+    expect(n.hidden, id).toBe(n.text() === "");
+  }
+});

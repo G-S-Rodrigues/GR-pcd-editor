@@ -466,6 +466,13 @@
       .f { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: 2px 0; color: var(--label-2); min-width: 0; font: var(--t-callout); }
       .f input[type=text] { width: 6em; max-width: 100%; min-width: 0; }
       .note { font: var(--t-callout); }
+      .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin: 6px 0; }
+      .actions button { min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+      .actions button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .callout { background: var(--fill-1); border-radius: 8px; padding: 6px 8px; margin: 6px 0; display: flex; flex-direction: column; gap: 4px; }
+      .callout.accent { background: var(--accent-soft); }
+      .callout[hidden] { display: none; }
+      .callout .note { margin: 0; }
       .verts { max-height: 160px; overflow: auto; }
       .vertrow { display: grid; grid-template-columns: 1.5em 1fr 1fr; gap: 4px; margin: 2px 0; }
       .vertrow input { width: 100%; }

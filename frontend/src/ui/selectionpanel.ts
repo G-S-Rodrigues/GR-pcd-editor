@@ -12,7 +12,11 @@ import { SELECTED_COLOURS, type SelectedColourId, selectedPresets } from "../col
 import { cssColour } from "./legend";
 import { iconControl } from "./iconbutton";
 import { iconSvg } from "./icons";
+import { FIELD_SPECS } from "./fields";
 import { TOOLTIPS } from "./tooltips";
+
+/** The tooltip led by the field label: the visible text of the action buttons is shorter than the label. */
+const tip = (id: string): string => `${FIELD_SPECS.find((f) => f.id === id)?.label ?? id}: ${TOOLTIPS[id] ?? ""}`;
 import { h } from "./dom";
 import { foldable } from "./fold";
 import type { PanelActions } from "./panels";
@@ -140,7 +144,8 @@ export function buildSelectionPanel(root: HTMLElement, store: Store<AppState>, a
     return why !== null;
   };
   // Hide selected: a text button (no glyph); inactive buttons stay clickable so the click explains why (like Select displayed)
-  const hideBtn = control("button", { id: "sel-hide", "aria-pressed": "false", onclick: () => a.toggleHide() }, "Hide selected");
+  const hideText = h("span", { text: "Hide selected" });
+  const hideBtn = control("button", { id: "sel-hide", "aria-pressed": "false", onclick: () => a.toggleHide() }, iconSvg("eyeoff", 16), hideText);
   const commit = control("button", { id: "sel-commit", onclick: a.commitDraft }, "Commit draft");
   const discard = control("button", { id: "sel-discard", onclick: a.discardDraft }, "Discard draft");
   const note = h("p", { id: "scope-note", class: "note" });
@@ -157,6 +162,8 @@ export function buildSelectionPanel(root: HTMLElement, store: Store<AppState>, a
     if (m) addNotice(store, "error", "delete_kept_failed", m);
   };
   const keptToggle = control("button", { id: "sel-show-kept", onclick: () => store.update((s) => ({ ...s, showKept: !s.showKept })) }, "Show kept points");
+  const draftCallout = h("div", { id: "draft-callout", class: "callout accent", hidden: true }, draftNote, h("div", { class: "stack" }, discard, commit));
+  const keptCallout = h("div", { id: "kept-callout", class: "callout", hidden: true }, keptWarn, keptDelete, keptToggle);
   const fold = foldable(
     store,
     "selection",
@@ -166,21 +173,19 @@ export function buildSelectionPanel(root: HTMLElement, store: Store<AppState>, a
     liveNote,
     prow("Scope", scope),
     prow("Highlight", swatchGroup),
-    h("div", { class: "stack" }, commit, discard),
     h(
       "div",
-      { class: "stack" },
-      guarded(control("button", { id: "sel-select-displayed", onclick: () => refuse() || a.selectDisplayed() }, "Select displayed")),
-      guarded(control("button", { id: "sel-invert", onclick: () => refuse() || a.invert() }, "Invert")),
+      { class: "actions" },
+      guarded(control("button", { id: "sel-select-displayed", onclick: () => refuse() || a.selectDisplayed() }, iconSvg("selectall", 16), h("span", { text: "Select shown" }))),
+      guarded(control("button", { id: "sel-invert", onclick: () => refuse() || a.invert() }, iconSvg("invert", 16), h("span", { text: "Invert" }))),
+      control("button", { id: "sel-clear", tooltip: tip("sel-clear"), onclick: a.clearSelection }, iconSvg("clear", 16), h("span", { text: "Clear" })),
+      hideBtn,
     ),
-    h("div", { class: "stack" }, control("button", { id: "sel-clear", onclick: a.clearSelection }, "Clear selection"), hideBtn),
     deleteBlocked,
     note,
     clusterLimit,
-    draftNote,
-    keptWarn,
-    keptDelete,
-    keptToggle,
+    draftCallout,
+    keptCallout,
   );
   root.append(fold.el);
   const sync: Sync = (s) => {
@@ -217,14 +222,14 @@ export function buildSelectionPanel(root: HTMLElement, store: Store<AppState>, a
       const id = b.getAttribute("data-control") ?? "";
       b.setAttribute("aria-disabled", String(why !== null));
       b.classList.toggle("inactive", why !== null);
-      b.title = why ? `${TOOLTIPS[id]} (${why})` : (TOOLTIPS[id] ?? "");
+      b.title = why ? `${tip(id)} (${why})` : tip(id);
     }
     const hs = hideState(s);
-    hideBtn.textContent = hs.label;
+    hideText.textContent = hs.label;
     hideBtn.setAttribute("aria-pressed", String(hs.pressed));
     hideBtn.setAttribute("aria-disabled", String(hs.reason !== null));
     hideBtn.classList.toggle("inactive", hs.reason !== null);
-    hideBtn.title = hs.reason ? `${TOOLTIPS["sel-hide"]} (${hs.reason})` : TOOLTIPS["sel-hide"];
+    hideBtn.title = hs.reason ? `${tip("sel-hide")} (${hs.reason})` : tip("sel-hide");
     commit.disabled = !commitEnabled(s);
     commit.textContent = commitLabel(s);
     discard.disabled = !discardEnabled(s);
@@ -232,7 +237,9 @@ export function buildSelectionPanel(root: HTMLElement, store: Store<AppState>, a
     draftNote.hidden = dn === null;
     draftNote.textContent = dn?.text ?? "";
     draftNote.title = dn?.title ?? "";
+    draftCallout.hidden = !discardEnabled(s);
     const n = scopeNotice(s);
+    note.hidden = n === null;
     note.textContent = n ?? "";
     const db = deleteBlockedNote(s);
     deleteBlocked.hidden = db === null;
@@ -247,6 +254,7 @@ export function buildSelectionPanel(root: HTMLElement, store: Store<AppState>, a
     keptDelete.textContent = hl.deleteKeptLabel ?? "";
     keptToggle.hidden = hl.keptCount === 0;
     keptToggle.classList.toggle("active", s.showKept);
+    keptCallout.hidden = keptWarn.hidden && keptDelete.hidden && keptToggle.hidden;
   };
   store.subscribe((s) => {
     fold.sync(s);
