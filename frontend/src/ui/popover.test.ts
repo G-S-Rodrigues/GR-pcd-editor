@@ -116,3 +116,23 @@ test("UI-1132 bindPopovers mirrors the state on the anchor and panel, focuses th
   s.pops.closeIf("b");
   expect(s.pops.isOpen()).toBe(false);
 });
+
+test("UI-1146 replace() places the open popover again after its content changed size, and does nothing when none is open", () => {
+  const a = { anchor: new FakeEl(), panel: new FakeEl() };
+  a.panel.setAttribute("id", "pa");
+  let h = 200;
+  const pops = bindPopovers([{ id: "a", anchor: a.anchor as unknown as HTMLElement, panel: a.panel as unknown as HTMLElement }], {
+    listenPointerDown: () => undefined,
+    listenKey: () => undefined,
+    listenResize: () => undefined,
+    viewport: () => VIEW,
+    measure: () => ({ anchor: { left: 600, top: 480, width: 40, height: 30 }, size: { w: 300, h } }),
+  });
+  pops.replace();
+  expect(a.panel.style.top).toBeUndefined();
+  pops.open("a");
+  expect(a.panel.style.top).toBe("272px");
+  h = 300; // flipped above the anchor: the panel grows upward, its bottom stays put
+  pops.replace();
+  expect(a.panel.style.top).toBe("172px");
+});

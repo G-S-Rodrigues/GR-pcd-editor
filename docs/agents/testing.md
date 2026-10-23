@@ -636,7 +636,8 @@ Since 22-5 the fold ids are `box, polygon, cluster, sparse, plane, thin, layers`
   `/out/part22-5-<w>x<h>-{dark,light}-{display,details,keyboard,history,export}.png`; keep with `SMOKE_SHOTS_DIR`, never commit).
   The full smoke run with `--workers=1` is 221 tests (210 + 11).
 - 22-5 fix round: `UI-1144` (a flipped popover is floored at 60 px), `UI-1145` (`#history-pop` max-height and scroll), `E2E-253` (60 History rows
-  stay between the top bar and the footer; rows are appended in the DOM, then a resize re-places the popover). Smoke is 222.
+  stay between the top bar and the footer; rows are appended in the DOM, then a resize re-places the popover). `UI-1146` (`replace()` re-places an open popover when its content changes size; main.ts calls it on a store change while History is
+  open). E2E-215 sets its own corner view: the camera persists across pages, so an earlier Top view made the arrow tip equal its base. Smoke is 222.
 - Changed (setup, selector, text or geometry only): every `Original` and `Active` reader goes through the shared `statOf` helper
   (they live in Cloud details); filter and selection tests open a popover with `openPop` and close it before the next step. The
   `modebar` argument left `buildLegend`. See each commit message for the per-test list.

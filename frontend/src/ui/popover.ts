@@ -111,6 +111,8 @@ export function bindPopovers(entries: PopEntry[], deps: PopDeps) {
     open: (id: string) => sync(id),
     toggle: (id: string) => apply({ type: "toggle", id }),
     close: () => apply({ type: "close" }),
+    /** Places the open popover again (its content changed size); nothing when none is open. */
+    replace: () => place(),
     /** Closes the named popover only when it is the open one. */
     closeIf: (id: string) => {
       if (open === id) apply({ type: "close" });

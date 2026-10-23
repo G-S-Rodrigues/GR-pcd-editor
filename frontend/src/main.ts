@@ -402,6 +402,9 @@ buildTimeline($("timeline"), store, {
 });
 $("timeline").append(historyOpen);
 buildHistoryPopover($("history-pop"), store);
+store.subscribe(() => {
+  if (pops.openId() === "history") pops.replace(); // a step added or undone while it is open changes its height
+});
 buildViewCube($("viewcube"), store);
 buildTriad($("triad"), store);
 const filterBoxes = buildFilterBoxes($("fbox-layer"), canvas, store, {

@@ -6598,12 +6598,14 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
 test("E2E-215 22-3 with the real mouse the band's upper z arrow tip widens max only, and a tilt ring (X facing the camera) turns rx; #prot-tilt-x shows state; Protected equals fixture truth", async ({ page }) => {
   const { exact, ctl, setNum } = helpers(page);
   await openTilted(page, exact);
+  // the camera outlives the page (a Top view an earlier test left is restored), so the view is set here, not assumed
+  await cornerView(page);
   const rows = tiltedRows();
   await ctl("prot-enabled").check();
   await setNum("prot-max", 0.5);
   await setNum("prot-min", -0.5);
   await appIdle(page);
-  // the default corner view: grab the upper arrow at its tip and pull it 25 px further out
+  // the corner view set above: grab the upper arrow at its tip and pull it 25 px further out
   const upper = (await page.evaluate(() => (window as unknown as { __editor: TiltHook }).__editor.protectionArrows())).find((r) => r.key === "global-max")!;
   const dx = upper.tip!.x - upper.base!.x;
   const dy = upper.tip!.y - upper.base!.y;
