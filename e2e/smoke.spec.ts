@@ -2932,8 +2932,8 @@ async function stageCorner(page: import("@playwright/test").Page): Promise<{ x: 
 }
 
 /** Polls until the 3D clear colour at a stage corner is the theme's --canvas (the renderer follows the theme on a later frame, so no sleep). */
-async function expectStageCorner(page: import("@playwright/test").Page, corner: { x: number; y: number }, want: "dark" | "light"): Promise<void> {
-  await expect.poll(() => brightestPixel(page, corner, 1).then((p) => near([p[0], p[1], p[2], 1], want === "light" ? [233, 235, 239] : [12, 13, 16])), { timeout: 5000, message: `stage corner under ${want}` }).toBe(true);
+async function expectStageCorner(page: import("@playwright/test").Page, corner: { x: number; y: number }, want: "dark" | "light", timeout = 5000): Promise<void> {
+  await expect.poll(() => brightestPixel(page, corner, 1).then((p) => near([p[0], p[1], p[2], 1], want === "light" ? [233, 235, 239] : [12, 13, 16])), { timeout, message: `stage corner under ${want}` }).toBe(true);
 }
 
 /** Every pixel of a (2r+1) square of the page around a screen point (a screenshot decoded in a blank tab, as brightestPixel does). */
@@ -7141,9 +7141,9 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
       await expect.poll(() => hook(page, (e) => e.state().renderTheme), { message: `${scheme} render theme` }).toBe(scheme);
       await page.mouse.move(5, 5);
       await appIdle(page);
-      // the same poll as expectStageCorner with a longer bound: each read is a full-page screenshot, slow at 1920x1080 under SwiftShader with the Box up
+      // a longer bound than the default: each read forces a full-frame capture, slow at 1920x1080 under SwiftShader with the Box up
       const corner = await stageCorner(page);
-      await expect.poll(() => brightestPixel(page, corner, 1).then((p) => near([p[0], p[1], p[2], 1], scheme === "light" ? [233, 235, 239] : [12, 13, 16])), { timeout: 20000, message: `stage corner under ${scheme}` }).toBe(true);
+      await expectStageCorner(page, corner, scheme, 20000);
       await page.screenshot({ path: `/out/part22-4b-${w}x${h}-${name}.png` });
       expect(await page.evaluate(() => document.scrollingElement!.scrollHeight <= window.innerHeight), `${scheme} ${name}: the page scrolls`).toBe(true);
     };

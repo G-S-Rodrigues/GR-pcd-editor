@@ -598,8 +598,8 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
   Smoke `E2E-231` (a lone base point draws 135 in light, the dark 216 in dark, and light again, no reload), `E2E-232` (light Box
   armed: arrows, a ring, a box edge, triad and legend chip in the light colours; `data-theme="dark"` gives back the exact dark values)
   and `E2E-233` (owner shots `/out/part22-4b-<w>x<h>-{dark,dark-armed,light,light-armed}.png`, keep with `SMOKE_SHOTS_DIR`, never
-  commit; a screenshot test, green before and after by design; its stage-corner poll is bounded at 20 s because each read is a
-  full-page screenshot). The changed `UI-1084` (the light-block clause flips: both light blocks declare the `--pt-*` and `--ax-*` tokens).
+  commit; a screenshot test, green before and after by design; its stage-corner poll is bounded at 20 s because each read forces a
+  full-frame capture, through the shared `expectStageCorner` timeout parameter). The changed `UI-1084` (the light-block clause flips: both light blocks declare the `--pt-*` and `--ax-*` tokens).
   The full smoke run with `--workers=1` is 209 tests (204 + 5).
 - R22-14: in the light theme the arrows are held to 3:1 (WCAG 1.4.11 graphics), the triad letters to 4.5:1 as text
   (`LIGHT_TRIAD_LETTER`). The dark arrows stay at 4.5:1 (`UI-906`, `UI-1085`, unedited).
