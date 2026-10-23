@@ -14,8 +14,18 @@ test("UI-1130 placePopover centres under the anchor at bottom + 8, flips above n
   expect(placePopover({ left: 1240, top: 10, width: 40, height: 30 }, size, VIEW)).toEqual({ x: 972, y: 48 });
   // flip: bottom + 8 + h = 718 > 720 - 34
   expect(placePopover({ left: 600, top: 480, width: 40, height: 30 }, size, VIEW)).toEqual({ x: 470, y: 272 });
-  // too tall for either side: clamped to the top margin
-  expect(placePopover({ left: 600, top: 10, width: 40, height: 30 }, { w: 300, h: 900 }, VIEW)).toEqual({ x: 470, y: 8 });
+  // too tall for either side: it flips and is floored at the top bar plus 8 (UI-1144)
+  expect(placePopover({ left: 600, top: 10, width: 40, height: 30 }, { w: 300, h: 900 }, VIEW)).toEqual({ x: 470, y: 60 });
+});
+
+test("UI-1144 a flipped popover is floored at the top bar plus 8 (60 px) and never runs under the bar", () => {
+  const size = { w: 300, h: 200 };
+  // flipped and too tall for the room above: the top is 60, not 8
+  expect(placePopover({ left: 600, top: 480, width: 40, height: 30 }, { w: 300, h: 500 }, VIEW)).toEqual({ x: 470, y: 60 });
+  // flipped with room above keeps its place
+  expect(placePopover({ left: 600, top: 480, width: 40, height: 30 }, size, VIEW)).toEqual({ x: 470, y: 272 });
+  // a popover that opens below the anchor is unchanged by the floor
+  expect(placePopover({ left: 600, top: 10, width: 40, height: 30 }, size, VIEW)).toEqual({ x: 470, y: 48 });
 });
 
 test("UI-1131 popoverReducer: toggle opens, closes and switches; an outside pointerdown closes; Esc closes unless typed in a text field", () => {

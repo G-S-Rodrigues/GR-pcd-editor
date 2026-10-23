@@ -7,12 +7,18 @@ export interface Box {
   height: number;
 }
 
+const TOP_BAR = 52;
+
 /** Where a popover goes: centred under its anchor at bottom + 8, above it when it would cross the footer band, inside an 8 px margin. */
 export function placePopover(anchor: Box, size: { w: number; h: number }, view: { w: number; h: number }): { x: number; y: number } {
   const clamp = (v: number, span: number, room: number) => Math.max(8, Math.min(v, room - span - 8));
   let y = anchor.top + anchor.height + 8;
-  if (y + size.h > view.h - 34) y = anchor.top - 8 - size.h;
-  return { x: clamp(anchor.left + anchor.width / 2 - size.w / 2, size.w, view.w), y: clamp(y, size.h, view.h) };
+  let top = 8;
+  if (y + size.h > view.h - 34) {
+    y = anchor.top - 8 - size.h;
+    top = TOP_BAR + 8; // a flipped popover stays under the 52 px top bar (--tb-h) plus 8
+  }
+  return { x: clamp(anchor.left + anchor.width / 2 - size.w / 2, size.w, view.w), y: Math.max(top, clamp(y, size.h, view.h)) };
 }
 
 export type PopEvent =

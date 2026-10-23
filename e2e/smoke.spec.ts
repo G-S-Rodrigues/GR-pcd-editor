@@ -1755,7 +1755,7 @@ test("E2E-46 10-8 each inspector section folds by click and keyboard, the fold s
   await page.reload();
   await exact("Original", String(ROOM_TOTAL));
   await expect.poll(async () => Object.keys(await SECTIONS_OPEN(page)).sort()).toEqual(["box", "layers"]);
-  await expect(probes.layers()).toBeHidden();
+  for (const id of Object.keys(probes)) await expect(probes[id]()).toBeHidden();
   await ctl("tool-box").click();
   // 17: arming a tool opens its folded section (it is the first section of the panel); the other folds are untouched
   await expect(ctl("box-size-x")).toBeVisible();
@@ -6967,9 +6967,9 @@ const textBackdrops = (page: Pg, scope: string, max = 40) =>
     },
     [scope, max] as const,
   );
-/** The worst WCAG ratio of one element's text over its backdrop: the layers composited over each possible stage colour (both ends of the stage) when the element is inside #stage. */
 /** Wait until no CSS transition is running: a colour read mid-transition after a theme switch is neither theme's colour. */
 const transitionsSettled = (page: Pg) => expect.poll(() => page.evaluate(() => document.getAnimations().length), { message: "CSS transitions finished" }).toBe(0);
+/** The worst WCAG ratio of one element's text over its backdrop: the layers composited over each possible stage colour (both ends of the stage) when the element is inside #stage. */
 const worstContrast = (t: Awaited<ReturnType<typeof textBackdrops>>[number]): number => {
   const solidBase = t.layers.length && /^rgb\(/.test(t.layers[t.layers.length - 1]) ? [cssRgba(t.layers[t.layers.length - 1])] : [];
   const bases = t.stage || !solidBase.length ? [cssRgba(t.canvas), cssRgba(t.vignette)] : solidBase;
@@ -7365,6 +7365,40 @@ test("E2E-249 22-5 the History popover lists the three deletions with their coun
   await page.locator('[data-control="history-open"]').click();
   await expect(rows.nth(2)).toHaveClass(/undone/);
   await expect(rows.nth(0)).not.toHaveClass(/undone/);
+});
+
+test("E2E-253 22-5 fix a History popover with 60 steps stays between the top bar and the footer, scrolls inside, and its last row can be reached", async ({ page }) => {
+  const t = tl(page);
+  await t.threeSteps();
+  const hist = page.locator("#history-pop");
+  await page.locator('[data-control="history-open"]').click();
+  await expect(hist).toBeVisible();
+  const rows = hist.locator("#history-list li");
+  await expect(rows).toHaveCount(3);
+  // grow the list in the DOM (the layout, not the model, is under test), then let the popover place itself again as a resize does
+  await page.evaluate(() => {
+    const list = document.getElementById("history-list")!;
+    for (let i = 0; i < 57; i++) {
+      const li = document.createElement("li");
+      li.textContent = `Delete step ${i + 4} (${i + 1})`;
+      list.append(li);
+    }
+    window.dispatchEvent(new Event("resize"));
+  });
+  await expect(rows).toHaveCount(60);
+  const vp = page.viewportSize()!;
+  const bar = (await page.locator("#toolbar").boundingBox())!;
+  const foot = (await page.locator("#footer").boundingBox())!;
+  const box = (await hist.boundingBox())!;
+  expect(box.y, "below the top bar").toBeGreaterThanOrEqual(bar.y + bar.height);
+  expect(box.y + box.height, "above the footer").toBeLessThanOrEqual(foot.y + 0.5);
+  expect(box.y + box.height).toBeLessThanOrEqual(vp.height);
+  expect(await hist.evaluate((e) => e.scrollHeight > e.clientHeight), "scrolls inside").toBe(true);
+  await rows.last().scrollIntoViewIfNeeded();
+  const last = (await rows.last().boundingBox())!;
+  const now = (await hist.boundingBox())!;
+  expect(last.y + last.height, "last row inside the panel").toBeLessThanOrEqual(now.y + now.height + 0.5);
+  expect(last.y).toBeGreaterThanOrEqual(now.y - 0.5);
 });
 
 test("E2E-248 22-5 Cloud details shows the file, the counts and the view, and Remove invalid lives in it", async ({ page }) => {

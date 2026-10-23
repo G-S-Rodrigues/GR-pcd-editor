@@ -45,7 +45,7 @@ describe("design tokens (part 22-4)", () => {
       label: "#f5f5f7", "label-2": "rgba(235,235,245,.72)", "label-3": "rgba(235,235,245,.55)",
       accent: "#0a84ff", "accent-soft": "rgba(10,132,255,.20)", "accent-text": "#409cff", "on-accent": "#0c0d10", "on-destructive": "#0c0d10", focus: "#0a84ff",
       destructive: "#ff453a", "destructive-soft": "rgba(255,69,58,.16)", "destructive-text": "#ff453a",
-      success: "#30d158", warning: "#ffd60a", "protected-ui": "#00d1ff",
+      success: "#30d158", warning: "#ffd60a", "protected-ui": "#00d1ff", "protected-text": "#00d1ff",
     },
     light: {
       canvas: "#e9ebef", "canvas-vignette": "#f6f7f9",
@@ -56,7 +56,7 @@ describe("design tokens (part 22-4)", () => {
       label: "#1d1d1f", "label-2": "rgba(60,60,67,.84)", "label-3": "rgba(60,60,67,.72)",
       accent: "#007aff", "accent-soft": "rgba(0,122,255,.14)", "accent-text": "#0066d6", "on-accent": "#0c0d10", "on-destructive": "#0c0d10", focus: "#007aff",
       destructive: "#ff3b30", "destructive-soft": "rgba(255,59,48,.12)", "destructive-text": "#d70015",
-      success: "#248a3d", warning: "#9a7300", "protected-ui": "#00789c",
+      success: "#248a3d", warning: "#9a7300", "protected-ui": "#00789c", "protected-text": "#006585",
     },
   };
   // Measured departures from mockup notes.md (plan E3): accent-text, on-accent, on-destructive, destructive-text, protected-ui are new;
@@ -77,7 +77,7 @@ describe("design tokens (part 22-4)", () => {
     for (const theme of THEMES) {
       for (const over of BACKDROPS) {
         for (const s of SURFACES) {
-          for (const t of ["label", "label-2", "label-3", "accent-text", "destructive-text", "protected-ui"]) {
+          for (const t of ["label", "label-2", "label-3", "accent-text", "destructive-text", "protected-ui", "protected-text"]) {
             expect(contrastRatio(onSurface(theme, t, s, over, blocks), surface(theme, s, over, blocks)), `${theme} ${t} on ${s} over ${over}`).toBeGreaterThanOrEqual(4.5);
           }
         }
@@ -299,6 +299,13 @@ describe("stylesheet rules (part 22-4)", () => {
     const supports = css.match(/@supports not \(\(backdrop-filter: blur\(1px\)\) or \(-webkit-backdrop-filter: blur\(1px\)\)\)\s*\{([\s\S]*?\})\s*\}/);
     const fb = rules(supports![1] + "}").find((r) => r.selector.split(",").map((x) => x.trim()).includes(".pop"));
     expect(fb?.body).toContain("background: var(--glass-strong-solid)");
+  });
+
+  test("UI-1145 the History popover is bounded to the room between the top bar and the footer and scrolls inside", () => {
+    const all = rules(styleText());
+    const body = all.filter((r) => r.selector.split(",").map((x) => x.trim()).includes("#history-pop")).map((r) => r.body).join(";");
+    expect(body).toContain("max-height: calc(100vh - 100px)");
+    expect(body).toMatch(/overflow(-y)?:\s*auto/);
   });
 
   test("UI-1143 (sheet and bars) the export sheet is 440 wide under the top bar with the 14 px radius, its footer is right-aligned, the scrim is .35, and the bars declare their heights", () => {

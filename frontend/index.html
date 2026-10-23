@@ -407,7 +407,7 @@
       #statusbar .item { color: var(--label); }
       #modebar { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--label-2); font: var(--t-caption); }
       .link { appearance: none; background: none; border: 0; padding: 0; font: inherit; color: var(--accent-text); text-decoration: underline; cursor: pointer; }
-      #history-pop { width: 300px; }
+      #history-pop { width: 300px; max-height: calc(100vh - 100px); overflow-y: auto; }
       #history-open { position: absolute; right: 8px; bottom: 8px; pointer-events: auto; z-index: 4; }
       dialog { background: var(--glass-strong); color: var(--label); border: 1px solid var(--separator); border-radius: var(--r-pop); min-width: 420px; max-width: 640px; }
       dialog h2, dialog h3 { font: var(--t-sheet); margin: 0 0 10px; }
