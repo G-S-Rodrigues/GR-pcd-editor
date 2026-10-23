@@ -83,9 +83,10 @@ test("UI-1165 each tool section's summary is the shared header: icon tile, name,
 });
 
 test("UI-1166 the seven ? helps register as popovers whose panels hang off the popover container (not off a details), carry their copy, and are distinct", () => {
-  expect(added.map((e) => e.id)).toEqual(["help-box", "help-polygon", "help-cluster", "help-sparse", "help-plane", "help-thin", "help-prot"]);
+  const helps = added.filter((e) => e.id.startsWith("help-")); // 22-6: the Fit menu registers through the same add()
+  expect(helps.map((e) => e.id)).toEqual(["help-box", "help-polygon", "help-cluster", "help-sparse", "help-plane", "help-thin", "help-prot"]);
   const copies = [...SECTIONS.map((x) => x[2]), PROTECTION_COPY];
-  added.forEach((e, i) => {
+  helps.forEach((e, i) => {
     const panel = e.panel as unknown as FakeEl;
     expect(popRoot.children).toContain(panel);
     expect(toolRoot.all().includes(panel) || dom.root.all().includes(panel)).toBe(false);

@@ -332,8 +332,8 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     syncs.push(sync);
     return h("label", { class: "f" }, label, input);
   };
-  const check = (id: string, label: string, get: (s: AppState) => boolean, set: (v: boolean) => void) => {
-    const input = control("input", { id, type: "checkbox", onchange: () => set(input.checked) });
+  const check = (id: string, label: string, get: (s: AppState) => boolean, set: (v: boolean) => void, cls?: string) => {
+    const input = control("input", { id, type: "checkbox", class: cls, onchange: () => set(input.checked) });
     syncs.push((s) => (input.checked = get(s)));
     return h("label", { class: "f" }, input, label);
   };
@@ -444,77 +444,95 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
       (s) => !B.minMaxState(s.tools.box).enabled,
     );
   const AXN = ["x", "y", "z"] as const;
-  const rectButton = button("box-rect", "Rect", () => store.update((s) => ({ ...s, rect: !s.rect })));
+  const rectButton = iconControl("box-rect", "rect", { onclick: () => store.update((s) => ({ ...s, rect: !s.rect })) });
   syncs.push((s) => {
     const ok = rectAxis(s.camera) !== null;
     rectButton.disabled = !ok;
     rectButton.classList.toggle("active", s.rect && ok);
     rectButton.title = ok ? TOOLTIPS["box-rect"] : `${TOOLTIPS["box-rect"]} (disabled: ${RECT_REASON})`;
   });
+  /** A label-left, control-right row (`.prow`); `col` stacks the label above the controls (three-field rows). */
+  const prow = (label: string, ctl: Node, col = false) => h("div", { class: col ? "prow col" : "prow" }, h("span", { class: "plabel", text: label }), h("div", { class: "pctl" }, ctl));
+  /** A two-option radio group (the Inside/Outside mode); the keys of `options` are the stored values. */
+  const segmented = (id: string, label: string, options: [string, string][], get: (s: AppState) => string, set: (v: string) => void) => {
+    const btns = options.map(([v, t]) => h("button", { type: "button", role: "radio", "aria-checked": "false", text: t, onclick: () => set(v) }));
+    const el = control("div", { id, class: "seg", role: "radiogroup", "aria-label": label }, ...btns);
+    syncs.push((s) => options.forEach(([v], k) => btns[k].setAttribute("aria-checked", String(get(s) === v))));
+    return el;
+  };
+  /** A closed `details.disc` disclosure (not persisted). */
+  const disc = (title: string, ...kids: Node[]) => h("details", { class: "disc" }, h("summary", {}, iconSvg("chevr"), title), h("div", { class: "inner" }, ...kids));
+  const fitItem = (id: string, label: string, run: () => void) => button(id, label, () => {
+    run();
+    slots.pops?.close();
+  });
+  const fitMenu = h(
+    "div",
+    { class: "pop menu", id: "box-fit-menu", role: "menu", "aria-label": "Fit the box", tabindex: "-1", hidden: true },
+    fitItem("box-fit-cloud", "Fit cloud", () => {
+      const bb = store.get().session?.active_bounds;
+      if (bb) boxEdit((b) => ({ ok: true, box: B.fitToBounds(b, bb) }));
+    }),
+    fitItem("box-fit-displayed", "Fit displayed", () => {
+      const s = store.get();
+      const bb = s.session?.active_bounds;
+      if (bb) boxEdit((b) => ({ ok: true, box: B.fitToBounds(b, displayedBounds(bb, s.tools.filters)) }));
+    }),
+    fitItem("box-fit-view", "Fit to view", () => {
+      const s = store.get();
+      const axis = rectAxis(s.camera);
+      const depth = axis === null ? null : rectDepth(axis, s.session?.active_bounds ?? null);
+      const box = depth ? fitToView(s.tools.box, s.camera, a.viewSize(), depth) : null;
+      if (box) boxEdit(() => ({ ok: true, box }));
+      else showErr(RECT_REASON);
+    }),
+    fitItem("box-fit-selection", "Fit selection", () => {
+      const bb = store.get().candidate?.bounds;
+      if (bb) boxEdit((b) => ({ ok: true, box: B.fitToBounds(b, bb) }));
+      else showErr("Preview a selection first; there is no candidate to fit");
+    }),
+  );
+  const fitButton = control("button", { id: "box-fit", type: "button", "aria-haspopup": "menu" }, "Fit ▾");
+  slots.pops?.add({ id: "box-fit", anchor: fitButton, panel: fitMenu });
+  const resetRotation = iconControl("box-reset-rotation", "level", { onclick: () => boxEdit((b) => ({ ok: true, box: B.resetRotation(b) })) });
   const boxPanel = section(
     "box",
     "Box",
     (s) => s.tool === "box",
     text((s) => B.boxValidity(s.tools.box) ?? ""),
-    h("h3", { text: "Centre" }),
-    row(...AXN.map((ax, i) => vecField("center", i as 0 | 1 | 2, ax))),
-    h("h3", { text: "Size" }),
-    row(...AXN.map((ax, i) => vecField("size", i as 0 | 1 | 2, ax))),
-    h("h3", { text: "Rotation (deg)" }),
-    row(rpyField(0, "box-roll", "Roll"), rpyField(1, "box-pitch", "Pitch"), rpyField(2, "box-yaw", "Yaw")),
-    h("h3", { text: "Min / max" }),
-    row(...AXN.map((ax, i) => mmField("min", i as 0 | 1 | 2, ax))),
-    row(...AXN.map((ax, i) => mmField("max", i as 0 | 1 | 2, ax))),
-    text((s) => {
-      const m = B.minMaxState(s.tools.box);
-      const e = B.worldExtents(s.tools.box);
-      return `${m.enabled ? "" : `${m.reason}. `}World extents: ${e.min.map(fmt).join(", ")} to ${e.max.map(fmt).join(", ")}`;
-    }),
-    select("box-mode", "Mode", [["inside", "Inside"], ["outside", "Outside"]], (s) => s.tools.box.mode, (v) => {
+    prow("Select", h("div", { class: "pctl" }, segmented("box-mode", "Box mode", [["inside", "Inside"], ["outside", "Outside"]], (s) => s.tools.box.mode, (v) => {
       boxEdit((b) => ({ ok: true, box: B.setMode(b, v as B.BoxMode) }));
-    }),
-    h(
-      "div",
-      { class: "stack" },
-      rectButton,
-      button("box-reset-rotation", "Reset rotation", () => boxEdit((b) => ({ ok: true, box: B.resetRotation(b) }))),
-      button("box-reset", "Reset box", () => boxEdit((b) => ({ ok: true, box: { ...B.resetBox(store.get().camera.target), mode: b.mode } }))),
-      button("box-fit-cloud", "Fit cloud", () => {
-        const bb = store.get().session?.active_bounds;
-        if (bb) boxEdit((b) => ({ ok: true, box: B.fitToBounds(b, bb) }));
-      }),
-      button("box-fit-displayed", "Fit displayed", () => {
-        const s = store.get();
-        const bb = s.session?.active_bounds;
-        if (bb) boxEdit((b) => ({ ok: true, box: B.fitToBounds(b, displayedBounds(bb, s.tools.filters)) }));
-      }),
-      button("box-fit-view", "Fit to view", () => {
-        const s = store.get();
-        const axis = rectAxis(s.camera);
-        const depth = axis === null ? null : rectDepth(axis, s.session?.active_bounds ?? null);
-        const box = depth ? fitToView(s.tools.box, s.camera, a.viewSize(), depth) : null;
-        if (box) boxEdit(() => ({ ok: true, box }));
-        else showErr(RECT_REASON);
-      }),
-      button("box-fit-selection", "Fit selection", () => {
-        const bb = store.get().candidate?.bounds;
-        if (bb) boxEdit((b) => ({ ok: true, box: B.fitToBounds(b, bb) }));
-        else showErr("Preview a selection first; there is no candidate to fit");
+    }), rectButton)),
+    prow("Centre", row(...AXN.map((ax, i) => vecField("center", i as 0 | 1 | 2, ax))), true),
+    prow("Size", row(...AXN.map((ax, i) => vecField("size", i as 0 | 1 | 2, ax))), true),
+    prow("Rotation (deg)", h("div", { class: "rot" }, row(rpyField(0, "box-roll", "Roll"), rpyField(1, "box-pitch", "Pitch"), rpyField(2, "box-yaw", "Yaw")), resetRotation), true),
+    disc(
+      "Min / max",
+      row(...AXN.map((ax, i) => mmField("min", i as 0 | 1 | 2, ax))),
+      row(...AXN.map((ax, i) => mmField("max", i as 0 | 1 | 2, ax))),
+      text((s) => {
+        const m = B.minMaxState(s.tools.box);
+        const e = B.worldExtents(s.tools.box);
+        return `${m.enabled ? "" : `${m.reason}. `}World extents: ${e.min.map(fmt).join(", ")} to ${e.max.map(fmt).join(", ")}`;
       }),
     ),
-    h("h3", { text: "Handles" }),
-    check("gizmo-snap", "Snap", (s) => s.gizmo.snap, (v) => store.update((s) => ({ ...s, gizmo: { ...s.gizmo, snap: v } }))),
-    row(
-      field("gizmo-step", "Step", (s) => s.gizmo.step, (v) => {
-        if (!(v > 0)) return "Snap step must be greater than 0";
-        store.update((s) => ({ ...s, gizmo: { ...s.gizmo, step: v } }));
-        return null;
-      }),
-      field("gizmo-angle-step", "Angle", (s) => s.gizmo.angleStep, (v) => {
-        if (!(v > 0)) return "Angle step must be greater than 0";
-        store.update((s) => ({ ...s, gizmo: { ...s.gizmo, angleStep: v } }));
-        return null;
-      }),
+    h("div", { class: "btnrow" }, fitButton, button("box-reset", "Reset box", () => boxEdit((b) => ({ ok: true, box: { ...B.resetBox(store.get().camera.target), mode: b.mode } })))),
+    fitMenu,
+    disc(
+      "Handles",
+      check("gizmo-snap", "Snap", (s) => s.gizmo.snap, (v) => store.update((s) => ({ ...s, gizmo: { ...s.gizmo, snap: v } })), "switch"),
+      row(
+        field("gizmo-step", "Step", (s) => s.gizmo.step, (v) => {
+          if (!(v > 0)) return "Snap step must be greater than 0";
+          store.update((s) => ({ ...s, gizmo: { ...s.gizmo, step: v } }));
+          return null;
+        }),
+        field("gizmo-angle-step", "Angle", (s) => s.gizmo.angleStep, (v) => {
+          if (!(v > 0)) return "Angle step must be greater than 0";
+          store.update((s) => ({ ...s, gizmo: { ...s.gizmo, angleStep: v } }));
+          return null;
+        }),
+      ),
     ),
   );
 

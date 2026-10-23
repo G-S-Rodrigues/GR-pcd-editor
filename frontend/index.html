@@ -477,6 +477,23 @@
       .seg button[aria-pressed="true"] { background: var(--glass-strong); color: var(--label); box-shadow: 0 0 0 1px var(--separator); }
       .seg button:disabled { opacity: .35; cursor: default; }
       #display-pop { width: 280px; }
+      .seg button[aria-checked="true"] { background: var(--glass-strong); color: var(--label); box-shadow: 0 0 0 1px var(--separator); }
+      .prow.col { grid-template-columns: 1fr; gap: 2px; }
+      .prow .pctl > .seg { flex: 1; }
+      .prow .pctl > .seg button { flex: 1; }
+      .rot { display: flex; align-items: flex-end; gap: 4px; width: 100%; }
+      .rot .triple { flex: 1; }
+      .btnrow { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+      .btnrow button { flex: 1 1 0; }
+      .disc { margin: 4px 0; }
+      .disc > summary { cursor: pointer; display: flex; align-items: center; gap: 4px; font: var(--t-callout); color: var(--label-2); list-style: none; }
+      .disc > summary::-webkit-details-marker { display: none; }
+      .disc > summary svg { transition: transform var(--dur); }
+      .disc[open] > summary svg { transform: rotate(90deg); }
+      .disc > .inner { padding: 4px 0 2px 16px; }
+      .menu { display: flex; flex-direction: column; gap: 2px; min-width: 140px; padding: 4px; }
+      .menu[hidden] { display: none; }
+      .menu button { text-align: left; background: transparent; border-color: transparent; }
       .prow { display: grid; grid-template-columns: 78px 1fr; align-items: center; gap: 8px; margin: 6px 0; }
       .prow .plabel { font: var(--t-callout); color: var(--label-2); }
       .prow .pctl { display: flex; align-items: center; gap: 6px; min-width: 0; }

@@ -343,6 +343,13 @@ function statOf(page: import("@playwright/test").Page) {
 }
 
 /** Shared helpers for the part 7 tests. */
+/** Opens the Box panel's Fit menu (22-6); the next `box-fit-*` click then closes it. Never used in E2E-163..167. */
+const openFit = (page: import("@playwright/test").Page) => page.locator('[data-control="box-fit"]').click();
+/** Opens the Box panel's Handles disclosure when it is closed (22-6). Never used in E2E-163..167. */
+const openHandles = async (page: import("@playwright/test").Page) => {
+  if (!(await page.locator('[data-control="gizmo-step"]').isVisible())) await page.locator("details.disc > summary", { hasText: "Handles" }).click();
+};
+
 function helpers(page: import("@playwright/test").Page) {
   // an earlier test's session may still be open and unsaved: accept replacing it; bulk-delete confirms are recorded and dismissed
   const dialogs: string[] = [];
@@ -652,11 +659,13 @@ test("E2E-16 7b1 rectangle select with the real mouse in Top then Left view, fit
   await exact("Candidates", String(truth));
   await exact("Selected", String(truth));
 
+  await openFit(page);
   await ctl("box-fit-view").click();
   await exact("Candidates", String(await num("Displayed")));
   await setNum("filter-z-min", 0.5);
   await setNum("filter-z-max", 10);
   await exact("Displayed", String(ROOM.wall + ROOM.ghost + ROOM.noise));
+  await openFit(page);
   await ctl("box-fit-displayed").click();
   await exact("Candidates", String(ROOM.wall + ROOM.ghost + ROOM.noise));
   await page.screenshot({ path: "/out/rect-select.png" });
@@ -1133,6 +1142,7 @@ test("E2E-30 7c3 Fit displayed with a Y filter on non-float32 limits selects exa
   const displayed = rows.filter((r) => [0, 1, 2].every((i) => Number.isFinite(r[i])) && r[1] >= 3.2 && r[1] <= 8).length;
   await exact("Displayed", String(displayed));
   await ctl("tool-box").click();
+  await openFit(page);
   await ctl("box-fit-displayed").click();
   await exact("Selected", String(displayed));
   await exact("Candidates", String(displayed));
@@ -4480,6 +4490,7 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
       await page.waitForTimeout(500);
       if (view === "cube-top") out[`${view} default`] = await measureBox(page);
       for (const fit of ["box-fit-cloud", "box-fit-displayed", "box-fit-view"] as const) {
+        await openFit(page);
         await t.ctl(fit).click();
         await page.waitForTimeout(500);
         out[`${view} ${fit}`] = await measureBox(page);
@@ -4631,6 +4642,7 @@ test("E2E-103 14 three real ring drags (X, Y, then Z) give a box with roll, pitc
 
 test("E2E-104 14 one keyboard sequence (nudge, grow, turn) edits the box and Selected equals the independent count", async ({ page }) => {
   const t = await gizmoBox(page, "top");
+  await openHandles(page);
   await t.setNum("gizmo-step", 1);
   await t.setNum("gizmo-angle-step", 30);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
@@ -6513,6 +6525,7 @@ test("E2E-196 22-1 Esc disarms the armed tool only when nothing more specific is
   expect(await page.evaluate(() => (window as unknown as { __escDialog: boolean | null }).__escDialog)).toBe(true);
   await armed(true);
   // 5: nothing pending (a checkbox has the focus, not a text field): Escape disarms and keeps the selection and its candidate
+  await openHandles(page);
   await t.ctl("gizmo-snap").focus();
   await page.keyboard.press("Escape");
   await armed(false);
@@ -7835,4 +7848,38 @@ test("E2E-267 22-6 the inspector shows one line while idle and only the armed to
   await expect(t.ctl("tool-box")).toHaveClass(/active/);
   await page.keyboard.press("Escape");
   await expect(t.ctl("tool-box")).not.toHaveClass(/active/);
+});
+
+test("E2E-268 22-6 the Box panel end to end: Outside inverts Selected, Fit opens a menu that closes on use, Min / max and Handles are disclosures, Reset box resets", async ({ page }) => {
+  const t = previewHelpers(page);
+  await t.wallSelected();
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  const inside = ROOM.ghost;
+  await t.exact("Selected", String(inside));
+  await page.getByRole("radio", { name: "Outside" }).click();
+  await t.exact("Selected", String(ROOM_TOTAL - ROOM.invalid - inside)); // the NaN row is invalid, never selected
+  await page.getByRole("radio", { name: "Inside" }).click();
+  await t.exact("Selected", String(inside));
+  await expect(page.locator("#box-fit-menu")).toBeHidden();
+  await openFit(page);
+  await expect(page.locator("#box-fit-menu")).toBeVisible();
+  await t.ctl("box-fit-cloud").click();
+  await expect(page.locator("#box-fit-menu")).toBeHidden();
+  const size = await hook(page, (e) => [...e.state().tools.box.dimensions]);
+  const bounds = await hook(page, (e) => e.state().session!.active_bounds);
+  size.forEach((v, i) => {
+    const range = bounds.max[i] - bounds.min[i];
+    expect(v).toBeGreaterThanOrEqual(range);
+    expect(v).toBeLessThan(range + 0.01);
+  });
+  await expect(t.ctl("box-min-x")).toBeHidden();
+  await page.locator("details.disc > summary", { hasText: "Min / max" }).click();
+  await expect(t.ctl("box-min-x")).toBeVisible();
+  await expect(t.ctl("gizmo-snap")).toBeHidden();
+  await openHandles(page);
+  await t.ctl("gizmo-snap").check();
+  await expect(t.ctl("gizmo-snap")).toBeChecked();
+  await t.ctl("box-reset").click();
+  const after = await hook(page, (e) => [...e.state().tools.box.dimensions]);
+  expect(after).not.toEqual(size);
 });

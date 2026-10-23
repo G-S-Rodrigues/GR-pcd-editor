@@ -59,6 +59,7 @@ export const FIELD_SPECS: FieldSpec[] = [
   ...AX.map((a) => f(`box-max-${a}`, `Max ${up(a)}`, "box", `Box maximum ${up(a)} edge; editable only for an unrotated box`)),
   f("box-mode", "Box mode", "box", "Inside selects points in the box; outside selects everything else"),
   f("box-reset-rotation", "Reset rotation", "box", "Set the box roll, pitch and yaw back to 0"),
+  f("box-fit", "Fit…", "box", "Fit the box to the cloud, the displayed points, the view or the selection: opens a menu"),
   f("box-reset", "Reset box", "box", "Replace the box by a unit box at the orbit pivot"),
   f("box-fit-cloud", "Fit cloud", "box", "Make the box exactly cover the active cloud"),
   f("box-fit-selection", "Fit selection", "box", "Make the box exactly cover the current candidate"),
