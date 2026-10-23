@@ -5053,6 +5053,31 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
   });
 }
 
+test("E2E-287 22-7 the row's actions are revealed: the more button is 0 at rest, 1 on row hover, on the active row and on keyboard focus; the eye of a hidden layer is always 1", async ({ page }) => {
+  const t = layerMenu(page);
+  const floor = await t.floorFromBand();
+  const wallId = await t.wallLayer();
+  await page.locator(`[data-layer-eye="${wallId}"]`).click();
+  await expect(page.locator(`[data-layer-eye="${wallId}"]`)).toHaveAttribute("aria-pressed", "false");
+  await page.locator(`[data-layer-row="${floor.id}"]`).click(); // Floor is the active layer
+  await page.mouse.move(5, 5);
+  await transitionsSettled(page);
+  const opacity = (sel: string) => page.locator(sel).evaluate((el) => getComputedStyle(el).opacity);
+  const wallMore = `[data-layer-more="${wallId}"]`;
+  expect(await opacity(wallMore)).toBe("0");
+  expect(await opacity(`[data-layer-more="${floor.id}"]`)).toBe("1");
+  expect(await opacity(`[data-layer-eye="${wallId}"]`)).toBe("1");
+  await page.locator(`[data-layer-row="${wallId}"]`).hover();
+  await transitionsSettled(page);
+  expect(await opacity(wallMore)).toBe("1");
+  await page.mouse.move(5, 5);
+  await transitionsSettled(page);
+  expect(await opacity(wallMore)).toBe("0");
+  await page.locator(wallMore).focus();
+  await transitionsSettled(page);
+  expect(await opacity(wallMore)).toBe("1");
+});
+
 // ---- part 15b: named sub layers (E2E-140..146)
 const layerHelpers = (page: Pg) => {
   const t = hideHelpers(page);
@@ -5431,7 +5456,7 @@ const layerMenu = (page: Pg) => {
   const t = layerHelpers(page);
   const flags = () => hook(page, (e) => e.state().session!.layers.map((l: { id: number; name: string; colour: number; count: number; protected?: boolean; locked?: boolean }) => ({ id: l.id, name: l.name, colour: l.colour, count: l.count, protected: l.protected === true, locked: l.locked === true })));
   const byName = async (name: string) => (await flags()).find((l) => l.name === name);
-  const m = (attr: string, id: number) => page.locator(`[data-layer-${attr}="${id}"]`);
+  const m = (attr: string, id: number) => page.locator(`[data-layer-${attr}="${id}"]:not(.layer-lock)`); // 22-7: a locked row also carries the lock mark
   const op = (id: number, o: string) => page.locator(`[data-layer-op="${o}"][data-layer-of="${id}"]`);
   const bandOn = async () => {
     await t.ctl("prot-enabled").check();

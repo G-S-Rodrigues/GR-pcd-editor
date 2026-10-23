@@ -146,9 +146,11 @@ test("UI-864 while a layer is being edited the panel says how many members it ha
 
 test("UI-892 a layer row is one line (chip, name, count, eye, Select, chevron) with its details area hidden; the chevron toggles it with aria-expanded and the row keeps its click", () => {
   const floor = rows().find((r) => r.getAttribute("data-layer-row") === "1") as FakeEl;
-  expect(floor.children).toHaveLength(6);
-  expect(floor.children.slice(3).map((c) => c.tag)).toEqual(["button", "button", "button"]);
-  expect([3, 4, 5].map((i) => ["data-layer-eye", "data-layer-select", "data-layer-more"].map((k) => floor.children[i].getAttribute(k)).findIndex((v) => v === "1"))).toEqual([0, 1, 2]);
+  expect(floor.children).toHaveLength(4);
+  const acts = floor.children[3];
+  expect(acts.className).toBe("layer-acts");
+  expect(acts.children.map((c) => c.tag)).toEqual(["button", "button", "button"]);
+  expect(["data-layer-eye", "data-layer-select", "data-layer-more"].map((k, i) => acts.children[i].getAttribute(k))).toEqual(["1", "1", "1"]);
   expect(floor.text()).toBe("Floor (30)");
   const details = () => section().all().find((e) => e.getAttribute("data-layer-details") === "1") as FakeEl;
   expect(details().getAttribute("hidden")).not.toBeNull();
@@ -215,7 +217,7 @@ test("UI-922 a protected layer's chip has no ring class (R22-3: the shield is th
   const floor = rows().find((r) => r.getAttribute("data-layer-row") === "1") as FakeEl;
   expect(floor.title).toContain("Protected");
   expect(rows().find((r) => r.getAttribute("data-layer-row") === "2")?.title).toContain("Locked");
-  expect(floor.children).toHaveLength(7);
+  expect(floor.children).toHaveLength(5); // chip, name, shield, count, acts
   expect(floor.text()).toContain("Floor (30)");
 });
 
@@ -305,4 +307,33 @@ test("UI-984 a different session forgets the open fold-outs: layer 1 of the next
   expect(rowBtn(1, "more").getAttribute("aria-expanded")).toBe("true");
   store.set({ session: { ...(store.get().session as NonNullable<ReturnType<typeof sessionFixture>>), session_id: "s2" } });
   expect(rowBtn(1, "more").getAttribute("aria-expanded")).toBe("false");
+});
+
+test("UI-1208 a row holds chip, name, shield, lock, count and .layer-acts (eye, select, more); the lock only on locked layers; more is a menu button; the eye is revealed only when its layer is visible", () => {
+  store.set({
+    session: base([layer({}), layer({ id: 2, name: "Wall", colour: 1, count: 20, protected: true, locked: true }), layer({ id: 3, name: "Roof", colour: 2, count: 10, visible: false })]),
+  });
+  const row = (id: number) => rows().find((r) => r.getAttribute("data-layer-row") === String(id)) as FakeEl;
+  const kids = row(2).children;
+  expect(kids).toHaveLength(6);
+  expect(kids[2].getAttribute("data-layer-shield")).toBe("2");
+  const lock = kids[3];
+  expect(lock.getAttribute("data-layer-lock")).toBe("2");
+  expect(lock.getAttribute("role")).toBe("img");
+  expect(lock.getAttribute("aria-label")).toBe("Locked");
+  expect(lock.title).toBe("Locked: membership is fixed; the points can still be deleted");
+  expect(kids[4].className).toContain("layer-count");
+  const acts = kids[5];
+  expect(acts.className).toBe("layer-acts");
+  expect(acts.children.map((c) => ["data-layer-eye", "data-layer-select", "data-layer-more"].find((k) => c.getAttribute(k) !== null))).toEqual(["data-layer-eye", "data-layer-select", "data-layer-more"]);
+  const more = acts.children[2];
+  expect(more.getAttribute("aria-haspopup")).toBe("menu");
+  expect(more.getAttribute("aria-label")).toBe("More for layer Wall");
+  expect(more.className).toContain("layer-act");
+  expect(acts.children[1].className).toContain("layer-act");
+  expect(row(1).all().some((e) => e.getAttribute("data-layer-lock") !== null)).toBe(false);
+  expect(row(2).children[0].classList.contains("locked")).toBe(true);
+  const eyeOf = (id: number) => row(id).all().find((e) => e.getAttribute("data-layer-eye") !== null) as FakeEl;
+  expect(eyeOf(1).className).toContain("layer-act");
+  expect(eyeOf(3).className).not.toContain("layer-act");
 });

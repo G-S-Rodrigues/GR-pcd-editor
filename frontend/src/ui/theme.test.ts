@@ -402,3 +402,18 @@ describe("palette and inspector chrome (part 22-6)", () => {
     }
   });
 });
+
+describe("layer row reveal (part 22-7)", () => {
+  test("UI-1209 .layer-act is 0 at rest and 1 on row hover, active row, focus within and an expanded menu; nothing hides it with display or visibility", () => {
+    const all = rules(styleText());
+    const rest = all.find((r) => r.selector === ".layer-row .layer-act");
+    expect(rest).toBeDefined();
+    expect(rest?.body).toMatch(/opacity:\s*0\b/);
+    const shown = all.find((r) => r.selector.split(",").some((s) => s.trim() === ".layer-row:hover .layer-act"));
+    expect(shown).toBeDefined();
+    const sels = (shown?.selector ?? "").split(",").map((s) => s.trim());
+    for (const want of [".layer-row:hover .layer-act", ".layer-row.active .layer-act", ".layer-row:focus-within .layer-act", '.layer-act[aria-expanded="true"]']) expect(sels).toContain(want);
+    expect(shown?.body).toMatch(/opacity:\s*1\b/);
+    for (const r of all.filter((x) => /\.layer-act\b/.test(x.selector))) expect(r.body, r.selector).not.toMatch(/display:\s*none|visibility:\s*hidden/);
+  });
+});

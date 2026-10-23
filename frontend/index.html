@@ -340,7 +340,10 @@
       .layer-row button { padding: 0; width: 18px; height: 18px; flex: none; display: inline-grid; place-items: center; font-size: 11px; background: transparent; border-color: transparent; }
       .layer-row button svg { display: block; }
       .layer-row button.inactive { opacity: 0.5; }
-      .layer-more[aria-expanded=true] svg { transform: rotate(180deg); }
+      .layer-row .layer-acts { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+      .layer-row .layer-act { opacity: 0; transition: opacity var(--dur); }
+      .layer-row:hover .layer-act, .layer-row.active .layer-act, .layer-row:focus-within .layer-act, .layer-act[aria-expanded="true"] { opacity: 1; }
+      .layer-row .layer-lock { flex: none; display: inline-grid; place-items: center; color: var(--label-2); }
       .layer-details { display: flex; flex-direction: column; gap: 3px; padding: 0 4px 3px 18px; }
       .layer-group { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; }
       .layer-group.g-colour { display: grid; grid-template-columns: repeat(8, 16px); gap: 2px; }

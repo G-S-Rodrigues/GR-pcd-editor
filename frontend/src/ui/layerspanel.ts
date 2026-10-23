@@ -50,7 +50,9 @@ export function buildLayersPanel(root: HTMLElement, store: Store<AppState>, a: P
   ];
   /** R22-3: the shield is the only protection mark of a row; it sits between the name and the count. */
   const shieldOf = (id: number, name: string): Node => h("span", { class: "layer-shield", "data-layer-shield": id, role: "img", "aria-label": "Protected", title: protectedTip(name) }, iconSvg("shield", 12));
-  const withShield = ([name, count]: Node[], shield: Node | null): Node[] => (shield ? [name, shield, count] : [name, count]);
+  /** The lock mark of a locked layer: it sits after the shield, before the count. */
+  const lockOf = (id: number): Node => h("span", { class: "layer-lock", "data-layer-lock": id, role: "img", "aria-label": "Locked", title: "Locked: membership is fixed; the points can still be deleted" }, iconSvg("lock", 12));
+  const withFlags = ([name, count]: Node[], shield: Node | null, lock: Node | null): Node[] => [name, ...(shield ? [shield] : []), ...(lock ? [lock] : []), count];
   const opened = new Set<number>();
   let layerKey = "";
   /** The Main row's chip: recoloured in place when the render theme changes (the rows are not rebuilt for it). */
@@ -90,15 +92,15 @@ export function buildLayersPanel(root: HTMLElement, store: Store<AppState>, a: P
     }
     for (const r of rows) {
       const open = opened.has(r.id) || editingId === r.id;
-      const eye = h("button", { type: "button", class: "layer-eye", "data-layer-eye": r.id, "aria-pressed": String(r.visible), "aria-label": r.eyeLabel, title: r.eyeLabel, onclick: (e: Event) => (e.stopPropagation?.(), a.layerToggle(r.id)) }, iconSvg(r.visible ? "eye" : "eyeoff", 14));
+      const eye = h("button", { type: "button", class: `layer-eye${r.visible ? " layer-act" : ""}`, "data-layer-eye": r.id, "aria-pressed": String(r.visible), "aria-label": r.eyeLabel, title: r.eyeLabel, onclick: (e: Event) => (e.stopPropagation?.(), a.layerToggle(r.id)) }, iconSvg(r.visible ? "eye" : "eyeoff", 14));
       const selTitle = r.selectDisabled ?? `Select the ${r.count.toLocaleString("en-US")} points of ${r.name}`;
-      const sel = h("button", { type: "button", class: `layer-icon${r.selectDisabled ? " inactive" : ""}`, "data-layer-select": r.id, "aria-disabled": String(r.selectDisabled !== null), "aria-label": `Select layer ${r.name}`, title: selTitle, onclick: (e: Event) => (e.stopPropagation?.(), a.layerSelect(r.id)) }, iconSvg("pick", 14));
-      const more = h("button", { type: "button", class: "layer-icon layer-more", "data-layer-more": r.id, "aria-expanded": String(open), "aria-label": `More for layer ${r.name}`, title: `Options for ${r.name}`, onclick: (e: Event) => {
+      const sel = h("button", { type: "button", class: `layer-icon layer-act${r.selectDisabled ? " inactive" : ""}`, "data-layer-select": r.id, "aria-disabled": String(r.selectDisabled !== null), "aria-label": `Select layer ${r.name}`, title: selTitle, onclick: (e: Event) => (e.stopPropagation?.(), a.layerSelect(r.id)) }, iconSvg("pick", 14));
+      const more = h("button", { type: "button", class: "layer-icon layer-more layer-act", "data-layer-more": r.id, "aria-haspopup": "menu", "aria-expanded": String(open), "aria-label": `More for layer ${r.name}`, title: `Options for ${r.name}`, onclick: (e: Event) => {
         e.stopPropagation?.();
         if (opened.has(r.id)) opened.delete(r.id);
         else opened.add(r.id);
         sync(store.get());
-      } }, iconSvg("chev", 14));
+      } }, iconSvg("more", 14));
       const stop = (e: Event) => e.stopPropagation?.();
       const btn = (attr: string, label: string, onclick: () => void, why: string | null = null, extra: Record<string, unknown> = {}) =>
         h("button", { type: "button", [`data-layer-${attr}`]: r.id, "aria-disabled": String(why !== null), class: `${why ? "inactive " : ""}${extra.class ?? ""}`.trim(), title: why ?? extra.title ?? label, onclick: (e: Event) => (stop(e), why === null && onclick()), ...(extra.aria ? { "aria-pressed": extra.aria } : {}) }, ...(extra.icon ? [iconSvg(extra.icon as IconName, 12)] : []), label);
@@ -151,7 +153,7 @@ export function buildLayersPanel(root: HTMLElement, store: Store<AppState>, a: P
         group("g-delete", btn("delete-points", "Delete points", () => a.layerDeletePoints(r.id), r.deletePointsDisabled, { class: "danger", title: `Delete the points of ${r.name} (confirmed; a timeline step you can undo)` })),
       );
       out.push(
-        h("li", { class: `layer-row${s.layerUi.active === r.id ? " active" : ""}`, "data-layer-row": r.id, title: r.title, "aria-selected": String(s.layerUi.active === r.id), onclick: () => a.layerChoose(r.id) }, chipOf(r.colour, r.locked ? " locked" : ""), ...withShield(nameAndCount(r.name, r.label), r.protected ? shieldOf(r.id, r.name) : null), eye, sel, more),
+        h("li", { class: `layer-row${s.layerUi.active === r.id ? " active" : ""}`, "data-layer-row": r.id, title: r.title, "aria-selected": String(s.layerUi.active === r.id), onclick: () => a.layerChoose(r.id) }, chipOf(r.colour, r.locked ? " locked" : ""), ...withFlags(nameAndCount(r.name, r.label), r.protected ? shieldOf(r.id, r.name) : null, r.locked ? lockOf(r.id) : null), h("span", { class: "layer-acts" }, eye, sel, more)),
         details,
       );
     }
