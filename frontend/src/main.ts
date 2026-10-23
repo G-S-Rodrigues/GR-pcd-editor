@@ -246,7 +246,8 @@ const exportDialog = buildExportDialog(store, (o) => runExport(store, o, { start
 const persister = createPersister(store, api.putClientState, { dragging: () => tools.dragging() });
 window.addEventListener("beforeunload", beforeUnloadHandler(() => store.get()));
 
-buildToolbar($("toolbar"), store, {
+const topbar = buildToolbar($("toolbar"), store, {
+  toggleHelp: () => help.toggle(),
   saveSession: () =>
     void runSave(store, { flushClientState: () => persister.flush(), startSave: () => startSave(), markSaved: async (id) => api.normaliseState(await markSaved(id)) }),
   openExport: () => exportDialog.open(),
@@ -260,7 +261,6 @@ buildCameraCluster($("camera-cluster"), store, { size });
 buildViewbar($("viewbar"), store, {
   size,
   refresh: () => void refresher.refresh(),
-  toggleHelp: () => help.toggle(),
   setCompare: (m) => {
     setCompare(store, m);
     void refresher.refresh();

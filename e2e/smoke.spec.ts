@@ -190,7 +190,8 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
   };
   await exact("Displayed", String(FLOOR + GHOST));
   const activeBefore = await num("Active");
-  await expect(page.locator("#unsaved-badge")).toHaveText("No unsaved edits");
+  await expect(page.locator("#unsaved-badge")).toBeHidden();
+  await expect(page.locator("#unsaved-badge")).toHaveAttribute("title", "No unsaved edits");
 
   await test.step("E2E-03 box numbers preview exactly the ghost; Protected 0", async () => {
     await ctl("tool-box").click();
@@ -225,7 +226,8 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
     await page.screenshot({ path: "/out/editor.png" });
     await ctl("apply").click();
     await exact("Active", String(activeBefore - GHOST));
-    await expect(page.locator("#unsaved-badge")).toHaveText("Unsaved edits");
+    await expect(page.locator("#unsaved-badge")).toHaveText("Edited");
+    await expect(page.locator("#unsaved-badge")).toHaveAttribute("title", "Unsaved edits");
     await ctl("undo").click();
     await exact("Active", String(activeBefore));
     await ctl("redo").click();
@@ -278,7 +280,8 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
       void d.accept();
     });
     await tab.goto("/");
-    await expect(tab.locator("#unsaved-badge")).toHaveText("Unsaved edits");
+    await expect(tab.locator("#unsaved-badge")).toHaveText("Edited");
+    await expect(tab.locator("#unsaved-badge")).toHaveAttribute("title", "Unsaved edits");
     await tab.locator("body").click(); // browsers only show the dialog after a user gesture
     await tab.reload();
     expect(seen).toContain("beforeunload");
@@ -290,7 +293,8 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
     expect(dl.suggestedFilename()).toBe("synthetic_session_v1.pcdsession");
     const path = testInfo.outputPath("session.pcdsession");
     await dl.saveAs(path);
-    await expect(page.locator("#unsaved-badge")).toHaveText("No unsaved edits");
+    await expect(page.locator("#unsaved-badge")).toBeHidden();
+    await expect(page.locator("#unsaved-badge")).toHaveAttribute("title", "No unsaved edits");
     await expect(page.locator("#notices")).toContainText("Session download started");
     // another file replaces the open session, then the downloaded session is reopened through the picker
     await page.locator("#file-input").setInputFiles({ name: "other.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
@@ -299,7 +303,8 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
     await exact("Original", String(TOTAL));
     await exact("Active", String(activeBefore - GHOST));
     await exact("Displayed", String(FLOOR));
-    await expect(page.locator("#unsaved-badge")).toHaveText("No unsaved edits");
+    await expect(page.locator("#unsaved-badge")).toBeHidden();
+    await expect(page.locator("#unsaved-badge")).toHaveAttribute("title", "No unsaved edits");
     await expect(ctl("undo")).toBeEnabled();
     await expect(ctl("colour-mode")).toHaveValue("viridis"); // restored from the archive's client state
   });
@@ -644,7 +649,7 @@ test("E2E-18 7b1 legend, headline numbers and the kept-by-protection warning equ
   // legend chips use the palette colours
   await expect(page.locator('#legend [data-legend="selected"]')).toHaveCSS("background-color", "rgb(255, 159, 28)");
   await expect(page.locator('#legend [data-legend="protected"]')).toHaveCSS("background-color", "rgb(0, 209, 255)");
-  await expect(page.locator("#headline-delete")).toHaveText("Will delete —");
+  await expect(page.locator('[data-control="apply"]')).toHaveText("Delete");
   await expect(page.locator("#kept-warning")).toBeHidden();
 
   await ctl("prot-enabled").check();
@@ -657,8 +662,9 @@ test("E2E-18 7b1 legend, headline numbers and the kept-by-protection warning equ
   const kept = ROOM.floor + ROOM.floorGhost; // z 0 and z 0.02 lie inside +-0.05
   await exact("Selected", String(valid));
   await exact("Candidates", String(valid - kept));
-  await expect(page.locator("#headline-delete")).toHaveText(`Will delete ${valid - kept}`);
-  await expect(page.locator("#headline-kept")).toHaveText(`Kept by protection ${kept}`);
+  await expect(page.locator('[data-control="apply"]')).toHaveText(`Delete ${valid - kept}`);
+  await expect(page.locator("#kept-chip")).toHaveText(`${kept} kept`);
+  await expect(page.locator("#kept-chip")).toHaveAttribute("title", `Kept by protection ${kept}`);
   await expect(page.locator("#kept-warning")).toBeVisible();
   await expect(page.locator("#kept-warning")).toHaveText(`${kept} selected points lie inside the protected interval and will be kept (ghosts in the floor slab?)`);
 
@@ -674,7 +680,8 @@ test("E2E-18 7b1 legend, headline numbers and the kept-by-protection warning equ
   await ctl("prot-enabled").uncheck();
   await exact("Candidates", String(valid));
   await expect(page.locator("#kept-warning")).toBeHidden();
-  await expect(page.locator("#headline-kept")).toHaveText("Kept by protection 0");
+  await expect(page.locator("#kept-chip")).toBeHidden();
+  await expect(page.locator("#kept-chip")).toHaveAttribute("title", "Kept by protection 0");
 });
 
 test("E2E-18b 7b1 draw budget: Rendered equals the budget exactly, the default draws everything, Auto is offered", async ({ page }) => {
@@ -2116,7 +2123,8 @@ test("E2E-55 11 deleting the middle step returns only its points; dismissing the
   await expect(t.card(0)).toHaveAttribute("title", /^Box delete, 27 points/);
   await expect(t.card(1)).toContainText(String(ROOM.noise));
   await expect(t.marker).toHaveAttribute("aria-valuenow", "2");
-  await expect(page.locator("#unsaved-badge")).toHaveText("Unsaved edits");
+  await expect(page.locator("#unsaved-badge")).toHaveText("Edited");
+  await expect(page.locator("#unsaved-badge")).toHaveAttribute("title", "Unsaved edits");
   // keyboard: Delete on a focused step removes it (with the confirmation) and never fires the global Apply.
   // The box tool restarts its preview after the delete above; a step gesture under that job is refused with a notice by
   // design (seen as the busy notice in 2 of 120 runs), so wait for idle like the marker gestures do.
@@ -5317,7 +5325,7 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
       };
       return { toolbar: row("toolbar"), viewbar: row("viewbar"), stage: document.getElementById("viewport")!.getBoundingClientRect().height };
     });
-    expect(m.toolbar.height).toBeLessThanOrEqual(33);
+    expect(m.toolbar.height).toBeLessThanOrEqual(52.5); // --tb-h: the one top bar of 22-5
     expect(m.viewbar.height).toBeLessThanOrEqual(29);
     for (const c of [...m.toolbar.ctl, ...m.viewbar.ctl]) {
       expect(c.visible, `${c.id} is visible`).toBe(true);
@@ -5430,7 +5438,7 @@ test("E2E-171 18 a protected Floor is never deleted: with the band off Kept by p
   const selected = finiteRows().filter((r) => inBox(r, ALL_BOX.c, ALL_BOX.d)).length;
   await t.exact("Selected", String(selected));
   await t.exact("Candidates", String(selected - floor.count));
-  await expect(page.locator("#headline-kept")).toHaveText(`Kept by protection ${floor.count}`);
+  await expect(page.locator("#kept-chip")).toHaveText(`${floor.count} kept`);
   await expect(t.ctl("apply")).toBeEnabled();
   await t.ctl("apply").click();
   await t.exact("Active", String(ROOM_TOTAL - (selected - floor.count)));
@@ -5449,7 +5457,7 @@ test("E2E-171 18 a protected Floor is never deleted: with the band off Kept by p
   await t.exact("Candidates", String(selected - floor.count - wallBand));
   await t.ctl("sel-delete-kept").click();
   await t.exact("Candidates", String(selected - floor.count));
-  await expect(page.locator("#headline-kept")).toHaveText(`Kept by protection ${floor.count}`);
+  await expect(page.locator("#kept-chip")).toHaveText(`${floor.count} kept`);
   await t.ctl("apply").click();
   await t.exact("Active", String(ROOM_TOTAL - (selected - floor.count)));
   expect((await t.byName("Floor"))!.count).toBe(floor.count);

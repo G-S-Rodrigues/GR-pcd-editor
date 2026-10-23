@@ -13,7 +13,6 @@ const BUDGETS = [100_000, 300_000, 1_000_000, AUTO_BUDGET];
 export interface ViewbarActions {
   size: () => { w: number; h: number };
   refresh: () => void;
-  toggleHelp: () => void;
   setCompare: (mode: CompareMode) => void;
 }
 
@@ -68,7 +67,6 @@ export function buildViewbar(root: HTMLElement, store: Store<AppState>, a: Viewb
     oninput: () => store.set({ overlayOpacity: clampOpacity(Number(opacity.value)) }),
   });
   const opacityBox = h("span", { class: "opacity" }, opacity);
-  const help = iconControl("help", "help", { onclick: a.toggleHelp });
 
   root.append(
     modeGroup,
@@ -77,7 +75,6 @@ export function buildViewbar(root: HTMLElement, store: Store<AppState>, a: Viewb
     h("label", {}, "Point size ", size),
     autoSize,
     h("label", {}, "Draw up to ", budget),
-    help,
   );
 
   const sync = (s: AppState) => {

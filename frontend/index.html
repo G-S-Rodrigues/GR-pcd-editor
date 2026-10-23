@@ -350,15 +350,26 @@
       .export-layers { margin: 6px 0; }
       .export-layer-rows { display: flex; flex-direction: column; max-height: 160px; overflow-y: auto; }
       #legend .chip { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
-      .headline { font-weight: 600; font-size: 12px; padding: 0 6px; line-height: 24px; }
-      #toolbar { padding-top: 1px; padding-bottom: 1px; }
+      #toolbar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; height: var(--tb-h); box-sizing: border-box; gap: 12px; padding: 0 12px; flex-wrap: nowrap; }
+      .grp { display: flex; align-items: center; gap: 6px; min-width: 0; }
+      .grp.right { justify-self: end; }
+      .grp.centre { justify-self: center; }
+      .tsep { width: 1px; height: 20px; background: var(--separator); margin: 0 4px; flex: none; }
+      .doc { display: flex; align-items: center; gap: 8px; margin-right: 6px; min-width: 0; }
+      .appmark { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; background: var(--accent); color: var(--on-accent); flex: none; }
+      .doc .t { display: flex; flex-direction: column; min-width: 0; }
+      .doc .t b { font: var(--t-headline); max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .doc-sub { display: inline-flex; align-items: center; gap: 4px; font: var(--t-caption); color: var(--label-2); }
+      .doc-sub[hidden], #kept-chip[hidden] { display: none; }
+      .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--warning); flex: none; }
+      #kept-chip { display: inline-flex; align-items: center; gap: 4px; height: var(--ctl-h); padding: 0 10px; box-sizing: border-box; border-radius: 13px; background: var(--fill-1); color: var(--protected-ui); font: var(--t-callout); white-space: nowrap; }
       #toolbar .ib { width: 30px; height: 30px; }
       #viewbar .ib { width: 24px; height: 24px; }
       #viewbar input[type=range] { margin: 0; }
       #viewbar .mode-group { padding: 0; border-radius: 6px; }
       #viewbar .mode-group .ib { width: 22px; height: 22px; }
       #toolbar button:not(.ib), #viewbar button:not(.ib), #toolbar select, #viewbar select, #toolbar input, #viewbar input { height: 24px; padding: 1px 6px; box-sizing: border-box; }
-      .headline.warn, .note.warn { color: var(--protected-ui); }
+      .note.warn { color: var(--protected-ui); }
       #fbox-layer { position: absolute; inset: 0; pointer-events: none; z-index: 2; overflow: hidden; }
       .fbox { position: absolute; left: 0; top: 0; width: 156px; height: 28px; display: flex; align-items: center; gap: 3px; padding: 2px 3px; background: var(--glass-hud); border: 1px solid var(--separator); border-radius: var(--r-ctl); pointer-events: auto; font-size: 12px; }
       .fbox .fgrip { flex: 0 0 46px; height: 22px; line-height: 20px; text-align: center; cursor: grab; border: 1px solid var(--separator); border-radius: 3px; background: var(--fill-1); color: var(--label-2); user-select: none; touch-action: none; }
@@ -419,13 +430,11 @@
       button.hint { background: var(--accent-soft); border-color: var(--accent); }
       #history-list { margin: 4px 0; padding-left: 18px; color: var(--label-2); }
       #history-list li.undone { opacity: .5; }
-      .badge { padding: 2px 8px; border-radius: 10px; background: var(--fill-2); color: var(--label-2); }
-      .badge.on { background: var(--accent); color: var(--on-accent); font-weight: 600; }
       #help-overlay { position: absolute; right: 8px; bottom: 54px; max-width: min(520px, 90%); max-height: 90%; overflow: auto; background: var(--glass-strong); border: 1px solid var(--separator); padding: 8px 12px; border-radius: var(--r-pop); display: none; z-index: 4; }
       #help-overlay.on { display: block; }
       #help-overlay td { padding: 1px 10px 1px 0; vertical-align: top; }
       #help-overlay td.k { white-space: nowrap; color: var(--accent-text); }
-      #statusbar .item, .layer-count, .headline, .step-count, .triple input, .fbox .fin, .fbox .ftog { font-variant-numeric: tabular-nums; }
+      #statusbar .item, .layer-count, #apply, #kept-chip, .step-count, .triple input, .fbox .fin, .fbox .ftog { font-variant-numeric: tabular-nums; }
       /* Glass. The side panels, rows and status bar sit on the flat page, so they are translucent without a blur. The stage HUD and the sheets blur what is behind them. #viewport never blurs. */
       #legend, .fbox, #camera-cluster .ib, #band-pill, .notice { -webkit-backdrop-filter: blur(28px) saturate(170%); backdrop-filter: blur(28px) saturate(170%); }
       dialog, #help-overlay, #progress { -webkit-backdrop-filter: blur(28px) saturate(170%); backdrop-filter: blur(28px) saturate(170%); }

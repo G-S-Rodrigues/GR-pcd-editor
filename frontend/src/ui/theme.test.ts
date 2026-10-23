@@ -275,7 +275,7 @@ describe("stylesheet rules (part 22-4)", () => {
     expect(INDEX_HTML).not.toMatch(/@import|@font-face|https?:\/\/|<link[^>]+stylesheet/);
     const all = rules(styleText());
     const tabular = all.filter((r) => /font-variant-numeric:\s*tabular-nums/.test(r.body)).map((r) => r.selector).join(", ");
-    for (const sel of ["#statusbar .item", ".layer-count", ".headline", ".step-count", ".triple input", ".fbox .fin", ".fbox .ftog"]) expect(tabular, sel).toContain(sel);
+    for (const sel of ["#statusbar .item", ".layer-count", "#apply", "#kept-chip", ".step-count", ".triple input", ".fbox .fin", ".fbox .ftog"]) expect(tabular, sel).toContain(sel);
     const h2 = all.find((r) => r.selector === "aside h2")!;
     expect(h2.body).toMatch(/font:\s*var\(--t-section\)/);
     expect(h2.body).not.toMatch(/uppercase|letter-spacing/);

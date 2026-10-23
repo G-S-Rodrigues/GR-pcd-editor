@@ -50,6 +50,9 @@ export const TOOLTIPS: Record<string, string> = {
   "export-go": "Prepare the export and start the browser download",
   "export-cancel": "Close the export dialog without exporting",
   help: "Show the mouse and keyboard controls (key ?)",
+  "display-open": "Display: colour mode, point size, how many points to draw, and the light or dark theme",
+  "details-open": "Cloud details: the file, the point counts (original, active, remaining, deleted, invalid) and the view",
+  "history-open": "History: the list of deletions and layer edits, with undone steps marked",
   "upload-cancel": "Stop sending the file to the app; nothing is opened and the current file is left as it is",
   ...Object.fromEntries(FIELD_SPECS.map((f) => [f.id, f.tooltip])),
 };

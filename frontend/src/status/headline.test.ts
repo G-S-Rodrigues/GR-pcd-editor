@@ -59,3 +59,16 @@ test("UI-910 points kept by protected layers are named, and only band-kept point
   expect(all.deleteKeptLabel).toBeNull();
   expect(all.warning).toBe("100 selected points will be kept by protection (100 in protected layers)");
 });
+
+test("UI-1134 deleteLabel and keptLabel feed the Delete N button and the N kept chip; the older fields are unchanged", () => {
+  expect(headline(st(null)).deleteLabel).toBe("Delete");
+  expect(headline({ ...initialState() }).deleteLabel).toBe("Delete");
+  expect(headline(st({ candidates: 50, protected_retained: 0 }, { cloud: 9, params: 4 })).deleteLabel).toBe("Delete");
+  expect(headline(st({ candidates: 1234, protected_retained: 1204 })).deleteLabel).toBe("Delete 1,234");
+  expect(headline(st({ candidates: 1234, protected_retained: 1204 })).keptLabel).toBe("1,204 kept");
+  expect(headline(st({ candidates: 10, protected_retained: 0 })).keptLabel).toBeNull();
+  expect(headline(st(null)).keptLabel).toBeNull();
+  const h = headline(st({ candidates: 1234, protected_retained: 1204 }));
+  expect(h.willDelete).toBe("Will delete 1,234");
+  expect(h.kept).toBe("Kept by protection 1,204");
+});
