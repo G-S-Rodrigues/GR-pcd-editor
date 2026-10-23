@@ -66,6 +66,6 @@ test("UI-234 foldSyncer keeps the user's flip through repeated unrelated syncs, 
   expect(el.open).toBe(true);
 });
 
-test("UI-1142 the fold sections are the six tools and Layers, in that order", () => {
-  expect([...SECTION_IDS]).toEqual(["box", "polygon", "cluster", "sparse", "plane", "thin", "layers"]);
+test("UI-1142 the fold sections are the six tools, Selection and Layers, in that order", () => {
+  expect([...SECTION_IDS]).toEqual(["box", "polygon", "cluster", "sparse", "plane", "thin", "selection", "layers"]);
 });

@@ -8013,3 +8013,33 @@ for (const [w, h] of SIZES) {
     expect(errors).toEqual([]);
   });
 }
+
+// ---- part 22-7: left sidebar (Selection and Layers)
+test("E2E-286 22-7 the Selection section folds by click and by Enter, the fold survives a reload and the counts do not change", async ({ page }) => {
+  const { exact, ctl } = helpers(page);
+  await openRoom(page, exact);
+  const sum = page.locator('details[data-section="selection"] > summary');
+  const det = page.locator('details[data-section="selection"]');
+  await expect(det).toHaveAttribute("open", "");
+  await expect(ctl("sel-clear")).toBeVisible();
+  const countsText = () => page.locator("#counts-panel").innerText();
+  const before = await countsText();
+  const putWith = (ok: (folded: Record<string, boolean> | undefined) => boolean) =>
+    page.waitForRequest((r) => r.method() === "PUT" && r.url().endsWith("/api/session/client-state") && ok(JSON.parse(r.postData() ?? "{}")?.ui?.sectionsOpen));
+  const savedFolded = putWith((f) => f?.selection === false);
+  await sum.click();
+  await expect(ctl("sel-clear")).toBeHidden();
+  await savedFolded;
+  await page.reload();
+  await exact("Original", String(ROOM_TOTAL));
+  await expect.poll(async () => Object.keys(await SECTIONS_OPEN(page))).toEqual(["selection"]);
+  await expect(ctl("sel-clear")).toBeHidden();
+  expect(await countsText()).toBe(before);
+  // the keyboard: Enter on the focused summary unfolds it again (saved, so the next test starts open)
+  const savedOpen = putWith((f) => f === undefined || Object.keys(f).length === 0);
+  await sum.focus();
+  await page.keyboard.press("Enter");
+  await expect(ctl("sel-clear")).toBeVisible();
+  expect(await countsText()).toBe(before);
+  await savedOpen;
+});

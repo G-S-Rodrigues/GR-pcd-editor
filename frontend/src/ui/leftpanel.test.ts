@@ -18,10 +18,10 @@ beforeEach(() => {
   store.set({ ...createAppStore().get(), session: sessionFixture(), tool: "box", liveFirst: true });
 });
 
-test("UI-892 (slot) the Layers section sits in #layers-slot after the Selection block, as the last child", () => {
+test("UI-892 (slot) the Layers section sits in #layers-slot after the Selection section, as the last child", () => {
   const kids = dom.root.children;
   const i = kids.indexOf(slot);
-  expect(i).toBeGreaterThan(kids.findIndex((c) => c.tag === "h2" && c.text() === "Selection"));
+  expect(i).toBeGreaterThan(kids.findIndex((c) => c.tag === "details" && c.getAttribute("data-section") === "selection"));
   expect(kids[kids.length - 1]).toBe(slot);
   expect(slot.children[0].getAttribute("data-section")).toBe("layers");
 });
