@@ -252,7 +252,7 @@ test("UI-967 a restored page does not restore the plane list, the chosen plane o
   expect(b.get().tool).toBe("none");
   expect(b.get().planes.list).toBeNull();
   expect(b.get().planes.chosen).toBeNull();
-  expect(b.get().tools.plane.distance).toBe(0.03);
+  expect(b.get().tools.plane.distance).toBe(0.1);
   expect(b.get().tools.thin.method).toBe("duplicates");
 });
 

@@ -611,3 +611,14 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
   light palette is converted (`gpuRgb`/`gpuPalette` in `colour/palette.ts`); ramps, normals and layer colours are unchanged.
 - Frontend unit checks need `frontend/index.html` mounted next to `frontend/src` (`UI-1084`, `UI-1101` read it). `npx` is absent in the
   checks image: run tsc as `node node_modules/typescript/bin/tsc --noEmit`.
+
+## Part 22-10 additions (tool defaults, R22-15)
+
+- New: `UI-1150` (a fresh store: Sparse radius 0.4, Planes 0.1 / 5 / 1, arming Sparse sends 0.4), `UI-1151` (the Sparse radius field opens
+  at 0.4 and clearing it still stores null, derived), `UI-1152` (the plane fields open at 0.1 / 5 / 1), smoke `E2E-260` (a default
+  Detect on the plane room lists exactly the floor, with the fixture-truth count at 0.1). The full smoke run with `--workers=1` is 210.
+- Changed, expected value: `UI-678` (defaults; the cleared radius is now a change from 0.4), `UI-679`, `UI-954`, `UI-958`, `UI-967`,
+  `UI-971`, `UI-973`, `UI-974`. Changed, setup only: `UI-681`, `UI-683`, `UI-955`, `UI-975a`, `E2E-186`, `187`, `188`, `189`, `192`,
+  `193` (both sizes), `194` (both sizes).
+- A plane E2E that needs more than one row, or the 30 degree window, sets the O7 values through `planeUi().o7Params()` once the tool is
+  armed (`detect(n)` does it). The backend request defaults are unchanged (the client always sends all values).

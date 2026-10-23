@@ -14,14 +14,14 @@ const det = (z: number, count: number, over: Partial<DetectedPlane> = {}): Detec
 });
 
 describe("planes and thin tool models (20-5)", () => {
-  it("UI-954 defaults carry the O7 values and the thin method duplicates at distance 0", () => {
-    expect(defaultPlane()).toEqual({ distance: 0.03, maxTilt: 30, maxPlanes: 4, region: "none", excludeProtected: true });
+  it("UI-954 defaults carry the R22-15 values and the thin method duplicates at distance 0", () => {
+    expect(defaultPlane()).toEqual({ distance: 0.1, maxTilt: 5, maxPlanes: 1, region: "none", excludeProtected: true });
     expect(defaultThin()).toEqual({ method: "duplicates", distance: 0, edge: 0.05, region: "none", excludeProtected: true });
   });
 
   it("UI-955 validation texts for distance, max tilt, max planes, method, thin distance and edge", () => {
     const p = defaultPlane();
-    expect(setPlaneDistance(p, 0.1)).toEqual({ ok: true, model: { ...p, distance: 0.1 } });
+    expect(setPlaneDistance(p, 0.2)).toEqual({ ok: true, model: { ...p, distance: 0.2 } });
     for (const bad of [0, -1, Number.NaN]) expect(setPlaneDistance(p, bad)).toMatchObject({ ok: false, model: p, error: expect.stringMatching(/Distance/) });
     expect(setMaxTilt(p, 45).ok).toBe(true);
     for (const bad of [0, 91, Number.NaN]) expect(setMaxTilt(p, bad)).toMatchObject({ ok: false, error: expect.stringMatching(/Max tilt/) });
@@ -55,7 +55,7 @@ describe("planes and thin tool models (20-5)", () => {
   });
 
   it("UI-958 the summaries say what is selected, that the lowest index is kept (O2), that chains collapse (O3) and who counts as a copy (O10)", () => {
-    expect(planeSummary(defaultPlane())).toMatch(/up to 4 .*Detected planes/);
+    expect(planeSummary(defaultPlane())).toMatch(/up to 1 .*Detected planes/);
     expect(planeSummary(defaultPlane())).toMatch(/changes nothing/);
     for (const m of [defaultThin(), { ...defaultThin(), distance: 0.001 }, { ...defaultThin(), method: "voxel" as const }]) {
       expect(thinSummary(m)).toMatch(/lowest index/);

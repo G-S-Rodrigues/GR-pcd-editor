@@ -115,15 +115,22 @@ test("UI-983 the left panel head holds the two new tool buttons and every Planes
   }
 });
 
+test("UI-1152 the plane fields open at the R22-15 defaults 0.1 / 5 / 1", () => {
+  store.set({ tool: "plane" });
+  expect(ctl("plane-distance").value).toBe("0.1");
+  expect(ctl("plane-max-tilt").value).toBe("5");
+  expect(ctl("plane-max").value).toBe("1");
+});
+
 test("UI-975a plane parameter edits validate and save without selecting; region and protection re-select only with a chosen plane", () => {
   store.set({ tool: "plane" });
   const dist = ctl("plane-distance");
-  dist.value = "0.1";
+  dist.value = "0.2";
   dist.fire("change");
-  expect(store.get().tools.plane.distance).toBe(0.1);
+  expect(store.get().tools.plane.distance).toBe(0.2);
   dist.value = "-1";
   dist.fire("change");
-  expect(store.get().tools.plane.distance).toBe(0.1);
+  expect(store.get().tools.plane.distance).toBe(0.2);
   expect(calls.toolChanged).not.toHaveBeenCalled();
   const ex = ctl("plane-exclude-protected");
   ex.checked = false;

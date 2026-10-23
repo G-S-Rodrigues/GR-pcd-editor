@@ -4,15 +4,18 @@ import type { RegionKind } from "../cluster/model";
 /** The server's default: a point with fewer than this many points in its 3 x 3 x 3 cubes is isolated. */
 export const DEFAULT_MIN_NEIGHBOURS = 8;
 
+/** R22-15 default Sparse radius, in the file unit. */
+export const DEFAULT_SPARSE_RADIUS = 0.4;
+
 export interface SparseModel {
-  /** Cube edge in the file unit; null lets the server derive it from the point spacing. */
+  /** Cube edge in the file unit (default 0.4, R22-15); null (the field cleared) lets the server derive it from the point spacing. */
   radius: number | null;
   minNeighbours: number;
   region: RegionKind;
   excludeProtected: boolean;
 }
 
-export const defaultSparse = (): SparseModel => ({ radius: null, minNeighbours: DEFAULT_MIN_NEIGHBOURS, region: "none", excludeProtected: true });
+export const defaultSparse = (): SparseModel => ({ radius: DEFAULT_SPARSE_RADIUS, minNeighbours: DEFAULT_MIN_NEIGHBOURS, region: "none", excludeProtected: true });
 
 type Edit = { ok: boolean; model: SparseModel; error?: string };
 

@@ -89,6 +89,19 @@ test("UI-665 in edit mode each vertex row has a remove button that removes that 
   expect(dom.root.all().filter((e) => e.hasAttribute("data-vertex-remove"))).toHaveLength(0);
 });
 
+test("UI-1151 the Sparse radius field opens at 0.4 with the derive placeholder; clearing it stores null and the summary says it is derived", () => {
+  store.set({ tool: "sparse" });
+  const radius = ctl("sparse-radius");
+  expect(radius.value).toBe("0.4");
+  expect(radius.getAttribute("placeholder")).toBe("From point spacing");
+  radius.value = "";
+  radius.fire("change");
+  expect(store.get().tools.sparse.radius).toBeNull();
+  expect(radius.value).toBe("");
+  const section = dom.root.all().find((e) => e.getAttribute("data-section") === "sparse") as FakeEl;
+  expect(section.text()).toMatch(/radius from the point spacing/);
+});
+
 test("UI-683 the Sparse points section shows for its tool only, edits radius and neighbours with validation and re-selects", () => {
   const section = dom.root.all().find((e) => e.getAttribute("data-section") === "sparse") as FakeEl;
   expect(section.hidden).toBe(true);
@@ -96,9 +109,9 @@ test("UI-683 the Sparse points section shows for its tool only, edits radius and
   expect(section.hidden).toBe(false);
   expect(section.text()).toMatch(/fewer than 8 points/);
   const radius = ctl("sparse-radius");
-  radius.value = "0.4";
+  radius.value = "0.25";
   radius.fire("change");
-  expect(store.get().tools.sparse.radius).toBe(0.4);
+  expect(store.get().tools.sparse.radius).toBe(0.25);
   radius.value = "";
   radius.fire("change");
   expect(store.get().tools.sparse.radius).toBeNull();

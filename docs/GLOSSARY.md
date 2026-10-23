@@ -101,8 +101,8 @@
 - **Detected plane:** A plane found by the Planes tool's Detect (RANSAC on a sample of the eligible points, near-horizontal
   by default): normal, offset, point count and tilt, listed lowest first. Detection is read only and the list is not saved.
   Not the same as the protection band's plane handles or a cut plane.
-- **Planes tool:** Detect lists up to 4 Detected planes; choosing a row selects the points within the Distance of it
-  (default 0.03 file units) so Delete removes them. The row labels "Lowest (floor?)" and "Highest (ceiling?)" are hints.
+- **Planes tool:** Detect lists up to Max planes (default 1) Detected planes; choosing a row selects the points within the Distance of it
+  (default 0.1 file units) so Delete removes them. The row labels "Lowest (floor?)" and "Highest (ceiling?)" are hints.
 - **Use as protection band:** A list row action that makes the height protection band follow a Detected plane (tilted
   when the plane is tilted; each tilt angle at most 60 degrees). An enabled band is replaced only after a confirm.
 - **Thin tool:** Selects duplicate points or a voxel subsample, always as a selection that Delete then removes (Undo

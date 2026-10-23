@@ -5964,8 +5964,15 @@ const planeUi = (page: Pg) => {
     if (!(await t.ctl(id).evaluate((e) => e.classList.contains("active")))) await t.ctl(id).click();
     await unfold();
   };
+  /** The O7 values (0.03 / 30 / 4) a plane test needing floor and ceiling or a 30 degree window sets; the defaults are 0.1 / 5 / 1 (R22-15). Call it once the tool is armed. */
+  const o7Params = async () => {
+    await t.setNum("plane-distance", 0.03);
+    await t.setNum("plane-max-tilt", 30);
+    await t.setNum("plane-max", 4);
+  };
   const detect = async (n: number) => {
     await useTool("tool-plane");
+    await o7Params();
     await t.ctl("plane-detect").click();
     await expect(rows).toHaveCount(n, { timeout: 30000 });
   };
@@ -5983,7 +5990,7 @@ const planeUi = (page: Pg) => {
     await dl.saveAs(path);
     return parsePcd(readFileSync(path)).rows;
   };
-  return { ...t, exact, k, asked, mode, unfold, rows, openCloud, useTool, detect, rowOf, exportRows };
+  return { ...t, exact, k, asked, mode, unfold, rows, openCloud, useTool, o7Params, detect, rowOf, exportRows };
 };
 const planeRows = () => parsePcd(planeRoomPcd()).rows;
 const dupRows = () => parsePcd(dupRoomPcd()).rows;
@@ -6042,6 +6049,7 @@ test("E2E-188 20 Use as protection band on a tilted floor: the band tilt is the 
   const t = planeUi(page);
   await t.openCloud("tilted.pcd", tiltedFloorPcd(), TILTED.floor + TILTED.ghost);
   await t.useTool("tool-plane");
+  await t.o7Params();
   await t.ctl("plane-detect").click();
   await expect(t.rows.first()).toBeVisible({ timeout: 30000 });
   const first = await t.rowOf(0);
@@ -6260,6 +6268,24 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     await page.screenshot({ path: `/out/part20-${w}x${hgt}-thin.png` });
   });
 }
+
+// ---- part 22-10: tool defaults (R22-15)
+test("E2E-260 22-10 a fresh page: Sparse radius 0.4; Planes 0.1 / 5 / 1; a default Detect lists exactly the floor with the fixture-truth count", async ({ page }) => {
+  const t = planeUi(page);
+  await t.openCloud("planes.pcd", planeRoomPcd(), PLANE_ROOM_TOTAL);
+  await t.useTool("tool-sparse");
+  await expect(page.locator("#sparse-radius")).toHaveValue("0.4");
+  await t.useTool("tool-plane");
+  await expect(page.locator("#plane-distance")).toHaveValue("0.1");
+  await expect(page.locator("#plane-max-tilt")).toHaveValue("5");
+  await expect(page.locator("#plane-max")).toHaveValue("1");
+  await t.ctl("plane-detect").click();
+  await expect(t.rows).toHaveCount(1, { timeout: 30000 });
+  const only = await t.rowOf(0);
+  expect(only.text).toContain("Lowest (floor?)");
+  expect(Math.abs(only.z)).toBeLessThan(0.01);
+  expect(only.count).toBe(countPlane(planeRows(), [0, 0, 1], 0, 0.1));
+});
 
 // ---- final fixes (part 21)
 test("E2E-195 21 a newly opened file forgets the chosen layer and the open fold-outs of the previous one", async ({ page }) => {

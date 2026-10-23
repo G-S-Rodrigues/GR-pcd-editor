@@ -107,11 +107,12 @@ Concepts worth knowing:
   cloud and **Export** contains them. Unlike the earlier view-only version it is saved with the session.
 - **Sparse points** selects points with fewer than a set number of neighbours (default 8)
   within a small cube around them, so isolated artifacts in the open go while dense walls
-  and floors stay. The radius (empty: derived from the point spacing), the region (whole
+  and floors stay. The radius (default 0.4 in the file unit; empty: derived from the point spacing), the region (whole
   cloud, box or polygon) and Exclude protected are set in its panel; it is an ordinary
   selection tool and composes with Add, Subtract and Intersect. The neighbour count is an
   upper-bound proxy for a true radius count, and its quality on a real scan is for you to judge.
-- **Planes** finds floor and ceiling candidates: Detect lists up to 4 near-horizontal planes (lowest first, with their
+- **Planes** finds floor and ceiling candidates: Detect lists up to Max planes near-horizontal planes (default 1, at most 8; tilt at most 5 degrees
+  and Distance 0.1 by default) (lowest first, with their
   point counts); choose a row to select the points within the Distance of that plane, or **Use as protection band** to
   protect a tilted floor. Detection changes nothing by itself.
 - **Thin** selects duplicate points (distance 0 for exact copies, above 0 for near copies) or a voxel subsample; Delete
