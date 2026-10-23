@@ -430,6 +430,14 @@
       button.hint { background: var(--accent-soft); border-color: var(--accent); }
       #history-list { margin: 4px 0; padding-left: 18px; color: var(--label-2); }
       #history-list li.undone { opacity: .5; }
+      .pop { position: fixed; z-index: 60; min-width: 220px; padding: 10px 12px 12px; box-sizing: border-box; border-radius: var(--r-pop); background: var(--glass-strong); border: 1px solid var(--separator); box-shadow: var(--shadow-pop); }
+      .pop[hidden] { display: none; }
+      .pop h4 { font: var(--t-headline); margin: 0 0 6px; }
+      .pop h5 { font: var(--t-section); color: var(--label-2); margin: 10px 0 4px; }
+      .kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin: 0; font: var(--t-callout); }
+      .kv dt { color: var(--label-2); }
+      .kv dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+      #cloud-details { width: 300px; }
       #help-overlay { position: absolute; right: 8px; bottom: 54px; max-width: min(520px, 90%); max-height: 90%; overflow: auto; background: var(--glass-strong); border: 1px solid var(--separator); padding: 8px 12px; border-radius: var(--r-pop); display: none; z-index: 4; }
       #help-overlay.on { display: block; }
       #help-overlay td { padding: 1px 10px 1px 0; vertical-align: top; }
@@ -437,17 +445,18 @@
       #statusbar .item, .layer-count, #apply, #kept-chip, .step-count, .triple input, .fbox .fin, .fbox .ftog { font-variant-numeric: tabular-nums; }
       /* Glass. The side panels, rows and status bar sit on the flat page, so they are translucent without a blur. The stage HUD and the sheets blur what is behind them. #viewport never blurs. */
       #legend, .fbox, #camera-cluster .ib, #band-pill, .notice { -webkit-backdrop-filter: blur(28px) saturate(170%); backdrop-filter: blur(28px) saturate(170%); }
-      dialog, #help-overlay, #progress { -webkit-backdrop-filter: blur(28px) saturate(170%); backdrop-filter: blur(28px) saturate(170%); }
+      dialog, .pop, #help-overlay, #progress { -webkit-backdrop-filter: blur(28px) saturate(170%); backdrop-filter: blur(28px) saturate(170%); }
       @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
         aside, .row, #statusbar { background: var(--glass-solid); }
         #legend, .fbox, #camera-cluster .ib, #band-pill, .notice { background: var(--glass-hud-solid); }
-        dialog, #help-overlay, #progress { background: var(--glass-strong-solid); }
+        dialog, .pop, #help-overlay, #progress { background: var(--glass-strong-solid); }
       }
       @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
     </style>
   </head>
   <body data-app="gr-pcd-editor">
     <div id="toolbar" class="row"></div>
+    <div id="popovers"><div id="cloud-details" class="pop" role="dialog" aria-label="Cloud details" hidden tabindex="-1"></div></div>
     <div id="viewbar" class="row"></div>
     <div id="body">
       <aside id="tools"><div id="start-banner" class="banner" hidden></div></aside>
@@ -467,7 +476,7 @@
         <div id="help-overlay" role="dialog" aria-label="Controls help"></div>
       </div>
       </div>
-      <aside id="inspector"><div id="toolpanels"></div><div id="fileinfo"></div><div id="editpanels"></div></aside>
+      <aside id="inspector"><div id="toolpanels"></div><div id="editpanels"></div></aside>
     </div>
     <div id="statusbar"></div>
     <div id="dropzone">Drop a .pcd or .pcdsession file to open it</div>

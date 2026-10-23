@@ -40,16 +40,16 @@ test("open a cloud, navigate, pick a pivot, colour, read counts", async ({ page 
 
   await test.step("E2E-02 views and projection", async () => {
     await page.locator('[data-control="cube-top"]').click();
-    await expect(page.locator("#inspector")).toContainText("Orthographic");
+    await expect(page.locator("#cloud-details")).toContainText("Orthographic");
     await page.locator('[data-control="view-perspective"]').click();
-    await expect(page.locator("#inspector")).toContainText("Perspective");
+    await expect(page.locator("#cloud-details")).toContainText("Perspective");
     await page.locator('[data-control="view-perspective"]').click();
     await page.locator('[data-control="cube-top"]').click();
   });
 
   await test.step("E2E-02 pivot: reset, pick", async () => {
     await page.locator('[data-control="pivot-reset"]').click();
-    await expect(page.locator("#inspector")).toContainText("4.5, 4.5, 1.5");
+    await expect(page.locator("#cloud-details")).toContainText("4.5, 4.5, 1.5");
     // the typed fields and Set pivot are gone; the pivot is set by picking. Top view: the point under the click with the greatest Z is picked
     await expect(page.locator('[data-control="pivot-x"]')).toHaveCount(0);
     await expect(page.locator('[data-control="pivot-set"]')).toHaveCount(0);
@@ -57,7 +57,7 @@ test("open a cloud, navigate, pick a pivot, colour, read counts", async ({ page 
     await expect(page.locator("#modebar")).toContainText("Tool: Pick pivot");
     await expect(page.locator('[data-control="pivot-pick"]')).toHaveAttribute("aria-pressed", "true");
     await pickAtWorld(page, [4, 4, 0]);
-    await expect(page.locator("#inspector")).toContainText("Pivot4, 4, 3");
+    await expect(page.locator("#cloud-details")).toContainText("Pivot4, 4, 3");
     await expect(page.locator("#modebar")).toContainText("Tool: None");
   });
 
@@ -116,10 +116,7 @@ test("6b real UI: filter, box select by numbers, preview counts, apply, undo, re
   });
   await page.goto("/");
   await page.locator("#file-input").setInputFiles({ name: "synthetic.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
-  const status = page.locator("#statusbar");
-  const stat = (name: string) => status.locator(`[data-status="${name}"]`);
-  const exact = (name: string, v: number | string) => expect(stat(name)).toHaveText(new RegExp(`^${name.replace(/[()/]/g, "\\$&")}: ${v}$`), { timeout: 15000 });
-  const num = async (name: string) => Number((await stat(name).innerText()).replace(/[^0-9]/g, ""));
+  const { stat, exact, num } = statOf(page);
   const ctl = (id: string) => page.locator(`[data-control="${id}"]`);
   const setNum = async (id: string, v: number) => {
     await expandFilterBox(page, id);
@@ -178,10 +175,7 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
   });
   await page.goto("/");
   await page.locator("#file-input").setInputFiles({ name: "synthetic.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
-  const status = page.locator("#statusbar");
-  const stat = (name: string) => status.locator(`[data-status="${name}"]`);
-  const exact = (name: string, v: number | string) => expect(stat(name)).toHaveText(new RegExp(`^${name.replace(/[()/]/g, "\\$&")}: ${v}$`), { timeout: 15000 });
-  const num = async (name: string) => Number((await stat(name).innerText()).replace(/[^0-9]/g, ""));
+  const { stat, exact, num } = statOf(page);
   const ctl = (id: string) => page.locator(`[data-control="${id}"]`);
   const setNum = async (id: string, v: number) => {
     await expandFilterBox(page, id);
@@ -238,12 +232,12 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
     await ctl("compare-overlay").click();
     await expect(page.locator("#modebar")).toContainText("View: Overlay (read-only)");
     await expect(page.locator("#counts-panel")).toContainText(`Deleted${GHOST} (`);
-    await expect(page.locator("#fileinfo")).toContainText(`Rendered all ${GHOST} eligible points`);
+    await expect(page.locator("#cloud-details")).toContainText(`Rendered all ${GHOST} eligible points`);
     await expect(ctl("apply")).toBeDisabled();
     await expect(ctl("tool-box")).toBeDisabled();
     await ctl("compare-split").click();
     await expect(page.locator("#modebar")).toContainText("View: Split (read-only)");
-    await expect(page.locator("#fileinfo")).toContainText("Right drawn");
+    await expect(page.locator("#cloud-details")).toContainText("Right drawn");
     await exact("Active", String(activeBefore - GHOST));
     await ctl("compare-edited").click();
     await expect(page.locator("#modebar")).not.toContainText("View:");
@@ -319,6 +313,16 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
   expect(errors).toEqual([]);
 });
 
+/** The status readers: Original and Active live in the Cloud details popover (bare value), the rest in the status bar ("Name: value"). */
+function statOf(page: import("@playwright/test").Page) {
+  const inDetails = (name: string) => name === "Original" || name === "Active";
+  const stat = (name: string) => (inDetails(name) ? page.locator("#cloud-details") : page.locator("#statusbar")).locator(`[data-status="${name}"]`);
+  const exact = (name: string, v: number | string) =>
+    expect(stat(name)).toHaveText(inDetails(name) ? new RegExp(`^${v}$`) : new RegExp(`^${name.replace(/[()/]/g, "\\$&")}: ${v}$`), { timeout: 15000 });
+  const num = async (name: string) => Number((await stat(name).innerText()).replace(/[^0-9]/g, ""));
+  return { stat, exact, num };
+}
+
 /** Shared helpers for the part 7 tests. */
 function helpers(page: import("@playwright/test").Page) {
   // an earlier test's session may still be open and unsaved: accept replacing it; bulk-delete confirms are recorded and dismissed
@@ -329,11 +333,7 @@ function helpers(page: import("@playwright/test").Page) {
       void d.dismiss();
     } else void d.accept();
   });
-  const status = page.locator("#statusbar");
-  const stat = (name: string) => status.locator(`[data-status="${name}"]`);
-  const exact = (name: string, v: number | string) =>
-    expect(stat(name)).toHaveText(new RegExp(`^${name.replace(/[()/]/g, "\\$&")}: ${v}$`), { timeout: 15000 });
-  const num = async (name: string) => Number((await stat(name).innerText()).replace(/[^0-9]/g, ""));
+  const { stat, exact, num } = statOf(page);
   const ctl = (id: string) => page.locator(`[data-control="${id}"]`);
   const setNum = async (id: string, v: number) => {
     await expandFilterBox(page, id);
@@ -829,7 +829,7 @@ test("E2E-20 7b2 the ? key and the ? button open a help overlay listing every ke
   await expect(help).not.toBeVisible();
 });
 
-const OVERFLOW_SELECTORS = ["#toolbar", "#viewbar", "#tools", "#inspector", "#toolpanels", "#fileinfo", "#editpanels", "#statusbar", "#modebar"];
+const OVERFLOW_SELECTORS = ["#toolbar", "#viewbar", "#tools", "#inspector", "#toolpanels", "#editpanels", "#statusbar", "#modebar"];
 
 async function checkLayout(page: import("@playwright/test").Page, w: number, h: number) {
   const scan = () =>
@@ -921,7 +921,7 @@ test("E2E-22 7b2 a slow upload can be cancelled: the progress goes away, the ope
   await page.waitForTimeout(500);
   await expect(page.locator("#notices")).not.toContainText("Cannot open");
   await exact("Original", String(ROOM_TOTAL));
-  await expect(page.locator("#inspector")).toContainText("room.pcd");
+  await expect(page.locator("#cloud-details")).toContainText("room.pcd");
   await expect(ctl("upload-cancel")).toBeHidden();
 });
 
@@ -1280,7 +1280,7 @@ test("E2E-156 17 the six filter boxes open collapsed as chips with no plane draw
 });
 
 for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
-  test(`E2E-157 17 the armed tool's section is the first section of the right panel at ${w}x${hgt}; File, Counts and View keep their order and fold state`, async ({ page }) => {
+  test(`E2E-157 17 the armed tool's section is the first section of the right panel at ${w}x${hgt}; the other right-panel folds keep their order and fold state`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: hgt });
     const t = helpers(page);
     await openRoom(page, t.exact);
@@ -1289,7 +1289,7 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     const open = (id: string) => page.locator(`details[data-section="${id}"]`).evaluate((d) => (d as HTMLDetailsElement).open);
     const fold = (id: string) => page.locator(`details[data-section="${id}"] > summary`);
     const idle = await order();
-    expect(idle.slice(0, 3)).toEqual(["file", "counts", "view"]);
+    expect(idle).toEqual(["display", "history"]);
     await t.ctl("tool-cluster").click();
     expect(await first()).toBe("cluster:true");
     await fold("cluster").click(); // fold it while armed: respected
@@ -1298,14 +1298,13 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     expect(await order()).toEqual(idle);
     await t.ctl("tool-cluster").click(); // arm again: opens again, first again
     expect(await first()).toBe("cluster:true");
-    expect((await order()).slice(1, 4)).toEqual(["file", "counts", "view"]);
+    expect((await order()).slice(1)).toEqual(idle);
     await t.ctl("tool-box").click();
     expect(await first()).toBe("box:true");
     await t.ctl("tool-box").click();
-    expect(await first()).toBe("file:true");
-    expect(await open("file")).toBe(true);
-    expect(await open("counts")).toBe(true);
-    expect(await open("view")).toBe(true);
+    expect(await first()).toBe("display:true");
+    expect(await open("display")).toBe(true);
+    expect(await open("history")).toBe(true);
   });
 }
 
@@ -1711,49 +1710,42 @@ test("E2E-46 10-8 each inspector section folds by click and keyboard, the fold s
   await openRoom(page, exact);
   const sum = (id: string) => page.locator(`details[data-section="${id}"] > summary`);
   const det = (id: string) => page.locator(`details[data-section="${id}"]`);
+  // the fold sections that survive part 22-5 and have their own controls: Layers (click) and the armed Box (keyboard)
+  await ctl("tool-box").click();
   const probes: Record<string, () => import("@playwright/test").Locator> = {
-    file: () => page.locator("#fileinfo details[data-section=file] dl"),
-    counts: () => page.locator("#counts-panel"),
-    view: () => page.locator("#fileinfo details[data-section=view] dl"),
-    display: () => ctl("filter-reset-all"),
-    history: () => page.locator("details[data-section=history] > p"), // "No edits yet" (an empty list has no height)
+    layers: () => ctl("layer-new"),
+    box: () => ctl("box-size-x"),
   };
   for (const id of Object.keys(probes)) {
     await expect(det(id)).toHaveAttribute("open", "");
     await expect(probes[id]()).toBeVisible();
   }
-  await expect(det("view")).toBeVisible();
-  const before = await page.locator("#counts-panel").innerText();
+  const countsText = () => page.locator("#counts-panel").innerText();
+  const before = await countsText();
+  const putWith = (ok: (folded: Record<string, boolean> | undefined) => boolean) =>
+    page.waitForRequest((r) => r.method() === "PUT" && r.url().endsWith("/api/session/client-state") && ok(JSON.parse(r.postData() ?? "{}")?.ui?.sectionsOpen));
   // click collapses; the keyboard (Enter on the focused summary) toggles too
-  for (const id of ["file", "counts", "view", "display"]) await sum(id).click();
-  await sum("history").focus();
+  const savedFolded = putWith((f) => f?.layers === false && f?.box === false);
+  await sum("layers").click();
+  await sum("box").focus();
   await page.keyboard.press("Enter");
   for (const id of Object.keys(probes)) await expect(probes[id]()).toBeHidden();
-  await ctl("tool-box").click();
-  await expect(ctl("box-size-x")).toBeVisible();
-  await sum("box").click();
-  await expect(ctl("box-size-x")).toBeHidden();
-  await expect.poll(async () => Object.keys(await SECTIONS_OPEN(page)).sort()).toEqual(["box", "counts", "display", "file", "history", "view"]);
-  await page.waitForTimeout(1600); // the client state is saved one second after the last change
+  await expect.poll(async () => Object.keys(await SECTIONS_OPEN(page)).sort()).toEqual(["box", "layers"]);
+  await savedFolded; // the client state is saved one second after the last change
   await page.reload();
   await exact("Original", String(ROOM_TOTAL));
-  await expect.poll(async () => Object.keys(await SECTIONS_OPEN(page)).sort()).toEqual(["box", "counts", "display", "file", "history", "view"]);
-  for (const id of Object.keys(probes)) await expect(probes[id]()).toBeHidden();
+  await expect.poll(async () => Object.keys(await SECTIONS_OPEN(page)).sort()).toEqual(["box", "layers"]);
+  await expect(probes.layers()).toBeHidden();
   await ctl("tool-box").click();
   // 17: arming a tool opens its folded section (it is the first section of the panel); the other folds are untouched
   await expect(ctl("box-size-x")).toBeVisible();
-  await expect.poll(async () => Object.keys(await SECTIONS_OPEN(page)).sort()).toEqual(["counts", "display", "file", "history", "view"]);
+  await expect.poll(async () => Object.keys(await SECTIONS_OPEN(page)).sort()).toEqual(["layers"]);
   // reopen all: nothing was lost and the counts read the same. The all-open state is also saved to the server (the next
   // test's page restores it), so this test leaves no folded section behind.
-  const savedOpen = page.waitForRequest((r) => {
-    if (r.method() !== "PUT" || !r.url().endsWith("/api/session/client-state")) return false;
-    const folded = JSON.parse(r.postData() ?? "{}")?.ui?.sectionsOpen;
-    return folded === undefined || Object.keys(folded).length === 0;
-  });
-  for (const id of ["file", "counts", "view", "display", "history"]) await sum(id).click();
+  const savedOpen = putWith((f) => f === undefined || Object.keys(f).length === 0);
+  await sum("layers").click();
   for (const id of Object.keys(probes)) await expect(probes[id]()).toBeVisible();
-  await expect(ctl("box-size-x")).toBeVisible();
-  expect(await page.locator("#counts-panel").innerText()).toBe(before);
+  expect(await countsText()).toBe(before);
   await savedOpen;
   // an inspector never scrolls sideways
   expect(await page.evaluate(() => { const a = document.getElementById("inspector")!; return a.scrollWidth <= a.clientWidth; })).toBe(true);
@@ -2719,7 +2711,7 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     await ctl("view-perspective").click();
     await expect(ctl("view-perspective")).toHaveAttribute("aria-pressed", "false");
     await expect(ctl("view-perspective").locator("svg")).toHaveAttribute("data-icon", "ortho");
-    await expect(page.locator("#inspector")).toContainText("Orthographic");
+    await expect(page.locator("#cloud-details")).toContainText("Orthographic");
     await ctl("view-perspective").click();
     // pick: arm, the button is pressed, Esc disarms; the click sets the pivot; reset returns it to the cloud centre
     await ctl("cube-top").click();
@@ -2729,12 +2721,12 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     await expect(page.locator("#modebar")).toContainText("Tool: None");
     await expect(ctl("pivot-pick")).toHaveAttribute("aria-pressed", "false");
     await ctl("pivot-reset").click();
-    await expect(page.locator("#inspector")).toContainText("Pivot9, 9.5, 2");
+    await expect(page.locator("#cloud-details")).toContainText("Pivot9, 9.5, 2");
     await pickPivotAt(page, [15, 2, 0]);
-    await expect(page.locator("#inspector")).toContainText("Pivot15, 2, 0");
+    await expect(page.locator("#cloud-details")).toContainText("Pivot15, 2, 0");
     await expect(ctl("pivot-pick")).toHaveAttribute("aria-pressed", "false");
     await ctl("pivot-reset").click();
-    await expect(page.locator("#inspector")).toContainText("Pivot9, 9.5, 2");
+    await expect(page.locator("#cloud-details")).toContainText("Pivot9, 9.5, 2");
     await page.screenshot({ path: `/out/camera-cluster-${w}.png` });
   });
 }
@@ -7208,3 +7200,86 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
     expect(errors).toEqual([]);
   });
 }
+
+// ---------------------------------------------------------------- part 22-5: popovers
+test("E2E-246 22-5 a popover opens from its anchor, closes on a click elsewhere, and its Esc closes it before the tool disarms and before a pending draft is discarded", async ({ page }) => {
+  const t = hideHelpers(page);
+  await t.floorSelected();
+  page.removeAllListeners("dialog");
+  page.on("dialog", (d) => void d.accept());
+  const pop = page.locator("#cloud-details");
+  const anchor = t.ctl("details-open");
+  const armed = (on: boolean) => (on ? expect(t.ctl("tool-box")).toHaveClass(/active/) : expect(t.ctl("tool-box")).not.toHaveClass(/active/));
+  await expect(pop).toBeHidden();
+  await anchor.click();
+  await expect(pop).toBeVisible();
+  await expect(anchor).toHaveAttribute("aria-expanded", "true");
+  await page.locator("#viewport").click({ position: { x: 40, y: 200 } });
+  await expect(pop).toBeHidden();
+  await expect(anchor).toHaveAttribute("aria-expanded", "false");
+  // Esc with no draft: the popover closes, the Box stays armed, the focus returns to the anchor; the second Esc disarms
+  await t.ctl("sel-clear").click();
+  await t.ctl("tool-box").click();
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  await t.exact("Selected", String(ROOM.ghost));
+  await anchor.click();
+  await expect(pop).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(pop).toBeHidden();
+  await armed(true);
+  await expect(page.locator("#modebar")).toContainText("Tool: Box");
+  await expect(anchor).toBeFocused();
+  await page.keyboard.press("Escape");
+  await armed(false);
+  await expect(page.locator("#modebar")).toContainText("Tool: None");
+  // E6b: a pending draft survives the Esc that closes the popover; the next Esc discards it, the one after disarms
+  await t.ctl("apply").click();
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
+  await t.ctl("tool-box").click();
+  await t.setBox(WALL18.c, WALL18.d);
+  await t.exact("Selected", String(ROOM.wall));
+  await t.ctl("op-add").click();
+  await t.setBox(FLOOR_BOX.c, FLOOR_BOX.d);
+  await expect(t.ctl("sel-discard")).toBeEnabled();
+  await anchor.click();
+  await expect(pop).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(pop).toBeHidden();
+  await expect(t.ctl("sel-discard")).toBeEnabled();
+  await armed(true);
+  await page.keyboard.press("Escape");
+  await expect(t.ctl("sel-discard")).toBeDisabled();
+  await armed(true);
+  await page.keyboard.press("Escape");
+  await armed(false);
+});
+
+test("E2E-248 22-5 Cloud details shows the file, the counts and the view, and Remove invalid lives in it", async ({ page }) => {
+  const { exact, ctl } = helpers(page);
+  await openRoom(page, exact);
+  const pop = page.locator("#cloud-details");
+  await ctl("details-open").click();
+  await expect(pop).toBeVisible();
+  const box = (await pop.boundingBox())!;
+  const at = (await ctl("details-open").boundingBox())!;
+  const vp = page.viewportSize()!;
+  expect(box.y, "8 px under its anchor").toBeGreaterThanOrEqual(at.y + at.height + 7.5);
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(vp.width);
+  expect(box.y + box.height).toBeLessThanOrEqual(vp.height);
+  await expect(pop).toContainText("room.pcd");
+  await expect(pop).toContainText("Fields");
+  await expect(pop).toContainText("m (assumed)");
+  await expect(pop.locator('[data-status="Original"]')).toHaveText(new Intl.NumberFormat("en-US").format(ROOM_TOTAL));
+  await expect(pop.locator('[data-status="Active"]')).toHaveText(new Intl.NumberFormat("en-US").format(ROOM_TOTAL));
+  await expect(pop.locator("#counts-panel")).toContainText("Remaining");
+  await expect(pop).toContainText("Perspective");
+  await expect(pop).toContainText("Pivot");
+  // a cloud with one invalid point: Remove invalid sits in the popover and removes it
+  await page.locator("#file-input").setInputFiles({ name: "synthetic.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
+  await exact("Original", String(TOTAL));
+  await expect(pop).toBeVisible();
+  await expect(ctl("remove-invalid")).toBeVisible();
+  await ctl("remove-invalid").click();
+  await exact("Active", String(TOTAL - 1));
+});

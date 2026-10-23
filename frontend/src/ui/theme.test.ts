@@ -282,6 +282,25 @@ describe("stylesheet rules (part 22-4)", () => {
     expect(all.find((r) => r.selector === "body")!.body).toMatch(/font:\s*var\(--t-body\)/);
   });
 
+  test("UI-1143 (popover glass) .pop is fixed, rounded, shadowed and above the stage HUD, blurs like the sheets with the opaque fallback, and has no display of its own when shown", () => {
+    const css = styleText();
+    const all = rules(css);
+    const has = (sel: string) => all.filter((r) => r.selector.split(",").map((x) => x.trim()).includes(sel));
+    const pop = has(".pop").map((r) => r.body).join(";");
+    expect(pop).toMatch(/position:\s*fixed/);
+    expect(pop).toContain("border-radius: var(--r-pop)");
+    expect(pop).toContain("box-shadow: var(--shadow-pop)");
+    expect(pop).not.toMatch(/(^|[;\s])display:/);
+    expect(has(".pop[hidden]").map((r) => r.body).join(";")).toContain("display: none");
+    const z = (b: string) => Number(b.match(/z-index:\s*(\d+)/)?.[1] ?? 0);
+    const hud = all.filter((r) => /#(legend|fbox-layer|camera-cluster|triad|band-pill|notices|progress|help-overlay)\b|\.fbox/.test(r.selector)).map((r) => z(r.body));
+    expect(z(pop)).toBeGreaterThan(Math.max(...hud));
+    expect(has(".pop").some((r) => /backdrop-filter: blur\(28px\) saturate\(170%\)/.test(r.body))).toBe(true);
+    const supports = css.match(/@supports not \(\(backdrop-filter: blur\(1px\)\) or \(-webkit-backdrop-filter: blur\(1px\)\)\)\s*\{([\s\S]*?\})\s*\}/);
+    const fb = rules(supports![1] + "}").find((r) => r.selector.split(",").map((x) => x.trim()).includes(".pop"));
+    expect(fb?.body).toContain("background: var(--glass-strong-solid)");
+  });
+
   test("UI-1090 the stage glass and the sheets carry blur(28px) saturate(170%) with the -webkit- twin, the page glass carries none, #viewport never blurs, and @supports not swaps in the opaque composites", () => {
     const css = styleText();
     const all = rules(css);

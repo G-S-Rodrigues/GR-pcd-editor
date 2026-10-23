@@ -42,7 +42,7 @@ import { createJobHint } from "./orchestration/jobhint";
 import type { SessionState, ToolKind } from "./state/types";
 import { h } from "./ui/dom";
 import { control } from "./ui/controls";
-import { buildInspector } from "./ui/inspector-shell";
+import { buildCloudDetails } from "./ui/inspector-shell";
 import { buildStatusbar } from "./ui/statusbar";
 import { buildBandPill } from "./ui/bandpill";
 import { buildLegend } from "./ui/legend";
@@ -53,6 +53,7 @@ import { discardEnabled } from "./tools/preview";
 import { buildTimeline } from "./timeline/strip";
 import { createStepCentre } from "./timeline/centre";
 import { createEditShape } from "./orchestration/editshape";
+import { bindPopovers } from "./ui/popover";
 import { buildHelp } from "./ui/help";
 import { classifyKey, escapeInField } from "./ui/keys";
 import { buildViewCube } from "./ui/viewcube";
@@ -161,16 +162,18 @@ const tools = createToolInteraction(canvas, store, size, {
   hint: (text) => addNotice(store, "info", "box_body_hint", text),
   filterEdit: (axis, side, value, o) => filters.editSide(axis, side, value, o),
 });
+let popOpenAtEsc = false; // a popover was open when this Esc began; the later listener must not also discard a draft (E6b)
 // The first global keydown listener: it reads the state before controls3d, the timeline, the filter boxes and the one below act.
 // A popover added later must report itself through `overlay` (22-5).
 window.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
+  popOpenAtEsc = pops.isOpen();
   const st = store.get();
   const el = e.target as HTMLInputElement | null;
   const target = escTarget(st, {
     field: escapeInField(el?.tagName ?? "", el?.type ?? ""),
     dragging: tools.dragging() || filterBoxes.dragging() || st.timeline.dragging !== null,
-    overlay: help.isOpen() || document.querySelector("dialog[open]") !== null,
+    overlay: help.isOpen() || pops.isOpen() || document.querySelector("dialog[open]") !== null,
   });
   tools.cancel(); // an arrow drag in progress goes back to its start value
   if (target === "tool") store.update(disarmedKeepingRegion); // R22-1: nothing more specific was pending; the selection and its candidate stay
@@ -257,6 +260,18 @@ const topbar = buildToolbar($("toolbar"), store, {
   undo: () => void editor.undo(),
   redo: () => void editor.redo(),
 });
+// The popovers. Their Escape listener is on window and registered after the first global one above, so that listener
+// still sees a popover as open (overlay) when it picks what the Esc is for; popOpenAtEsc keeps that for the draft branch below.
+const pops = bindPopovers([{ id: "details", anchor: topbar.anchors.details, panel: $("cloud-details") }], {
+  listenPointerDown: (f) => document.addEventListener("pointerdown", f, true),
+  listenKey: (f) => window.addEventListener("keydown", f),
+  listenResize: (f) => window.addEventListener("resize", f),
+  viewport: () => ({ w: window.innerWidth, h: window.innerHeight }),
+  measure: (anchor, panel) => {
+    const r = anchor.getBoundingClientRect();
+    return { anchor: { left: r.left, top: r.top, width: r.width, height: r.height }, size: { w: panel.offsetWidth, h: panel.offsetHeight } };
+  },
+});
 buildCameraCluster($("camera-cluster"), store, { size });
 buildViewbar($("viewbar"), store, {
   size,
@@ -319,9 +334,6 @@ const panelActions = {
   layerMove: (id: number, dir: -1 | 1) => void layers.move(id, dir),
   layerMerge: (from: number, into: number) => void layers.merge(from, into),
   layerDeletePoints: (id: number) => void layers.deletePoints(id),
-  removeInvalid: () => void editor.removeInvalid(),
-  removeInvalidVisible: () => editor.removeInvalidVisible(),
-  removeInvalidLabel: () => editor.removeInvalidLabel(),
   cancelJob: () => runner.reset(),
   startDrawing: () => store.update((st) => ({ ...st, tools: { ...st.tools, polygon: startDrawing(st.tools.polygon) } })),
   finishPolygon: (): string | null => {
@@ -343,7 +355,7 @@ const panelActions = {
     clearSelection: () => void editor.clearSelection(),
   }),
 };
-buildInspector($("fileinfo"), store);
+buildCloudDetails($("cloud-details"), store, { removeInvalid: () => void editor.removeInvalid(), removeInvalidVisible: () => editor.removeInvalidVisible(), removeInvalidLabel: () => editor.removeInvalidLabel() });
 buildToolPalette($("tools"), store, panelActions);
 buildLayersPanel($("layers-slot"), store, panelActions);
 buildBandPill($("stage"), store);
@@ -407,7 +419,7 @@ window.addEventListener("keydown", (e) => {
     layers.leaveEdit();
   } else if (id === "cancel" && store.get().tools.polygon.phase === "drawing") {
     panelActions.cancelDrawing();
-  } else if (id === "cancel" && store.get().interaction === "orbit" && discardEnabled(store.get())) {
+  } else if (id === "cancel" && store.get().interaction === "orbit" && discardEnabled(store.get()) && !popOpenAtEsc) {
     runner.discardDraft();
   }
 });

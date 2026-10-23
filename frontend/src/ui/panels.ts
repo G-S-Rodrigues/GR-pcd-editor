@@ -70,9 +70,6 @@ export interface PanelActions {
   layerMove: (id: number, dir: -1 | 1) => void;
   layerMerge: (from: number, into: number) => void;
   layerDeletePoints: (id: number) => void;
-  removeInvalid: () => void;
-  removeInvalidVisible: () => boolean;
-  removeInvalidLabel: () => string;
   cancelJob: () => void;
   planeDetect: () => void;
   planeCancel: () => void;
@@ -203,7 +200,6 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
   const note = h("p", { id: "scope-note", class: "note" });
   const deleteBlocked = h("p", { id: "delete-blocked", class: "note warn", hidden: true });
   const clusterLimit = h("p", { id: "cluster-limit", class: "note warn", hidden: true });
-  const invalid = control("button", { id: "remove-invalid", onclick: a.removeInvalid }, "Remove invalid");
   const draftNote = h("p", { id: "draft-note", class: "note warn", hidden: true });
   const keptWarn = h("p", { id: "kept-warning", class: "note warn", hidden: true });
   const keptDelete = control(
@@ -239,8 +235,6 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     keptDelete,
     keptToggle,
     h("div", { id: "layers-slot" }),
-    h("h2", { text: "Cloud" }),
-    invalid,
   );
   const sync: Sync = (s) => {
     for (const k of ["box", "polygon", "cluster", "sparse", "plane", "thin"] as const) btns[k].classList.toggle("active", s.tool === k);
@@ -308,8 +302,6 @@ export function buildToolPalette(root: HTMLElement, store: Store<AppState>, a: P
     keptDelete.textContent = hl.deleteKeptLabel ?? "";
     keptToggle.hidden = hl.keptCount === 0;
     keptToggle.classList.toggle("active", s.showKept);
-    invalid.hidden = !a.removeInvalidVisible();
-    invalid.textContent = a.removeInvalidLabel();
   };
   store.subscribe(sync);
   sync(store.get());

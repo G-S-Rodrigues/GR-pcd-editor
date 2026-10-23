@@ -44,7 +44,7 @@ export interface EscInput {
   field: boolean;
   /** An arrow, ring or handle drag (tools.dragging()), a filter grip drag (buildFilterBoxes.dragging; `filterUi.interacting` also means keyboard focus), a timeline marker drag. */
   dragging: boolean;
-  /** The help overlay or an open <dialog> (22-5 adds its popovers here). */
+  /** The help overlay, an open popover or an open <dialog>. */
   overlay: boolean;
 }
 /** What one Esc is for, most specific first; "tool" (disarm) only when nothing else is pending. */

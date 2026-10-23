@@ -18,12 +18,11 @@ beforeEach(() => {
   store.set({ ...createAppStore().get(), session: sessionFixture(), tool: "box", liveFirst: true });
 });
 
-test("UI-892 (slot) the Layers section sits in #layers-slot between the Selection block and the Cloud heading", () => {
+test("UI-892 (slot) the Layers section sits in #layers-slot after the Selection block, as the last child", () => {
   const kids = dom.root.children;
   const i = kids.indexOf(slot);
   expect(i).toBeGreaterThan(kids.findIndex((c) => c.tag === "h2" && c.text() === "Selection"));
-  expect(kids[i + 1].tag).toBe("h2");
-  expect(kids[i + 1].text()).toBe("Cloud");
+  expect(kids[kids.length - 1]).toBe(slot);
   expect(slot.children[0].getAttribute("data-section")).toBe("layers");
 });
 
@@ -42,6 +41,6 @@ test("UI-893 the short texts are visible and the long ones are tooltips; Select 
   expect(rowOf("sel-select-displayed")).toBe(rowOf("sel-invert"));
   expect(rowOf("sel-clear")).toBe(rowOf("sel-hide"));
   expect(rowOf("sel-commit")).toBe(rowOf("sel-discard"));
-  const HEAD_IDS = ["tool-box", "tool-polygon", "tool-cluster", "tool-sparse", "op-select", "op-add", "op-subtract", "op-intersect", "preview-live", "scope-select", "sel-colour", "sel-commit", "sel-discard", "sel-select-displayed", "sel-invert", "sel-clear", "sel-hide", "sel-delete-kept", "sel-show-kept", "remove-invalid", "layer-name", "layer-new", "layer-assign", "layer-release", "layer-set"];
+  const HEAD_IDS = ["tool-box", "tool-polygon", "tool-cluster", "tool-sparse", "op-select", "op-add", "op-subtract", "op-intersect", "preview-live", "scope-select", "sel-colour", "sel-commit", "sel-discard", "sel-select-displayed", "sel-invert", "sel-clear", "sel-hide", "sel-delete-kept", "sel-show-kept", "layer-name", "layer-new", "layer-assign", "layer-release", "layer-set"];
   for (const id of HEAD_IDS) expect(dom.root.control(id), id).toBeDefined();
 });
