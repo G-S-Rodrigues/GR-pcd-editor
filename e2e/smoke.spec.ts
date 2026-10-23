@@ -7988,7 +7988,7 @@ for (const [w, h] of SIZES) {
       for (const scheme of ["dark", "light"] as const) {
         await page.emulateMedia({ colorScheme: scheme });
         await transitionsSettled(page);
-        await page.waitForTimeout(300); // the canvas redraws with the theme's render palette
+        await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))); // two frames: the canvas redraws with the theme's render palette
         expect(await noScroll(), `${state} ${scheme}: the page does not scroll`).toBe(true);
         await page.screenshot({ path: `/out/part22-6-${w}x${h}-${state}-${scheme}.png` });
       }
