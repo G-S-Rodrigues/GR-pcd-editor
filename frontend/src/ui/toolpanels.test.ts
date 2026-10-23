@@ -6,6 +6,7 @@ import { PROTECTION_COPY } from "../inspector/protection";
 import { POLYGON_DEPTH_NOTE } from "../tools/polygon/model";
 import { type PanelActions, BOX_NOTE, buildEditPanels } from "./panels";
 import { CLUSTER_HELP, PLANE_HELP, SPARSE_HELP, THIN_HELP } from "./copy";
+import { FIELD_SPECS } from "./fields";
 import type { PopEntry } from "./popover";
 
 const dom = installFakeDom();
@@ -105,4 +106,23 @@ test("UI-1167 an open session with no tool armed shows the idle line in the tool
   store.set({ tool: "box" });
   expect(idle.hidden).toBe(true);
   store.set({ tool: "none" });
+});
+
+test("UI-1171 every control of the tool and protection groups is built exactly once, the polygon mode is a segmented group, the skip-protected checkboxes are switches, and the thin method stays a select", () => {
+  const all = [...dom.root.all(), ...toolRoot.all()];
+  const groups = ["box", "polygon", "cluster", "sparse", "plane", "thin", "protection"];
+  for (const spec of FIELD_SPECS.filter((x) => groups.includes(x.group))) {
+    if (spec.id === "plane-list") continue; // built per detection, not at start
+    expect(all.filter((e) => e.getAttribute("data-control") === spec.id).length, spec.id).toBe(1);
+  }
+  const mode = toolRoot.control("poly-mode") as FakeEl;
+  expect(mode.tag).toBe("div");
+  expect(mode.getAttribute("role")).toBe("radiogroup");
+  expect(cls(mode)).toContain("seg");
+  for (const t of ["cluster", "sparse", "plane", "thin"]) {
+    const ex = toolRoot.control(`${t}-exclude-protected`) as FakeEl;
+    expect(ex.getAttribute("type")).toBe("checkbox");
+    expect(cls(ex)).toContain("switch");
+  }
+  expect((toolRoot.control("thin-method") as FakeEl).tag).toBe("select");
 });

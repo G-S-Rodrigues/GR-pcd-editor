@@ -335,7 +335,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
   const check = (id: string, label: string, get: (s: AppState) => boolean, set: (v: boolean) => void, cls?: string) => {
     const input = control("input", { id, type: "checkbox", class: cls, onchange: () => set(input.checked) });
     syncs.push((s) => (input.checked = get(s)));
-    return h("label", { class: "f" }, input, label);
+    return h("label", { class: "f" }, ...(cls ? [label, input] : [input, label]));
   };
   const select = (id: string, label: string, options: [string, string][], get: (s: AppState) => string, set: (v: string) => void) => {
     const el = control("select", { id, onchange: () => set(el.value) }, ...options.map(([v, t]) => h("option", { value: v, text: t })));
@@ -626,10 +626,10 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     vertexList,
     row(polyZ("zMin", "poly-zmin", "Z min"), polyZ("zMax", "poly-zmax", "Z max")),
     text((s) => PG.polygonProblem(s.tools.polygon) ?? (s.tools.polygon.zMin <= -Z_UNLIMITED && s.tools.polygon.zMax >= Z_UNLIMITED ? "Z limits: unlimited" : "")),
-    select("poly-mode", "Mode", [["inside", "Inside"], ["outside", "Outside"]], (s) => s.tools.polygon.mode, (v) => {
+    prow("Select", segmented("poly-mode", "Polygon mode", [["inside", "Inside"], ["outside", "Outside"]], (s) => s.tools.polygon.mode, (v) => {
       store.update((s) => ({ ...s, tools: { ...s.tools, polygon: { ...s.tools.polygon, mode: v as "inside" | "outside" } } }));
       a.toolChanged();
-    }),
+    })),
   );
 
   // arming a tool opens its section if it was folded (through the store, like a click on its summary) and scrolls the panel to the
@@ -667,7 +667,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     "cluster",
     "Cluster",
     (s) => s.tool === "cluster",
-    h("div", { class: "stack" }, pickButton, button("cluster-cancel", "Cancel", a.cancelJob)),
+    h("div", { class: "btnrow" }, pickButton, button("cluster-cancel", "Cancel", a.cancelJob)),
     text((s) => pickText(s)),
     field("cluster-radius", "Link distance", (s) => s.tools.cluster.radius, (v) => {
       const r = setRadius(store.get().tools.cluster, v);
@@ -711,7 +711,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     check("cluster-exclude-protected", "Exclude protected points", (s) => s.tools.cluster.excludeProtected, (v) => {
       store.update((s) => ({ ...s, tools: { ...s.tools, cluster: { ...s.tools.cluster, excludeProtected: v } } }));
       a.toolChanged();
-    }),
+    }, "switch"),
     (() => {
       const dl = h("dl", { id: "cluster-result" });
       syncs.push((s) => dl.replaceChildren(...clusterPanel(s).flatMap((r) => [h("dt", { text: r.label }), h("dd", { text: r.value })])));
@@ -762,7 +762,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     check("sparse-exclude-protected", "Exclude protected points", (s) => s.tools.sparse.excludeProtected, (v) => {
       store.update((s) => ({ ...s, tools: { ...s.tools, sparse: { ...s.tools.sparse, excludeProtected: v } } }));
       a.toolChanged();
-    }),
+    }, "switch"),
   );
 
   // ---- planes: detect floor and ceiling planes (read only), choose one, select its points
@@ -822,8 +822,8 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     check("plane-exclude-protected", "Exclude protected points", (s) => s.tools.plane.excludeProtected, (v) => {
       store.update((s) => ({ ...s, tools: { ...s.tools, plane: { ...s.tools.plane, excludeProtected: v } } }));
       if (store.get().planes.chosen) a.toolChanged();
-    }),
-    h("div", { class: "stack" }, detectBtn, cancelBtn),
+    }, "switch"),
+    h("div", { class: "btnrow" }, detectBtn, cancelBtn),
     text(planesNote, "note"),
     planeList,
   );
@@ -853,7 +853,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     check("thin-exclude-protected", "Exclude protected points", (s) => s.tools.thin.excludeProtected, (v) => {
       store.update((s) => ({ ...s, tools: { ...s.tools, thin: { ...s.tools.thin, excludeProtected: v } } }));
       a.toolChanged();
-    }),
+    }, "switch"),
   );
 
   // ---- filters (the six boxes live on the canvas, see filterboxes/; the panel keeps the note, summary and global reset)
