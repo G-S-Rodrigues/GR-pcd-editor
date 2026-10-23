@@ -7920,3 +7920,96 @@ test("E2E-269 22-6 the Height protection header: the ? works while folded, the s
   await expect(band).toHaveAttribute("aria-checked", "false");
   await band.click();
 });
+
+/** An element's own background and the backgrounds behind it (innermost first) up to the first opaque layer: what a graphic is drawn over. */
+const graphicBackdrop = (page: Pg, selector: string) =>
+  page.evaluate((sel) => {
+    const el = document.querySelector(sel)!;
+    const own = getComputedStyle(el).backgroundColor;
+    const layers: string[] = [];
+    for (let n: Element | null = el.parentElement; n; n = n.parentElement) {
+      const bg = getComputedStyle(n).backgroundColor;
+      if (bg !== "rgba(0, 0, 0, 0)") {
+        layers.push(bg);
+        if (/^rgb\(/.test(bg)) break;
+      }
+    }
+    return { own, layers };
+  }, selector);
+const graphicContrast = (g: Awaited<ReturnType<typeof graphicBackdrop>>) => {
+  let bg: Rgba = [0, 0, 0, 1];
+  for (const l of [...g.layers].reverse()) bg = over(cssRgba(l), bg);
+  return contrastOf(cssRgba(g.own), bg);
+};
+
+for (const scheme of ["dark", "light"] as const) {
+  test(`E2E-270 22-6 contrast under the ${scheme} theme: the armed icon on the accent, the pill, the header name and kbd, the ? and the switch on-track meet their floors; the switch off-track is measured and recorded`, async ({ page }, testInfo) => {
+    const t = hideHelpers(page);
+    await page.emulateMedia({ colorScheme: scheme });
+    await openRoom(page, t.exact);
+    await t.ctl("tool-box").click();
+    await t.ctl("prot-enabled").check();
+    await transitionsSettled(page);
+    const icon = await page.evaluate(() => {
+      const b = document.querySelector('[data-control="tool-box"]')!;
+      return { fg: getComputedStyle(b).color, bg: getComputedStyle(b).backgroundColor };
+    });
+    expect(contrastOf(cssRgba(icon.fg), cssRgba(icon.bg)), `${scheme} armed icon on accent`).toBeGreaterThanOrEqual(3);
+    for (const [name, sel, floor] of [
+      ["pill", "#arm-pill, #arm-pill *", 4.5],
+      ["header name and kbd", 'details[data-section="box"] > summary h2, details[data-section="box"] > summary .kbd', 4.5],
+      ["? button", 'details[data-section="box"] > summary .qm', 3],
+    ] as const) {
+      await expect.poll(async () => (await textBackdrops(page, sel)).length, { message: name }).toBeGreaterThan(0);
+      for (const e of await textBackdrops(page, sel)) {
+        if (!/"[^"]+"$/.test(e.what)) continue;
+        expect(worstContrast(e), `${scheme} ${name}: ${e.what}`).toBeGreaterThanOrEqual(floor);
+      }
+    }
+    const on = graphicContrast(await graphicBackdrop(page, '[data-control="prot-enabled"]'));
+    expect(on, `${scheme} switch on-track`).toBeGreaterThanOrEqual(3);
+    await t.ctl("prot-enabled").uncheck();
+    await transitionsSettled(page);
+    const off = graphicContrast(await graphicBackdrop(page, '[data-control="prot-enabled"]'));
+    testInfo.annotations.push({ type: "measure", description: `${scheme} switch on-track ${on.toFixed(2)}, off-track ${off.toFixed(2)} (owner E12: no floor)` });
+    console.log(`E2E-270 ${scheme} switch on ${on.toFixed(2)} off ${off.toFixed(2)}`);
+  });
+}
+
+for (const [w, h] of SIZES) {
+  test(`E2E-271 22-6 owner screenshots at ${w}x${h}, dark and light: idle, Box armed with a preview, help open, Fit menu open, Height protection open; the page never scrolls and raises no error`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const errors: string[] = [];
+    const t = previewHelpers(page);
+    await openRoom(page, t.exact);
+    page.on("pageerror", (e) => errors.push(String(e)));
+    const noScroll = () => page.evaluate(() => document.scrollingElement!.scrollHeight <= document.scrollingElement!.clientHeight + 1 && document.scrollingElement!.scrollWidth <= document.scrollingElement!.clientWidth + 1);
+    const shot = async (state: string) => {
+      for (const scheme of ["dark", "light"] as const) {
+        await page.emulateMedia({ colorScheme: scheme });
+        await transitionsSettled(page);
+        await page.waitForTimeout(300); // the canvas redraws with the theme's render palette
+        expect(await noScroll(), `${state} ${scheme}: the page does not scroll`).toBe(true);
+        await page.screenshot({ path: `/out/part22-6-${w}x${h}-${state}-${scheme}.png` });
+      }
+    };
+    await shot("idle");
+    await t.wallSelected();
+    await t.ctl("op-add").click();
+    await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+    await t.previewIs(ROOM.wall + ROOM.ghost);
+    await shot("box-armed");
+    await t.ctl("box-help").click();
+    await expect(page.locator("#box-help-pop")).toBeVisible();
+    await shot("help-open");
+    await page.keyboard.press("Escape");
+    await openFit(page);
+    await expect(page.locator("#box-fit-menu")).toBeVisible();
+    await shot("fit-open");
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#box-fit-menu")).toBeHidden();
+    await t.ctl("prot-enabled").check();
+    await shot("protection");
+    expect(errors).toEqual([]);
+  });
+}

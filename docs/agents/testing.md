@@ -248,6 +248,8 @@ export, save, persist, unsaved, tooltips), under `frontend/src/**`; backend rend
 
 ## Collapsible inspector sections (part 10-8)
 
+(Part 22-6: tool sections now carry the shared header, icon tile, name, `?` and close, inside the summary.)
+
 IDs: `UI-230..232` (`frontend/src/ui/sections.test.ts`: all open by default, per-section
 fold, client-state round trip, old sessions all open) and `E2E-46` (click and Enter fold
 each section, reload restores, counts unchanged). Fold state is `AppState.sectionsOpen`
@@ -645,3 +647,20 @@ Since 22-5 the fold ids are `box, polygon, cluster, sparse, plane, thin, layers`
   popover as open (`pops.isOpen()` into `overlay`); `popOpenAtEsc` stops the same Esc from also discarding a pending draft. Esc on a
   select inside a popover is the select's own (`escapeInField`).
 - `--protected-text` is the kept chip's text token (light `#006585`): `--protected-ui` measured 4.196 on the light bar, under 4.5.
+
+## Part 22-6 additions (floating tool palette and right inspector)
+
+- New ids: `UI-1160` (`pops.add`), `UI-1161..1164` (palette, arm pill, reserved corner), `UI-1165..1167` (shared tool header, `?` helps, idle
+  line), `UI-1168`/`UI-1169` (Box rows, Min / max and Handles disclosures), `UI-1170` (Height protection header), `UI-1171` (Polygon
+  segmented mode, switches), `UI-1172` a/b (tokens, widths, `.switch`), `E2E-265..271`. E2E-270 measures the switch off track (about 1.64 dark,
+  1.31 light) and logs it as an annotation with no floor (owner E12); E2E-271 keeps 20 owner shots under `shots-22/part-6` (never committed).
+- Changed tests: UI-300, UI-682, UI-893, UI-969, UI-983, E2E-121, E2E-16, E2E-30, E2E-100, E2E-104, E2E-196, UI-890, UI-1166 (selectors,
+  setup and pinned text only), and `OVERFLOW_SELECTORS` gained `#palette`.
+- Summary-centre rule: a click on a tool section's summary must land on its centre, so the `?`, kbd and switch sit clear of it (E2E-265).
+- `openFit(page)` and `openHandles(page)` open the Fit menu and the Handles disclosure; never use them inside E2E-163..167.
+- `pops.add(entry)` registers late panels (Fit menu, tool helps) in the one-open, outside-click and Esc rules.
+- Reserved corner: the palette lives inside the legend's reserved corner (`LEGEND_BOX` left 60, top 40); UI-1164 keeps them apart.
+- Widths: `--rs-w` is 280 px below 1440, 296 from 1440, 332 from 1700 (R22-16); the 0.6 stage bound in `checkLayout` is untouched. 22-7 must keep
+  `--ls-w` at 232 px or less below 1440.
+- The Fit menu is `position: fixed` inside the aside: a later `backdrop-filter`, `filter` or `transform` on `aside` would break it.
+- Counts after this part: see the gate run in the commit message.
