@@ -37,7 +37,7 @@ beforeEach(() => {
 
 test("UI-831 the layers section is a registered fold section, hidden without a file, shown with one", () => {
   expect(SECTION_IDS).toContain("layers");
-  expect(SECTION_IDS.indexOf("layers")).toBeLessThan(SECTION_IDS.indexOf("history"));
+  expect(SECTION_IDS[SECTION_IDS.length - 1]).toBe("layers"); // Layers is the last fold
   expect(section().hidden).toBe(false);
   store.set({ session: null });
   expect(section().hidden).toBe(true);

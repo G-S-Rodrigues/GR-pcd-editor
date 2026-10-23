@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 import { createAppStore, initialState } from "../state/app";
 import type { Candidate, SessionState } from "../state/types";
 import { applyPreset } from "../view/presets";
-import { modeIndicator, statusItems } from "./model";
+import { footerItems, modeIndicator, statusItems } from "./model";
 
 const session = (over: Partial<SessionState> = {}) =>
   ({
@@ -89,4 +89,12 @@ test("UI-184 Protected shows an update marker until the server has the protectio
   // a disabled panel with other numbers is not pending
   const off = { ...base, tools: { ...base.tools, protection: { ...base.tools.protection, global: { enabled: false, min: 5, max: 6 } } } };
   expect(protectedOf(off)).toBe("7");
+});
+
+test("UI-1139 (items) footerItems is statusItems without Original, Active and Unsaved, in the same order", () => {
+  const st = { ...initialState(), session: session(), candidate: cand(), render: { count: 300, eligible: 800 } as never, budget: 300 };
+  const all = statusItems(st).map((i) => i.label);
+  expect(footerItems(st).map((i) => i.label)).toEqual(all.filter((l) => !["Original", "Active", "Unsaved"].includes(l)));
+  expect(footerItems(st).map((i) => i.label)).toEqual(["Displayed", "Selected", "Protected", "Candidates", "Invalid (active/total)", "Deleted", "Rendered", "Job"]);
+  expect(footerItems(initialState())).toEqual([]);
 });

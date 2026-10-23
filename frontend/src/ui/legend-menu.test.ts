@@ -12,7 +12,6 @@ import { TOOLTIPS } from "./tooltips";
 
 let dom: ReturnType<typeof installFakeDom>;
 let root: FakeEl;
-let modebar: FakeEl;
 let api: ReturnType<typeof buildLegend>;
 const store = createAppStore();
 const header = () => root.control("legend-menu") as FakeEl;
@@ -21,8 +20,7 @@ const rows = () => root.all().filter((e) => e.getAttribute("data-legend")).map((
 beforeAll(() => {
   dom = installFakeDom();
   root = dom.root;
-  modebar = new FakeEl("div");
-  api = buildLegend(root as unknown as HTMLElement, store, modebar as unknown as HTMLElement);
+  api = buildLegend(root as unknown as HTMLElement, store);
 });
 afterAll(() => dom.restore());
 
@@ -88,9 +86,10 @@ test("UI-344 the reserved LEGEND rectangle is the expanded size the builder sets
   expect(LEGEND).toEqual({ w: LEGEND_BOX.left + LEGEND_BOX.w + LEGEND_BOX.pad, h: LEGEND_BOX.top + LEGEND_BOX.maxH + LEGEND_BOX.pad });
 });
 
-test("UI-345 the mode line (id modebar) lives in the menu body, after the rows", () => {
+test("UI-345 the mode line (id modebar) no longer lives in the menu body: it moved to the footer", () => {
   const body = root.all().find((e) => e.getAttribute("data-legend-body") === "1") as FakeEl;
-  expect(body.children[body.children.length - 1]).toBe(modebar);
+  expect(body.all().some((e) => e.getAttribute("id") === "modebar")).toBe(false);
+  expect(body.children[body.children.length - 1].className).toBe("legend-layers");
 });
 
 const ramp = () => root.all().find((e) => e.getAttribute("id") === "legend-ramp") as FakeEl;

@@ -396,9 +396,14 @@
       #dropzone.on { display: grid; }
       #progress { position: absolute; left: 50%; top: 40%; transform: translateX(-50%); background: var(--glass-strong); border: 1px solid var(--separator); padding: 10px 16px; border-radius: var(--r-pop); display: none; z-index: 4; }
       #progress.on { display: block; }
-      #statusbar { display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 4px 8px; background: var(--glass); border-top: 1px solid var(--separator); font: var(--t-caption); }
+      #footer { display: flex; align-items: center; gap: 14px; height: var(--ft-h); box-sizing: border-box; padding: 0 12px; background: var(--glass); border-top: 1px solid var(--separator); font: var(--t-caption); white-space: nowrap; overflow: hidden; }
+      #statusbar { display: flex; flex-wrap: nowrap; align-items: center; gap: 14px; min-width: 0; }
       #statusbar .item b { color: var(--label-2); font-weight: 500; }
-      #modebar { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--separator); color: var(--label-2); font: var(--t-caption); line-height: 1.35; }
+      #statusbar .item { color: var(--label); }
+      #modebar { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--label-2); font: var(--t-caption); }
+      .link { appearance: none; background: none; border: 0; padding: 0; font: inherit; color: var(--accent-text); text-decoration: underline; cursor: pointer; }
+      #history-pop { width: 300px; }
+      #history-open { position: absolute; right: 8px; bottom: 8px; pointer-events: auto; z-index: 4; }
       dialog { background: var(--glass-strong); color: var(--label); border: 1px solid var(--separator); border-radius: var(--r-pop); min-width: 420px; max-width: 640px; }
       dialog h2 { font: var(--t-sheet); }
       dialog::backdrop { background: rgba(0,0,0,.55); }
@@ -453,7 +458,7 @@
       #legend, .fbox, #camera-cluster .ib, #band-pill, .notice { -webkit-backdrop-filter: blur(28px) saturate(170%); backdrop-filter: blur(28px) saturate(170%); }
       dialog, .pop, #help-overlay, #progress { -webkit-backdrop-filter: blur(28px) saturate(170%); backdrop-filter: blur(28px) saturate(170%); }
       @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-        aside, .row, #statusbar { background: var(--glass-solid); }
+        aside, .row, #statusbar, #footer { background: var(--glass-solid); }
         #legend, .fbox, #camera-cluster .ib, #band-pill, .notice { background: var(--glass-hud-solid); }
         dialog, .pop, #help-overlay, #progress { background: var(--glass-strong-solid); }
       }
@@ -462,7 +467,7 @@
   </head>
   <body data-app="gr-pcd-editor">
     <div id="toolbar" class="row"></div>
-    <div id="popovers"><div id="cloud-details" class="pop" role="dialog" aria-label="Cloud details" hidden tabindex="-1"></div><div id="display-pop" class="pop" role="dialog" aria-label="Display" hidden tabindex="-1"></div><div id="help-overlay" class="pop" role="dialog" aria-label="Controls help" hidden tabindex="-1"></div></div>
+    <div id="popovers"><div id="cloud-details" class="pop" role="dialog" aria-label="Cloud details" hidden tabindex="-1"></div><div id="display-pop" class="pop" role="dialog" aria-label="Display" hidden tabindex="-1"></div><div id="history-pop" class="pop" role="dialog" aria-label="History" hidden tabindex="-1"></div><div id="help-overlay" class="pop" role="dialog" aria-label="Controls help" hidden tabindex="-1"></div></div>
         <div id="body">
       <aside id="tools"><div id="start-banner" class="banner" hidden></div></aside>
       <div id="centre">
@@ -472,7 +477,7 @@
         <div id="viewcube"></div>
         <div id="triad"></div>
         <div id="camera-cluster" role="group" aria-label="Camera"></div>
-        <div id="legend"><div id="modebar"></div></div>
+        <div id="legend"></div>
         <div id="empty">Open a .pcd file to begin.<br />Drop one anywhere, or use “Open from this computer”.</div>
         <div id="progress"></div>
         <div id="webgl-notice" hidden></div>
@@ -482,7 +487,7 @@
       </div>
       <aside id="inspector"><div id="toolpanels"></div><div id="editpanels"></div></aside>
     </div>
-    <div id="statusbar"></div>
+    <footer id="footer"><div id="statusbar"></div><div id="modebar"></div></footer>
     <div id="dropzone">Drop a .pcd or .pcdsession file to open it</div>
     <script type="module" src="/src/main.ts"></script>
   </body>

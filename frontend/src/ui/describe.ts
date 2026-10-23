@@ -36,6 +36,7 @@ export function describeControls(): ControlDescriptor[] {
     { id: "help", label: "Controls help", group: "display" },
     { id: "display-open", label: "Display", group: "display" },
     { id: "details-open", label: "Cloud details", group: "display" },
+    { id: "status-invalid", label: "Invalid points", group: "display" },
     { id: "theme-system", label: "Theme System", group: "display" },
     { id: "theme-light", label: "Theme Light", group: "display" },
     { id: "theme-dark", label: "Theme Dark", group: "display" },

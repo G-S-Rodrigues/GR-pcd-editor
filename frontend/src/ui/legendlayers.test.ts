@@ -24,7 +24,7 @@ const root = () => dom.root;
 const items = () => root().all().filter((e) => e.getAttribute("data-legend-layer") !== null);
 beforeAll(() => {
   dom = installFakeDom();
-  buildLegend(root() as unknown as HTMLElement, store, new FakeEl("div") as unknown as HTMLElement, () => undefined, toggle);
+  buildLegend(root() as unknown as HTMLElement, store, () => undefined, toggle);
 });
 afterAll(() => dom.restore());
 

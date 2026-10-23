@@ -1,5 +1,5 @@
 /** Inspector sections the user can fold (Height protection has its own `floorPanelOpen`). Ids avoid the words the UI-92 test forbids. */
-export const SECTION_IDS = ["box", "polygon", "cluster", "sparse", "plane", "thin", "layers", "history"] as const;
+export const SECTION_IDS = ["box", "polygon", "cluster", "sparse", "plane", "thin", "layers"] as const;
 export type SectionId = (typeof SECTION_IDS)[number];
 /** Only closed sections are stored; a missing id means open. */
 export type SectionsOpen = Partial<Record<SectionId, boolean>>;

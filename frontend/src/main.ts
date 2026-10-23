@@ -54,6 +54,8 @@ import { buildTimeline } from "./timeline/strip";
 import { createStepCentre } from "./timeline/centre";
 import { createEditShape } from "./orchestration/editshape";
 import { bindPopovers } from "./ui/popover";
+import { buildHistoryPopover } from "./ui/historypop";
+import { iconControl } from "./ui/iconbutton";
 import { buildHelp } from "./ui/help";
 import { classifyKey, escapeInField } from "./ui/keys";
 import { buildViewCube } from "./ui/viewcube";
@@ -273,10 +275,12 @@ const topbar = buildToolbar($("toolbar"), store, {
 });
 // The popovers. Their Escape listener is on window and registered after the first global one above, so that listener
 // still sees a popover as open (overlay) when it picks what the Esc is for; popOpenAtEsc keeps that for the draft branch below.
+const historyOpen = iconControl("history-open", "list");
 const pops = bindPopovers([
   { id: "display", anchor: topbar.anchors.display, panel: $("display-pop") },
   { id: "details", anchor: topbar.anchors.details, panel: $("cloud-details") },
   { id: "help", anchor: topbar.anchors.help, panel: $("help-overlay") },
+  { id: "history", anchor: historyOpen, panel: $("history-pop") },
 ], {
   listenPointerDown: (f) => document.addEventListener("pointerdown", f, true),
   listenKey: (f) => window.addEventListener("keydown", f),
@@ -303,7 +307,7 @@ buildDisplayPopover($("display-pop"), store, {
     writeTheme(storage, c);
   },
 });
-buildStatusbar($("statusbar"), $("modebar"), store);
+buildStatusbar($("statusbar"), $("modebar"), store, { openDetails: () => pops.open("details") });
 const planesCtl = createPlanesController(
   store,
   { detect: (b) => api.detectPlanes(b as api.DetectPlanesBody), poll: (id, opts) => pollJob(id, opts), cancelJob: (id) => postJson(`/api/jobs/${id}/cancel`) },
@@ -381,7 +385,7 @@ buildCloudDetails($("cloud-details"), store, { removeInvalid: () => void editor.
 buildToolPalette($("tools"), store, panelActions);
 buildLayersPanel($("layers-slot"), store, panelActions);
 buildBandPill($("stage"), store);
-const legend = buildLegend($("legend"), store, $("modebar"), () => void hide.show(), (id) => void layers.toggle(id));
+const legend = buildLegend($("legend"), store, () => void hide.show(), (id) => void layers.toggle(id));
 store.subscribe((s) => legend.update(s.timeline.highlight !== null, s.preview?.op ?? null));
 const stepEdit = createEditShape(store, {
   resetRunner: () => runner.reset(),
@@ -396,6 +400,8 @@ buildTimeline($("timeline"), store, {
   renameStep: (sid, name) => void editor.renameStep(sid, name),
   pendingCursor: () => editor.pendingCursor(),
 });
+$("timeline").append(historyOpen);
+buildHistoryPopover($("history-pop"), store);
 buildViewCube($("viewcube"), store);
 buildTriad($("triad"), store);
 const filterBoxes = buildFilterBoxes($("fbox-layer"), canvas, store, {

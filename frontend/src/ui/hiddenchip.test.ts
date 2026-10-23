@@ -17,7 +17,7 @@ const some = (n: number) => sessionFixture({ counts: { ...sessionFixture().count
 beforeAll(() => {
   dom = installFakeDom();
   root = dom.root;
-  buildLegend(root as unknown as HTMLElement, store, new FakeEl("div") as unknown as HTMLElement, onShow);
+  buildLegend(root as unknown as HTMLElement, store, onShow);
 });
 afterAll(() => dom.restore());
 

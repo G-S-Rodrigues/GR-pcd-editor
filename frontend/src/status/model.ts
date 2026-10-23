@@ -53,6 +53,11 @@ export function statusItems(s: AppState): StatusItem[] {
   ];
 }
 
+/** The items the footer shows: Original and Active live in Cloud details and Unsaved is the title's Edited subtitle. */
+export function footerItems(s: AppState): StatusItem[] {
+  return statusItems(s).filter((i) => !["Original", "Active", "Unsaved"].includes(i.label));
+}
+
 const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 /** Always-visible mode, operation, scope, frame and unit text. */

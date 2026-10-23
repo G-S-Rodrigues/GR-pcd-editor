@@ -23,7 +23,7 @@ test("UI-890 the six tool sections live in the toolRoot slot and the other secti
   expect(rest).not.toContain("box");
   expect(rest).not.toContain("cluster");
   expect(rest).not.toContain("layers"); // 17-10: Layers moved to the left panel
-  expect(rest).toContain("history");
+  expect(rest).toEqual([]); // 22-5: History is a popover, so the root holds no fold section
 });
 
 test("UI-891 arming a tool whose section is folded opens it through the store once, and scrolls the panel to the top once per arming, not on every sync", () => {

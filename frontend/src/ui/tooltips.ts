@@ -51,6 +51,7 @@ export const TOOLTIPS: Record<string, string> = {
   "export-cancel": "Close the export dialog without exporting",
   help: "Show the mouse and keyboard controls (key ?)",
   "display-open": "Display: colour mode, point size, how many points to draw, and the light or dark theme",
+  "status-invalid": "Invalid points (active / total): open Cloud details, where they can be removed",
   "theme-system": "Follow the operating system light or dark setting",
   "theme-light": "Use the light theme",
   "theme-dark": "Use the dark theme",

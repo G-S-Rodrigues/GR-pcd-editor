@@ -43,11 +43,10 @@ export function legendEntries(stepActive = false, previewOp: PreviewState["op"] 
 export const cssColour = (c: Rgb): string => `rgb(${c.map((v) => Math.round(v * 255)).join(", ")})`;
 
 /**
- * The collapsible legend menu: a header button (aria-expanded, chevron) and a body holding the legend rows and the
- * mode line (`modebar`, id kept). `update(true)` adds the Step highlight row; a preview op adds its live-preview row.
+ * The collapsible legend menu: a header button (aria-expanded, chevron) and a body holding the legend rows. `update(true)` adds the Step highlight row; a preview op adds its live-preview row.
  * Open by default; the folded state lives in `AppState.legendOpen` and is saved with the session.
  */
-export function buildLegend(root: HTMLElement, store: Store<AppState>, modebar: HTMLElement, onShowHidden: () => void = () => undefined, onToggleLayer: (id: number) => void = () => undefined): { update(stepActive: boolean, previewOp?: PreviewState["op"] | null): void } {
+export function buildLegend(root: HTMLElement, store: Store<AppState>, onShowHidden: () => void = () => undefined, onToggleLayer: (id: number) => void = () => undefined): { update(stepActive: boolean, previewOp?: PreviewState["op"] | null): void } {
   let shown = false;
   let shownPreview: PreviewState["op"] | null = null;
   const rows = h("div", { class: "legend-rows" });
@@ -60,7 +59,7 @@ export function buildLegend(root: HTMLElement, store: Store<AppState>, modebar: 
   const rampSwatches = h("div", { class: "ramp-swatches", "data-ramp-swatches": "1", hidden: true });
   const ramp = h("div", { id: "legend-ramp", role: "img", hidden: true }, rampTitle, rampBar, rampEnds, rampSwatches);
   const layerBox = h("div", { class: "legend-layers" });
-  const body = h("div", { id: "legend-body", "data-legend-body": "1" }, ramp, rows, layerBox, modebar);
+  const body = h("div", { id: "legend-body", "data-legend-body": "1" }, ramp, rows, layerBox);
   let current: RampLegend | null = null;
   let currentKey = "";
   const chev = iconSvg("chev", 14);

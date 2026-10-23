@@ -20,7 +20,6 @@ import { headline } from "../status/headline";
 import { commitEnabled, commitLabel, discardEnabled, previewClusterOf, previewParts } from "../tools/preview";
 import { scopeNotice, selectionDisabledReason } from "../orchestration/selection";
 import { hideState } from "../orchestration/hide";
-import { historyRows } from "../inspector/history";
 import { control } from "./controls";
 import { SELECTED_COLOURS, type SelectedColourId, selectedPresets } from "../colour/selectcolour";
 import { cssColour } from "./legend";
@@ -912,20 +911,9 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     text((s) => effectiveText(s.candidate)),
   );
 
-  // ---- history
-  const histList = h("ol", { id: "history-list" });
-  syncs.push((s) => {
-    histList.replaceChildren(
-      ...(s.session ? historyRows(s.session) : []).map((r) =>
-        h("li", { class: r.undone ? "undone" : "", text: `${r.label} (${r.count.toLocaleString("en-US")})${r.undone ? " - undone" : ""}` }),
-      ),
-    );
-  });
-  const histPanel = section("history", "History", (s) => s.session !== null, histList, text((s) => (s.session && s.session.history.entries.length === 0 ? "No edits yet" : "")));
-
   root.append(errors);
   toolRoot.append(boxPanel, polyPanel, clusterPanelEl, sparsePanel, planePanel, thinPanel);
-  root.append(filterPanel, protPanel, histPanel);
+  root.append(filterPanel, protPanel);
   const syncAll = (s: AppState) => {
     for (const f of syncs) f(s);
   };

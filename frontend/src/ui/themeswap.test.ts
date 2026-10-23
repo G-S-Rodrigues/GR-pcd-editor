@@ -21,8 +21,7 @@ const actions = new Proxy({} as Record<string, unknown>, { get: (t, k: string) =
 const legendRoot = new (dom.root.constructor as new (t: string) => FakeEl)("div");
 const panelRoot = new (dom.root.constructor as new (t: string) => FakeEl)("div");
 const layersRoot = new (dom.root.constructor as new (t: string) => FakeEl)("div");
-const modebar = new (dom.root.constructor as new (t: string) => FakeEl)("div");
-buildLegend(legendRoot as unknown as HTMLElement, store, modebar as unknown as HTMLElement);
+buildLegend(legendRoot as unknown as HTMLElement, store);
 buildToolPalette(panelRoot as unknown as HTMLElement, store, actions);
 buildLayersPanel(layersRoot as unknown as HTMLElement, store, actions);
 const layer = (over: Partial<Layer>): Layer => ({ id: 1, name: "Floor", colour: 0, visible: true, count: 30, bounds: null, ...over });

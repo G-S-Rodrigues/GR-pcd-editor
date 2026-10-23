@@ -28,7 +28,7 @@ test("open a cloud, navigate, pick a pivot, colour, read counts", async ({ page 
       buffer: syntheticPcd(),
     });
     const status = page.locator("#statusbar");
-    await expect(status.locator('[data-status="Original"]')).toContainText(String(TOTAL));
+    await expect(page.locator('#cloud-details [data-status="Original"]')).toContainText(String(TOTAL));
     await expect(status.locator('[data-status="Displayed"]')).toContainText(String(FLOOR + GHOST));
     await expect(status.locator('[data-status="Candidates"]')).toContainText("—");
     await expect(status.locator('[data-status="Invalid (active/total)"]')).toContainText("1 / 1");
@@ -90,7 +90,7 @@ test("E2E-01 open by dropping a file", async ({ page }) => {
     return d;
   }, syntheticPcd().toString());
   await page.dispatchEvent("body", "drop", { dataTransfer: dt });
-  await expect(page.locator('#statusbar [data-status="Original"]')).toContainText(String(TOTAL));
+  await expect(page.locator('#cloud-details [data-status="Original"]')).toContainText(String(TOTAL));
   const bad = await page.evaluateHandle(() => {
     const d = new DataTransfer();
     d.items.add(new File(["x"], "notes.txt"));
@@ -1198,7 +1198,7 @@ test("E2E-34 9 security headers reach the browser and the page frames nothing", 
   });
   await page.goto("/");
   await page.locator("#file-input").setInputFiles({ name: "synthetic.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
-  await expect(page.locator('#statusbar [data-status="Original"]')).toContainText(String(TOTAL));
+  await expect(page.locator('#cloud-details [data-status="Original"]')).toContainText(String(TOTAL));
   await page.waitForTimeout(500);
   expect(violations).toEqual([]);
 });
@@ -1301,7 +1301,7 @@ test("E2E-156 17 the six filter boxes open collapsed as chips with no plane draw
 });
 
 for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
-  test(`E2E-157 17 the armed tool's section is the first section of the right panel at ${w}x${hgt}; the other right-panel folds keep their order and fold state`, async ({ page }) => {
+  test(`E2E-157 17 the armed tool's section is the first section of the right panel at ${w}x${hgt}; it is the only fold section of the right panel`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: hgt });
     const t = helpers(page);
     await openRoom(page, t.exact);
@@ -1310,7 +1310,7 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     const open = (id: string) => page.locator(`details[data-section="${id}"]`).evaluate((d) => (d as HTMLDetailsElement).open);
     const fold = (id: string) => page.locator(`details[data-section="${id}"] > summary`);
     const idle = await order();
-    expect(idle).toEqual(["history"]);
+    expect(idle).toEqual([]);
     await t.ctl("tool-cluster").click();
     expect(await first()).toBe("cluster:true");
     await fold("cluster").click(); // fold it while armed: respected
@@ -1323,8 +1323,8 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     await t.ctl("tool-box").click();
     expect(await first()).toBe("box:true");
     await t.ctl("tool-box").click();
-    expect(await first()).toBe("history:true");
-    expect(await open("history")).toBe(true);
+    expect(await first()).toBeUndefined();
+    expect(await order()).toEqual([]);
   });
 }
 
@@ -1893,7 +1893,7 @@ test("E2E-50 11 three deletions with three tools make three step cards with icon
   await expect(t.marker).toHaveAttribute("aria-valuetext", "After step 3 of 3");
   const h = await sidsOf(page);
   expect(h.entries.map((e) => e.count)).toEqual([ROOM.ghost, ROOM.wall, ROOM.noise]);
-  await expect(page.locator("#history-list li")).toHaveCount(3); // the right-panel list stays
+  await expect(page.locator("#history-list li")).toHaveCount(3); // the History popover's list (closed, but in the DOM)
   expect(errors).toEqual([]);
 });
 
@@ -2882,13 +2882,13 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
 }
 
 for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
-  test(`E2E-75 12-5 the legend is a menu, open by default, folding by click and keyboard survives a reload, and it holds the mode line without overlapping boxes or the cube at ${w}x${hgt}`, async ({ page }) => {
+  test(`E2E-75 12-5 the legend is a menu, open by default, folding by click and keyboard survives a reload, and the mode line stays in the footer without overlapping boxes or the cube at ${w}x${hgt}`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: hgt });
     const { exact, ctl } = helpers(page);
     await openRoom(page, exact);
     for (const sel of ["#legend", "#legend-menu", "#modebar"]) await expect(page.locator(sel)).toHaveCount(1);
     await expect(page.locator('#legend [data-legend="selected"]')).toBeVisible();
-    await expect(page.locator("#legend #modebar")).toBeVisible();
+    await expect(page.locator("#footer #modebar")).toBeVisible();
     await expect(page.locator("#modebar")).toContainText("Tool: None");
     await expect(ctl("legend-menu")).toHaveAttribute("aria-expanded", "true");
     await expect(ctl("legend-menu")).toHaveAttribute("aria-label", "Legend menu");
@@ -2910,7 +2910,7 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     await ctl("legend-menu").click();
     await expect(ctl("legend-menu")).toHaveAttribute("aria-expanded", "false");
     await expect(page.locator('#legend [data-legend="selected"]')).toBeHidden();
-    await expect(page.locator("#modebar")).toBeHidden();
+    await expect(page.locator("#modebar")).toBeVisible(); // the mode line lives in the footer and does not fold with the legend
     await page.screenshot({ path: `/out/legend-closed-${w}.png`, clip: { ...(await box("#legend")), x: 0, y: (await box("#stage")).y, width: 260 } });
     await ctl("legend-menu").focus();
     await page.keyboard.press("Enter");
@@ -7305,6 +7305,40 @@ test("E2E-246 22-5 a popover opens from its anchor, closes on a click elsewhere,
   await armed(true);
   await page.keyboard.press("Escape");
   await armed(false);
+  // part 3: the History popover opens from history-open, replaces any other popover, and its Esc leaves the Box armed
+  const hist = page.locator("#history-pop");
+  await t.ctl("tool-box").click();
+  await armed(true);
+  await anchor.click();
+  await expect(pop).toBeVisible();
+  await t.ctl("history-open").click();
+  await expect(hist).toBeVisible();
+  await expect(pop).toBeHidden();
+  await page.keyboard.press("Escape");
+  await expect(hist).toBeHidden();
+  await armed(true);
+});
+
+test("E2E-249 22-5 the History popover lists the three deletions with their counts, marks the undone one, and its button sits at the right end of the timeline", async ({ page }) => {
+  const t = tl(page);
+  await t.threeSteps();
+  const hist = page.locator("#history-pop");
+  await expect(hist).toBeHidden();
+  await page.locator('[data-control="history-open"]').click();
+  await expect(hist).toBeVisible();
+  const rows = hist.locator("#history-list li");
+  await expect(rows).toHaveCount(3);
+  const fmt = (n: number) => new Intl.NumberFormat("en-US").format(n);
+  for (const [i, n] of [ROOM.ghost, ROOM.wall, ROOM.noise].entries()) await expect(rows.nth(i)).toContainText(`(${fmt(n)})`);
+  const strip = (await page.locator("#timeline").boundingBox())!;
+  const btn = (await page.locator('#timeline [data-control="history-open"]').boundingBox())!;
+  expect(btn.x + btn.width, "right end of the timeline").toBeGreaterThan(strip.x + strip.width - 24);
+  await page.keyboard.press("Escape");
+  await expect(hist).toBeHidden();
+  await page.locator('[data-control="undo"]').click();
+  await page.locator('[data-control="history-open"]').click();
+  await expect(rows.nth(2)).toHaveClass(/undone/);
+  await expect(rows.nth(0)).not.toHaveClass(/undone/);
 });
 
 test("E2E-248 22-5 Cloud details shows the file, the counts and the view, and Remove invalid lives in it", async ({ page }) => {
@@ -7335,6 +7369,12 @@ test("E2E-248 22-5 Cloud details shows the file, the counts and the view, and Re
   await expect(ctl("remove-invalid")).toBeVisible();
   await ctl("remove-invalid").click();
   await exact("Active", String(TOTAL - 1));
+  // the footer's Invalid item is a button that opens Cloud details
+  await page.keyboard.press("Escape");
+  await expect(pop).toBeHidden();
+  await page.locator('#footer [data-status="Invalid (active/total)"] [data-control="status-invalid"]').click();
+  await expect(pop).toBeVisible();
+  await expect(pop.locator("#counts-panel")).toContainText("Invalid");
 });
 
 for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
@@ -7347,6 +7387,11 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     await t.setNum("prot-max", 0.05);
     await t.ctl("tool-box").click();
     for (const [id, v] of [["box-center-x", 9], ["box-center-y", 9], ["box-center-z", 2], ["box-size-x", 30], ["box-size-y", 30], ["box-size-z", 10]] as const) await t.setNum(id, v);
+    const foot = (await page.locator("#footer").boundingBox())!;
+    expect(foot.height).toBeGreaterThan(25.5);
+    expect(foot.height).toBeLessThan(26.5);
+    for (const name of ["Original", "Active", "Unsaved"]) await expect(page.locator(`#footer [data-status="${name}"]`)).toHaveCount(0);
+    await expect(page.locator("#footer #modebar")).toHaveCount(1);
     const kept = ROOM.floor + ROOM.floorGhost;
     const n = ROOM_TOTAL - ROOM.invalid - kept;
     await t.exact("Candidates", String(n));
