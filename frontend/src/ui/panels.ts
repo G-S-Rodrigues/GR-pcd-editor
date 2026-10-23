@@ -345,7 +345,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
   const button = (id: string, label: string, onclick: () => void) => control("button", { id, onclick }, label);
   /** The `?` help for one header: the anchor sits in the summary, the panel in the popover container, never inside the section. */
   const helpButton = (sec: string, name: string, copy: string) => {
-    const anchor = control("button", { id: `${sec}-help`, class: "qm", type: "button" }, "?");
+    const anchor = control("button", { id: `${sec}-help`, class: "qm", type: "button", "aria-label": `${name} help` }, "?");
     if (slots.popRoot && slots.pops) {
       const panel = h("div", { class: "pop help-pop", id: `${sec}-help-pop`, role: "dialog", "aria-label": `${name} help`, tabindex: "-1", hidden: true }, h("p", { text: copy }));
       slots.popRoot.append(panel);

@@ -7308,7 +7308,7 @@ test("E2E-246 22-5 a popover opens from its anchor, closes on a click elsewhere,
   await anchor.click();
   await expect(pop).toBeVisible();
   await expect(anchor).toHaveAttribute("aria-expanded", "true");
-  await page.locator("#viewport").click({ position: { x: 40, y: 200 } });
+  await page.locator("#viewport").click({ position: { x: 40, y: 420 } });
   await expect(pop).toBeHidden();
   await expect(anchor).toHaveAttribute("aria-expanded", "false");
   // Esc with no draft: the popover closes, the Box stays armed, the focus returns to the anchor; the second Esc disarms
@@ -7578,7 +7578,7 @@ test("E2E-246 22-5 (Display and Keyboard) opening one popover closes the other, 
     expect(b.y + b.height, `${sel} bottom margin`).toBeLessThanOrEqual(vp.height - 7.5);
     prev = sel;
   }
-  await page.locator("#viewport").click({ position: { x: 40, y: 200 } });
+  await page.locator("#viewport").click({ position: { x: 40, y: 420 } });
   await expect(page.locator(prev!)).toBeHidden();
 });
 
