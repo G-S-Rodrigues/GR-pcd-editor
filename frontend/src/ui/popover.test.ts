@@ -162,3 +162,65 @@ test("UI-1160 add(entry) wires a late popover: aria-controls, toggle, one-open w
   expect(s.pops.isOpen()).toBe(false);
   expect(late.anchor.focused).toBe(1);
 });
+
+test("UI-1200 placePopover with where=beside sits right of the anchor at top - 10, flips above near the footer (floor 60), clamps to the window, and without where is unchanged", () => {
+  const size = { w: 262, h: 300 };
+  expect(placePopover({ left: 206, top: 200, width: 22, height: 22 }, size, { w: 1280, h: 720 }, "beside")).toEqual({ x: 236, y: 190 });
+  // 460 + 300 > 686: flips to top - h - 8 = 162
+  expect(placePopover({ left: 206, top: 470, width: 22, height: 22 }, size, { w: 1280, h: 720 }, "beside")).toEqual({ x: 236, y: 162 });
+  // too tall for the room above: floored at the top bar plus 8 (UI-1144)
+  expect(placePopover({ left: 206, top: 470, width: 22, height: 22 }, { w: 262, h: 460 }, { w: 1280, h: 720 }, "beside")).toEqual({ x: 236, y: 60 });
+  // right edge clamp: 1280 - 262 - 8
+  expect(placePopover({ left: 1200, top: 200, width: 22, height: 22 }, size, { w: 1280, h: 720 }, "beside")).toEqual({ x: 1010, y: 190 });
+  // the default is the centred-below rule of UI-1130
+  expect(placePopover({ left: 600, top: 10, width: 40, height: 30 }, { w: 300, h: 200 }, VIEW)).toEqual({ x: 470, y: 48 });
+  expect(placePopover({ left: 600, top: 10, width: 40, height: 30 }, { w: 300, h: 200 }, VIEW, "below")).toEqual({ x: 470, y: 48 });
+});
+
+test("UI-1201 toggleAt opens a popover at a movable anchor, moves it to another anchor, closes on the same anchor; reanchor moves it without refocus; outside pointerdown and Esc close it", () => {
+  const s = setup();
+  const layerPanel = new FakeEl("div");
+  layerPanel.setAttribute("id", "layer-menu");
+  layerPanel.hidden = true;
+  const a1 = new FakeEl("button");
+  const a2 = new FakeEl("button");
+  const a3 = new FakeEl("button");
+  s.pops.add({ id: "layer", anchor: new FakeEl("span") as unknown as HTMLElement, panel: layerPanel as unknown as HTMLElement, where: "beside", movable: true });
+  s.pops.toggleAt("layer", a1 as unknown as HTMLElement);
+  expect(s.pops.openId()).toBe("layer");
+  expect(a1.getAttribute("aria-expanded")).toBe("true");
+  expect(layerPanel.hidden).toBe(false);
+  expect(layerPanel.focused).toBe(1);
+  expect(layerPanel.style.left).toBe("648px"); // beside the 600..640 anchor: right + 8
+  expect(layerPanel.style.top).toBe("8px"); // top - 10 clamped to the 8 px margin
+  s.pops.toggleAt("layer", a2 as unknown as HTMLElement);
+  expect(s.pops.openId()).toBe("layer");
+  expect(a1.getAttribute("aria-expanded")).toBe("false");
+  expect(a2.getAttribute("aria-expanded")).toBe("true");
+  s.pops.toggleAt("layer", a2 as unknown as HTMLElement);
+  expect(s.pops.isOpen()).toBe(false);
+  expect(a2.getAttribute("aria-expanded")).toBe("false");
+  // an outside pointerdown closes; one on the current anchor keeps it
+  s.pops.toggleAt("layer", a1 as unknown as HTMLElement);
+  s.down(a1);
+  expect(s.pops.openId()).toBe("layer");
+  s.down(new FakeEl("canvas"));
+  expect(s.pops.isOpen()).toBe(false);
+  // reanchor while open moves aria-expanded, does not refocus
+  s.pops.toggleAt("layer", a1 as unknown as HTMLElement);
+  const focused = layerPanel.focused;
+  s.pops.reanchor("layer", a3 as unknown as HTMLElement);
+  expect(a3.getAttribute("aria-expanded")).toBe("true");
+  expect(layerPanel.focused).toBe(focused);
+  s.key("Escape");
+  expect(s.pops.isOpen()).toBe(false);
+  expect(a3.focused).toBe(1);
+  // one at a time
+  s.pops.toggleAt("layer", a1 as unknown as HTMLElement);
+  s.a.anchor.fire("click");
+  expect(s.pops.openId()).toBe("a");
+  expect(layerPanel.hidden).toBe(true);
+  // reanchor while closed only stores the anchor
+  s.pops.reanchor("layer", a2 as unknown as HTMLElement);
+  expect(s.pops.isOpen() && s.pops.openId() === "layer").toBe(false);
+});

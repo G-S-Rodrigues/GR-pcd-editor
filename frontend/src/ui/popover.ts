@@ -9,16 +9,22 @@ export interface Box {
 
 const TOP_BAR = 52;
 
-/** Where a popover goes: centred under its anchor at bottom + 8, above it when it would cross the footer band, inside an 8 px margin. */
-export function placePopover(anchor: Box, size: { w: number; h: number }, view: { w: number; h: number }): { x: number; y: number } {
+export type Placement = "below" | "beside";
+
+/**
+ * Where a popover goes. `below` (default): centred under its anchor at bottom + 8. `beside`: right of the anchor at right + 8,
+ * top - 10 (a row menu). Either flips above/up near the footer band and stays inside an 8 px margin.
+ */
+export function placePopover(anchor: Box, size: { w: number; h: number }, view: { w: number; h: number }, where: Placement = "below"): { x: number; y: number } {
   const clamp = (v: number, span: number, room: number) => Math.max(8, Math.min(v, room - span - 8));
-  let y = anchor.top + anchor.height + 8;
+  let y = where === "beside" ? anchor.top - 10 : anchor.top + anchor.height + 8;
   let top = 8;
   if (y + size.h > view.h - 34) {
     y = anchor.top - 8 - size.h;
     top = TOP_BAR + 8; // a flipped popover stays under the 52 px top bar (--tb-h) plus 8
   }
-  return { x: clamp(anchor.left + anchor.width / 2 - size.w / 2, size.w, view.w), y: Math.max(top, clamp(y, size.h, view.h)) };
+  const x = where === "beside" ? anchor.left + anchor.width + 8 : anchor.left + anchor.width / 2 - size.w / 2;
+  return { x: clamp(x, size.w, view.w), y: Math.max(top, clamp(y, size.h, view.h)) };
 }
 
 export type PopEvent =
@@ -45,6 +51,10 @@ export interface PopEntry {
   id: string;
   anchor: HTMLElement;
   panel: HTMLElement;
+  /** Placement rule; centred below the anchor when absent. */
+  where?: Placement;
+  /** True for an entry whose anchor moves (`toggleAt`): the caller's button calls it, no click listener is bound. */
+  movable?: boolean;
 }
 
 export interface PopDeps {
@@ -67,7 +77,7 @@ export function bindPopovers(entries: PopEntry[], deps: PopDeps) {
     const e = find(open);
     if (!e) return;
     const m = deps.measure(e.anchor, e.panel);
-    const p = placePopover(m.anchor, m.size, deps.viewport());
+    const p = placePopover(m.anchor, m.size, deps.viewport(), e.where);
     e.panel.style.left = `${p.x}px`;
     e.panel.style.top = `${p.y}px`;
   };
@@ -86,9 +96,16 @@ export function bindPopovers(entries: PopEntry[], deps: PopDeps) {
     }
   };
   const apply = (ev: PopEvent) => sync(popoverReducer(open, ev));
+  const moveAnchor = (e: PopEntry, anchor: HTMLElement) => {
+    if (e.anchor === anchor) return;
+    e.anchor.setAttribute("aria-expanded", "false");
+    e.anchor = anchor;
+    anchor.setAttribute("aria-controls", e.panel.getAttribute("id") ?? "");
+    anchor.setAttribute("aria-expanded", "false");
+  };
   const wire = (e: PopEntry) => {
     e.anchor.setAttribute("aria-controls", e.panel.getAttribute("id") ?? "");
-    e.anchor.addEventListener("click", () => apply({ type: "toggle", id: e.id }));
+    if (!e.movable) e.anchor.addEventListener("click", () => apply({ type: "toggle", id: e.id }));
   };
   for (const e of entries) wire(e);
   sync(null);
@@ -112,6 +129,30 @@ export function bindPopovers(entries: PopEntry[], deps: PopDeps) {
       entries.push(e);
       wire(e);
       sync(open);
+    },
+    /**
+     * Opens `id` at `anchor`, moves it there when it is open at another anchor, closes it when it is open at this one.
+     * For entries with a moving anchor (a row's `...` button): the caller's own click handler calls this.
+     */
+    toggleAt: (id: string, anchor: HTMLElement) => {
+      const e = find(id);
+      if (!e) return;
+      if (open === id && e.anchor === anchor) return apply({ type: "close" });
+      moveAnchor(e, anchor);
+      if (open === id) {
+        e.anchor.setAttribute("aria-expanded", "true");
+        place();
+      } else sync(id);
+    },
+    /** The anchor element was rebuilt: point the entry at the new one; when open, the new anchor takes the expanded mark and the panel is placed again (no refocus). */
+    reanchor: (id: string, anchor: HTMLElement) => {
+      const e = find(id);
+      if (!e) return;
+      moveAnchor(e, anchor);
+      if (open === id) {
+        anchor.setAttribute("aria-expanded", "true");
+        place();
+      }
     },
     isOpen: () => open !== null,
     openId: () => open,
