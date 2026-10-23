@@ -7883,3 +7883,40 @@ test("E2E-268 22-6 the Box panel end to end: Outside inverts Selected, Fit opens
   const after = await hook(page, (e) => [...e.state().tools.box.dimensions]);
   expect(after).not.toEqual(size);
 });
+
+test("E2E-269 22-6 the Height protection header: the ? works while folded, the switch turns protection on and off without folding, and the Floor, Tilt, Show band rows work", async ({ page }) => {
+  const t = hideHelpers(page);
+  await openRoom(page, t.exact);
+  const rows = roomValid();
+  const fold = () => page.evaluate(() => (window as unknown as { __editor: { state: () => { floorPanelOpen: boolean } } }).__editor.state().floorPanelOpen);
+  await protSummary(page).click(); // fold it
+  await expect(page.locator("details.panel", { has: page.locator("summary", { hasText: "Height protection" }) })).toHaveJSProperty("open", false);
+  await t.ctl("prot-help").click();
+  await expect(page.locator("#prot-help-pop")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#prot-help-pop")).toBeHidden();
+  await protSummary(page).click(); // unfold
+  await expect.poll(fold).toBe(true); // the toggle event is queued: wait for the store
+  await expect(page.locator("details.panel > summary [data-control=prot-enabled]"), "the switch lives in the header").toHaveCount(1);
+  await t.ctl("prot-enabled").check();
+  await expect(t.ctl("prot-enabled")).toBeChecked();
+  await t.setNum("prot-max", 1.5);
+  await t.setNum("prot-min", 0.5);
+  await t.exact("Protected", String(rows.filter((r) => r[2] >= 0.5 && r[2] <= 1.5).length));
+  expect(await fold(), "the switch does not fold the section").toBe(true);
+  await expect(page.locator("details.panel", { has: page.locator("summary", { hasText: "Height protection" }) })).toHaveJSProperty("open", true);
+  await t.ctl("prot-enabled").uncheck();
+  await expect(t.ctl("prot-enabled")).not.toBeChecked();
+  await t.exact("Protected", "0");
+  await t.setNum("prot-floor-t", 0.3);
+  await t.setNum("prot-tilt-x", 5);
+  await expect(t.ctl("prot-tilt-x")).toHaveValue("5");
+  await t.ctl("prot-level").click();
+  await expect(t.ctl("prot-tilt-x")).toHaveValue("0");
+  await expect(t.ctl("prot-tilt-y")).toHaveValue("0");
+  const band = t.ctl("prot-show-band");
+  await expect(band).toHaveAttribute("aria-checked", "true");
+  await band.click();
+  await expect(band).toHaveAttribute("aria-checked", "false");
+  await band.click();
+});

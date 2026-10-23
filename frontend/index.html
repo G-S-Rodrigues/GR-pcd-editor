@@ -430,12 +430,15 @@
       details.panel > summary h2 { display: inline; }
       summary:has(> .qm) { display: flex; align-items: center; gap: 6px; list-style: none; }
       summary:has(> .qm)::-webkit-details-marker { display: none; }
-      summary:has(> .qm)::before { content: ""; width: 6px; height: 6px; border-right: 1.5px solid var(--label-2); border-bottom: 1.5px solid var(--label-2); transform: rotate(-45deg); margin: 0 2px; flex: none; }
-      details[open] > summary:has(> .qm)::before { transform: rotate(45deg); }
+      summary:has(> .qm):not(.prot-h)::before { content: ""; width: 6px; height: 6px; border-right: 1.5px solid var(--label-2); border-bottom: 1.5px solid var(--label-2); transform: rotate(-45deg); margin: 0 2px; flex: none; }
+      details[open] > summary:has(> .qm):not(.prot-h)::before { transform: rotate(45deg); }
       summary > .ticon { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; background: var(--accent-soft); color: var(--accent-text); flex: none; }
       summary:has(> .qm) > h2 { flex: 1 1 auto; min-width: 0; }
       summary > .kbd { font: var(--t-callout); color: var(--label-2); white-space: nowrap; }
       summary > .ib.sm { width: 24px; height: 24px; flex: none; }
+      summary.prot-h > svg:first-child { color: var(--label-2); flex: none; transition: transform var(--dur); }
+      details[open] > summary.prot-h > svg:first-child { transform: rotate(90deg); }
+      summary.prot-h > svg:nth-child(2) { color: var(--protected-ui); flex: none; }
       .qm { width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%; background: var(--fill-1); color: var(--label-2); font: var(--t-callout); line-height: 18px; text-align: center; flex: none; cursor: pointer; }
       .help-pop { width: 280px; }
       .help-pop p { margin: 0; font: var(--t-callout); color: var(--label-2); }

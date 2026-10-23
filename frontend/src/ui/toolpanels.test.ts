@@ -126,3 +126,26 @@ test("UI-1171 every control of the tool and protection groups is built exactly o
   }
   expect((toolRoot.control("thin-method") as FakeEl).tag).toBe("select");
 });
+
+const protDetails = () => dom.root.all().find((e) => e.tag === "details" && e.children[0].children.some((c) => c.tag === "h2" && c.text() === "Height protection")) as FakeEl;
+
+test("UI-1170 Height protection: the header holds chevron, shield, title, ? and the global switch; the rows are Height, Floor, Tilt, Show band, This edit", () => {
+  const det = protDetails();
+  const sum = det.children[0];
+  expect(sum.children.map((c) => c.tag)).toEqual(["svg", "svg", "h2", "button", "input"]);
+  expect(sum.children[1].getAttribute("data-icon")).toBe("shield");
+  expect(sum.children[3].getAttribute("data-control")).toBe("prot-help");
+  const sw = sum.children[4];
+  expect(sw.getAttribute("data-control")).toBe("prot-enabled");
+  expect(sw.getAttribute("type")).toBe("checkbox");
+  expect(sw.getAttribute("role")).toBe("switch");
+  expect(cls(sw)).toContain("switch");
+  const labels = det.all().filter((e) => cls(e).includes("prow")).map((r) => r.children[0].text());
+  expect(labels).toEqual(["Height", "Floor", "Tilt", "Show band", "This edit"]);
+  expect((det.control("prot-pick-floor") as FakeEl).text()).toContain("Pick point");
+  const level = det.control("prot-level") as FakeEl;
+  expect(level.children[0].tag).toBe("svg");
+  expect(level.getAttribute("aria-label")).toContain("Level");
+  for (const id of ["prot-local-min", "prot-local-max", "prot-ack"]) expect(det.control(id)).toBeDefined();
+  expect(det.all().some((e) => e.tag === "p" && e.text() === PROTECTION_COPY)).toBe(false);
+});

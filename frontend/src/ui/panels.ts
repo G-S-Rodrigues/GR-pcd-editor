@@ -381,8 +381,8 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     return f.el;
   };
   /** A panel section the user can fold; its open state is `floorPanelOpen` (also drives the strong protected colour). */
-  const collapsible = (title: string, visible: (s: AppState) => boolean, ...kids: (Node | null)[]) => {
-    const el = h("details", { class: "panel", open: true }, h("summary", { title: "Fold or unfold this section; while it is open the protected slab is drawn in a stronger colour" }, h("h2", { text: title }), helpButton("prot", title, PROTECTION_COPY)), ...kids);
+  const collapsible = (header: Node[], visible: (s: AppState) => boolean, ...kids: (Node | null)[]) => {
+    const el = h("details", { class: "panel prot-panel", open: true }, h("summary", { class: "prot-h", title: "Fold or unfold this section; while it is open the protected slab is drawn in a stronger colour" }, ...header), ...kids);
     el.addEventListener("toggle", () => {
       if (el.open !== store.get().floorPanelOpen) store.update((s) => ({ ...s, floorPanelOpen: el.open }));
     });
@@ -891,33 +891,31 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     tiltMsg(r.ok ? null : (r.error ?? "Invalid"));
     return r.ok ? null : (r.error ?? "Invalid");
   };
+  const protSwitch = control("input", { id: "prot-enabled", type: "checkbox", role: "switch", class: "switch", "aria-label": "Global protection", onchange: () => prot((m) => P.setGlobal(m, { enabled: protSwitch.checked })) });
+  syncs.push((s) => (protSwitch.checked = s.tools.protection.global.enabled));
   const protPanel = collapsible(
-    "Height protection",
+    [iconSvg("chevr"), iconSvg("shield"), h("h2", { text: "Height protection" }), helpButton("prot", "Height protection", PROTECTION_COPY), protSwitch],
     (s) => s.session !== null,
-    h(
-      "div",
-      { class: "stack" },
-      button("prot-pick-floor", "Pick floor point", () => store.set({ interaction: store.get().interaction === "pick-floor" ? "orbit" : "pick-floor" })),
-    ),
-    field("prot-floor-t", "Floor +/-", (s) => s.floorT, (v) => {
-      if (!P.intervalFromPick(0, v).ok) return "The floor thickness must be a number above 0";
-      store.update((s) => ({ ...s, floorT: v }));
-      return null;
-    }),
-    check("prot-enabled", "Global protection", (s) => s.tools.protection.global.enabled, (v) => prot((m) => P.setGlobal(m, { enabled: v }))),
-    row(
+    prow("Height", row(
       field("prot-min", "Min Z", (s) => s.tools.protection.global.min, (v) => { const r = a.protectionEdit((m) => P.setGlobal(m, { min: v })); return r.ok ? null : (r.error ?? "Invalid"); }),
       field("prot-max", "Max Z", (s) => s.tools.protection.global.max, (v) => { const r = a.protectionEdit((m) => P.setGlobal(m, { max: v })); return r.ok ? null : (r.error ?? "Invalid"); }),
-    ),
-    row(
+    ), true),
+    prow("Floor", h("div", { class: "rot" },
+      control("button", { id: "prot-pick-floor", type: "button", onclick: () => store.set({ interaction: store.get().interaction === "pick-floor" ? "orbit" : "pick-floor" }) }, iconSvg("pick"), " Pick point"),
+      field("prot-floor-t", "Floor +/-", (s) => s.floorT, (v) => {
+        if (!P.intervalFromPick(0, v).ok) return "The floor thickness must be a number above 0";
+        store.update((s) => ({ ...s, floorT: v }));
+        return null;
+      }),
+    ), true),
+    prow("Tilt", h("div", { class: "rot" }, row(
       field("prot-tilt-x", "Tilt X (deg)", (s) => s.tools.protection.tilt.rx, (v) => tilt({ rx: v })),
       field("prot-tilt-y", "Tilt Y (deg)", (s) => s.tools.protection.tilt.ry, (v) => tilt({ ry: v })),
-    ),
+    ), iconControl("prot-level", "level", { onclick: () => { tiltMsg(null); prot((m) => ({ ok: true, model: P.levelled(m) })); } })), true),
     tiltNote,
-    button("prot-level", "Level", () => { tiltMsg(null); prot((m) => ({ ok: true, model: P.levelled(m) })); }),
-    (() => {
+    prow("Show band", (() => {
       // "Show band": hides the whole band on the canvas (fill, outline, arrows, rings); protection stays on, so it is not a protection edit
-      const sw = control("button", { id: "prot-show-band", role: "switch", class: "toggle", onclick: () => store.update((s) => ({ ...s, bandVisible: !s.bandVisible })) }, iconSvg("eye", 16), " Show band");
+      const sw = control("button", { id: "prot-show-band", role: "switch", class: "toggle switch", onclick: () => store.update((s) => ({ ...s, bandVisible: !s.bandVisible })) }, iconSvg("eye", 16), " Show band");
       let drawn: boolean | null = null; // the icon is rebuilt only when bandVisible changes, not on every store update
       syncs.push((s) => {
         if (drawn === s.bandVisible) return;
@@ -926,8 +924,8 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
         sw.replaceChildren(iconSvg(s.bandVisible ? "eye" : "eyeoff", 16), " Show band");
       });
       return sw;
-    })(),
-    select("prot-mode", "This operation", [["inherit", "Use global"], ["add_local", "Add local slab"], ["override", "Override global"]], (s) => s.tools.protection.mode, (v) => prot((m) => ({ ok: true, model: P.setOperationMode(m, v as P.OpMode) }))),
+    })()),
+    prow("This edit", select("prot-mode", "", [["inherit", "Use global"], ["add_local", "Add local slab"], ["override", "Override global"]], (s) => s.tools.protection.mode, (v) => prot((m) => ({ ok: true, model: P.setOperationMode(m, v as P.OpMode) })))),
     row(
       field("prot-local-min", "Local min", (s) => s.tools.protection.local?.min ?? 0, (v) => { const r = a.protectionEdit((m) => P.setLocal(m, { min: v, max: m.local?.max ?? v })); return r.ok ? null : (r.error ?? "Invalid"); }, (s) => s.tools.protection.mode === "inherit"),
       field("prot-local-max", "Local max", (s) => s.tools.protection.local?.max ?? 0, (v) => { const r = a.protectionEdit((m) => P.setLocal(m, { min: m.local?.min ?? v, max: v })); return r.ok ? null : (r.error ?? "Invalid"); }, (s) => s.tools.protection.mode === "inherit"),
