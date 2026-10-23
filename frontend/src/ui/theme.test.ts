@@ -301,6 +301,25 @@ describe("stylesheet rules (part 22-4)", () => {
     expect(fb?.body).toContain("background: var(--glass-strong-solid)");
   });
 
+  test("UI-1143 (sheet and bars) the export sheet is 440 wide under the top bar with the 14 px radius, its footer is right-aligned, the scrim is .35, and the bars declare their heights", () => {
+    const css = styleText();
+    const all = rules(css);
+    const body = (sel: string) => all.filter((r) => r.selector.split(",").map((x) => x.trim()).includes(sel)).map((r) => r.body).join(";");
+    const sheet = body("#export-dialog");
+    expect(sheet).toContain("width: 440px");
+    expect(sheet).toContain("margin-top: calc(var(--tb-h) + 10px)");
+    expect(sheet).toContain("max-height: calc(100vh - 120px)");
+    expect(sheet).toContain("border-radius: var(--r-panel)");
+    expect(sheet).toContain("padding: 18px 20px 16px");
+    expect(body("dialog h3")).toContain("font: var(--t-sheet)");
+    expect(body("#export-dialog .foot")).toMatch(/display:\s*flex/);
+    expect(body("#export-dialog .foot")).toContain("justify-content: flex-end");
+    expect(body("dialog::backdrop")).toContain("background: rgba(0,0,0,.35)");
+    expect(body("#toolbar")).toContain("height: var(--tb-h)");
+    expect(body("#toolbar")).toContain("grid-template-columns: 1fr auto 1fr");
+    expect(body("#footer")).toContain("height: var(--ft-h)");
+  });
+
   test("UI-1090 the stage glass and the sheets carry blur(28px) saturate(170%) with the -webkit- twin, the page glass carries none, #viewport never blurs, and @supports not swaps in the opaque composites", () => {
     const css = styleText();
     const all = rules(css);

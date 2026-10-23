@@ -5924,6 +5924,29 @@ test("E2E-182 19 One file per layer: one download per layer, each equal to fixtu
   await expect(page.locator("#export-dialog")).toBeHidden();
 });
 
+test("E2E-250 22-5 the Export sheet is 440 wide under the top bar with a .35 scrim, lists one file per layer, and Cancel closes it", async ({ page }) => {
+  const t = layerMenu(page);
+  await t.floorFromBand();
+  await t.wallLayer();
+  await t.ctl("export").click();
+  const dlg = page.locator("#export-dialog");
+  await expect(dlg).toBeVisible();
+  const box = (await dlg.boundingBox())!;
+  const bar = (await page.locator("#toolbar").boundingBox())!;
+  const vp = page.viewportSize()!;
+  expect(Math.abs(box.width - 440)).toBeLessThanOrEqual(1);
+  expect(Math.abs(box.x + box.width / 2 - vp.width / 2)).toBeLessThanOrEqual(2);
+  expect(Math.abs(box.y - (bar.y + bar.height + 10))).toBeLessThanOrEqual(1);
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(await page.evaluate(() => getComputedStyle(document.getElementById("export-dialog")!, "::backdrop").backgroundColor)).toBe("rgba(0, 0, 0, 0.35)");
+  await page.locator("#export-per-layer").check();
+  await t.ctl("export-go").click();
+  await expect(page.locator("[data-export-file]")).toHaveCount(3, { timeout: 30000 });
+  await expect(page.locator("[data-export-file]").nth(1)).toContainText("room_Floor_cleaned.pcd");
+  await page.locator("#export-cancel").click();
+  await expect(dlg).toBeHidden();
+});
+
 test("E2E-183 19 Hide selected then Undo: the points are drawn and selectable again", async ({ page }) => {
   const t = hideHelpers(page);
   const n = await t.floorSelected();

@@ -405,8 +405,11 @@
       #history-pop { width: 300px; }
       #history-open { position: absolute; right: 8px; bottom: 8px; pointer-events: auto; z-index: 4; }
       dialog { background: var(--glass-strong); color: var(--label); border: 1px solid var(--separator); border-radius: var(--r-pop); min-width: 420px; max-width: 640px; }
-      dialog h2 { font: var(--t-sheet); }
-      dialog::backdrop { background: rgba(0,0,0,.55); }
+      dialog h2, dialog h3 { font: var(--t-sheet); margin: 0 0 10px; }
+      dialog::backdrop { background: rgba(0,0,0,.35); }
+      #export-dialog { width: 440px; margin-top: calc(var(--tb-h) + 10px); max-height: calc(100vh - 120px); border-radius: var(--r-panel); padding: 18px 20px 16px; box-sizing: border-box; overflow-y: auto; }
+      #export-dialog .primary { background: var(--accent); color: var(--on-accent); }
+      #export-dialog .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
       details.panel > summary { cursor: pointer; list-style-position: inside; }
       details.panel > summary h2 { display: inline; }
       .panel { border-top: 1px solid var(--separator); margin-top: 8px; padding-top: 4px; }
