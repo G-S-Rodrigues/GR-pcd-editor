@@ -177,18 +177,21 @@ test("UI-876 a #delete-blocked note under the Select/Clear/Hide stack carries th
   expect(note.text()).toBe("");
 });
 
-test("UI-887 Scope sits on its own row (div.oprow.scoperow with a Scope label and the select), a sibling block of the swatch row, not inline before it", () => {
+test("UI-887 Scope sits on its own row (div.prow with a Scope label and the segmented radiogroup), a sibling block of the Highlight row, not inline before it", () => {
   const all = dom.root.all();
   const sel = ctl("scope-select");
-  const row = all.find((e) => e.children.includes(sel)) as FakeEl;
+  const pctl = all.find((e) => e.children.includes(sel)) as FakeEl;
+  const row = all.find((e) => e.children.includes(pctl)) as FakeEl;
   expect(row.tag).toBe("div");
-  expect(row.className).toBe("oprow scoperow");
-  expect(row.children.map((c) => c.tag)).toEqual(["label", "select"]);
+  expect(row.className).toBe("prow");
+  expect(row.children.map((c) => c.tag)).toEqual(["span", "div"]);
   expect(row.children[0].text()).toBe("Scope");
-  const swatchRow = all.find((e) => e.className === "oprow" && e.text().startsWith("Selected colour")) as FakeEl;
+  expect(sel.tag).toBe("div");
+  expect(sel.className).toBe("seg");
+  const swatchRow = all.find((e) => e.className === "prow" && e.text().startsWith("Highlight")) as FakeEl;
   expect(swatchRow).toBeDefined();
   const parentOf = (x: FakeEl) => all.concat(dom.root as unknown as FakeEl).find((e) => e.children.includes(x));
   expect(parentOf(row)).toBe(parentOf(swatchRow));
   expect(row).not.toBe(swatchRow);
-  expect(swatchRow.children.includes(sel)).toBe(false);
+  expect(swatchRow.all().includes(sel)).toBe(false);
 });

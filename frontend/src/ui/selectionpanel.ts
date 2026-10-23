@@ -19,6 +19,9 @@ import type { PanelActions } from "./panels";
 
 type Sync = (s: AppState) => void;
 
+/** A label-left, control-right row (`.prow`). */
+const prow = (label: string, ctl: Node) => h("div", { class: "prow" }, h("span", { class: "plabel", text: label }), h("div", { class: "pctl" }, ctl));
+
 /** The first-selection note: the short line is visible, the advice is its tooltip (part 17-10). */
 export const LIVE_NOTE = "First selection: edits are live.";
 export const LIVE_NOTE_TITLE = "First selection: edits are live. Choose Add, Subtract or Intersect to preview changes instead.";
@@ -53,35 +56,50 @@ export function buildSelectionPanel(root: HTMLElement, store: Store<AppState>, a
     });
     return b;
   });
-  const op = control("div", { id: "op-select", role: "radiogroup", "aria-label": "Operation", class: "opgroup" }, ...opBtns);
-  const previewLive = control(
-    "button",
-    {
-      id: "preview-live",
-      role: "switch",
-      class: "toggle",
-      onclick: () => {
-        store.set({ previewLive: !store.get().previewLive });
-        const s = store.get();
-        if (s.draft && s.tool !== "none") a.toolChanged(); // turning it on previews the shape now; off drops the old preview
-      },
+  const op = control("div", { id: "op-select", role: "radiogroup", "aria-label": "Operation", class: "seg icons" }, ...opBtns);
+  const previewLive = control("button", {
+    id: "preview-live",
+    type: "button",
+    role: "switch",
+    class: "switch",
+    onclick: () => {
+      store.set({ previewLive: !store.get().previewLive });
+      const s = store.get();
+      if (s.draft && s.tool !== "none") a.toolChanged(); // turning it on previews the shape now; off drops the old preview
     },
-    iconSvg("eye", 16),
-    " Live preview",
-  );
+  });
   const liveNote = h("p", { id: "live-note", class: "note", hidden: true });
-  const scope = control(
-    "select",
-    {
-      id: "scope-select",
-      onchange: () => {
-        store.set({ scope: scope.value as AppState["scope"] });
-        a.scopeChanged();
+  // Scope: a two-segment radiogroup (roving tabindex, arrows move the choice); a click on the checked one does nothing
+  const SCOPES = [
+    ["displayed", "scope-displayed", "Displayed"],
+    ["active", "scope-active", "Active"],
+  ] as const;
+  const chooseScope = (value: AppState["scope"]) => {
+    if (store.get().scope === value) return;
+    store.set({ scope: value });
+    a.scopeChanged();
+  };
+  const scopeBtns = SCOPES.map(([value, id, text], i) =>
+    control(
+      "button",
+      {
+        id,
+        type: "button",
+        role: "radio",
+        onclick: () => chooseScope(value),
+        onkeydown: (e: KeyboardEvent) => {
+          const d = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+          if (!d) return;
+          e.preventDefault();
+          const j = (i + d + SCOPES.length) % SCOPES.length;
+          chooseScope(SCOPES[j][0]);
+          scopeBtns[j].focus();
+        },
       },
-    },
-    h("option", { value: "displayed", text: "Displayed" }),
-    h("option", { value: "active", text: "Active" }),
+      text,
+    ),
   );
+  const scope = control("div", { id: "scope-select", role: "radiogroup", "aria-label": "Scope", class: "seg" }, ...scopeBtns);
   // Selected colour: four swatch radios (Orange default); view-only, saved with the session when not orange
   const chooseColour = (id: SelectedColourId) => store.set({ selectedColour: id });
   const swatches = SELECTED_COLOURS.map((p, i) => {
@@ -112,7 +130,7 @@ export function buildSelectionPanel(root: HTMLElement, store: Store<AppState>, a
     b.style.background = cssColour(p.colour);
     return b;
   });
-  const swatchGroup = control("div", { id: "sel-colour", role: "radiogroup", "aria-label": "Selected colour", class: "opgroup" }, ...swatches);
+  const swatchGroup = control("div", { id: "sel-colour", role: "radiogroup", "aria-label": "Selected colour", class: "dots" }, ...swatches);
   // Select displayed and Invert stay clickable but inactive (aria-disabled) while a tool is armed: the click explains why
   const guardedBtns: HTMLButtonElement[] = [];
   const guarded = (b: HTMLButtonElement) => (guardedBtns.push(b), b);
@@ -143,10 +161,11 @@ export function buildSelectionPanel(root: HTMLElement, store: Store<AppState>, a
     store,
     "selection",
     h("h2", { text: "Selection" }),
-    h("div", { class: "oprow" }, h("span", { text: "Operation" }), op, previewLive),
+    prow("Operation", op),
+    prow("Live preview", previewLive),
     liveNote,
-    h("div", { class: "oprow scoperow" }, h("label", { text: "Scope" }), scope),
-    h("div", { class: "oprow" }, h("span", { text: "Selected colour" }), swatchGroup),
+    prow("Scope", scope),
+    prow("Highlight", swatchGroup),
     h("div", { class: "stack" }, commit, discard),
     h(
       "div",
@@ -175,11 +194,14 @@ export function buildSelectionPanel(root: HTMLElement, store: Store<AppState>, a
     });
     previewLive.setAttribute("aria-checked", String(s.previewLive));
     previewLive.setAttribute("aria-pressed", String(s.previewLive));
-    previewLive.replaceChildren(iconSvg(s.previewLive ? "eye" : "eyeoff", 16), " Live preview");
     liveNote.hidden = !(s.liveFirst && s.tool !== "none");
     liveNote.textContent = liveNote.hidden ? "" : LIVE_NOTE;
     liveNote.title = liveNote.hidden ? "" : LIVE_NOTE_TITLE;
-    scope.value = s.scope;
+    SCOPES.forEach(([value], i) => {
+      const on = s.scope === value;
+      scopeBtns[i].setAttribute("aria-checked", String(on));
+      scopeBtns[i].tabIndex = on ? 0 : -1;
+    });
     const presets = selectedPresets(s.renderTheme);
     SELECTED_COLOURS.forEach((p, i) => {
       const on = s.selectedColour === p.id;

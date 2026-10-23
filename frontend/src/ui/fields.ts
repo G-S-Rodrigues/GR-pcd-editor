@@ -26,6 +26,8 @@ export const FIELD_SPECS: FieldSpec[] = [
   f("op-subtract", "Subtract from selection", "tool", "Remove the tool shape's points from the selection; previewed, applied on Commit"),
   f("op-intersect", "Intersect with selection", "tool", "Keep only the selected points that are also in the tool shape; previewed, applied on Commit"),
   f("preview-live", "Live preview", "tool", "On: shape edits preview the result at once. Off: edits only move the outline and Commit computes and applies the result in one step (the first selection is always live)"),
+  f("scope-displayed", "Scope Displayed", "tool", "Tools select among the displayed points: those that pass the display filter"),
+  f("scope-active", "Scope Active", "tool", "Tools select among every point still in the cloud, filtered out or not"),
   f("scope-select", "Scope", "tool", "Displayed: only points that pass the display filter. Active: every point still in the cloud"),
   f("sel-colour", "Selected colour", "tool", "Colour of the selected points on the canvas (view only; saved with the session). Pick one that stands out from the cloud colours"),
   f("sel-colour-orange", "Selected colour Orange", "tool", "Draw the selected points in orange (default)"),

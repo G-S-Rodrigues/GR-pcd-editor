@@ -41,6 +41,6 @@ test("UI-893 the short texts are visible and the long ones are tooltips; Select 
   expect(rowOf("sel-select-displayed")).toBe(rowOf("sel-invert"));
   expect(rowOf("sel-clear")).toBe(rowOf("sel-hide"));
   expect(rowOf("sel-commit")).toBe(rowOf("sel-discard"));
-  const HEAD_IDS = ["op-select", "op-add", "op-subtract", "op-intersect", "preview-live", "scope-select", "sel-colour", "sel-commit", "sel-discard", "sel-select-displayed", "sel-invert", "sel-clear", "sel-hide", "sel-delete-kept", "sel-show-kept", "layer-name", "layer-new", "layer-assign", "layer-release", "layer-set"];
+  const HEAD_IDS = ["op-select", "op-add", "op-subtract", "op-intersect", "preview-live", "scope-select", "scope-displayed", "scope-active", "sel-colour", "sel-commit", "sel-discard", "sel-select-displayed", "sel-invert", "sel-clear", "sel-hide", "sel-delete-kept", "sel-show-kept", "layer-name", "layer-new", "layer-assign", "layer-release", "layer-set"];
   for (const id of HEAD_IDS) expect(dom.root.control(id), id).toBeDefined();
 });

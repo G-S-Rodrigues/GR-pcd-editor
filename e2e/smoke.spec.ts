@@ -422,7 +422,7 @@ test("E2E-10 7a filter redraws the canvas and a filter change never leaves a sta
   // scope Active keeps the hidden floor selected and says so
   await ctl("tool-box").click(); // Apply disarmed the Box (R22-1)
   await boxEverything();
-  await page.locator('[data-control="scope-select"]').selectOption("active");
+  await page.locator('[data-control="scope-active"]').click();
   await exact("Selected", String(FLOOR + GHOST));
   await expect(page.locator("#scope-note")).toContainText(`${FLOOR} selected points are outside the display filter`, { timeout: 15000 });
   expect(errors).toEqual([]);
@@ -962,7 +962,7 @@ test("E2E-24 7b2 first page shows the start banner; a reloaded session starts Ad
   await expect(page.locator("#start-banner")).toBeHidden();
   await ctl("tool-cluster").click();
   await ctl("op-subtract").click();
-  await ctl("scope-select").selectOption("active");
+  await ctl("scope-active").click();
   await ctl("cluster-max-points").fill("1234");
   await ctl("cluster-max-points").press("Enter");
   await expect(page.locator("#modebar")).toContainText("Op: Subtract");
@@ -2426,10 +2426,10 @@ test("E2E-62 a single Cluster keeps Apply enabled across scope, protection and d
   await t.pickSeed(CL.wall);
   await t.exact("Candidates", String(ROOM.wall));
   await expect(t.ctl("apply")).toBeEnabled();
-  await t.ctl("scope-select").selectOption("active");
+  await t.ctl("scope-active").click();
   await t.exact("Candidates", String(ROOM.wall));
   await expect(t.ctl("apply")).toBeEnabled();
-  await t.ctl("scope-select").selectOption("displayed");
+  await t.ctl("scope-displayed").click();
   await t.ctl("prot-enabled").check();
   await t.setNum("prot-min", -0.1);
   await t.setNum("prot-max", 0.1);
@@ -4315,27 +4315,27 @@ async function selectWholeRoom(page: import("@playwright/test").Page, t: ReturnT
 }
 
 for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
-  test(`E2E-155 17 the focused Scope select and the selected-colour swatches keep their focus outlines apart at ${w}x${hgt}`, async ({ page }) => {
+  test(`E2E-155 17 the focused Scope radio and the selected-colour swatches keep their focus outlines apart at ${w}x${hgt}`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: hgt });
     const t = helpers(page);
     await openRoom(page, t.exact);
     await t.ctl("preview-live").focus();
     await page.keyboard.press("Tab");
-    await expect(t.ctl("scope-select")).toBeFocused();
+    await expect(t.ctl("scope-displayed")).toBeFocused();
     const r = await page.evaluate(() => {
       const grow = (el: Element) => {
         const b = el.getBoundingClientRect();
         // the focus ring is 3px wide and 1px off the edge (22-4): 4px
         return { l: b.left - 4, t: b.top - 4, r: b.right + 4, b: b.bottom + 4 };
       };
-      const sel = grow(document.querySelector('[data-control="scope-select"]')!);
+      const sel = grow(document.querySelector('[data-control="scope-displayed"]')!);
       const sw = [...document.querySelectorAll('[data-control="sel-colour"] [data-control^="sel-colour-"]')].map(grow);
       return { sel, sw };
     });
     expect(r.sw.length).toBeGreaterThan(0);
     for (const s of r.sw) {
       const overlap = s.l < r.sel.r && s.r > r.sel.l && s.t < r.sel.b && s.b > r.sel.t;
-      expect(overlap, "a swatch outline touches the Scope select outline").toBe(false);
+      expect(overlap, "a swatch outline touches the Scope radio outline").toBe(false);
     }
   });
 }
@@ -4360,7 +4360,7 @@ test("E2E-133 16-3 the selected colour: swatches by real mouse and keyboard reco
   expect(await pixelsNear(page, RGB_OF.magenta)).toBeGreaterThan(20);
   expect(await pixelsNear(page, RGB_OF.orange)).toBeLessThan(orangeBefore - 20); // the points left orange (the handles stay)
   // keyboard: Tab from the Scope select lands on the checked swatch, Arrow moves and selects, Space selects
-  await ctl("scope-select").focus();
+  await ctl("scope-displayed").focus();
   await page.keyboard.press("Tab");
   await expect(ctl("sel-colour-magenta")).toBeFocused();
   await page.keyboard.press("ArrowRight");
@@ -6916,7 +6916,7 @@ test("E2E-222 22-4 a keyboard-focused toolbar button, side-panel field and stage
   await ctl("filter-x-min-toggle").click(); // expand one filter box so it has a field
   for (const [scheme, accent] of [["dark", [10, 132, 255]], ["light", [0, 122, 255]]] as const) {
     await page.emulateMedia({ colorScheme: scheme });
-    for (const id of ["open-file", "scope-select", "filter-x-min-toggle"]) {
+    for (const id of ["open-file", "scope-displayed", "filter-x-min-toggle"]) {
       await page.locator("body").click({ position: { x: 1, y: 1 } });
       await page.keyboard.press("Tab"); // keyboard modality, so focus() shows the ring
       await ctl(id).focus();
@@ -8042,4 +8042,23 @@ test("E2E-286 22-7 the Selection section folds by click and by Enter, the fold s
   await expect(ctl("sel-clear")).toBeVisible();
   expect(await countsText()).toBe(before);
   await savedOpen;
+});
+
+test("E2E-286 22-7 (Scope) the Scope radios change the candidate exactly as the select did, by mouse and by keyboard", async ({ page }) => {
+  const t = clusterHelpers(page);
+  await openRoom(page, t.exact);
+  await t.ctl("tool-cluster").click();
+  await t.setNum("cluster-radius", 1.1);
+  await t.pickSeed(CL.wall);
+  await t.exact("Candidates", String(ROOM.wall));
+  await t.ctl("scope-active").click();
+  await expect(t.ctl("scope-active")).toHaveAttribute("aria-checked", "true");
+  await t.exact("Candidates", String(ROOM.wall));
+  await expect(t.ctl("apply")).toBeEnabled();
+  await t.ctl("scope-active").focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(t.ctl("scope-displayed")).toHaveAttribute("aria-checked", "true");
+  await expect(t.ctl("scope-displayed")).toBeFocused();
+  await t.exact("Candidates", String(ROOM.wall));
+  await expect(t.ctl("apply")).toBeEnabled();
 });
