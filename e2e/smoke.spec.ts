@@ -6284,6 +6284,7 @@ test("E2E-260 22-10 a fresh page: Sparse radius 0.4; Planes 0.1 / 5 / 1; a defau
   const only = await t.rowOf(0);
   expect(only.text).toContain("Lowest (floor?)");
   expect(Math.abs(only.z)).toBeLessThan(0.01);
+  expect(only.count).toBe(PLANE_ROOM.floor);
   expect(only.count).toBe(countPlane(planeRows(), [0, 0, 1], 0, 0.1));
 });
 
