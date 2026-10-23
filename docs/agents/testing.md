@@ -252,6 +252,8 @@ IDs: `UI-230..232` (`frontend/src/ui/sections.test.ts`: all open by default, per
 fold, client-state round trip, old sessions all open) and `E2E-46` (click and Enter fold
 each section, reload restores, counts unchanged). Fold state is `AppState.sectionsOpen`
 (only closed ids stored; ids avoid the UI-92 words) next to `floorPanelOpen`.
+Since 22-5 the fold ids are `box, polygon, cluster, sparse, plane, thin, layers` (`file`, `counts`, `view`, `history` and
+`display` left; old archives that still list them load, the ids are dropped). `E2E-46` folds `layers` and `box`.
 
 ## Part 11 additions (history timeline)
 
@@ -428,7 +430,7 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
   commit them.
 - Step-0 measurements at HEAD 73870ad (room open, no tool, no layers): `#toolbar` 45 px and `#viewbar` 51 px, one line
   each; `#tools` content 385.7 px (369.7 like for like); stage 596.8 px at 720 and 956.8 px at 1080. After 17-10 the
-  `#tools` content is 345.4 px at both sizes; after 17-11 `#toolbar` is at most 33 px and `#viewbar` at most 29 px.
+  `#tools` content is 345.4 px at both sizes; after 17-11 `#toolbar` is at most 33 px and `#viewbar` at most 29 px. Since 22-5 one 52 px top bar replaces `#toolbar` and `#viewbar`.
 - Changed existing tests (setup, selector, text or geometry only, nothing loosened): UI-62, UI-65, UI-202, UI-203,
   UI-300, UI-400, UI-513, UI-666, UI-816, UI-831..838, UI-863, UI-864, UI-890; E2E-10, E2E-13, E2E-16, E2E-20, E2E-24,
   E2E-25, E2E-30, E2E-35, E2E-35b, E2E-36, E2E-37, E2E-38, E2E-40, E2E-41, E2E-46, E2E-62, E2E-90, E2E-113..115,
@@ -622,3 +624,21 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
   `193` (both sizes), `194` (both sizes).
 - A plane E2E that needs more than one row, or the 30 degree window, sets the O7 values through `planeUi().o7Params()` once the tool is
   armed (`detect(n)` does it). The backend request defaults are unchanged (the client always sends all values).
+
+## Part 22-5 additions (top bar and popovers, R22-2)
+
+- New unit: `UI-1130..1132` (`ui/popover.ts`: placement, the reducer, the binder with injected listeners), `UI-1133` (Display popover),
+  `UI-1134..1136` (top bar, Delete N, kept chip, title and Edited), `UI-1137` (theme storage), `UI-1138` (Cloud details), `UI-1139`
+  (footer items and the Invalid button), `UI-1140` (History popover), `UI-1141` (Keyboard popover), `UI-1142` (the sections left),
+  `UI-1143` (popover glass; sheet and bars CSS). New smoke: `E2E-245` (top bar, both sizes, plus the footer), `E2E-246` (popover Esc
+  order, Display and Keyboard, History, all anchors and 8 px margins), `E2E-247` (Display and Theme), `E2E-248` (Cloud details and the
+  footer Invalid), `E2E-249` (History), `E2E-250` (Export sheet), `E2E-251` (contrast), `E2E-252` (owner shots
+  `/out/part22-5-<w>x<h>-{dark,light}-{display,details,keyboard,history,export}.png`; keep with `SMOKE_SHOTS_DIR`, never commit).
+  The full smoke run with `--workers=1` is 221 tests (210 + 11).
+- Changed (setup, selector, text or geometry only): every `Original` and `Active` reader goes through the shared `statOf` helper
+  (they live in Cloud details); filter and selection tests open a popover with `openPop` and close it before the next step. The
+  `modebar` argument left `buildLegend`. See each commit message for the per-test list.
+- Popover Esc rule: the popover's key listener is on `window`, registered after the main handler, so the main handler still sees the
+  popover as open (`pops.isOpen()` into `overlay`); `popOpenAtEsc` stops the same Esc from also discarding a pending draft. Esc on a
+  select inside a popover is the select's own (`escapeInField`).
+- `--protected-text` is the kept chip's text token (light `#006585`): `--protected-ui` measured 4.196 on the light bar, under 4.5.
