@@ -61,7 +61,9 @@ import { buildTriad } from "./ui/triad";
 import { buildFilterBoxes } from "./ui/filterboxes";
 import { buildToolbar } from "./ui/toolbar";
 import { buildCameraCluster } from "./ui/camera-cluster";
-import { buildViewbar } from "./ui/viewbar";
+import { buildDataMode } from "./ui/viewbar";
+import { buildDisplayPopover } from "./ui/displaypop";
+import { applyTheme, readTheme, writeTheme } from "./ui/themechoice";
 import { attachControls } from "./viewport/controls3d";
 import { installDebugHook } from "./viewport/debug";
 import { createViewport } from "./viewport/scene";
@@ -69,6 +71,16 @@ import { fitBounds } from "./view/fit";
 import { resetPivot } from "./view/pivot";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+
+// The theme choice is per browser: it is applied before anything is built so the first paint is already themed.
+const storage = ((): Storage | { getItem: () => null; setItem: () => void; removeItem: () => void } => {
+  try {
+    return localStorage;
+  } catch {
+    return { getItem: () => null, setItem: () => undefined, removeItem: () => undefined };
+  }
+})();
+applyTheme(document.documentElement, readTheme(storage));
 
 const store = createAppStore();
 createJobHint(store);
@@ -173,7 +185,7 @@ window.addEventListener("keydown", (e) => {
   const target = escTarget(st, {
     field: escapeInField(el?.tagName ?? "", el?.type ?? ""),
     dragging: tools.dragging() || filterBoxes.dragging() || st.timeline.dragging !== null,
-    overlay: help.isOpen() || pops.isOpen() || document.querySelector("dialog[open]") !== null,
+    overlay: pops.isOpen() || document.querySelector("dialog[open]") !== null,
   });
   tools.cancel(); // an arrow drag in progress goes back to its start value
   if (target === "tool") store.update(disarmedKeepingRegion); // R22-1: nothing more specific was pending; the selection and its candidate stay
@@ -250,7 +262,6 @@ const persister = createPersister(store, api.putClientState, { dragging: () => t
 window.addEventListener("beforeunload", beforeUnloadHandler(() => store.get()));
 
 const topbar = buildToolbar($("toolbar"), store, {
-  toggleHelp: () => help.toggle(),
   saveSession: () =>
     void runSave(store, { flushClientState: () => persister.flush(), startSave: () => startSave(), markSaved: async (id) => api.normaliseState(await markSaved(id)) }),
   openExport: () => exportDialog.open(),
@@ -262,7 +273,11 @@ const topbar = buildToolbar($("toolbar"), store, {
 });
 // The popovers. Their Escape listener is on window and registered after the first global one above, so that listener
 // still sees a popover as open (overlay) when it picks what the Esc is for; popOpenAtEsc keeps that for the draft branch below.
-const pops = bindPopovers([{ id: "details", anchor: topbar.anchors.details, panel: $("cloud-details") }], {
+const pops = bindPopovers([
+  { id: "display", anchor: topbar.anchors.display, panel: $("display-pop") },
+  { id: "details", anchor: topbar.anchors.details, panel: $("cloud-details") },
+  { id: "help", anchor: topbar.anchors.help, panel: $("help-overlay") },
+], {
   listenPointerDown: (f) => document.addEventListener("pointerdown", f, true),
   listenKey: (f) => window.addEventListener("keydown", f),
   listenResize: (f) => window.addEventListener("resize", f),
@@ -273,12 +288,19 @@ const pops = bindPopovers([{ id: "details", anchor: topbar.anchors.details, pane
   },
 });
 buildCameraCluster($("camera-cluster"), store, { size });
-buildViewbar($("viewbar"), store, {
-  size,
-  refresh: () => void refresher.refresh(),
+buildDataMode(topbar.centre, store, {
   setCompare: (m) => {
     setCompare(store, m);
     void refresher.refresh();
+  },
+});
+buildDisplayPopover($("display-pop"), store, {
+  size,
+  refresh: () => void refresher.refresh(),
+  theme: readTheme(storage),
+  setTheme: (c) => {
+    applyTheme(document.documentElement, c);
+    writeTheme(storage, c);
   },
 });
 buildStatusbar($("statusbar"), $("modebar"), store);
@@ -388,7 +410,7 @@ window.addEventListener("keyup", (e) => {
 window.addEventListener("blur", () => {
   rectHeld = false;
 });
-const help = buildHelp($("help-overlay"));
+const help = buildHelp($("help-overlay"), pops);
 window.addEventListener("keydown", (e) => {
   const t = e.target as HTMLElement | null;
   const id = classifyKey({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey, shiftKey: e.shiftKey, target: t?.tagName ?? "" });

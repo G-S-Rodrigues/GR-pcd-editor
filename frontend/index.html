@@ -244,7 +244,6 @@
       .ib { width: 34px; height: 34px; padding: 0; display: inline-grid; place-items: center; background: transparent; border-color: transparent; border-radius: var(--r-ctl); }
       .ib svg { display: block; }
       .ib:hover:not(:disabled) { background: var(--fill-2); }
-      .mode-group { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--separator); border-radius: 8px; }
       .mode-group .opacity { display: inline-flex; align-items: center; padding: 0 6px; }
       .ib[aria-checked=true] { background: var(--accent-soft); border-color: var(--accent); }
       .oprow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
@@ -364,11 +363,7 @@
       .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--warning); flex: none; }
       #kept-chip { display: inline-flex; align-items: center; gap: 4px; height: var(--ctl-h); padding: 0 10px; box-sizing: border-box; border-radius: 13px; background: var(--fill-1); color: var(--protected-ui); font: var(--t-callout); white-space: nowrap; }
       #toolbar .ib { width: 30px; height: 30px; }
-      #viewbar .ib { width: 24px; height: 24px; }
-      #viewbar input[type=range] { margin: 0; }
-      #viewbar .mode-group { padding: 0; border-radius: 6px; }
-      #viewbar .mode-group .ib { width: 22px; height: 22px; }
-      #toolbar button:not(.ib), #viewbar button:not(.ib), #toolbar select, #viewbar select, #toolbar input, #viewbar input { height: 24px; padding: 1px 6px; box-sizing: border-box; }
+      #toolbar button:not(.ib), #toolbar select, #toolbar input { height: 24px; padding: 1px 6px; box-sizing: border-box; }
       .note.warn { color: var(--protected-ui); }
       #fbox-layer { position: absolute; inset: 0; pointer-events: none; z-index: 2; overflow: hidden; }
       .fbox { position: absolute; left: 0; top: 0; width: 156px; height: 28px; display: flex; align-items: center; gap: 3px; padding: 2px 3px; background: var(--glass-hud); border: 1px solid var(--separator); border-radius: var(--r-ctl); pointer-events: auto; font-size: 12px; }
@@ -438,10 +433,21 @@
       .kv dt { color: var(--label-2); }
       .kv dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
       #cloud-details { width: 300px; }
-      #help-overlay { position: absolute; right: 8px; bottom: 54px; max-width: min(520px, 90%); max-height: 90%; overflow: auto; background: var(--glass-strong); border: 1px solid var(--separator); padding: 8px 12px; border-radius: var(--r-pop); display: none; z-index: 4; }
-      #help-overlay.on { display: block; }
-      #help-overlay td { padding: 1px 10px 1px 0; vertical-align: top; }
-      #help-overlay td.k { white-space: nowrap; color: var(--accent-text); }
+      .seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 8px; background: var(--fill-1); }
+      .seg button { height: calc(var(--ctl-h) - 4px); min-width: 28px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--label-2); font: var(--t-callout); display: inline-flex; align-items: center; justify-content: center; gap: 5px; transition: background var(--dur), color var(--dur); box-sizing: border-box; }
+      #toolbar .seg button:not(.ib) { height: calc(var(--ctl-h) - 4px); padding: 0 10px; }
+      .seg button:hover:not([aria-pressed="true"]):not(:disabled) { color: var(--label); }
+      .seg button[aria-pressed="true"] { background: var(--glass-strong); color: var(--label); box-shadow: 0 0 0 1px var(--separator); }
+      .seg button:disabled { opacity: .35; cursor: default; }
+      #display-pop { width: 280px; }
+      .prow { display: grid; grid-template-columns: 78px 1fr; align-items: center; gap: 8px; margin: 6px 0; }
+      .prow .plabel { font: var(--t-callout); color: var(--label-2); }
+      .prow .pctl { display: flex; align-items: center; gap: 6px; min-width: 0; }
+      .prow .pctl select, .prow .pctl input[type=range] { flex: 1; min-width: 0; }
+      #help-overlay { width: 560px; max-height: 70vh; overflow: auto; }
+      #help-overlay table { border-collapse: collapse; width: 100%; font: var(--t-callout); }
+      #help-overlay td { padding: 4px 0; vertical-align: top; border-bottom: 1px solid var(--separator); color: var(--label-2); }
+      #help-overlay td.k { white-space: nowrap; padding-right: 14px; width: 1%; color: var(--accent-text); }
       #statusbar .item, .layer-count, #apply, #kept-chip, .step-count, .triple input, .fbox .fin, .fbox .ftog { font-variant-numeric: tabular-nums; }
       /* Glass. The side panels, rows and status bar sit on the flat page, so they are translucent without a blur. The stage HUD and the sheets blur what is behind them. #viewport never blurs. */
       #legend, .fbox, #camera-cluster .ib, #band-pill, .notice { -webkit-backdrop-filter: blur(28px) saturate(170%); backdrop-filter: blur(28px) saturate(170%); }
@@ -456,9 +462,8 @@
   </head>
   <body data-app="gr-pcd-editor">
     <div id="toolbar" class="row"></div>
-    <div id="popovers"><div id="cloud-details" class="pop" role="dialog" aria-label="Cloud details" hidden tabindex="-1"></div></div>
-    <div id="viewbar" class="row"></div>
-    <div id="body">
+    <div id="popovers"><div id="cloud-details" class="pop" role="dialog" aria-label="Cloud details" hidden tabindex="-1"></div><div id="display-pop" class="pop" role="dialog" aria-label="Display" hidden tabindex="-1"></div><div id="help-overlay" class="pop" role="dialog" aria-label="Controls help" hidden tabindex="-1"></div></div>
+        <div id="body">
       <aside id="tools"><div id="start-banner" class="banner" hidden></div></aside>
       <div id="centre">
       <div id="stage">
@@ -473,8 +478,7 @@
         <div id="webgl-notice" hidden></div>
         <div id="notices" aria-live="polite" aria-relevant="additions text"></div>
         <section id="timeline" hidden></section>
-        <div id="help-overlay" role="dialog" aria-label="Controls help"></div>
-      </div>
+              </div>
       </div>
       <aside id="inspector"><div id="toolpanels"></div><div id="editpanels"></div></aside>
     </div>

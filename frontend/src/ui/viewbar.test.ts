@@ -7,9 +7,9 @@ import { describeControls } from "./describe";
 import { KEY_DOCS, classifyKey } from "./keys";
 import { TOOLTIPS } from "./tooltips";
 import { buildToolbar } from "./toolbar";
-import { buildViewbar } from "./viewbar";
+import { buildDataMode } from "./viewbar";
 
-const actions = { size: () => ({ w: 100, h: 100 }), refresh: () => undefined, notify: () => undefined, setCompare: () => undefined };
+const actions = { setCompare: () => undefined };
 let dom: ReturnType<typeof installFakeDom>;
 let root: FakeEl;
 let topbar: FakeEl;
@@ -18,7 +18,7 @@ const store = createAppStore();
 beforeAll(() => {
   dom = installFakeDom();
   root = dom.root;
-  buildViewbar(root as unknown as HTMLElement, store, actions as never);
+  buildDataMode(root as unknown as HTMLElement, store, actions);
   // the help button moved to the top bar (22-5): its claim is checked on a toolbar built into a second root
   topbar = new (root.constructor as new (t: string) => FakeEl)("div");
   buildToolbar(topbar as unknown as HTMLElement, store, { pickFile: () => undefined, preview: () => undefined, apply: () => undefined, undo: () => undefined, redo: () => undefined, saveSession: () => undefined, openExport: () => undefined });
@@ -37,15 +37,15 @@ test("UI-302 the help lamp is an icon button that keeps its id and name", () => 
   expect(b.text()).toBe("");
 });
 
-test("UI-311 the data modes are an icon group; each aria-pressed follows the compare mode and all are disabled without a file", () => {
+test("UI-311 the data modes are a text segment group; each aria-pressed follows the compare mode and all are disabled without a file", () => {
   const g = group();
   expect(g, "role=group with aria-label Data mode").toBeDefined();
   const ids = modes.map((m) => `compare-${m}`);
   expect(g!.children.map((c) => c.getAttribute("data-control")).filter((x) => x && x.startsWith("compare-"))).toEqual(ids);
   for (const id of ids) {
     const b = root.control(id) as FakeEl;
-    expect(b.children.map((c) => c.tag), id).toEqual(["svg"]);
-    expect(b.text(), id).toBe("");
+    expect(b.children.map((c) => c.tag), id).toEqual(["#text"]);
+    expect(b.text(), id).toBe(id.slice(8).replace(/^./, (c) => c.toUpperCase()));
     expect(b.disabled, id).toBe(true);
   }
   store.set({ session: sessionFixture() });

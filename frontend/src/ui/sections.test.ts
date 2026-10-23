@@ -31,7 +31,7 @@ test("UI-232 section state is saved and restored, old sessions and bad content g
   const out = applyClientPatch(createAppStore().get(), patch!);
   expect(isSectionOpen(out.sectionsOpen, "box")).toBe(false);
   expect(isSectionOpen(out.sectionsOpen, "history")).toBe(false);
-  expect(isSectionOpen(out.sectionsOpen, "display")).toBe(true);
+  expect(isSectionOpen(out.sectionsOpen, "polygon")).toBe(true);
   const old = applyClientPatch(createAppStore().get(), restoreClientState({ v: 1, ui: {} })!);
   expect(old.sectionsOpen).toEqual({});
   const bad = restoreClientState({ v: 1, ui: { sectionsOpen: { nope: false, box: "x", history: false, slice: false } } });

@@ -65,7 +65,9 @@ test("open a cloud, navigate, pick a pivot, colour, read counts", async ({ page 
     const colour = page.locator('[data-control="colour-mode"]');
     expect(await colour.locator("option").evaluateAll((o) => o.map((x) => (x as HTMLOptionElement).value))).toEqual(["turbo", "viridis", "flat", "distance", "normals"]);
     await expect(colour).toHaveValue("turbo");
+    await openPop(page, "display");
     await colour.selectOption("viridis");
+    await closePop(page, "display");
     await expect(colour).toHaveValue("viridis");
     await expect(page.locator("#legend-ramp")).toHaveAttribute("data-ramp", "viridis");
   });
@@ -246,7 +248,9 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
 
   await test.step("AC-17 view state: colouring is stored with the session", async () => {
     const put = page.waitForRequest((r) => r.method() === "PUT" && r.url().endsWith("/api/session/client-state") && JSON.parse(r.postData() ?? "{}")?.colour === "viridis");
+    await openPop(page, "display");
     await ctl("colour-mode").selectOption("viridis");
+    await closePop(page, "display");
     await put; // debounced one second after the last change
   });
 
@@ -312,6 +316,21 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
   writeFileSync(testInfo.outputPath("done"), "ok");
   expect(errors).toEqual([]);
 });
+
+/** The popover anchors by popover id. */
+const POP_ANCHOR: Record<string, string> = { display: "display-open", details: "details-open", help: "help", history: "history-open" };
+/** Opens a popover through its anchor only if it is closed. */
+async function openPop(page: import("@playwright/test").Page, id: string) {
+  const a = page.locator(`[data-control="${POP_ANCHOR[id]}"]`);
+  if ((await a.getAttribute("aria-expanded")) !== "true") await a.click();
+  await expect(a).toHaveAttribute("aria-expanded", "true");
+}
+/** Closes a popover through its anchor only if it is open (Esc cannot, while a select holds the focus). */
+async function closePop(page: import("@playwright/test").Page, id: string) {
+  const a = page.locator(`[data-control="${POP_ANCHOR[id]}"]`);
+  if ((await a.getAttribute("aria-expanded")) === "true") await a.click();
+  await expect(a).toHaveAttribute("aria-expanded", "false");
+}
 
 /** The status readers: Original and Active live in the Cloud details popover (bare value), the rest in the status bar ("Name: value"). */
 function statOf(page: import("@playwright/test").Page) {
@@ -695,7 +714,9 @@ test("E2E-18b 7b1 draw budget: Rendered equals the budget exactly, the default d
   await exact("Original", "150,000");
   await expect(stat("Rendered")).toHaveText("Rendered: all 150,000 eligible points", { timeout: 20000 });
   await expect(page.locator('[data-control="budget"] option', { hasText: "Auto (max)" })).toHaveCount(1);
+  await openPop(page, "display");
   await page.locator('[data-control="budget"]').selectOption("100000");
+  await closePop(page, "display");
   await expect(stat("Rendered")).toHaveText("Rendered: 100,000 of 150,000 eligible (sampled to budget)", { timeout: 20000 });
 });
 
@@ -829,7 +850,7 @@ test("E2E-20 7b2 the ? key and the ? button open a help overlay listing every ke
   await expect(help).not.toBeVisible();
 });
 
-const OVERFLOW_SELECTORS = ["#toolbar", "#viewbar", "#tools", "#inspector", "#toolpanels", "#editpanels", "#statusbar", "#modebar"];
+const OVERFLOW_SELECTORS = ["#toolbar", "#tools", "#inspector", "#toolpanels", "#editpanels", "#statusbar", "#modebar"];
 
 async function checkLayout(page: import("@playwright/test").Page, w: number, h: number) {
   const scan = () =>
@@ -1289,7 +1310,7 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     const open = (id: string) => page.locator(`details[data-section="${id}"]`).evaluate((d) => (d as HTMLDetailsElement).open);
     const fold = (id: string) => page.locator(`details[data-section="${id}"] > summary`);
     const idle = await order();
-    expect(idle).toEqual(["display", "history"]);
+    expect(idle).toEqual(["history"]);
     await t.ctl("tool-cluster").click();
     expect(await first()).toBe("cluster:true");
     await fold("cluster").click(); // fold it while armed: respected
@@ -1302,8 +1323,7 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     await t.ctl("tool-box").click();
     expect(await first()).toBe("box:true");
     await t.ctl("tool-box").click();
-    expect(await first()).toBe("display:true");
-    expect(await open("display")).toBe(true);
+    expect(await first()).toBe("history:true");
     expect(await open("history")).toBe(true);
   });
 }
@@ -2584,7 +2604,8 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     await page.setViewportSize({ width: w, height: hgt });
     const { exact, ctl } = helpers(page);
     await openRoom(page, exact);
-    for (const sel of ["#toolbar", "#viewbar", "#modebar"]) await expect(page.locator(sel)).toHaveCount(1); // E2E-21 skips a missing container
+    for (const sel of ["#toolbar", "#modebar"]) await expect(page.locator(sel)).toHaveCount(1); // E2E-21 skips a missing container
+    await expect(page.locator("#viewbar")).toHaveCount(0); // 22-5: the view row is gone, its controls moved into the top bar and the Display popover
     const labels: Record<string, string> = { "open-file": "Open from this computer", "save-session": "Save session", export: "Export", undo: "Undo", redo: "Redo" };
     const ys: number[] = [];
     for (const [id, label] of Object.entries(labels)) {
@@ -2621,7 +2642,7 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
   });
 }
 
-test("E2E-71 12-2 the four data modes are an icon group with exact counts; the opacity slider shows only in Overlay; Hold original and the O key are gone", async ({ page }) => {
+test("E2E-71 12-2 the four data modes are a text segment group with exact counts; the opacity slider shows only in Overlay; Hold original and the O key are gone", async ({ page }) => {
   const { exact, ctl } = helpers(page);
   await openRoom(page, exact);
   const group = page.locator('[role="group"][aria-label="Data mode"]');
@@ -2634,7 +2655,7 @@ test("E2E-71 12-2 the four data modes are an icon group with exact counts; the o
   for (const [i, id] of ids.entries()) {
     await expect(ctl(id)).toHaveCount(1);
     await expect(ctl(id)).toHaveAttribute("aria-label", names[i]);
-    await expect(ctl(id)).toHaveText("");
+    await expect(ctl(id)).toHaveText(names[i]);
     await expect(group.locator(`[data-control="${id}"]`)).toHaveCount(1);
   }
   await pressed("compare-edited");
@@ -2688,7 +2709,7 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
       expect((await ctl(id).boundingBox())!.width).toBeGreaterThanOrEqual(30);
     }
     for (const gone of ["pivot-x", "pivot-y", "pivot-z", "pivot-set"]) await expect(ctl(gone)).toHaveCount(0);
-    await expect(page.locator("#viewbar").locator('[data-control="pivot-reset"]')).toHaveCount(0);
+    await expect(page.locator("#toolbar").locator('[data-control="pivot-reset"]')).toHaveCount(0);
     const box = async (sel: string) => (await page.locator(sel).first().boundingBox())!;
     const c = await box("#camera-cluster");
     const stage = await box("#stage");
@@ -3030,14 +3051,18 @@ test("E2E-77 12-7 colour modes Turbo (default), Viridis and Grey: the select lis
   const turbo = await read();
   await page.screenshot({ path: "/out/colour-turbo.png" });
   await page.locator("#legend").screenshot({ path: "/out/legend-turbo.png" });
+  await openPop(page, "display");
   await modes.selectOption("viridis");
+  await closePop(page, "display");
   await expect(page.locator("#legend-ramp")).toHaveAttribute("data-ramp", "viridis");
   await expect(page.locator("#legend-ramp")).toContainText("Height (Viridis)");
   await expect.poll(async () => sum(turbo, await read()), { timeout: 5000 }).toBeGreaterThan(40);
   const viridis = await read();
   await page.screenshot({ path: "/out/colour-viridis.png" });
   await page.locator("#legend").screenshot({ path: "/out/legend-viridis.png" });
+  await openPop(page, "display");
   await modes.selectOption("flat");
+  await closePop(page, "display");
   await expect(page.locator("#legend-ramp")).toBeHidden();
   await expect.poll(async () => sum(viridis, await read()), { timeout: 5000 }).toBeGreaterThan(40);
   const grey = await read();
@@ -3045,7 +3070,9 @@ test("E2E-77 12-7 colour modes Turbo (default), Viridis and Grey: the select lis
   await page.screenshot({ path: "/out/colour-flat.png" });
   await page.locator("#legend").screenshot({ path: "/out/legend-flat.png" });
   await expect(page.locator('#legend [data-legend="base"]')).toHaveCSS("background-color", "rgb(176, 176, 176)");
+  await openPop(page, "display");
   await modes.selectOption("turbo");
+  await closePop(page, "display");
 });
 
 test("E2E-78 12-8 Distance to viewer: the legend reads near to far, the drawn colour of a fixed point follows the view, a selected point keeps its selection colour, the console stays clean", async ({ page }) => {
@@ -3063,7 +3090,9 @@ test("E2E-78 12-8 Distance to viewer: the legend reads near to far, the drawn co
   // an isolated noise point (nothing else shares its screen position from the front or the back)
   const lone = [16.5, 3.5, 3];
   const pixel = async () => brightestPixel(page, await settledScreen(page, lone));
+  await openPop(page, "display");
   await modes.selectOption("distance");
+  await closePop(page, "display");
   await expect(page.locator("#legend-ramp")).toHaveAttribute("data-ramp", "distance");
   await expect(page.locator("#legend-ramp .ramp-min")).toHaveText("near");
   await expect(page.locator("#legend-ramp .ramp-max")).toHaveText("far");
@@ -3087,11 +3116,15 @@ test("E2E-78 12-8 Distance to viewer: the legend reads near to far, the drawn co
   await page.mouse.wheel(0, 200);
   await expect.poll(() => hook(page, (e) => e.drawnCount())).toBeGreaterThan(0);
   // a selected point keeps the selection colour (the shader leaves flagged points alone)
+  await openPop(page, "display");
   await modes.selectOption("turbo");
+  await closePop(page, "display");
   await ctl("sel-select-displayed").click();
   await expect.poll(async () => (await page.locator('#statusbar [data-status="Selected"]').innerText()).replace(/\D/g, ""), { timeout: 15000 }).not.toBe("0");
   const selectedTurbo = await pixel();
+  await openPop(page, "display");
   await modes.selectOption("distance");
+  await closePop(page, "display");
   await expect.poll(async () => sum(selectedTurbo, await pixel()), { timeout: 5000 }).toBeLessThanOrEqual(6);
   expect(errors).toEqual([]);
 });
@@ -3103,7 +3136,9 @@ test("E2E-78 12-8 the interaction LOD still draws at most 200k points during an 
   await page.goto("/");
   await page.locator("#file-input").setInputFiles({ name: "big.pcd", mimeType: "application/octet-stream", buffer: bigRoomPcd(bigRoomXyz()) });
   await exact("Original", total.toLocaleString("en-US"));
+  await openPop(page, "display");
   await ctl("colour-mode").selectOption("distance");
+  await closePop(page, "display");
   await expect.poll(() => hook(page, (e) => e.drawnCount()), { timeout: 15000 }).toBe(total);
   const box = (await page.locator("#viewport").boundingBox())!;
   const cx = box.x + box.width / 2;
@@ -3134,7 +3169,9 @@ test("E2E-79 12-9 Normal shading: the legend shows the X/Y/Z swatches, a floor p
   await exact("Original", NORMAL_ROOM_TOTAL.toLocaleString("en-US"));
   const modes = ctl("colour-mode");
   await expect(modes.locator('option[value="normals"]')).toHaveText("Normal shading");
+  await openPop(page, "display");
   await modes.selectOption("normals");
+  await closePop(page, "display");
   await expect(page.locator("#legend-ramp")).toHaveAttribute("data-ramp", "normals");
   await expect(page.locator("#legend-ramp")).toContainText("Normal shading");
   await expect(page.locator("#legend-ramp [data-swatch]")).toHaveCount(3);
@@ -3158,7 +3195,9 @@ test("E2E-79 12-9 Normal shading: the legend shows the X/Y/Z swatches, a floor p
   await dl.saveAs(path);
   await page.locator("#file-input").setInputFiles({ name: "other.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
   await exact("Active", String(TOTAL));
+  await openPop(page, "display");
   await modes.selectOption("flat");
+  await closePop(page, "display");
   await page.locator("#file-input").setInputFiles({ name: "room_session_v1.pcdsession", mimeType: "application/octet-stream", buffer: readFileSync(path) });
   await exact("Original", NORMAL_ROOM_TOTAL.toLocaleString("en-US"));
   await expect(ctl("colour-mode")).toHaveValue("normals");
@@ -4325,7 +4364,9 @@ test("E2E-133 16-3 the selected colour: swatches by real mouse and keyboard reco
   await expect(legend).toHaveCSS("background-color", "rgb(255, 0, 255)");
   // the choice persists across colour modes
   for (const mode of ["viridis", "distance", "turbo"]) {
+    await openPop(page, "display");
     await ctl("colour-mode").selectOption(mode);
+    await closePop(page, "display");
     await page.waitForTimeout(500);
     await expect(legend).toHaveCSS("background-color", "rgb(255, 0, 255)");
     expect(await pixelsNear(page, RGB_OF.magenta), mode).toBeGreaterThan(20);
@@ -4354,7 +4395,9 @@ test("E2E-134 16-3 an Add preview keeps its own pink in the legend with a chosen
   await ctl("cube-top").click();
   await selectWholeRoom(page, t);
   for (const mode of ["turbo", "viridis", "distance"]) {
+    await openPop(page, "display");
     await ctl("colour-mode").selectOption(mode);
+    await closePop(page, "display");
     for (const preset of ["orange", "magenta", "white", "lime"] as const) {
       await ctl(`sel-colour-${preset}`).click();
       await expect(page.locator('#legend [data-legend="selected"]')).toHaveCSS("background-color", `rgb(${RGB_OF[preset].join(", ")})`);
@@ -4362,7 +4405,9 @@ test("E2E-134 16-3 an Add preview keeps its own pink in the legend with a chosen
       await page.screenshot({ path: `/out/selected-colour-${mode}-${preset}.png` });
     }
   }
+  await openPop(page, "display");
   await ctl("colour-mode").selectOption("turbo");
+  await closePop(page, "display");
   await ctl("sel-colour-magenta").click();
   // select the wall, press Add, move the box over the ghosts: the added points are previewed in the add colour
   await ctl("sel-clear").click();
@@ -5301,7 +5346,7 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
 // 17-11: the step-0 stage height at HEAD 73870ad (room open, no tool, no layers)
 const STEP0_STAGE = { 720: 596.8, 1080: 956.8 } as const;
 for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
-  test(`E2E-159 17 the header rows are thinner at ${w}x${h}: one line each, every control inside its row, the stage is taller`, async ({ page }) => {
+  test(`E2E-159 17 the top bar is one 52 px row at ${w}x${h}: every control inside it, the stage is taller`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: h });
     const t = helpers(page);
     await openRoom(page, t.exact);
@@ -5315,16 +5360,14 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
         });
         return { height: rb.height, ctl };
       };
-      return { toolbar: row("toolbar"), viewbar: row("viewbar"), stage: document.getElementById("viewport")!.getBoundingClientRect().height };
+      return { toolbar: row("toolbar"), stage: document.getElementById("viewport")!.getBoundingClientRect().height };
     });
     expect(m.toolbar.height).toBeLessThanOrEqual(52.5); // --tb-h: the one top bar of 22-5
-    expect(m.viewbar.height).toBeLessThanOrEqual(29);
-    for (const c of [...m.toolbar.ctl, ...m.viewbar.ctl]) {
+    for (const c of m.toolbar.ctl) {
       expect(c.visible, `${c.id} is visible`).toBe(true);
       expect(c.inside, `${c.id} is inside its row`).toBe(true);
     }
-    expect(m.toolbar.ctl.length).toBeGreaterThan(5);
-    expect(m.viewbar.ctl.length).toBeGreaterThan(3);
+    expect(m.toolbar.ctl.length).toBeGreaterThan(10); // the bar now also holds the data mode and the three popover anchors
     expect(m.stage).toBeGreaterThan(STEP0_STAGE[h]);
   });
 }
@@ -5603,7 +5646,9 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
     await page.mouse.move(5, 5);
     await page.waitForTimeout(400);
     await page.screenshot({ path: `/out/part18-${w}x${h}-menu.png` });
+    await openPop(page, "display");
     await t.ctl("colour-mode").selectOption("layers");
+    await closePop(page, "display");
     await t.ctl("cube-top").click();
     await page.waitForTimeout(600);
     await page.screenshot({ path: `/out/part18-${w}x${h}-floor.png` });
@@ -5632,7 +5677,9 @@ test("E2E-201 22-2 recolouring a protected Floor layer changes the canvas in Lay
   const floor = await t.floorFromBand();
   const asked: string[] = [];
   page.on("dialog", (d) => asked.push(d.message())); // registered after the open (E2E-90 rule)
+  await openPop(page, "display");
   await t.ctl("colour-mode").selectOption("layers");
+  await closePop(page, "display");
   await t.ctl("cube-top").click();
   await page.mouse.move(5, 5);
   await expect(t.ctl("prot-min")).toBeVisible(); // the section is open: the region colour is live
@@ -5681,7 +5728,9 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
     await page.mouse.move(5, 5);
     await steadyCanvas(page);
     await page.screenshot({ path: `/out/part22-2-${w}x${h}-menu.png` });
+    await openPop(page, "display");
     await t.ctl("colour-mode").selectOption("layers");
+    await closePop(page, "display");
     await t.ctl("cube-top").click();
     await page.mouse.move(5, 5);
     await steadyCanvas(page);
@@ -5920,7 +5969,9 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
     await t.ctl("apply").click();
     await expect(layerCards(page)).toHaveCount(3);
     await expect(layerCards(page).first()).toBeVisible();
+    await openPop(page, "display");
     await t.ctl("colour-mode").selectOption("layers");
+    await closePop(page, "display");
     await page.mouse.move(5, 5);
     await page.waitForTimeout(400);
     await page.screenshot({ path: `/out/part19-${w}x${h}-strip.png` });
@@ -7017,7 +7068,9 @@ test("E2E-231 22-4b light points on the real stage: a lone base point draws the 
   const { exact, ctl } = helpers(page);
   await openRoom(page, exact);
   await appIdle(page);
+  await openPop(page, "display");
   await ctl("colour-mode").selectOption("flat"); // Grey: the base colour, not a height ramp
+  await closePop(page, "display");
   await page.evaluate(() => ((window as unknown as { __mark: number }).__mark = 1));
   const lone = await settledScreen(page, [16.5, 3.5, 3]);
   const corner = await stageCorner(page);
@@ -7282,4 +7335,146 @@ test("E2E-248 22-5 Cloud details shows the file, the counts and the view, and Re
   await expect(ctl("remove-invalid")).toBeVisible();
   await ctl("remove-invalid").click();
   await exact("Active", String(TOTAL - 1));
+});
+
+for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-245 22-5 the top bar is one 52 px row at ${w}x${hgt}: left, centre and right groups, Delete N and the kept chip, and no two controls overlap in Edited or Overlay`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: hgt });
+    const t = hideHelpers(page);
+    await openRoom(page, t.exact);
+    await t.ctl("prot-enabled").check();
+    await t.setNum("prot-min", -0.05);
+    await t.setNum("prot-max", 0.05);
+    await t.ctl("tool-box").click();
+    for (const [id, v] of [["box-center-x", 9], ["box-center-y", 9], ["box-center-z", 2], ["box-size-x", 30], ["box-size-y", 30], ["box-size-z", 10]] as const) await t.setNum(id, v);
+    const kept = ROOM.floor + ROOM.floorGhost;
+    const n = ROOM_TOTAL - ROOM.invalid - kept;
+    await t.exact("Candidates", String(n));
+    await expect(page.locator("#kept-chip")).toHaveText(`${kept} kept`);
+    const bar = page.locator("#toolbar");
+    await expect(bar).toBeVisible();
+    const scan = async (label: string) => {
+      const m = await page.evaluate(() => {
+        const rb = document.getElementById("toolbar")!.getBoundingClientRect();
+        const boxes = [...document.querySelectorAll<HTMLElement>("#toolbar [data-control]")].map((e) => {
+          const b = e.getBoundingClientRect();
+          return { id: e.getAttribute("data-control")!, l: b.left, r: b.right, t: b.top, b: b.bottom, w: b.width, h: b.height };
+        });
+        const centre = document.querySelector<HTMLElement>("#toolbar .grp.centre")!.getBoundingClientRect();
+        const apply = document.getElementById("apply")!.getBoundingClientRect();
+        return { bar: { l: rb.left, r: rb.right, t: rb.top, b: rb.bottom, h: rb.height }, boxes, centre: { l: centre.left, r: centre.right }, applyRight: apply.right };
+      });
+      expect(m.bar.h, `${label} bar height`).toBeGreaterThan(51.5);
+      expect(m.bar.h, `${label} bar height`).toBeLessThan(52.5);
+      for (const b of m.boxes) {
+        expect(b.w > 0 && b.h > 0, `${label} ${b.id} is visible`).toBe(true);
+        expect(b.l >= m.bar.l - 0.5 && b.r <= m.bar.r + 0.5 && b.t >= m.bar.t - 0.5 && b.b <= m.bar.b + 0.5, `${label} ${b.id} is inside the bar`).toBe(true);
+      }
+      for (let i = 0; i < m.boxes.length; i++) {
+        for (let j = i + 1; j < m.boxes.length; j++) {
+          const a = m.boxes[i];
+          const b = m.boxes[j];
+          const apart = a.r <= b.l + 0.5 || b.r <= a.l + 0.5 || a.b <= b.t + 0.5 || b.b <= a.t + 0.5;
+          expect(apart, `${label} ${a.id} and ${b.id} do not overlap`).toBe(true);
+        }
+      }
+      expect(m.bar.r - m.applyRight, `${label} Delete N ends within 12 px of the right edge`).toBeLessThanOrEqual(12.5);
+      if (w >= 1920) expect(Math.abs((m.centre.l + m.centre.r) / 2 - (m.bar.l + m.bar.r) / 2), `${label} centre group is centred`).toBeLessThanOrEqual(2);
+      return m;
+    };
+    const m = await scan("edited");
+    const order = m.boxes.map((b) => b.id);
+    expect(order.indexOf("open-file")).toBeLessThan(order.indexOf("redo"));
+    expect(order.indexOf("redo")).toBeLessThan(order.indexOf("compare-original"));
+    expect(order.indexOf("compare-split")).toBeLessThan(order.indexOf("display-open"));
+    expect(order.slice(order.indexOf("display-open"))).toEqual(["display-open", "details-open", "help", "preview", "apply"]);
+    await expect(t.ctl("apply")).toHaveText(`Delete ${n}`);
+    await t.exact("Candidates", String(n));
+    await expect(page.locator("#kept-chip")).toBeVisible();
+    await expect(page.locator("#doc-title")).toBeVisible();
+    expect((await page.locator("#doc-title").boundingBox())!.width).toBeLessThanOrEqual(190.5);
+    await t.ctl("compare-overlay").click();
+    await expect(t.ctl("overlay-opacity")).toBeVisible();
+    expect(await page.locator("#toolbar .grp.centre").locator('[data-control="overlay-opacity"]').count()).toBe(1);
+    await expect(page.locator("#kept-chip")).toBeVisible();
+    await expect(t.ctl("apply")).toHaveText(`Delete ${n}`);
+    await scan("overlay");
+  });
+}
+
+test("E2E-246 22-5 (Display and Keyboard) opening one popover closes the other, Esc in a select keeps the popover and the Box armed, Esc elsewhere in it closes it, ? opens the Keyboard popover", async ({ page }) => {
+  const t = hideHelpers(page);
+  await t.floorSelected();
+  page.removeAllListeners("dialog");
+  page.on("dialog", (d) => void d.accept());
+  const display = page.locator("#display-pop");
+  const details = page.locator("#cloud-details");
+  const help = page.locator("#help-overlay");
+  const armed = () => expect(t.ctl("tool-box")).toHaveClass(/active/);
+  await t.ctl("details-open").click();
+  await expect(details).toBeVisible();
+  await t.ctl("display-open").click();
+  await expect(display).toBeVisible();
+  await expect(details).toBeHidden();
+  // Esc on the colour select is the select's own: the popover stays and the Box stays armed
+  await t.ctl("colour-mode").focus();
+  await page.keyboard.press("Escape");
+  await expect(display).toBeVisible();
+  await armed();
+  // Esc on the point-size slider closes the popover, the focus returns to the anchor, the Box stays armed
+  await t.ctl("point-size").focus();
+  await page.keyboard.press("Escape");
+  await expect(display).toBeHidden();
+  await expect(t.ctl("display-open")).toBeFocused();
+  await armed();
+  // ? opens the Keyboard popover and closes Display; Esc closes it and the Box stays armed
+  await t.ctl("display-open").click();
+  await expect(display).toBeVisible();
+  await page.locator("body").click({ position: { x: 1, y: 1 } });
+  await page.locator("#viewport").hover();
+  await t.ctl("display-open").click();
+  await expect(display).toBeVisible();
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("?");
+  await expect(help).toBeVisible();
+  await expect(display).toBeHidden();
+  await page.keyboard.press("Escape");
+  await expect(help).toBeHidden();
+  await armed();
+});
+
+test("E2E-247 22-5 the Display popover lists the colour modes, changes the budget, and its Theme group sets, persists and clears data-theme and the canvas follows", async ({ page }) => {
+  const t = hideHelpers(page);
+  await t.floorSelected();
+  await t.ctl("layer-new").click();
+  await t.ctl("display-open").click();
+  await expect(page.locator("#display-pop")).toBeVisible();
+  const state = () => page.evaluate(() => (window as unknown as { __editor: { state: () => { budget: number; renderTheme: string } } }).__editor.state());
+  const canvasToken = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--canvas").trim());
+  const theme = () => page.evaluate(() => document.documentElement.getAttribute("data-theme"));
+  expect(await t.ctl("colour-mode").locator("option").count()).toBe(6);
+  await t.ctl("budget").selectOption("100000");
+  expect((await state()).budget).toBe(100000);
+  await t.ctl("theme-light").click();
+  expect(await theme()).toBe("light");
+  expect(await canvasToken()).toBe("#e9ebef");
+  await expect.poll(async () => (await state()).renderTheme).toBe("light");
+  await expect(t.ctl("theme-light")).toHaveAttribute("aria-pressed", "true");
+  await page.reload();
+  expect(await theme()).toBe("light");
+  await t.exact("Original", String(ROOM_TOTAL));
+  await t.ctl("display-open").click();
+  await expect(t.ctl("theme-light")).toHaveAttribute("aria-pressed", "true");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await t.ctl("theme-system").click();
+  expect(await theme()).toBeNull();
+  expect(await canvasToken()).toBe("#0c0d10");
+  await page.emulateMedia({ colorScheme: "light" });
+  expect(await canvasToken()).toBe("#e9ebef");
+  await expect.poll(async () => (await state()).renderTheme).toBe("light");
+  await t.ctl("theme-dark").click();
+  expect(await theme()).toBe("dark");
+  expect(await canvasToken()).toBe("#0c0d10");
+  await expect.poll(async () => (await state()).renderTheme).toBe("dark");
+  await t.ctl("theme-system").click(); // leave no stored choice behind for the next test
 });

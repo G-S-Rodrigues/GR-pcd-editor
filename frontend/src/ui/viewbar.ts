@@ -6,17 +6,20 @@ import { dataModeModel } from "../compare/datamode";
 import { COMPARE_MODES, type CompareMode, clampOpacity } from "../compare/model";
 import { control } from "./controls";
 import { h } from "./dom";
-import { iconControl } from "./iconbutton";
 
 const BUDGETS = [100_000, 300_000, 1_000_000, AUTO_BUDGET];
 
-export interface ViewbarActions {
+export interface DisplayActions {
   size: () => { w: number; h: number };
   refresh: () => void;
+}
+
+export interface DataModeActions {
   setCompare: (mode: CompareMode) => void;
 }
 
-export function buildViewbar(root: HTMLElement, store: Store<AppState>, a: ViewbarActions): void {
+/** Colour, point size, Auto and the draw budget, as labelled rows of the Display popover. */
+export function buildDisplayControls(root: HTMLElement, store: Store<AppState>, a: DisplayActions): void {
   const colour = control("select", {
     id: "colour-mode",
     onchange: () => {
@@ -53,42 +56,11 @@ export function buildViewbar(root: HTMLElement, store: Store<AppState>, a: Viewb
     const label = b === AUTO_BUDGET ? "Auto (max)" : `${b.toLocaleString("en-US")} points`;
     budget.append(h("option", { value: String(b), selected: b === store.get().budget }, label));
   }
-  const modeIcon = Object.fromEntries(dataModeModel("edited", true).items.map((i) => [i.mode, i.icon])) as Record<CompareMode, ReturnType<typeof dataModeModel>["items"][number]["icon"]>;
-  const compareButtons = COMPARE_MODES.map((m) => iconControl(`compare-${m}`, modeIcon[m], { onclick: () => a.setCompare(m) }));
-  const modeGroup = h("div", { class: "mode-group", role: "group", "aria-label": "Data mode" });
-  const opacity = control("input", {
-    id: "overlay-opacity",
-    type: "range",
-    min: "0.05",
-    max: "1",
-    step: "0.05",
-    value: "0.35",
-    "aria-label": "Overlay opacity",
-    oninput: () => store.set({ overlayOpacity: clampOpacity(Number(opacity.value)) }),
-  });
-  const opacityBox = h("span", { class: "opacity" }, opacity);
-
-  root.append(
-    modeGroup,
-    h("span", { class: "sep" }),
-    h("label", {}, "Colour ", colour),
-    h("label", {}, "Point size ", size),
-    autoSize,
-    h("label", {}, "Draw up to ", budget),
-  );
+  const row = (label: string, ...kids: HTMLElement[]) => h("div", { class: "prow" }, h("span", { class: "plabel", text: label }), h("div", { class: "pctl" }, ...kids));
+  root.append(row("Colour", colour), row("Point size", size, autoSize), row("Draw up to", budget));
 
   const sync = (s: AppState) => {
     const has = s.session !== null;
-    const dm = dataModeModel(s.compare, has);
-    for (const [i, it] of dm.items.entries()) {
-      compareButtons[i].classList.toggle("active", it.pressed);
-      compareButtons[i].setAttribute("aria-pressed", String(it.pressed));
-      compareButtons[i].disabled = it.disabled;
-    }
-    if (modeGroup.dataset.opacity !== String(dm.showOpacity)) {
-      modeGroup.dataset.opacity = String(dm.showOpacity);
-      modeGroup.replaceChildren(...compareButtons, ...(dm.showOpacity ? [opacityBox] : []));
-    }
     autoSize.disabled = !has;
     const opts = colourOptionsFor(s.session?.schema ?? [], (s.session?.layers.length ?? 0) > 0);
     const key = opts.map((o) => `${o.id}${o.enabled}`).join();
@@ -108,6 +80,40 @@ export function buildViewbar(root: HTMLElement, store: Store<AppState>, a: Viewb
     if (colour.value !== s.colour.mode && opts.some((o) => o.id === s.colour.mode)) colour.value = s.colour.mode;
     if (size.value !== String(s.colour.pointSize)) size.value = String(s.colour.pointSize);
     if (budget.value !== String(s.budget) && BUDGETS.includes(s.budget)) budget.value = String(s.budget);
+  };
+  store.subscribe(sync);
+  sync(store.get());
+}
+
+/** The Data mode segmented control (text segments) and, in Overlay only, the opacity slider. */
+export function buildDataMode(root: HTMLElement, store: Store<AppState>, a: DataModeActions): void {
+  const names: Record<CompareMode, string> = { original: "Original", edited: "Edited", overlay: "Overlay", split: "Split" };
+  const compareButtons = COMPARE_MODES.map((m) => control("button", { id: `compare-${m}`, type: "button", "aria-label": names[m], onclick: () => a.setCompare(m) }, names[m]));
+  const modeGroup = h("div", { class: "seg mode-group", role: "group", "aria-label": "Data mode" });
+  const opacity = control("input", {
+    id: "overlay-opacity",
+    type: "range",
+    min: "0.05",
+    max: "1",
+    step: "0.05",
+    value: "0.35",
+    "aria-label": "Overlay opacity",
+    oninput: () => store.set({ overlayOpacity: clampOpacity(Number(opacity.value)) }),
+  });
+  const opacityBox = h("span", { class: "opacity" }, opacity);
+  root.append(modeGroup);
+
+  const sync = (s: AppState) => {
+    const dm = dataModeModel(s.compare, s.session !== null);
+    for (const [i, it] of dm.items.entries()) {
+      compareButtons[i].classList.toggle("active", it.pressed);
+      compareButtons[i].setAttribute("aria-pressed", String(it.pressed));
+      compareButtons[i].disabled = it.disabled;
+    }
+    if (modeGroup.dataset.opacity !== String(dm.showOpacity)) {
+      modeGroup.dataset.opacity = String(dm.showOpacity);
+      modeGroup.replaceChildren(...compareButtons, ...(dm.showOpacity ? [opacityBox] : []));
+    }
     if (document.activeElement !== opacity) opacity.value = String(s.overlayOpacity);
   };
   store.subscribe(sync);

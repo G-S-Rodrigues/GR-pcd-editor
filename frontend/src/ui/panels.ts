@@ -826,16 +826,18 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
   );
 
   // ---- filters (the six boxes live on the canvas, see filterboxes/; the panel keeps the note, summary and global reset)
-  const filterPanel = section(
-    "display",
-    "Display filter",
-    (s) => s.session !== null,
+  const filterPanel = h(
+    "section",
+    { class: "panel", id: "display-filter" },
+    h("h2", { text: "Display filter" }),
     h("p", { class: "note", text: FILTER_COPY }),
     text((s) =>
       s.session ? `${filterSummary(s.tools.filters, s.session.bounds, s.session.counts)}. Displayed: ${s.session.counts.displayed.toLocaleString("en-US")} of ${s.session.counts.active.toLocaleString("en-US")} active points` : "",
     ),
     h("div", { class: "stack" }, button("filter-reset-all", "Reset filters", a.filterResetAll)),
   );
+
+  syncs.push((s) => (filterPanel.hidden = s.session === null));
 
   // ---- protection
   const prot = (fn: (m: P.ProtectionModel) => P.ProtectionEdit) => showErr(a.protectionEdit(fn).error);

@@ -16,8 +16,6 @@ export interface ToolbarActions {
   redo: () => void;
   saveSession: () => void;
   openExport: () => void;
-  /** The Keyboard anchor; until the popover manager owns it. */
-  toggleHelp?: () => void;
 }
 
 export interface ToolbarParts {
@@ -54,7 +52,7 @@ export function buildToolbar(root: HTMLElement, store: Store<AppState>, a: Toolb
   const kept = h("span", { id: "kept-chip", hidden: true }, shield, "");
   const display = iconControl("display-open", "sliders");
   const details = iconControl("details-open", "info");
-  const help = iconControl("help", "keyboard", { onclick: () => a.toggleHelp?.() });
+  const help = iconControl("help", "keyboard");
   const centre = h("div", { class: "grp centre" });
   root.append(
     h(
