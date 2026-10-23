@@ -16,6 +16,7 @@ docker compose -f docker/compose.yaml --profile checks build verify lint
 docker compose -f docker/compose.yaml --profile checks run --rm verify
 docker compose -f docker/compose.yaml --profile checks run --rm lint
 bash tests/container/test_compose.sh                # container tier
+bash tests/container/test_smoke_names.sh            # CTR-12, static, smoke.sh project/image env
 bash tests/launcher/test_launcher.sh                # launcher, stub docker
 bash tests/launcher/test_launcher_smoke.sh          # launcher, real Docker
 ```
@@ -90,8 +91,10 @@ by running `node node_modules/vitest/vitest.mjs run <file>` in `frontend/`.
 
 ## Smoke (browser, part 6)
 
-`bash scripts/smoke.sh` builds the app image (tag `gr-pcd-visualizer:smoke`),
-starts it under compose project `gr-pcd-smoke` (profile `smoke`, tmpfs `/work`,
+`bash scripts/smoke.sh` builds the app image (tag `gr-pcd-visualizer:smoke`, or
+`$GR_PCD_SMOKE_IMAGE`), starts it under compose project `gr-pcd-smoke` (or
+`$GR_PCD_SMOKE_PROJECT`; set both to different values per run and two smoke runs
+can go at once, `CTR-12` in `tests/container/test_smoke_names.sh`) (profile `smoke`, tmpfs `/work`,
 no published port) and runs Playwright `mcr.microsoft.com/playwright:v1.64.1-noble`
 with `network_mode: service:smoke-app`, so the page is `http://localhost:8080`
 (the Host guard only allows loopback). `e2e/node_modules` is installed once

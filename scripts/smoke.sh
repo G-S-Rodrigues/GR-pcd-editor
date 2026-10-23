@@ -3,7 +3,11 @@
 # Separate compose profile `smoke`; not part of `verify`. Needs network once to pull images.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-COMPOSE=(docker compose -f docker/compose.yaml -p gr-pcd-smoke --profile smoke)
+# Per-run names (defaults unchanged) so two concurrent smoke runs do not collide:
+# GR_PCD_SMOKE_PROJECT is the compose project, GR_PCD_SMOKE_IMAGE the smoke-app image tag.
+PROJECT="${GR_PCD_SMOKE_PROJECT:-gr-pcd-smoke}"
+export GR_PCD_SMOKE_IMAGE="${GR_PCD_SMOKE_IMAGE:-gr-pcd-visualizer:smoke}"
+COMPOSE=(docker compose -f docker/compose.yaml -p "$PROJECT" --profile smoke)
 OUT="$(mktemp -d)"
 # shellcheck disable=SC2317  # invoked through trap
 cleanup() { "${COMPOSE[@]}" down --remove-orphans >/dev/null 2>&1 || true; rm -rf "$OUT"; }
