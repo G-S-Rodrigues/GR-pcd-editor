@@ -146,6 +146,7 @@ export function buildSelectionPanel(root: HTMLElement, store: Store<AppState>, a
   // Hide selected: a text button (no glyph); inactive buttons stay clickable so the click explains why (like Select displayed)
   const hideText = h("span", { text: "Hide selected" });
   const hideBtn = control("button", { id: "sel-hide", "aria-pressed": "false", onclick: () => a.toggleHide() }, iconSvg("eyeoff", 16), hideText);
+  const shownBtn = guarded(control("button", { id: "sel-select-displayed", "aria-label": "Select shown", onclick: () => refuse() || a.selectDisplayed() }, iconSvg("selectall", 16), h("span", { text: "Select shown" })));
   const commit = control("button", { id: "sel-commit", onclick: a.commitDraft }, "Commit draft");
   const discard = control("button", { id: "sel-discard", onclick: a.discardDraft }, "Discard draft");
   const note = h("p", { id: "scope-note", class: "note" });
@@ -176,7 +177,7 @@ export function buildSelectionPanel(root: HTMLElement, store: Store<AppState>, a
     h(
       "div",
       { class: "actions" },
-      guarded(control("button", { id: "sel-select-displayed", onclick: () => refuse() || a.selectDisplayed() }, iconSvg("selectall", 16), h("span", { text: "Select shown" }))),
+      shownBtn,
       guarded(control("button", { id: "sel-invert", onclick: () => refuse() || a.invert() }, iconSvg("invert", 16), h("span", { text: "Invert" }))),
       control("button", { id: "sel-clear", tooltip: tip("sel-clear"), onclick: a.clearSelection }, iconSvg("clear", 16), h("span", { text: "Clear" })),
       hideBtn,
@@ -226,6 +227,7 @@ export function buildSelectionPanel(root: HTMLElement, store: Store<AppState>, a
     }
     const hs = hideState(s);
     hideText.textContent = hs.label;
+    hideBtn.setAttribute("aria-label", hs.label); // the visible text may be ellipsised in the 232 px column
     hideBtn.setAttribute("aria-pressed", String(hs.pressed));
     hideBtn.setAttribute("aria-disabled", String(hs.reason !== null));
     hideBtn.classList.toggle("inactive", hs.reason !== null);

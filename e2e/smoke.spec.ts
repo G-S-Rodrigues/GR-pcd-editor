@@ -8219,6 +8219,61 @@ for (const [w, h] of SIZES) {
   });
 }
 
+for (const [w, h] of SIZES) {
+  test(`E2E-290 22-8 first commit: in the Selection actions grid at ${w}x${h} (Box armed, so Select shown and Invert are inactive) each button's label box stays inside its button, clear of its icon and of its sibling; an ellipsised label keeps its full text in the title or aria-label`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const { ctl } = await sidebarState(page);
+    const p = previewHelpers(page);
+    await expect(ctl("sel-invert"), "the Box is armed after sidebarState, so Invert is inactive").toHaveAttribute("aria-disabled", "true");
+    const measure = () => page.evaluate(() =>
+      [...document.querySelectorAll<HTMLElement>(".actions button")].map((b) => {
+        const span = b.querySelector("span")!;
+        const range = document.createRange();
+        range.selectNodeContents(span);
+        const r = (x: DOMRect) => ({ l: x.left, r: x.right, t: x.top, b: x.bottom });
+        return {
+          id: b.getAttribute("data-control"),
+          button: r(b.getBoundingClientRect()),
+          icon: r(b.querySelector("svg")!.getBoundingClientRect()),
+          span: r(span.getBoundingClientRect()),
+          text: r(range.getBoundingClientRect()),
+          clipped: span.scrollWidth > span.clientWidth,
+          full: span.textContent ?? "",
+          names: `${b.title} ${b.getAttribute("aria-label") ?? ""}`,
+        };
+      }),
+    );
+    const hit = (a: { l: number; r: number }, b: { l: number; r: number }) => a.l < b.r - 0.5 && b.l < a.r - 0.5;
+    const check = async (state: string) => {
+    const boxes = await measure();
+    console.log(`ACTIONS ${w}x${h} ${state} ${JSON.stringify(boxes)}`);
+    for (const [i, b] of boxes.entries()) {
+      expect(b.span.l, `${b.id} label inside its button (left)`).toBeGreaterThanOrEqual(b.button.l - 0.5);
+      expect(b.span.r, `${b.id} label inside its button (right)`).toBeLessThanOrEqual(b.button.r + 0.5);
+      expect(hit(b.span, b.icon), `${b.id} label box overlaps its icon`).toBe(false);
+      if (!b.clipped) expect(b.text.r, `${b.id} text inside its label box`).toBeLessThanOrEqual(b.span.r + 0.5);
+      if (b.clipped) expect(b.names, `${b.id} is ellipsised, so its full text must be in title/aria-label`).toContain(b.full);
+      for (const o of boxes.slice(i + 1)) {
+        const sameRow = b.button.t < o.button.b && o.button.t < b.button.b;
+        if (sameRow) {
+          expect(hit(b.button, o.button), `${b.id} button overlaps ${o.id}`).toBe(false);
+          expect(hit(b.span, o.span) || hit(b.text, o.text), `${b.id} label overlaps ${o.id}'s label`).toBe(false);
+          expect(hit(b.text, o.icon) || hit(o.text, b.icon), `${b.id} text overlaps ${o.id}'s icon`).toBe(false);
+        }
+      }
+    }
+    };
+    await check("armed");
+    // the draft state of the owner shot: an Add draft over the kept floor
+    await p.setBox(FLOOR_BOX.c, FLOOR_BOX.d);
+    await expect(page.locator("#kept-warning")).toBeVisible({ timeout: 15000 });
+    await ctl("op-add").click();
+    await p.setBox([-1, 4.5, 2.5], [1, 10, 5]);
+    await expect(page.locator("#draft-note")).toContainText("Preview, not applied", { timeout: 15000 });
+    await check("draft");
+  });
+}
+
 test("E2E-286 22-7 the Selection section folds by click and by Enter, the fold survives a reload and the counts do not change", async ({ page }) => {
   const { exact, ctl } = helpers(page);
   await openRoom(page, exact);
