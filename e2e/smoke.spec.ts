@@ -1280,6 +1280,7 @@ test("E2E-36 10 a collapsed but active box shows a chip with its value and the f
   const fbox = page.locator('.fbox[data-box="z-max"]');
   await expect(fbox).toHaveClass(/active/);
   await expect(fbox).toHaveClass(/collapsed/);
+  await transitionsSettled(page); // the chip's background fades to the accent: read the settled colour
   expect(await ctl("filter-z-max-toggle").evaluate((e) => getComputedStyle(e).backgroundColor)).not.toBe(await ctl("filter-z-min-toggle").evaluate((e) => getComputedStyle(e).backgroundColor));
   await expect(ctl("filter-z-max-toggle")).toContainText("1.5");
   await exact("Displayed", n);
@@ -1296,7 +1297,7 @@ test("E2E-156 17 the six filter boxes open collapsed as chips with no plane draw
   await expect(fboxes).toHaveCount(6);
   for (const b of await fboxes.all()) {
     await expect(b).toHaveClass(/collapsed/);
-    await expect(b.locator(".ftog")).toHaveText(/^[XYZ](>=|<=) /);
+    await expect(b.locator(".ftog")).toHaveText(/^[XYZ] (≥|≤) /);
   }
   await expect(ctl("filter-x-min")).toBeHidden();
   expect((await planesNow(page)).map((q) => q.key)).toEqual([]);
@@ -7153,10 +7154,10 @@ test("E2E-224 22-4 every visible icon-only button has an aria-label and a title:
   expect(states).toEqual({ idle: [], "box armed with a layer": [], legend: [], "filter box": [], help: [], "export dialog": [] });
 });
 
-test("E2E-230 22-4b a collapsed filter box's accessible name contains the chip it shows (WCAG 2.5.3): the X>= button is the X min toggle, and expanded it is the plain box name", async ({ page }) => {
+test("E2E-230 22-4b a collapsed filter box's accessible name contains the chip it shows (WCAG 2.5.3): the X ≥ button is the X min toggle, and expanded it is the plain box name", async ({ page }) => {
   const t = helpers(page);
   await openRoom(page, t.exact);
-  const chip = page.getByRole("button", { name: /X>=/ });
+  const chip = page.getByRole("button", { name: /X ≥/ });
   await expect(chip).toHaveCount(1);
   await expect(chip).toBeVisible();
   await expect(chip).toHaveAttribute("id", "filter-x-min-toggle");

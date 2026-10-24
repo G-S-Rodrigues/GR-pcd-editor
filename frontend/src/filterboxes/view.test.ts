@@ -12,14 +12,14 @@ describe("filter box view model", () => {
     expect(a.label).toBe("Z min");
     expect(a.valueText).toBe("4.123457");
     expect(a.ariaValueText).toBe("Z min 4.123457");
-    expect(a.chipText).toBe("Z>= 4.123");
+    expect(a.chipText).toBe("Z ≥ 4.123");
     expect(a.active).toBe(true);
     expect(a.collapsed).toBe(false);
     expect(a.disabled).toBe(false);
     expect([a.min, a.max, a.now]).toEqual([2, 12, 4.123456789]);
     const i = boxView(m, B, "z", "max", true);
     expect(i.valueText).toBe("12");
-    expect(i.chipText).toBe("Z<= 12");
+    expect(i.chipText).toBe("Z ≤ 12");
     expect(i.active).toBe(false);
     expect(i.collapsed).toBe(true);
     expect(i.classes).toBe("fbox collapsed");

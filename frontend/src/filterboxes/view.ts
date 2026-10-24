@@ -32,7 +32,7 @@ export function boxView(m: FilterModel, b: Bounds | null, axis: Axis, side: Side
     label,
     valueText: round6(now),
     ariaValueText: `${label} ${round6(now)}`,
-    chipText: `${A}${side === "min" ? ">=" : "<="} ${round3(now)}`,
+    chipText: `${A} ${side === "min" ? "≥" : "≤"} ${round3(now)}`,
     active,
     collapsed,
     disabled,
