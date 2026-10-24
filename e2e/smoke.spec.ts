@@ -7140,6 +7140,9 @@ test("E2E-224 22-4 every visible icon-only button has an aria-label and a title:
   states["box armed with a layer"] = await offenders();
   if ((await ctl("legend-menu").getAttribute("aria-expanded")) === "false") await ctl("legend-menu").click();
   states.legend = await offenders();
+  // the layer menu is a popover over the right of the stage, where the legend at the bottom left no longer pushes the boxes (22-8): close it before the box is clicked
+  await page.keyboard.press("Escape");
+  await expect(more).toHaveAttribute("aria-expanded", "false");
   await t.setNum("filter-x-min", 0);
   states["filter box"] = await offenders();
   await ctl("help").click();

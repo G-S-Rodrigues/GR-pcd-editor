@@ -63,6 +63,7 @@ export function buildSelectionPanel(root: HTMLElement, store: Store<AppState>, a
   const op = control("div", { id: "op-select", role: "radiogroup", "aria-label": "Operation", class: "seg icons" }, ...opBtns);
   const previewLive = control("button", {
     id: "preview-live",
+    "aria-label": "Live preview",
     type: "button",
     role: "switch",
     class: "switch",
