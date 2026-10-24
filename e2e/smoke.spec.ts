@@ -8082,7 +8082,143 @@ for (const [w, h] of SIZES) {
   });
 }
 
+
 // ---- part 22-7: left sidebar (Selection and Layers)
+/** Main plus three layers (Floor from the band, Wall, Ghost), the band on, the selection cleared, Box armed. */
+const sidebarState = async (page: Pg) => {
+  const t = layerMenu(page);
+  await t.floorFromBand();
+  await t.wallLayer();
+  await t.ctl("sel-clear").click();
+  await t.ctl("tool-box").click();
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  await t.exact("Selected", String(ROOM.ghost));
+  await t.newLayer("Ghost");
+  await t.ctl("sel-clear").click();
+  await t.exact("Selected", "0");
+  await t.ctl("tool-box").click();
+  return t;
+};
+const sidebarMeasure = (page: Pg) =>
+  page.evaluate(() => {
+    const el = document.getElementById("tools")!;
+    const kids = ([...el.children] as HTMLElement[]).filter((k) => k.getBoundingClientRect().height > 0);
+    const w = (s: string) => Math.round(document.querySelector<HTMLElement>(s)!.getBoundingClientRect().width);
+    const names = [...document.querySelectorAll<HTMLElement>("#layer-list [data-layer-row]")].map((r) => `${r.getAttribute("data-layer-row")}:${r.querySelector<HTMLElement>(".layer-name")!.clientWidth}/${r.querySelector<HTMLElement>(".layer-name")!.scrollWidth}`);
+    return {
+      scroll: [el.scrollHeight, el.clientHeight] as const,
+      blocks: kids.map((k) => `${k.tagName}#${k.id}.${k.className.toString().slice(0, 12)}:${Math.round(k.getBoundingClientRect().height)}`),
+      stage: w("#stage"),
+      left: w("#tools"),
+      right: w("#inspector"),
+      names,
+      note: document.getElementById("draft-note")?.getBoundingClientRect().height ?? 0,
+    };
+  });
+
+/** Every visible control in the left column, scrolled into view in turn: it must sit inside the column, and the topmost element at its centre must be itself (so it is clickable). Returns the failures. */
+const sidebarReach = (page: Pg) =>
+  page.evaluate(() => {
+    const col = document.getElementById("tools")!;
+    const out: string[] = [];
+    let n = 0;
+    for (const el of [...col.querySelectorAll<HTMLElement>("button, input, select, summary, [role=radio]")]) {
+      const cs = getComputedStyle(el);
+      if (cs.visibility === "hidden" || cs.display === "none") continue;
+      if (el.getClientRects().length === 0 || el.getBoundingClientRect().height === 0) continue;
+      el.scrollIntoView({ block: "center" });
+      const r = el.getBoundingClientRect();
+      const c = col.getBoundingClientRect();
+      const name = `${el.tagName}#${el.id}[${el.getAttribute("data-control") ?? el.getAttribute("aria-label") ?? el.textContent?.trim().slice(0, 16)}]`;
+      n++;
+      if (r.top < c.top - 1 || r.bottom > c.bottom + 1 || r.left < c.left - 1 || r.right > c.right + 1) { out.push(`${name} outside the column`); continue; }
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      if (!hit || !(el === hit || el.contains(hit) || hit.contains(el) || el.closest("label")?.contains(hit))) out.push(`${name} covered by ${hit?.tagName}#${hit?.id}.${hit?.className}`);
+    }
+    col.scrollTop = 0;
+    return { n, out };
+  });
+
+for (const [w, h] of SIZES) {
+  test(`E2E-285 22-7 the left sidebar at ${w}x${h}: no scroll at 1920x1080 in both states and at 1280x720 with the Box armed; with an Add draft over the kept points at 1280x720 it may scroll, every control stays reachable, there is no sideways scroll and it never overlaps the stage (heights, widths and layer name widths are logged)`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const t = await sidebarState(page);
+    const p = previewHelpers(page);
+    const log = async (state: string) => {
+      const m = await sidebarMeasure(page);
+      console.log(`LEFT-SIDEBAR ${w}x${h} ${state} ${m.scroll[0]}/${m.scroll[1]} ${m.blocks.join(",")} stage=${m.stage} left=${m.left} right=${m.right} note=${m.note}`);
+      console.log(`LEFT-SIDEBAR-NAMES ${w}x${h} ${m.names.join(",")}`);
+      return m;
+    };
+    const geometry = async (state: string) =>
+      page.evaluate(() => {
+        const col = document.getElementById("tools")!;
+        const stage = document.getElementById("stage")!.getBoundingClientRect();
+        return { sideways: col.scrollWidth - col.clientWidth, gap: stage.left - col.getBoundingClientRect().right, ownsScroll: ["auto", "scroll"].includes(getComputedStyle(col).overflowY), page: document.scrollingElement!.scrollHeight - document.scrollingElement!.clientHeight };
+      }).then((g) => {
+        expect(g.sideways, `${state}: no horizontal scroll in the sidebar`).toBeLessThanOrEqual(0);
+        expect(g.gap, `${state}: the sidebar does not overlap the stage`).toBeGreaterThanOrEqual(0);
+        expect(g.ownsScroll, `${state}: the sidebar scrolls itself when it cannot fit (R22-19)`).toBe(true);
+        expect(g.page, `${state}: the page does not scroll`).toBeLessThanOrEqual(1);
+      });
+    const a = await log("A");
+    expect(a.scroll[0], `${w}x${h} Box armed: scrollHeight ${a.scroll[0]} <= clientHeight ${a.scroll[1]}`).toBeLessThanOrEqual(a.scroll[1]);
+    await geometry("A");
+    // B: commit a floor selection (inside the band, so the kept warning shows), then an Add over the wall
+    await p.setBox(FLOOR_BOX.c, FLOOR_BOX.d);
+    await expect(page.locator("#kept-warning")).toBeVisible({ timeout: 15000 });
+    await t.ctl("op-add").click();
+    await p.setBox([-1, 4.5, 2.5], [1, 10, 5]);
+    await expect(page.locator("#draft-note")).toContainText("Preview, not applied", { timeout: 15000 });
+    await expect(page.locator("#kept-warning")).toBeVisible();
+    const b = await log("B");
+    if (w === 1920) expect(b.scroll[0], `${w}x${h} + draft with the kept callout: scrollHeight ${b.scroll[0]} <= clientHeight ${b.scroll[1]}`).toBeLessThanOrEqual(b.scroll[1]);
+    await geometry("B");
+    const reach = await sidebarReach(page);
+    expect(reach.n, "the reach check saw the controls").toBeGreaterThan(20);
+    expect(reach.out, `${w}x${h} + draft: every control reachable by scrolling`).toEqual([]);
+    if (w === 1280) expect(b.stage, "the stage keeps 0.6 of the window").toBeGreaterThanOrEqual(768);
+  });
+}
+
+for (const [w, h] of SIZES) {
+  test(`E2E-289 22-7 owner screenshots at ${w}x${h}, dark and light: idle (room, 3 layers), Box armed, + draft with the kept callout, Floor's menu open; only the menu is open in the last, nothing throws`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => {
+      if (m.type() === "error" && !/404/.test(m.text())) errors.push(m.text());
+    });
+    const t = await sidebarState(page);
+    const p = previewHelpers(page);
+    const floorId = await page.locator("#layer-list [data-layer-row]").nth(1).getAttribute("data-layer-row");
+    const shot = async (state: string) => {
+      for (const scheme of ["dark", "light"] as const) {
+        await page.emulateMedia({ colorScheme: scheme });
+        await transitionsSettled(page);
+        await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))); // two frames: the canvas redraws with the theme's render palette
+        await page.screenshot({ path: `/out/part22-7-${w}x${h}-${scheme}-${state}.png` });
+      }
+    };
+    await t.ctl("tool-box").click(); // disarm: idle
+    await shot("idle");
+    await t.ctl("tool-box").click();
+    await shot("armed");
+    await p.setBox(FLOOR_BOX.c, FLOOR_BOX.d);
+    await expect(page.locator("#kept-warning")).toBeVisible({ timeout: 15000 });
+    await t.ctl("op-add").click();
+    await p.setBox([-1, 4.5, 2.5], [1, 10, 5]);
+    await expect(page.locator("#draft-note")).toContainText("Preview, not applied", { timeout: 15000 });
+    await shot("draft");
+    await t.openMore(Number(floorId));
+    await expect(page.locator("#layer-menu")).toBeVisible();
+    await page.mouse.move(5, 5);
+    await shot("menu");
+    await expect(page.locator("#layer-menu")).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+}
+
 test("E2E-286 22-7 the Selection section folds by click and by Enter, the fold survives a reload and the counts do not change", async ({ page }) => {
   const { exact, ctl } = helpers(page);
   await openRoom(page, exact);

@@ -667,3 +667,23 @@ Since 22-5 the fold ids are `box, polygon, cluster, sparse, plane, thin, layers`
   `--ls-w` at 232 px or less below 1440.
 - The Fit menu is `position: fixed` inside the aside: a later `backdrop-filter`, `filter` or `transform` on `aside` would break it.
 - Counts after this part: see the gate run in the commit message.
+
+## Part 22-7 additions (left sidebar)
+
+- New ids: `UI-1200`/`UI-1201` (popover `beside` placement, `toggleAt`, `reanchor`), `UI-1202` (Selection foldable section), `UI-1203`/`UI-1204`
+  (Operation seg icons, Live preview switch, Scope radiogroup, Highlight dots), `UI-1205..1207` (actions grid, callouts), `UI-1208`/`UI-1209`
+  (layer row lock, `.layer-acts`, hover reveal), `UI-1210`/`UI-1211` (`#layer-menu` popover), `UI-1212` (footer `.lfoot`/`.lfoot2`),
+  `UI-1213` (`--ls-w` 232/256/288), `E2E-285..289`.
+- Changed tests: UI-1142, UI-887, UI-892, UI-893 (HEAD_IDS), UI-300, UI-639, UI-922, UI-832, UI-863, UI-921, UI-1014, UI-925, UI-926, UI-923,
+  UI-984, UI-1172b (regex for `--ls-w`), E2E-10, E2E-24, E2E-62, E2E-133, E2E-155, E2E-222, E2E-173, E2E-174, E2E-175, E2E-201, E2E-202
+  (selectors, setup and pinned text only; no threshold changed).
+- The layer menu is a popover (`#layer-menu`): call `openMore(id)` before menu clicks after any outside click or another popover closed it.
+- Widths (R22-16): `--ls-w` 232 px below 1440, 256 from 1440, 288 from 1700; stage exactly 768 at 1280x720.
+- R22-19: the left sidebar scrolls (`overflow-y: auto`) when it cannot fit; nothing is shrunk or cut. E2E-285 pins no scroll at 1920x1080 (Box
+  armed and + draft) and at 1280x720 Box armed; 1280x720 + draft scrolls (694/642 measured), with every control reachable, no sideways scroll,
+  no overlap with the stage. It logs a `LEFT-SIDEBAR` line (scrollHeight/clientHeight, block heights, column widths, draft-note height) and a
+  `LEFT-SIDEBAR-NAMES` line (layer name clientWidth/scrollWidth, no floor).
+- E2E-289 keeps 16 owner shots (`/out/part22-7-<w>x<h>-<theme>-<state>.png`: idle, armed, draft, menu) under `shots-22/part-7`; never committed.
+- `scripts/smoke.sh` honours `GR_PCD_SMOKE_PROJECT` and `GR_PCD_SMOKE_IMAGE` (defaults `gr-pcd-smoke`, `gr-pcd-visualizer:smoke`) so parallel
+  runs do not collide; CTR-12 (`tests/container/test_smoke_names.sh`) pins it.
+- Smoke count: 22-6 close + 8 (E2E-285 and E2E-289 at two sizes each, E2E-286 two tests, E2E-287 and E2E-288 one each).

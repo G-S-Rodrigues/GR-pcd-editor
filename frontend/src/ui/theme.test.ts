@@ -380,9 +380,9 @@ describe("palette and inspector chrome (part 22-6)", () => {
     const css = styleText();
     const body = rules(css).find((r) => r.selector === "#body");
     expect(body!.body).toContain("var(--rs-w)");
-    expect(css).toMatch(/#body \{ grid-template-columns: 240px minmax\(0, 1fr\) var\(--rs-w\)/);
+    expect(css).toMatch(/#body \{[^}]*grid-template-columns: var\(--ls-w\) minmax\(0, 1fr\) var\(--rs-w\)/); // 22-7: the left column is --ls-w at every width
     expect(parseBlocks().root["rs-w"]).toBe("280px");
-    expect(css).toMatch(/@media \(min-width: 1440px\) \{ :root \{ --rs-w: 296px/);
+    expect(css).toMatch(/@media \(min-width: 1440px\) \{ :root \{[^}]*--rs-w: 296px/);
     expect(css).toMatch(/@media \(min-width: 1700px\) \{ :root \{[^}]*--rs-w: 332px/);
     const all = rules(css);
     const track = all.find((r) => r.selector.includes(".switch") && !/::|:checked|aria-checked/.test(r.selector));
@@ -415,5 +415,21 @@ describe("layer row reveal (part 22-7)", () => {
     for (const want of [".layer-row:hover .layer-act", ".layer-row.active .layer-act", ".layer-row:focus-within .layer-act", '.layer-act[aria-expanded="true"]']) expect(sels).toContain(want);
     expect(shown?.body).toMatch(/opacity:\s*1\b/);
     for (const r of all.filter((x) => /\.layer-act\b/.test(x.selector))) expect(r.body, r.selector).not.toMatch(/display:\s*none|visibility:\s*hidden/);
+  });
+});
+
+describe("left sidebar geometry (part 22-7)", () => {
+  test("UI-1213 --ls-w is 232px at the root, 256px from 1440 and 288px from 1700 (R22-16); #body starts with var(--ls-w); the sidebar blocks use no colour literal", () => {
+    const css = styleText();
+    expect(parseBlocks().root["ls-w"]).toBe("232px");
+    expect(css).toMatch(/@media \(min-width: 1440px\) \{ :root \{[^}]*--ls-w: 256px/);
+    expect(css).toMatch(/@media \(min-width: 1700px\) \{ :root \{[^}]*--ls-w: 288px/);
+    const all = rules(css);
+    const body = all.find((r) => r.selector === "#body");
+    expect(body?.body).toMatch(/grid-template-columns:\s*var\(--ls-w\) minmax\(0, 1fr\) var\(--rs-w\)/);
+    for (const r of all.filter((x) => /^#body\b/.test(x.selector))) expect(r.body, r.selector).not.toMatch(/grid-template-columns:\s*\d+px/);
+    const blocks = all.filter((r) => /\.callout\b|\.actions\b|\.lfoot2?\b|\.prow\b|\.dots\b/.test(r.selector));
+    expect(blocks.length).toBeGreaterThan(4);
+    for (const r of blocks) expect(r.body, r.selector).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/);
   });
 });

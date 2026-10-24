@@ -133,14 +133,14 @@
         --ctl-h: 26px;
         --tb-h: 52px;
         --ft-h: 26px;
-        --ls-w: 256px;
+        --ls-w: 232px;
         --rs-w: 280px;
         /* Motion */
         --dur-fast: 120ms;
         --dur: 150ms;
         --dur-slow: 250ms;
       }
-      @media (min-width: 1440px) { :root { --rs-w: 296px; } }
+      @media (min-width: 1440px) { :root { --ls-w: 256px; --rs-w: 296px; } }
       @media (min-width: 1700px) { :root { --ls-w: 288px; --rs-w: 332px; --ctl-h: 28px; } }
       @media (prefers-color-scheme: light) {
         :root:not([data-theme="dark"]) {
@@ -274,11 +274,10 @@
       .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 2px 6px; background: var(--glass); border-bottom: 1px solid var(--separator); }
       .row .sep { width: 1px; align-self: stretch; background: var(--separator); margin: 0 4px; }
       .row label { color: var(--label-2); display: inline-flex; align-items: center; gap: 4px; }
-      #body { flex: 1; display: grid; grid-template-columns: 220px minmax(0, 1fr) var(--rs-w); min-height: 0; }
-      @media (min-width: 1700px) { #body { grid-template-columns: 240px minmax(0, 1fr) var(--rs-w); } }
+      #body { flex: 1; display: grid; grid-template-columns: var(--ls-w) minmax(0, 1fr) var(--rs-w); min-height: 0; }
       aside { background: var(--glass); padding: 8px; overflow-x: hidden; overflow-y: auto; min-width: 0; }
       aside > *, .panel { min-width: 0; }
-      #tools { border-right: 1px solid var(--separator); }
+      #tools { border-right: 1px solid var(--separator); padding: 6px 10px 10px; }
       #inspector { border-left: 1px solid var(--separator); }
       aside h2 { font: var(--t-section); color: var(--label-2); margin: 8px 0 4px; }
       aside h3 { font: 600 12px/16px var(--font); color: var(--label); margin: 6px 0 2px; }
