@@ -33,17 +33,19 @@ export function buildLayersPanel(root: HTMLElement, store: Store<AppState>, a: P
   const syncs: ((s: AppState) => void)[] = [];
   const layerList = h("ul", { id: "layer-list", class: "layer-list" });
   const layerName = control("input", { id: "layer-name", type: "text", maxlength: "40", placeholder: "Layer name", "aria-label": "Layer name" });
-  const layerBtn = (id: string, label: string, onclick: () => void) => control("button", { id, "aria-disabled": "false", onclick }, label);
-  const newBtn = layerBtn("layer-new", "New layer", () => {
+  const layerBtn = (id: string, label: string | Node, onclick: () => void, name?: string) =>
+    control("button", { id, "aria-disabled": "false", ...(name ? { "aria-label": name } : {}), onclick }, label);
+  // the footer: icon-only New layer buttons (their names are aria-labels), short texts for Assign and Release (names keep the field labels)
+  const newBtn = layerBtn("layer-new", iconSvg("add", 16), () => {
     a.layerCreate(layerName.value);
     layerName.value = "";
-  });
-  const assignBtn = layerBtn("layer-assign", "Assign selection", () => a.layerAssign());
-  const releaseBtn = layerBtn("layer-release", "Release to main", () => a.layerRelease());
+  }, "New layer");
+  const assignBtn = layerBtn("layer-assign", "Assign", () => a.layerAssign(), "Assign selection");
+  const releaseBtn = layerBtn("layer-release", "Release", () => a.layerRelease(), "Release to main");
   const setBtn = layerBtn("layer-set", "Set layer to selection", () => a.layerSet());
   setBtn.hidden = true;
-  const fromBandBtn = layerBtn("layer-from-band", "New layer from protected points", () => a.layerFromBand());
-  const stack = h("div", { class: "stack" }, assignBtn, releaseBtn, setBtn); // Set layer to selection is always here; the menu closes when Edit layer fires
+  const fromBandBtn = layerBtn("layer-from-band", iconSvg("shieldplus", 16), () => a.layerFromBand(), "New layer from protected points");
+  const foot2 = h("div", { class: "lfoot2" }, assignBtn, releaseBtn, setBtn); // Set layer to selection lives here while a layer is edited; the menu closes when Edit layer fires
   const editingLine = h("p", { id: "layer-editing", class: "note", hidden: true });
   const reasonOn = (b: HTMLElement, tipId: string, why: string | null) => {
     b.setAttribute("aria-disabled", String(why !== null));
@@ -204,9 +206,8 @@ export function buildLayersPanel(root: HTMLElement, store: Store<AppState>, a: P
     empty,
     layerList,
     editingLine,
-    h("div", { class: "oprow" }, layerName, newBtn),
-    h("div", { class: "stack" }, fromBandBtn),
-    stack,
+    h("div", { class: "lfoot" }, layerName, newBtn, fromBandBtn),
+    foot2,
   );
   syncs.push((s) => {
     f.el.hidden = s.session === null;

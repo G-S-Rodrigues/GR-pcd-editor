@@ -406,3 +406,35 @@ test("UI-1211 the open menu closes when its layer leaves the rows and when the s
   store.set({ session: { ...(store.get().session as NonNullable<ReturnType<typeof sessionFixture>>), session_id: "s9" } });
   expect(menu.calls.close).toBe(2);
 });
+
+test("UI-1212 the section ends with .lfoot (name, icon-only New layer and New layer from protected points) and .lfoot2 (Assign, Release, and Set layer to selection while a layer is edited); #layer-editing sits above .lfoot", () => {
+  const f = section();
+  const body = [f, ...f.all()].find((e) => e.children.some((c) => c.className === "lfoot")) as FakeEl;
+  expect(body).toBeDefined();
+  const names = body.children.map((c) => c.getAttribute("id") ?? c.className);
+  const iFoot = names.indexOf("lfoot");
+  expect(names.slice(iFoot)).toEqual(["lfoot", "lfoot2"]);
+  expect(names.indexOf("layer-editing")).toBeGreaterThan(-1);
+  expect(names.indexOf("layer-editing")).toBeLessThan(iFoot);
+  const foot = body.children[iFoot];
+  expect(foot.children.map((c) => c.getAttribute("data-control"))).toEqual(["layer-name", "layer-new", "layer-from-band"]);
+  const nb = ctl("layer-new");
+  expect(nb.getAttribute("aria-label")).toBe("New layer");
+  expect(nb.all().some((e) => e.tag === "svg")).toBe(true);
+  expect(nb.text()).toBe("");
+  expect(nb.title).toBe(TOOLTIPS["layer-new"]);
+  const fb = ctl("layer-from-band");
+  expect(fb.getAttribute("aria-label")).toBe("New layer from protected points");
+  expect(fb.all().some((e) => e.tag === "svg")).toBe(true);
+  const foot2 = body.children[iFoot + 1];
+  expect(foot2.children.map((c) => c.getAttribute("data-control"))).toEqual(["layer-assign", "layer-release", "layer-set"]);
+  expect(ctl("layer-assign").text()).toBe("Assign");
+  expect(ctl("layer-release").text()).toBe("Release");
+  expect(ctl("layer-set").hidden).toBe(true);
+  store.set({ session: twoLayers(), layerUi: { editing: 1, active: 1 } });
+  expect(ctl("layer-set").hidden).toBe(false);
+  expect(foot2.children.filter((c) => c.getAttribute("data-control") === "layer-set")).toHaveLength(1);
+  expect(byId("layer-editing").hidden).toBe(false);
+  expect(byId("layer-editing").text()).toContain("Floor");
+  expect(menu.isOpen()).toBe(false); // the editing state does not open the menu
+});

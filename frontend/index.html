@@ -361,6 +361,12 @@
       .layer-details button[data-layer-protected] svg { vertical-align: -2px; margin-right: 3px; }
       .layer-row .chip.locked { outline: 1px dashed var(--label); outline-offset: 1px; }
       .layer-details[hidden] { display: none; }
+      .lfoot { display: flex; align-items: center; gap: 5px; margin: 6px 0 4px; }
+      .lfoot input { flex: 1 1 auto; min-width: 0; }
+      .lfoot button { flex: none; width: var(--ctl-h); padding: 0; display: inline-grid; place-items: center; }
+      .lfoot2 { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin: 4px 0; }
+      .lfoot2 button { min-width: 0; }
+      .lfoot2 #layer-set { grid-column: 1 / -1; }
       .layer-details button { height: 22px; padding: 0 6px; font-size: 11px; }
       #tools h2 { margin: 6px 0 2px; }
       #tools .stack { gap: 3px; margin: 2px 0; }
