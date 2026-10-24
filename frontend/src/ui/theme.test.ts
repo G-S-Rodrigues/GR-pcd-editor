@@ -338,7 +338,7 @@ describe("stylesheet rules (part 22-4)", () => {
       expect(r.selector, "no blur on the canvas").not.toMatch(/#viewport|canvas/);
     }
     const inside = (selector: string) => blurred.filter((r) => r.selector.split(",").map((x) => x.trim()).includes(selector));
-    const hud = ["#legend", ".fbox", "#camera-cluster .ib", "#band-pill", ".notice"];
+    const hud = ["#legend", ".fbox", "#camera-cluster", "#band-pill", ".notice"];
     const strong = ["dialog", "#help-overlay", "#progress"];
     for (const sel of [...hud, ...strong]) expect(inside(sel).length, sel).toBeGreaterThan(0);
     for (const sel of ["aside", ".row", "#statusbar"]) expect(inside(sel), sel).toEqual([]);
