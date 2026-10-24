@@ -2704,7 +2704,7 @@ test("E2E-71 12-2 the four data modes are a text segment group with exact counts
 });
 
 for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
-  test(`E2E-72 12-3 16-2 the camera cluster sits above the ViewCube, overlaps nothing, resets and picks the pivot; no typed pivot at ${w}x${hgt}`, async ({ page }) => {
+  test(`E2E-72 12-3 16-2 the camera cluster sits below the ViewCube, overlaps nothing, resets and picks the pivot; no typed pivot at ${w}x${hgt}`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: hgt });
     const { exact, ctl } = helpers(page);
     await openRoom(page, exact);
@@ -2730,7 +2730,8 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     const hit = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
       a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
     expect(hit(c, await box("#viewcube")), "cluster vs #viewcube").toBe(false);
-    expect(c.y + c.height).toBeLessThanOrEqual((await box("#viewcube")).y);
+    const cubeBox = await box("#viewcube");
+    expect(c.y).toBeGreaterThanOrEqual(cubeBox.y + cubeBox.height);
     const fboxes = await page.locator(".fbox").all();
     expect(fboxes.length).toBeGreaterThan(0);
     for (const f of fboxes) expect(hit(c, (await f.boundingBox())!), "cluster vs .fbox").toBe(false);
@@ -2763,7 +2764,7 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
 }
 
 for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
-  test(`E2E-132 16-2 the cluster is above a smaller ViewCube and nothing in the top-right corner overlaps in Front, Left, Top and Back at ${w}x${hgt}`, async ({ page }) => {
+  test(`E2E-132 16-2 22-8 the cluster is below a smaller ViewCube and nothing in the top-right corner overlaps in Front, Left, Top and Back at ${w}x${hgt}`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: hgt });
     const { exact } = helpers(page);
     await openRoom(page, exact);
@@ -2796,8 +2797,8 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
       type R = { l: number; t: number; r: number; b: number };
       const hit = (a: R, b: R) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
       const tag = `${w} ${view}`;
-      expect(r.cluster.b, `${tag} cluster above cube`).toBeLessThanOrEqual(r.cube.t);
-      expect(r.cluster.l >= r.stage.l && r.cluster.r <= r.stage.r && r.cluster.t >= r.stage.t, `${tag} cluster inside stage`).toBe(true);
+      expect(r.cluster.t, `${tag} cluster below cube`).toBeGreaterThanOrEqual(r.cube.b);
+      expect(r.cluster.l >= r.stage.l && r.cluster.r <= r.stage.r && r.cluster.t >= r.stage.t && r.cluster.b <= r.stage.b, `${tag} cluster inside stage`).toBe(true);
       expect(r.cubeStage.r - r.cubeStage.l, `${tag} cube stage width`).toBeLessThanOrEqual(80);
       expect(hit(r.cluster, r.cubeStage), `${tag} cluster x cube stage`).toBe(false);
       for (const a of r.parts) expect(hit(r.cluster, a), `${tag} cluster x arrow or zone`).toBe(false);
@@ -8275,7 +8276,7 @@ for (const [w, h] of SIZES) {
 }
 
 for (const [w, h] of SIZES) {
-  test(`E2E-300 22-8 HUD layout at ${w}x${h}: the legend is in the stage's bottom-left quarter, right of the triad and above the timeline bar`, async ({ page }) => {
+  test(`E2E-300 22-8 HUD layout at ${w}x${h}: the legend is in the stage's bottom-left quarter, right of the triad and above the timeline bar; the camera stack is a column centred under the ViewCube`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: h });
     const { exact } = helpers(page);
     await openRoom(page, exact);
@@ -8293,6 +8294,12 @@ for (const [w, h] of SIZES) {
     expect(legend.x, "legend is right of the triad").toBeGreaterThanOrEqual(triad.x + triad.width);
     expect(legend.y + legend.height, "legend's bottom edge is above the timeline bar").toBeLessThanOrEqual(band);
     expect(Math.abs(legend.y + legend.height - (triad.y + triad.height)), "legend is bottom-aligned with the triad").toBeLessThanOrEqual(2);
+    // camera leg: the stack is under the cube, centred on it, and taller than wide
+    const cube = await box("#viewcube .cube-stage");
+    const stack = await box("#camera-cluster");
+    expect(stack.y, `the camera stack (y ${stack.y}) is below the cube (bottom ${cube.y + cube.height})`).toBeGreaterThanOrEqual(cube.y + cube.height);
+    expect(Math.abs(stack.x + stack.width / 2 - (cube.x + cube.width / 2)), "the stack is centred under the cube").toBeLessThanOrEqual(2);
+    expect(stack.height, "the stack is a column").toBeGreaterThan(stack.width);
   });
 }
 

@@ -5,14 +5,16 @@ export const CUBE_SIDE = 40; // px, the cube's edge length
 export const CUBE_WRAP = 160;
 export const CUBE_TOP = 8;
 export const CUBE_RIGHT = 8;
-/** The camera cluster: a row of four icon buttons above the ViewCube (part 16-2; it was under it in 12-3). */
-export const CLUSTER = { btn: 32, between: 2, gap: 6, count: 4, w: 4 * 32 + 3 * 2, h: 32 } as const;
-/** Top of the ViewCube wrapper: below the cluster row. */
-export const CUBE_WRAP_TOP = CUBE_TOP + CLUSTER.h + CLUSTER.gap;
-/** The vertical camera stack (22-8) that will sit under the ViewCube: four 32 px buttons, 2 px between, 4 px glass padding each side. */
+/** The vertical camera stack under the ViewCube (22-8): four 32 px buttons, 2 px between, 4 px glass padding each side. */
 export const STACK = { w: 40, h: 4 * 32 + 3 * 2 + 8 } as const;
-/** Reserved top-right column: the cube with its arrows, then the camera stack under it (22-8). It also covers today's row above the cube. */
-export const CUBE = { w: CUBE_WRAP + 2 * CUBE_RIGHT, h: CUBE_TOP + CUBE_WRAP + CLUSTER.gap + STACK.h + 8 } as const;
+/** The camera cluster (22-8): a column of four icon buttons under the ViewCube (it was a row above it from 16-2). */
+export const CLUSTER = { btn: 32, between: 2, gap: 6, count: 4, w: STACK.w, h: STACK.h } as const;
+/** Top of the ViewCube wrapper: the cube is at the top, the stack hangs under it. */
+export const CUBE_WRAP_TOP = CUBE_TOP;
+/** Top of the camera stack: under the cube wrapper. */
+export const CLUSTER_TOP = CUBE_WRAP_TOP + CUBE_WRAP + CLUSTER.gap;
+/** Reserved top-right column: the cube with its arrows, then the camera stack under it. */
+export const CUBE = { w: CUBE_WRAP + 2 * CUBE_RIGHT, h: CLUSTER_TOP + CLUSTER.h + 8 } as const;
 /** Arrow ring and corner zones around the cube centre (px). Arrows sit on `ring`, corner zones just outside the silhouette. */
 export const CUBE_NAV = { ring: 68, arrow: 22, zone: 18, zoneOffset: 5 } as const;
 /** The floating tool palette (six icon buttons, 22-6) at the stage's top-left, and the arm pill beside it; both sit inside the corner the legend reserves. */
