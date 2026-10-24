@@ -8274,6 +8274,28 @@ for (const [w, h] of SIZES) {
   });
 }
 
+for (const [w, h] of SIZES) {
+  test(`E2E-300 22-8 HUD layout at ${w}x${h}: the legend is in the stage's bottom-left quarter, right of the triad and above the timeline bar`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const { exact } = helpers(page);
+    await openRoom(page, exact);
+    const box = async (sel: string) => {
+      const b = await page.locator(sel).first().boundingBox();
+      expect(b, `${sel} is visible`).not.toBeNull();
+      return b!;
+    };
+    const stage = await box("#stage");
+    const legend = await box("#legend");
+    const triad = await box("#triad");
+    const band = stage.y + stage.height - 48;
+    expect(legend.y, `legend is in the bottom half (y ${legend.y}, stage ${stage.y}+${stage.height})`).toBeGreaterThan(stage.y + stage.height / 2);
+    expect(legend.x, "legend is in the left half").toBeLessThan(stage.x + stage.width / 2);
+    expect(legend.x, "legend is right of the triad").toBeGreaterThanOrEqual(triad.x + triad.width);
+    expect(legend.y + legend.height, "legend's bottom edge is above the timeline bar").toBeLessThanOrEqual(band);
+    expect(Math.abs(legend.y + legend.height - (triad.y + triad.height)), "legend is bottom-aligned with the triad").toBeLessThanOrEqual(2);
+  });
+}
+
 test("E2E-286 22-7 the Selection section folds by click and by Enter, the fold survives a reload and the counts do not change", async ({ page }) => {
   const { exact, ctl } = helpers(page);
   await openRoom(page, exact);

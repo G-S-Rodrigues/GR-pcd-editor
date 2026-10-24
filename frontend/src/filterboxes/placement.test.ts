@@ -2,8 +2,8 @@ import { describe, expect, it, test } from "vitest";
 import { defaultCamera, orbit } from "../view/camera";
 import { PRESETS, applyPreset } from "../view/presets";
 import { fromBasisLookUp } from "../view/basis";
-import { BAND, CUBE, TRIAD } from "../view/layout";
-import { LEGEND, type PlacedBox, type PlaceState, RESERVED, pillRect, placeBoxes, spread1d, spreadAround, triadRect } from "./placement";
+import { BAND, CUBE, LEGEND_BOX, PALETTE_CORNER, RESET_HUD, TRIAD } from "../view/layout";
+import { LEGEND, legendRect, pillCentre, resetRect, type PlacedBox, type PlaceState, RESERVED, pillRect, placeBoxes, spread1d, spreadAround, triadRect } from "./placement";
 
 const SIZES = (_id: string) => ({ w: 156, h: 28 });
 const STAGE = { w: 780, h: 560 };
@@ -39,11 +39,13 @@ describe("filter box placement", () => {
   });
 
   it("UI-195 docked boxes stack at the bottom of the left edge, Z max above Z min, X and Y above", () => {
-    const f = put(preset("top")).boxes;
+    // 22-8: the legend sits at the bottom left, so the left lane only has room above it on a stage this short (780x560 pushes the docked boxes to a second row)
+    const stage = { w: 1340, h: 900 };
+    const f = put(preset("top"), null, stage).boxes;
     const zmax = by(f, "z-max");
     const zmin = by(f, "z-min");
     expect(zmax.y).toBeLessThan(zmin.y);
-    expect(zmin.y + zmin.h).toBeLessThanOrEqual(STAGE.h);
+    expect(zmin.y + zmin.h).toBeLessThanOrEqual(stage.h);
     expect(zmin.x).toBeLessThan(20);
   });
 
@@ -230,9 +232,12 @@ describe("filter boxes avoid the band-hidden pill", () => {
     });
   }
 
-  it("UI-1074 pillRect covers the pill as drawn (240 x 28, 56 px above the bottom, centred) and stays above the timeline band", () => {
+  it("UI-1074 pillRect covers the pill as drawn (240 x 28, 56 px above the bottom, centred between the legend and the Reset icon) and stays above the timeline band", () => {
     for (const stage of [STAGE, { w: 1920, h: 1080 }]) {
-      const pill = { l: stage.w / 2 - 120, t: stage.h - 56 - 28, r: stage.w / 2 + 120, b: stage.h - 56 };
+      const c = pillCentre(stage);
+      expect(c).toBe((LEGEND_BOX.left + LEGEND_BOX.w + LEGEND_BOX.pad + stage.w - RESET_HUD.right - RESET_HUD.size) / 2);
+      expect(c).toBeGreaterThan(stage.w / 2 - 1); // the legend is wider than the Reset icon, so the span's middle is right of the stage's
+      const pill = { l: c - 120, t: stage.h - 56 - 28, r: c + 120, b: stage.h - 56 };
       const r = pillRect(stage);
       expect(r.l).toBeLessThanOrEqual(pill.l);
       expect(r.r).toBeGreaterThanOrEqual(pill.r);
@@ -258,14 +263,16 @@ describe("filter boxes avoid the band-hidden pill", () => {
   });
 });
 
-test("UI-337 RESERVED holds exactly the legend, the cube with its arrows, the triad and the timeline band, derived from the shared constants", () => {
+test("UI-337 RESERVED holds exactly the palette corner, the cube column, the triad, the legend, the Reset icon and the timeline band, derived from the shared constants", () => {
   const stage = { w: 1000, h: 600 };
   const r = RESERVED(stage);
-  expect(r).toHaveLength(4);
-  expect(r[0]).toEqual({ l: 0, t: 0, r: LEGEND.w, b: LEGEND.h });
+  expect(r).toHaveLength(6);
+  expect(r[0]).toEqual({ l: 0, t: 0, r: PALETTE_CORNER.w, b: PALETTE_CORNER.h });
   expect(r[1]).toEqual({ l: stage.w - CUBE.w, t: 0, r: stage.w, b: CUBE.h });
   expect(r[2]).toEqual(triadRect(stage));
-  expect(r[3]).toEqual({ l: 0, t: stage.h - BAND, r: stage.w, b: stage.h });
+  expect(r[3]).toEqual(legendRect(stage));
+  expect(r[4]).toEqual(resetRect(stage));
+  expect(r[5]).toEqual({ l: 0, t: stage.h - BAND, r: stage.w, b: stage.h });
   expect(r[2]).toEqual({ l: TRIAD.left, t: stage.h - BAND - TRIAD.above - TRIAD.size, r: TRIAD.left + TRIAD.size, b: stage.h - BAND - TRIAD.above });
 });
 
@@ -295,5 +302,58 @@ test("UI-352 no filter box enters the timeline band at the bottom of the stage, 
         expect(b.y + b.h, `${name} ${b.id} ${stage.w}x${stage.h}`).toBeLessThanOrEqual(stage.h - BAND);
       }
     }
+  }
+});
+
+describe("UI-1230 22-8 the six boxes clear every HUD rectangle (built here from the constants, not from RESERVED) at the stages the app really has", () => {
+  const hudRects = (stage: { w: number; h: number }) => {
+    const lb = stage.h - LEGEND_BOX.bottom;
+    return {
+      "palette corner": { l: 0, t: 0, r: PALETTE_CORNER.w, b: PALETTE_CORNER.h },
+      "cube column": { l: stage.w - CUBE.w, t: 0, r: stage.w, b: CUBE.h },
+      triad: { l: TRIAD.left, t: stage.h - BAND - TRIAD.above - TRIAD.size, r: TRIAD.left + TRIAD.size, b: stage.h - BAND - TRIAD.above },
+      legend: { l: LEGEND_BOX.left, t: lb - LEGEND_BOX.maxH - 2 * LEGEND_BOX.pad, r: LEGEND_BOX.left + LEGEND_BOX.w, b: lb },
+      reset: { l: stage.w - RESET_HUD.right - RESET_HUD.size - 4, t: stage.h - RESET_HUD.bottom - RESET_HUD.size - 4, r: stage.w - RESET_HUD.right + 4, b: stage.h - RESET_HUD.bottom + 4 },
+      band: { l: 0, t: stage.h - BAND, r: stage.w, b: stage.h },
+    };
+  };
+  const covers = (big: ReturnType<typeof rect>, c: ReturnType<typeof rect>) => big.l <= c.l && big.t <= c.t && big.r >= c.r && big.b >= c.b;
+  for (const stage of [
+    { w: 780, h: 560 },
+    { w: 768, h: 642 }, // 1280x720 under R22-16
+    { w: 888, h: 822 }, // the default 1400x900 smoke viewport
+    { w: 1300, h: 1002 },
+    { w: 1340, h: 900 },
+  ]) {
+    it(`UI-1230 ${stage.w}x${stage.h}: inside the stage, clear of the palette corner, cube column, triad, legend, Reset and the band, and of each other`, () => {
+      const hud = hudRects(stage);
+      for (const [name, c] of Object.entries(hud)) expect(RESERVED(stage).some((r) => covers(r, c)), `RESERVED covers ${name}`).toBe(true);
+      let boxes = 0;
+      let rows2 = 0;
+      for (let yaw = 0; yaw < 36; yaw++) {
+        for (const pitch of [-80, -45, -20, 0, 20, 45, 80]) {
+          let cam = orbit(defaultCamera(), (Math.PI / 180) * yaw * 10, 0);
+          cam = orbit(cam, 0, (Math.PI / 180) * pitch);
+          for (const o of [cam.orientation, ...(yaw % 9 === 0 && pitch === 0 ? [applyPreset(cam, "front").orientation] : [])]) {
+            const r = placeBoxes(o, stage, null, SIZES, new Set());
+            expect(r.boxes).toHaveLength(6);
+            for (const [i, a] of r.boxes.entries()) {
+              boxes++;
+              if (a.row > 0) rows2++;
+              const ra = rect(a);
+              const where = `yaw ${yaw * 10} pitch ${pitch} ${a.id}`;
+              expect(ra.l, where).toBeGreaterThanOrEqual(0);
+              expect(ra.t, where).toBeGreaterThanOrEqual(0);
+              expect(ra.r, where).toBeLessThanOrEqual(stage.w);
+              expect(ra.b, where).toBeLessThanOrEqual(stage.h);
+              for (const [name, c] of Object.entries(hud)) expect(hit(ra, c), `${where} vs ${name}`).toBe(false);
+              for (const c of r.boxes.slice(i + 1)) expect(hit(ra, rect(c)), `${where} vs ${c.id}`).toBe(false);
+            }
+          }
+        }
+      }
+      console.info(`UI-1230 ${stage.w}x${stage.h} boxes=${boxes} row>0=${rows2}`);
+      expect(boxes).toBeGreaterThan(1000);
+    });
   }
 });

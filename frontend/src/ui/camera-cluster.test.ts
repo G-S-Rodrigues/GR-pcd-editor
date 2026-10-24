@@ -3,7 +3,7 @@ import { createAppStore } from "../state/app";
 import { sessionFixture } from "../testing/fixtures";
 import { type FakeEl, installFakeDom } from "../testing/fakedom";
 import { RESERVED } from "../filterboxes/placement";
-import { CLUSTER, CUBE, CUBE_RIGHT, CUBE_SIDE, CUBE_STAGE, CUBE_TOP, CUBE_NAV, CUBE_WRAP, CUBE_WRAP_TOP } from "../view/layout";
+import { CLUSTER, CUBE, CUBE_RIGHT, CUBE_SIDE, CUBE_STAGE, CUBE_TOP, CUBE_NAV, CUBE_WRAP, CUBE_WRAP_TOP, STACK } from "../view/layout";
 import { cubeNavCss } from "./cube-arrows";
 import { togglePerspective } from "../view/camera";
 import { buildCameraCluster } from "./camera-cluster";
@@ -78,7 +78,7 @@ test("UI-710 the cluster row sits above the smaller ViewCube wrapper and the res
   const top = Number.parseFloat(root.style.top);
   expect(top + CLUSTER.h + CLUSTER.gap).toBeLessThanOrEqual(CUBE_WRAP_TOP);
   expect(CUBE_WRAP_TOP).toBe(CUBE_TOP + CLUSTER.h + CLUSTER.gap);
-  expect(CUBE.h).toBe(CUBE_TOP + CLUSTER.h + CLUSTER.gap + CUBE_WRAP + 8);
+  expect(CUBE.h).toBe(CUBE_TOP + CUBE_WRAP + CLUSTER.gap + STACK.h + 8); // 22-8: the column reserves the stack under the cube (it covers the row above it too)
   expect(CUBE_WRAP).toBeGreaterThanOrEqual(2 * CUBE_NAV.ring + CUBE_NAV.arrow);
   expect(CLUSTER.w).toBeLessThanOrEqual(CUBE_WRAP);
   expect(CUBE_SIDE).toBeLessThanOrEqual(40);

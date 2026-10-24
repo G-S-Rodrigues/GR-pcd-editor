@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "vitest";
 import { createAppStore } from "../state/app";
 import { restoreClientState, serialiseClientState, applyClientPatch } from "../state/persist";
 import { FakeEl, installFakeDom } from "../testing/fakedom";
-import { LEGEND } from "../filterboxes/placement";
+import { LEGEND, legendRect } from "../filterboxes/placement";
 import { LEGEND_BOX } from "../view/layout";
 import { describeControls } from "./describe";
 import { PALETTE } from "../colour/palette";
@@ -83,7 +83,12 @@ test("UI-343 the header is a real button with a name and a tooltip (Enter and Sp
 test("UI-344 the reserved LEGEND rectangle is the expanded size the builder sets, so folding never moves the boxes", () => {
   expect(root.style.width).toBe(`${LEGEND_BOX.w}px`);
   expect(root.style.maxHeight).toBe(`${LEGEND_BOX.maxH}px`);
-  expect(LEGEND).toEqual({ w: LEGEND_BOX.left + LEGEND_BOX.w + LEGEND_BOX.pad, h: LEGEND_BOX.top + LEGEND_BOX.maxH + LEGEND_BOX.pad });
+  expect(root.style.left).toBe(`${LEGEND_BOX.left}px`);
+  expect(root.style.bottom).toBe(`${LEGEND_BOX.bottom}px`);
+  expect(root.style.top).toBeFalsy();
+  expect(LEGEND).toEqual({ w: LEGEND_BOX.w + 2 * LEGEND_BOX.pad, h: LEGEND_BOX.maxH + 2 * LEGEND_BOX.pad });
+  const stage = { w: 768, h: 642 };
+  expect(legendRect(stage)).toEqual({ l: LEGEND_BOX.left - LEGEND_BOX.pad, t: stage.h - LEGEND_BOX.bottom - LEGEND_BOX.maxH - 2 * LEGEND_BOX.pad, r: LEGEND_BOX.left + LEGEND_BOX.w + LEGEND_BOX.pad, b: stage.h - LEGEND_BOX.bottom + LEGEND_BOX.pad });
 });
 
 test("UI-345 the mode line (id modebar) no longer lives in the menu body: it moved to the footer", () => {

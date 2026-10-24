@@ -66,7 +66,7 @@ export function buildLegend(root: HTMLElement, store: Store<AppState>, onShowHid
   const header = control("button", { id: "legend-menu", type: "button", class: "legend-head", "aria-label": LABEL, "aria-controls": "legend-body", "aria-expanded": "true" }, chev, h("span", { text: "Legend" }));
   header.addEventListener("click", () => store.update((s) => ({ ...s, legendOpen: !s.legendOpen })));
   root.style.left = `${LEGEND_BOX.left}px`;
-  root.style.top = `${LEGEND_BOX.top}px`;
+  root.style.bottom = `${LEGEND_BOX.bottom}px`;
   root.style.width = `${LEGEND_BOX.w}px`;
   root.style.maxHeight = `${LEGEND_BOX.maxH}px`;
   // "N hidden - Show": the on-canvas reminder of "Hide selected"; inside the legend box, so no new reserved rectangle
