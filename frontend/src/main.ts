@@ -61,7 +61,7 @@ import { buildHelp } from "./ui/help";
 import { classifyKey, escapeInField } from "./ui/keys";
 import { buildViewCube } from "./ui/viewcube";
 import { buildTriad } from "./ui/triad";
-import { buildFilterBoxes } from "./ui/filterboxes";
+import { buildFilterBoxes, buildFilterReset } from "./ui/filterboxes";
 import { buildToolbar } from "./ui/toolbar";
 import { buildCameraCluster } from "./ui/camera-cluster";
 import { buildDataMode } from "./ui/viewbar";
@@ -395,6 +395,7 @@ buildLayersPanel($("layers-slot"), store, panelActions, {
   openId: () => pops.openId(),
 });
 buildBandPill($("stage"), store);
+buildFilterReset($("filter-hud"), store, () => panelActions.filterResetAll());
 const legend = buildLegend($("legend"), store, () => void hide.show(), (id) => void layers.toggle(id));
 store.subscribe((s) => legend.update(s.timeline.highlight !== null, s.preview?.op ?? null));
 const stepEdit = createEditShape(store, {

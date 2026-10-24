@@ -1,4 +1,5 @@
 import { BOX_NOTE, CLUSTER_HELP, PLANE_HELP, SPARSE_HELP, THIN_HELP } from "./copy";
+import { FILTER_COPY } from "../inspector/filters";
 import { PROTECTION_COPY } from "../inspector/protection";
 import { POLYGON_DEPTH_NOTE } from "../tools/polygon/model";
 
@@ -116,7 +117,7 @@ export const FIELD_SPECS: FieldSpec[] = [
       ];
     }),
   ),
-  f("filter-reset-all", "Reset filters", "filter", "Put all six display filter sides back to the whole cloud (nothing hidden)"),
+  f("filter-reset-all", "Reset filters", "filter", "Put all six display filter sides back to the whole cloud (nothing hidden). " + FILTER_COPY),
   f("prot-enabled", "Global protection", "protection", "Protect every point whose Z is inside the interval from deletion; off by default"),
   f("prot-min", "Protect min Z", "protection", "Lower Z of the protected slab (inclusive)"),
   f("prot-max", "Protect max Z", "protection", "Upper Z of the protected slab (inclusive)"),

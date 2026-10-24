@@ -2,14 +2,16 @@ import { beginFilterDrag, cancelFilterDrag, END_ON_DOT, type FilterDrag, moveFil
 import { BOX_IDS, boxKey, isBoxCollapsed } from "../filterboxes/model";
 import { type PlaceState, pillRect, placeBoxes } from "../filterboxes/placement";
 import { boxView, nudgeValue, parseBoxInput } from "../filterboxes/view";
-import { type Axis, type FilterEdit, type Side, sideValue } from "../inspector/filters";
+import { type Axis, type FilterEdit, type Side, filterSummary, sideValue } from "../inspector/filters";
 import { screenRay } from "../pick/screenray";
 import { type AppState, addNotice } from "../state/app";
 import type { Store } from "../state/store";
 import { lookDirection } from "../view/camera";
+import { RESET_HUD } from "../view/layout";
 import { bandPillShown } from "./bandpill";
 import { control } from "./controls";
 import { h } from "./dom";
+import { iconControl } from "./iconbutton";
 
 export interface BoxActions {
   editSide: (axis: Axis, side: Side, value: number, opts: { live: boolean }) => FilterEdit;
@@ -188,3 +190,26 @@ export function buildFilterBoxes(
   return { dragging: () => drag !== null };
 }
 
+
+/**
+ * The Reset filters icon on the canvas (22-8, replaces the Display filter section): a glass button at the stage's bottom right.
+ * Its tooltip carries the filter copy; the live summary ("2 filters active, 0.2% hidden") is its accessible description, and it
+ * takes the accent while any side is active. Hidden without a session.
+ */
+export function buildFilterReset(root: HTMLElement, store: Store<AppState>, onReset: () => void): void {
+  const b = iconControl("filter-reset-all", "filterx", { onclick: onReset });
+  root.style.right = `${RESET_HUD.right}px`;
+  root.style.bottom = `${RESET_HUD.bottom}px`;
+  root.style.width = `${RESET_HUD.size}px`;
+  root.style.height = `${RESET_HUD.size}px`;
+  root.append(b);
+  const sync = (s: AppState) => {
+    root.hidden = s.session === null;
+    if (!s.session) return;
+    const text = filterSummary(s.tools.filters, s.session.bounds, s.session.counts);
+    b.setAttribute("aria-description", text);
+    b.classList.toggle("active", !text.startsWith("0 "));
+  };
+  store.subscribe(sync);
+  sync(store.get());
+}

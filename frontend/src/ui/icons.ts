@@ -88,6 +88,8 @@ export const ICONS = {
   level: [r(2.5, 8.5, 19, 7, 3.5), r(9.5, 10.5, 5, 3, 1.5)],
   close: [p("M6 6l12 12M18 6 6 18")],
   chevr: [p("m9 6 6 6-6 6")],
+  /** Not in the sheet (22-8, mockup-22): the Reset filters button on the canvas (a funnel with a cross). */
+  filterx: [p("M3 5h15l-5.5 6.5V18l-3 1.5v-8z"), p("m16 15 5 5m0-5-5 5")],
 } as const satisfies Record<string, readonly IconNode[]>;
 
 export type IconName = keyof typeof ICONS;

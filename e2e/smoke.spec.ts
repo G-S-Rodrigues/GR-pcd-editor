@@ -1378,7 +1378,7 @@ test("E2E-40 10 per-box reset and global reset restore the cloud bound and the s
   await setNum("filter-z-max", 1.5);
   await setNum("filter-x-min", 5);
   await exact("Displayed", String(rows.filter((r) => r[2] <= 1.5 && r[0] >= 5).length));
-  await expect(page.locator("#inspector")).toContainText(/Displayed: /);
+  await expect(ctl("filter-reset-all")).toHaveAttribute("aria-description", /^2 filters active/);
   await ctl("filter-z-max-reset").click();
   await exact("Displayed", String(rows.filter((r) => r[0] >= 5).length));
   const f = await filtersNow(page);
@@ -6854,7 +6854,7 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
     expect(pb.x + pb.width).toBeLessThanOrEqual(stage.x + stage.width);
     expect(pb.y).toBeGreaterThanOrEqual(stage.y);
     expect(pb.y + pb.height).toBeLessThanOrEqual(stage.y + stage.height);
-    for (const id of ["#legend", "#timeline", "#viewcube", "#camera-cluster", "#triad", "#notices"]) {
+    for (const id of ["#legend", "#timeline", "#viewcube", "#camera-cluster", "#filter-hud", "#triad", "#notices"]) {
       const el = page.locator(id);
       if (!(await el.isVisible())) continue;
       const r = (await el.boundingBox())!;
@@ -7302,7 +7302,7 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
       if (!(await boxes.nth(i).isVisible())) continue;
       seen++;
       const r = (await boxes.nth(i).boundingBox())!;
-      for (const id of ["#legend", "#timeline", "#viewcube", "#camera-cluster", "#notices"]) {
+      for (const id of ["#legend", "#timeline", "#viewcube", "#camera-cluster", "#filter-hud", "#notices"]) {
         const el = page.locator(id);
         if (!(await el.isVisible())) continue;
         const o = (await el.boundingBox())!;
@@ -7354,7 +7354,7 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
       if (!(await boxes.nth(i).isVisible())) continue;
       seen++;
       const r = (await boxes.nth(i).boundingBox())!;
-      for (const id of ["#legend", "#timeline", "#viewcube", "#camera-cluster", "#notices"]) {
+      for (const id of ["#legend", "#timeline", "#viewcube", "#camera-cluster", "#filter-hud", "#notices"]) {
         const el = page.locator(id);
         if (!(await el.isVisible())) continue;
         const o = (await el.boundingBox())!;
@@ -7804,7 +7804,7 @@ const resolvedToken = (page: Pg, token: string, prop = "backgroundColor") =>
     [token, prop],
   );
 /** Visible stage rectangles a palette or pill must not touch. */
-const STAGE_NEIGHBOURS = ["#legend", "#viewcube", "#camera-cluster", "#triad", "#timeline", "#band-pill", "#fbox-layer .fbox", "#notices > *"];
+const STAGE_NEIGHBOURS = ["#legend", "#viewcube", "#camera-cluster", "#filter-hud", "#triad", "#timeline", "#band-pill", "#fbox-layer .fbox", "#notices > *"];
 const visibleRects = (page: Pg, selector: string) =>
   page.evaluate((sel) => {
     return [...document.querySelectorAll(sel)]
@@ -8305,6 +8305,29 @@ for (const [w, h] of SIZES) {
     expect(stack.height, "the stack is a column").toBeGreaterThan(stack.width);
   });
 }
+
+test("E2E-301 22-8 the Reset filters icon sits in #filter-hud at the stage's bottom right, is active with two filters and says so in its description; a click restores Displayed to all; the Display filter section is gone and the tooltip carries the filter copy", async ({ page }) => {
+  const { exact, ctl, setNum } = helpers(page);
+  await openRoom(page, exact);
+  await page.keyboard.press("3");
+  const rows = roomValid();
+  await setNum("filter-z-max", 1.5);
+  await setNum("filter-x-min", 5);
+  await exact("Displayed", String(rows.filter((r) => r[2] <= 1.5 && r[0] >= 5).length));
+  const reset = page.locator('#filter-hud [data-control="filter-reset-all"]');
+  await expect(reset).toBeVisible();
+  const stage = (await page.locator("#stage").boundingBox())!;
+  const b = (await reset.boundingBox())!;
+  expect(b.x, "the icon is in the right half").toBeGreaterThan(stage.x + stage.width / 2);
+  expect(b.y, "the icon is in the bottom half").toBeGreaterThan(stage.y + stage.height / 2);
+  await expect(reset).toHaveClass(/active/);
+  await expect(reset).toHaveAttribute("aria-description", /^2 filters active/);
+  await expect(reset).toHaveAttribute("title", /does not delete them/);
+  await expect(page.locator("#display-filter")).toHaveCount(0);
+  await ctl("filter-reset-all").click();
+  await exact("Displayed", String(rows.length));
+  await expect(reset).not.toHaveClass(/active/);
+});
 
 test("E2E-286 22-7 the Selection section folds by click and by Enter, the fold survives a reload and the counts do not change", async ({ page }) => {
   const { exact, ctl } = helpers(page);

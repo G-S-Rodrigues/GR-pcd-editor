@@ -1,6 +1,5 @@
 import { PROTECTION_COPY, effectiveText, retainedText } from "../inspector/protection";
 import * as P from "../inspector/protection";
-import { FILTER_COPY, filterSummary } from "../inspector/filters";
 import type { AppState } from "../state/app";
 import type { Store } from "../state/store";
 import type { Vec3 } from "../state/types";
@@ -650,20 +649,6 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     }, "switch"),
   );
 
-  // ---- filters (the six boxes live on the canvas, see filterboxes/; the panel keeps the note, summary and global reset)
-  const filterPanel = h(
-    "section",
-    { class: "panel", id: "display-filter" },
-    h("h2", { text: "Display filter" }),
-    h("p", { class: "note", text: FILTER_COPY }),
-    text((s) =>
-      s.session ? `${filterSummary(s.tools.filters, s.session.bounds, s.session.counts)}. Displayed: ${s.session.counts.displayed.toLocaleString("en-US")} of ${s.session.counts.active.toLocaleString("en-US")} active points` : "",
-    ),
-    h("div", { class: "stack" }, button("filter-reset-all", "Reset filters", a.filterResetAll)),
-  );
-
-  syncs.push((s) => (filterPanel.hidden = s.session === null));
-
   // ---- protection
   const prot = (fn: (m: P.ProtectionModel) => P.ProtectionEdit) => showErr(a.protectionEdit(fn).error);
   // a refused tilt says why right under the fields (the shared #edit-error sits at the top of the panels, out of sight from here)
@@ -738,7 +723,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
   syncs.push((s) => (idle.hidden = !(s.session !== null && s.tool === "none")));
   root.append(errors);
   toolRoot.append(idle, boxPanel, polyPanel, clusterPanelEl, sparsePanel, planePanel, thinPanel);
-  root.append(filterPanel, protPanel);
+  root.append(protPanel);
   const syncAll = (s: AppState) => {
     for (const f of syncs) f(s);
   };

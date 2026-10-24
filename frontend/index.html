@@ -404,6 +404,11 @@
       .fbox.collapsed .fgrip, .fbox.collapsed .fin, .fbox.collapsed .frst { display: none; }
       .fbox.collapsed .ftog { flex: 1 1 auto; width: 100%; height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
       .fbox.collapsed.active .ftog { background: var(--accent); color: var(--on-accent); font-weight: 600; }
+      #filter-hud { position: absolute; z-index: 3; padding: 4px; border-radius: 12px; background: var(--glass-hud); }
+      #filter-hud[hidden] { display: none; }
+      #filter-hud .ib { width: 32px; height: 32px; background: transparent; }
+      #filter-hud .ib:hover:not(:disabled) { background: var(--fill-2); }
+      #filter-hud .ib.active { color: var(--accent); }
       #camera-cluster { position: absolute; display: flex; flex-direction: column; z-index: 3; padding: 4px; border-radius: 12px; background: var(--glass-hud); }
       #camera-cluster .ib { width: 32px; height: 32px; background: transparent; }
       #camera-cluster .ib:hover:not(:disabled) { background: var(--fill-2); }
@@ -538,11 +543,11 @@
       #help-overlay td.k { white-space: nowrap; padding-right: 14px; width: 1%; color: var(--accent-text); }
       #statusbar .item, .layer-count, #apply, #kept-chip, .step-count, .triple input, .fbox .fin, .fbox .ftog { font-variant-numeric: tabular-nums; }
       /* Glass. The side panels, rows and status bar sit on the flat page, so they are translucent without a blur. The stage HUD and the sheets blur what is behind them. #viewport never blurs. */
-      #legend, #palette, #arm-pill, .fbox, #camera-cluster, #band-pill, .notice { -webkit-backdrop-filter: blur(28px) saturate(170%); backdrop-filter: blur(28px) saturate(170%); }
+      #legend, #palette, #arm-pill, .fbox, #camera-cluster, #filter-hud, #band-pill, .notice { -webkit-backdrop-filter: blur(28px) saturate(170%); backdrop-filter: blur(28px) saturate(170%); }
       dialog, .pop, #help-overlay, #progress { -webkit-backdrop-filter: blur(28px) saturate(170%); backdrop-filter: blur(28px) saturate(170%); }
       @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
         aside, .row, #statusbar, #footer { background: var(--glass-solid); }
-        #legend, #palette, #arm-pill, .fbox, #camera-cluster, #band-pill, .notice { background: var(--glass-hud-solid); }
+        #legend, #palette, #arm-pill, .fbox, #camera-cluster, #filter-hud, #band-pill, .notice { background: var(--glass-hud-solid); }
         dialog, .pop, #help-overlay, #progress { background: var(--glass-strong-solid); }
       }
       @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
@@ -560,6 +565,7 @@
         <div id="viewcube"></div>
         <div id="triad"></div>
         <div id="camera-cluster" role="group" aria-label="Camera"></div>
+        <div id="filter-hud" class="hud" hidden></div>
         <div id="legend"></div>
         <div id="palette" class="hud" role="toolbar" aria-label="Tools" aria-orientation="vertical"></div>
         <div id="arm-pill" class="hud" role="status" hidden></div>
