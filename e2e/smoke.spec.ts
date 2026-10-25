@@ -8223,6 +8223,12 @@ for (const [w, h] of SIZES) {
     await shot("idle");
     await t.ctl("tool-box").click();
     await shot("armed");
+    // The armed Box's first live selection (the ghost box) lands about now; it lands once, and arming again after it would make the next edits
+    // drafts over it. Wait for it, clear it (which disarms) and arm on nothing: the Floor box below is then the live first selection.
+    await t.exact("Selected", String(ROOM.ghost));
+    await t.ctl("sel-clear").click();
+    await t.exact("Selected", "0");
+    await t.ctl("tool-box").click();
     await p.setBox(FLOOR_BOX.c, FLOOR_BOX.d);
     await expect(page.locator("#kept-warning")).toBeVisible({ timeout: 15000 });
     await t.ctl("op-add").click();
