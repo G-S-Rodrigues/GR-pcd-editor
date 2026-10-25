@@ -225,6 +225,20 @@ describe("protection band routing (part 10)", () => {
     expect(t.tools.pointerDown(t.ev(off.x, off.y + 30))).toBe(false);
   });
 
+  it("UI-1262 while a pick is waiting (pick-seed, pick-pivot, pick-floor) a press on the band's outline or arrow is a pick, not a plane drag; back in orbit it grabs again (E2E-87)", () => {
+    for (const interaction of ["pick-seed", "pick-pivot", "pick-floor"] as const) {
+      const t = protSetup();
+      const edge = t.at([2, 5, 2]);
+      const tip = t.at(t.anchors().find((a) => a.key.edge === "max")!.tip);
+      t.store.update((s) => ({ ...s, interaction }));
+      expect(t.tools.pointerDown(t.ev(edge.x, edge.y)), `${interaction} outline`).toBe(false);
+      expect(t.tools.pointerDown(t.ev(tip.x, tip.y)), `${interaction} arrow`).toBe(false);
+      t.store.update((s) => ({ ...s, interaction: "orbit" }));
+      expect(t.tools.pointerDown(t.ev(edge.x, edge.y)), "orbit outline").toBe(true);
+      t.tools.pointerUp();
+    }
+  });
+
   it("UI-211 the upper plane's arrow points up, the lower one's down, and each drag moves only its own edge", () => {
     const t = protSetup();
     const [lo, hi] = [t.anchors().find((a) => a.key.edge === "min")!, t.anchors().find((a) => a.key.edge === "max")!];

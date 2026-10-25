@@ -258,7 +258,8 @@ export function createToolInteraction(
           return true;
         }
       }
-      const band = bandHit(s, vp, p);
+      // a waiting pick (seed, pivot, floor) owns the press: a point near the band's outline is picked, not dragged along (E2E-87)
+      const band = s.interaction === "orbit" ? bandHit(s, vp, p) : null;
       if (band && band.kind !== "ring") {
         const pl = band.arrow.plane;
         drag = { kind: "plane", key: band.arrow.key, model0: s.tools.protection, anchor: pl.anchor, axis: normalOf(s.tools.protection.tilt), ray0: ray };
