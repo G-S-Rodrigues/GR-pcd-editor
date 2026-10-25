@@ -2,6 +2,12 @@ import { expect, test } from "@playwright/test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { BIG, DUP, FLOOR, PLANE_ROOM, PLANE_ROOM_TOTAL, GHOST, NORMAL_ROOM_TOTAL, ROOM, ROOM_TOTAL, SPARSE, SPARSE_TOTAL, TILTED, TOTAL, bigRoomPcd, bigRoomXyz, countInTiltedSlab, clusterNearestTruth, countInXyz, countPlane, dupRoomPcd, dupTruth, normalRoomPcd, planeRoomPcd, voxelTruth, parsePcd, roomPcd, rowKey, sparseRoomPcd, syntheticPcd, tiltedFloorAngles, tiltedFloorPcd, truthKeys } from "./synthetic";
 
+// Each test opens its own file. The server keeps the previous test's session, and a page load adopts it (GET /api/session) a moment before
+// the new upload replaces it, so a late adoption could repaint the new session. Dropping the session first isolates the tests (setup only).
+test.beforeEach(async ({ request }) => {
+  await request.delete("/api/session");
+});
+
 test("open a cloud, navigate, pick a pivot, colour, read counts", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));

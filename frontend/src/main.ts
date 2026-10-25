@@ -35,6 +35,7 @@ import { buildLayersPanel } from "./ui/layerspanel";
 import { createToolInteraction } from "./viewport/interact";
 import { attachDropZone } from "./files/dragdrop";
 import { dropNotice, openSource } from "./orchestration/open";
+import { adoptExisting } from "./orchestration/adopt";
 import { createRefresher } from "./orchestration/refresh";
 import { createStepView } from "./orchestration/stepview";
 import { createSessionSync } from "./orchestration/session-sync";
@@ -510,11 +511,4 @@ attachDropZone(document.body, {
 });
 
 // an existing session (page reload)
-void getState()
-  .then((state) => {
-    if (!state) return;
-    store.set({ session: state });
-    onOpened(state);
-    return refresher.refresh();
-  })
-  .catch(() => undefined);
+void adoptExisting(store, { onOpened, refresh: () => refresher.refresh() }).catch(() => undefined);
