@@ -770,7 +770,8 @@ Since 22-5 the fold ids are `box, polygon, cluster, sparse, plane, thin, layers`
   E2E-307 (Show band switch), E2E-308 (I-understand row), E2E-309 (empty timeline).
 - New ids, 22-11: UI-1263 (chips keep off the Box rotate ring anchors: `boxHandleRects`), UI-1264 and UI-1265 (a waiting pick owns the press over Box
   handles and filter-plane arrows; `hoverAt` gated the same way), UI-1266 (a failed open with no session adopts the session the server holds),
-  UI-1267 (the Reset box tooltip names the 3 m default box).
+  UI-1267 (the Reset box tooltip names the 3 m default box), UI-1268 (guard from the E2E-27 probe: a candidate stale twice before the protection PUT
+  lands is re-requested at the new params revision once the PUT's params hook runs; GREEN on first run, the stuck "—" is not reachable that way).
 - Changed tests (intended): UI-351, UI-1070, UI-1075, E2E-57 (moves the pointer off the card; 22-11 also polls the hover preview visible first and
   asserts `timeline.highlight` is null), E2E-285, E2E-289, E2E-304 and CTR-12.
 - Smoke total: 258 tests; 22-11 adds none.
