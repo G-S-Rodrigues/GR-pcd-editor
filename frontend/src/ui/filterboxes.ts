@@ -1,7 +1,7 @@
 import { beginFilterDrag, cancelFilterDrag, END_ON_DOT, type FilterDrag, moveFilterDrag } from "../filterboxes/drag";
 import { BOX_IDS, boxKey, isBoxCollapsed } from "../filterboxes/model";
 import { type PlaceState, type Rect, pillRect, placeBoxes } from "../filterboxes/placement";
-import { boxTipRects } from "../filterboxes/tips";
+import { boxHandleRects } from "../filterboxes/tips";
 import { boxView, nudgeValue, parseBoxInput } from "../filterboxes/view";
 import { type Axis, type FilterEdit, type Side, filterSummary, sideValue } from "../inspector/filters";
 import { screenRay } from "../pick/screenray";
@@ -158,7 +158,7 @@ export function buildFilterBoxes(
     const stage = { w: layer.clientWidth, h: layer.clientHeight };
     const lock = new Set<string>(s.filterUi.interacting ? [s.filterUi.interacting] : []);
     // reserved: the band-hidden pill and, while the Box tool is armed, its arrow tips (a chip on a tip would take the press)
-    const reserved: Rect[] = [...(bandPillShown(s) ? [pillRect(stage)] : []), ...(s.tool === "box" ? boxTipRects(s.tools.box, s.camera, stage) : [])];
+    const reserved: Rect[] = [...(bandPillShown(s) ? [pillRect(stage)] : []), ...(s.tool === "box" ? boxHandleRects(s.tools.box, s.camera, stage) : [])];
     const placed = placeBoxes(s.camera.orientation, stage, place, sizes, lock, reserved);
     place = placed.state;
     for (const box of boxes) {
