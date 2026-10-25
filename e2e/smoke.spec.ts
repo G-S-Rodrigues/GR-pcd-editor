@@ -8191,6 +8191,8 @@ for (const [w, h] of SIZES) {
     const b = await log("B");
     if (w === 1920) expect(b.scroll[0], `${w}x${h} + draft with the kept callout: scrollHeight ${b.scroll[0]} <= clientHeight ${b.scroll[1]}`).toBeLessThanOrEqual(b.scroll[1]);
     await geometry("B");
+    // R22-19 path: at 1280x720 + draft the column really overflows, so the scroll and the reach check below are exercised, not vacuous
+    if (w === 1280) expect(b.scroll[0], `${w}x${h} + draft: the sidebar overflows (scrollHeight ${b.scroll[0]} > clientHeight ${b.scroll[1]})`).toBeGreaterThan(b.scroll[1]);
     const reach = await sidebarReach(page);
     expect(reach.n, "the reach check saw the controls").toBeGreaterThan(20);
     expect(reach.out, `${w}x${h} + draft: every control reachable by scrolling`).toEqual([]);
