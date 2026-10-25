@@ -6,10 +6,11 @@ import { EDIT_SHAPE_UNAVAILABLE, editShapeState } from "../tools/shape";
 import { installTimelineStyle } from "./overlay";
 import {
   CARD_W,
+  CARD_W_WIDE,
+  GAP,
   PAD,
   STEP_GLYPH,
   deleteState,
-  PITCH,
   slotX,
   type CardView,
   cancelRename,
@@ -46,7 +47,10 @@ export interface TimelineActions {
  * draws `timelineView(state)` and turns gestures into the model transitions and the three actions; cards are patched
  * in place so a focused card keeps its focus across state changes.
  */
-export function buildTimeline(root: HTMLElement, store: Store<AppState>, actions: TimelineActions): void {
+export function buildTimeline(root: HTMLElement, store: Store<AppState>, actions: TimelineActions, opts: { wide?: () => boolean } = {}): void {
+  const mq = typeof matchMedia === "function" ? matchMedia("(min-width: 1700px)") : null;
+  const wide = opts.wide ?? (() => mq?.matches ?? false);
+  const chipW = () => (wide() ? CARD_W_WIDE : CARD_W);
   const scroller = h("div", { id: "timeline-scroll" });
   const track = h("div", { id: "timeline-track" });
   const empty = h("span", { class: "tl-empty" });
@@ -63,7 +67,9 @@ export function buildTimeline(root: HTMLElement, store: Store<AppState>, actions
   const editBtn = control("button", { id: "step-edit-shape", type: "button", "data-act": "edit-shape", class: "step-edit" }, "Edit shape");
   track.append(line, empty, marker);
   scroller.append(track);
-  root.append(scroller);
+  const sum = h("span", { id: "tl-sum" });
+  const end = h("div", { class: "tl-end" });
+  root.append(h("div", { id: "timeline-bar" }, h("div", { class: "tl-head" }, h("b", { text: "Timeline" }), sum), scroller, end));
   root.setAttribute("role", "region");
   root.setAttribute("aria-label", "History timeline");
 
@@ -151,7 +157,8 @@ export function buildTimeline(root: HTMLElement, store: Store<AppState>, actions
 
   function render(): void {
     const s = store.get();
-    const v = timelineView(s.session, s.timeline);
+    const w = chipW();
+    const v = timelineView(s.session, s.timeline, w);
     root.hidden = v.hidden;
     if (v.hidden) return;
     track.style.width = `${v.trackWidth}px`;
@@ -170,8 +177,8 @@ export function buildTimeline(root: HTMLElement, store: Store<AppState>, actions
         cards.set(c.sid, el);
         track.insertBefore(el, marker);
       }
-      el.style.left = `${PAD + i * PITCH}px`;
-      el.style.width = `${CARD_W}px`;
+      el.style.left = `${PAD + i * (w + GAP)}px`;
+      el.style.width = `${w}px`;
       el.classList.toggle("greyed", c.greyed);
       el.classList.toggle("highlighted", c.highlighted);
       el.setAttribute("aria-pressed", String(c.highlighted));
@@ -199,7 +206,8 @@ export function buildTimeline(root: HTMLElement, store: Store<AppState>, actions
       }
       if (track.children[i + 2] !== el) track.insertBefore(el, track.children[i + 2] ?? marker);
     });
-    marker.style.left = `${slotX(s.timeline.dragging ?? v.marker.slot) - 7}px`;
+    marker.style.left = `${slotX(s.timeline.dragging ?? v.marker.slot, w) - 7}px`
+    sum.textContent = `${v.marker.now} of ${v.marker.max}`;
     marker.classList.toggle("dragging", s.timeline.dragging !== null);
     marker.setAttribute("aria-valuemin", "0");
     marker.setAttribute("aria-valuemax", String(v.marker.max));
@@ -212,7 +220,7 @@ export function buildTimeline(root: HTMLElement, store: Store<AppState>, actions
   // ---- marker drag: nothing is sent while dragging, one rollback on release
   const nSteps = () => store.get().session?.history.entries.length ?? 0;
   const cursor = () => store.get().session?.history.cursor ?? 0;
-  const slotAt = (clientX: number) => slotFromX(clientX - scroller.getBoundingClientRect().left + scroller.scrollLeft, nSteps());
+  const slotAt = (clientX: number) => slotFromX(clientX - scroller.getBoundingClientRect().left + scroller.scrollLeft, nSteps(), chipW());
   marker.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
     marker.setPointerCapture(e.pointerId);
@@ -287,5 +295,6 @@ export function buildTimeline(root: HTMLElement, store: Store<AppState>, actions
   });
 
   store.subscribe(render);
+  mq?.addEventListener?.("change", render);
   render();
 }

@@ -412,7 +412,7 @@ buildTimeline($("timeline"), store, {
   renameStep: (sid, name) => void editor.renameStep(sid, name),
   pendingCursor: () => editor.pendingCursor(),
 });
-$("timeline").append(historyOpen);
+$("timeline").querySelector(".tl-end")!.append(historyOpen);
 buildHistoryPopover($("history-pop"), store);
 store.subscribe(() => {
   if (pops.openId() === "history") pops.replace(); // a step added or undone while it is open changes its height

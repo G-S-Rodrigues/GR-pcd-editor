@@ -11,6 +11,9 @@
         --dk-canvas-vignette: #16181d;
         --dk-glass: rgba(30, 31, 36, 0.70);
         --dk-glass-hud: rgba(24, 25, 30, 0.62);
+        --dk-tl-bar: rgba(16, 20, 26, 0.72);
+        --dk-tl-text: #ffffff;
+        --dk-tl-halo: rgba(0, 0, 0, 0.9);
         --dk-glass-strong: rgba(36, 37, 43, 0.86);
         --dk-glass-solid: #191a1e;
         --dk-glass-hud-solid: #131419;
@@ -43,6 +46,9 @@
         --lt-canvas-vignette: #f6f7f9;
         --lt-glass: rgba(248, 248, 250, 0.74);
         --lt-glass-hud: rgba(250, 250, 252, 0.70);
+        --lt-tl-bar: rgba(250, 250, 252, 0.85);
+        --lt-tl-text: #1d1d1f;
+        --lt-tl-halo: rgba(255, 255, 255, 0.9);
         --lt-glass-strong: rgba(252, 252, 253, 0.92);
         --lt-glass-solid: #f4f5f7;
         --lt-glass-hud-solid: #f5f6f8;
@@ -76,6 +82,9 @@
         --canvas-vignette: var(--dk-canvas-vignette);
         --glass: var(--dk-glass);
         --glass-hud: var(--dk-glass-hud);
+        --tl-bar: var(--dk-tl-bar);
+        --tl-text: var(--dk-tl-text);
+        --tl-halo: var(--dk-tl-halo);
         --glass-strong: var(--dk-glass-strong);
         --glass-solid: var(--dk-glass-solid);
         --glass-hud-solid: var(--dk-glass-hud-solid);
@@ -131,6 +140,7 @@
         --r-pop: 12px;
         --r-panel: 14px;
         --ctl-h: 26px;
+        --chip-w: 112px; /* CARD_W in timeline/model.ts */
         --tb-h: 52px;
         --ft-h: 26px;
         --ls-w: 232px;
@@ -141,7 +151,7 @@
         --dur-slow: 250ms;
       }
       @media (min-width: 1440px) { :root { --ls-w: 256px; --rs-w: 296px; } }
-      @media (min-width: 1700px) { :root { --ls-w: 288px; --rs-w: 332px; --ctl-h: 28px; } }
+      @media (min-width: 1700px) { :root { --ls-w: 288px; --rs-w: 332px; --ctl-h: 28px; --chip-w: 184px; } }
       @media (prefers-color-scheme: light) {
         :root:not([data-theme="dark"]) {
           color-scheme: light;
@@ -149,6 +159,9 @@
           --canvas-vignette: var(--lt-canvas-vignette);
           --glass: var(--lt-glass);
           --glass-hud: var(--lt-glass-hud);
+          --tl-bar: var(--lt-tl-bar);
+          --tl-text: var(--lt-tl-text);
+          --tl-halo: var(--lt-tl-halo);
           --glass-strong: var(--lt-glass-strong);
           --glass-solid: var(--lt-glass-solid);
           --glass-hud-solid: var(--lt-glass-hud-solid);
@@ -198,6 +211,9 @@
         --canvas-vignette: var(--lt-canvas-vignette);
         --glass: var(--lt-glass);
         --glass-hud: var(--lt-glass-hud);
+        --tl-bar: var(--lt-tl-bar);
+        --tl-text: var(--lt-tl-text);
+        --tl-halo: var(--lt-tl-halo);
         --glass-strong: var(--lt-glass-strong);
         --glass-solid: var(--lt-glass-solid);
         --glass-hud-solid: var(--lt-glass-hud-solid);
@@ -286,17 +302,18 @@
       aside dd { margin: 0 0 2px 6.5em; color: var(--label); overflow-wrap: anywhere; }
       #centre { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
       #stage { position: relative; min-width: 0; min-height: 0; flex: 1 1 0; }
-      .step.highlighted { border-color: var(--pt-step); box-shadow: 0 0 0 1px var(--pt-step); }
-      .step-icon { cursor: pointer; font-size: 15px; line-height: 16px; display: inline-block; width: 20px; }
-      .step-label { display: block; font-size: 11px; line-height: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      input.step-rename { width: 100%; height: 16px; padding: 0 3px; font-size: 11px; }
-      .step-tools { position: absolute; right: 6px; top: 2px; display: none; gap: 1px; }
+      .step.highlighted { box-shadow: 0 0 0 1.5px var(--pt-step); }
+      .step-icon { cursor: pointer; font-size: 14px; line-height: 16px; display: inline-block; width: 18px; text-align: center; }
+      .step-label { display: block; min-width: 0; font-size: 11px; line-height: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      input.step-rename { height: 16px; padding: 0 3px; font-size: 11px; }
+      .step-count { font-weight: 600; font-size: 12px; line-height: 16px; font-variant-numeric: tabular-nums; }
+      .step-tools { display: none; gap: 1px; flex: none; order: 3; }
       .step:hover .step-tools, .step:focus-within .step-tools { display: flex; }
-      .step:hover .step-count, .step:focus-within .step-count { visibility: hidden; }
-      .step-edit { display: none; width: 100%; height: 14px; padding: 0; font-size: 11px; line-height: 12px; }
-      .step.highlighted .step-edit:not([hidden]) { display: block; }
-      .step.highlighted .step-label { display: none; }
-      .step-btn { width: 16px; height: 16px; padding: 0; line-height: 1; font-size: 11px; }
+      .step:hover .step-count, .step:focus-within .step-count { display: none; }
+      .step-edit { display: none; height: 18px; padding: 0 6px; font-size: 11px; line-height: 16px; white-space: nowrap; }
+      .step.highlighted .step-edit:not([hidden]) { display: inline-block; }
+      .step.highlighted .step-count, .step.highlighted .step-label { display: none; }
+      .step-btn { width: 18px; height: 20px; padding: 0; line-height: 1; font-size: 11px; background: transparent; border: 0; }
       #viewport { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
       #legend { position: absolute; display: flex; flex-direction: column; gap: 2px; font: var(--t-callout); background: var(--glass-hud); padding: 4px 6px 8px; border-radius: 12px; pointer-events: none; z-index: 1; overflow: hidden; }
       #legend .legend-head { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 6px 0 2px; background: transparent; border-color: transparent; color: var(--label); font-weight: 600; pointer-events: auto; }
@@ -436,7 +453,6 @@
       #modebar { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--label-2); font: var(--t-caption); }
       .link { appearance: none; background: none; border: 0; padding: 0; font: inherit; color: var(--accent-text); text-decoration: underline; cursor: pointer; }
       #history-pop { width: 300px; max-height: calc(100vh - 100px); overflow-y: auto; }
-      #history-open { position: absolute; right: 8px; bottom: 8px; pointer-events: auto; z-index: 4; }
       dialog { background: var(--glass-strong); color: var(--label); border: 1px solid var(--separator); border-radius: var(--r-pop); min-width: 420px; max-width: 640px; }
       dialog h2, dialog h3 { font: var(--t-sheet); margin: 0 0 10px; }
       dialog::backdrop { background: rgba(0,0,0,.35); }
@@ -544,11 +560,11 @@
       #help-overlay td.k { white-space: nowrap; padding-right: 14px; width: 1%; color: var(--accent-text); }
       #statusbar .item, .layer-count, #apply, #kept-chip, .step-count, .triple input, .fbox .fin, .fbox .ftog { font-variant-numeric: tabular-nums; }
       /* Glass. The side panels, rows and status bar sit on the flat page, so they are translucent without a blur. The stage HUD and the sheets blur what is behind them. #viewport never blurs. */
-      #legend, #palette, #arm-pill, .fbox, #camera-cluster, #filter-hud, #band-pill, .notice { -webkit-backdrop-filter: blur(28px) saturate(170%); backdrop-filter: blur(28px) saturate(170%); }
+      #legend, #palette, #arm-pill, .fbox, #camera-cluster, #filter-hud, #band-pill, .notice, #timeline-bar { -webkit-backdrop-filter: blur(28px) saturate(170%); backdrop-filter: blur(28px) saturate(170%); }
       dialog, .pop, #help-overlay, #progress { -webkit-backdrop-filter: blur(28px) saturate(170%); backdrop-filter: blur(28px) saturate(170%); }
       @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
         aside, .row, #statusbar, #footer { background: var(--glass-solid); }
-        #legend, #palette, #arm-pill, .fbox, #camera-cluster, #filter-hud, #band-pill, .notice { background: var(--glass-hud-solid); }
+        #legend, #palette, #arm-pill, .fbox, #camera-cluster, #filter-hud, #band-pill, .notice, #timeline-bar { background: var(--glass-hud-solid); }
         dialog, .pop, #help-overlay, #progress { background: var(--glass-strong-solid); }
       }
       @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }

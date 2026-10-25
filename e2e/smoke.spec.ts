@@ -2194,6 +2194,7 @@ test("E2E-56 11 applying while rolled back asks first: dismiss changes nothing, 
 test("E2E-57 11 rename by double-click on the name, by the pencil and by F2; the icon double-click highlights nothing new", async ({ page }) => {
   const t = tl(page);
   await t.threeSteps();
+  await t.card(1).hover(); // below 1700 px the label shows on hover or focus (22-8)
   await t.card(1).locator(".step-label").dblclick();
   const input = t.card(1).locator("input.step-rename");
   await expect(input).toBeFocused();
@@ -2218,6 +2219,7 @@ test("E2E-57 11 rename by double-click on the name, by the pencil and by F2; the
   await expect(t.card(2).locator(".step-label")).toHaveText("Noise");
   expect((await sidsOf(page)).entries.map((e) => e.name)).toEqual(["Ghost", "Wall", "Noise"]);
   // clearing the name goes back to the default label
+  await t.card(1).hover(); // below 1700 px the label shows on hover or focus (22-8)
   await t.card(1).locator(".step-label").dblclick();
   await t.card(1).locator("input.step-rename").fill("");
   await t.card(1).locator("input.step-rename").press("Enter");
@@ -2233,6 +2235,7 @@ test("E2E-57 11 rename by double-click on the name, by the pencil and by F2; the
 test("E2E-58 11 the strip survives save and reopen (names, order, marker, counts) and an export after a rollback holds exactly the active steps' result", async ({ page }, testInfo) => {
   const t = tl(page);
   await t.threeSteps();
+  await t.card(0).hover(); // below 1700 px the label shows on hover or focus (22-8)
   await t.card(0).locator(".step-label").dblclick();
   await t.card(0).locator("input.step-rename").fill("Ghost block");
   await t.card(0).locator("input.step-rename").press("Enter");
@@ -4209,6 +4212,9 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     expect(opRow.scroll[0]).toBeLessThanOrEqual(opRow.scroll[1]);
     const plain = (await t.card(0).boundingBox())!;
     await t.card(0).locator(".step-icon").click();
+    // the chip widens under the pointer below 1700 px (22-8): measure it with the pointer on a free stage point
+    const vp = (await page.locator("#viewport").boundingBox())!;
+    await page.mouse.move(vp.x + vp.width / 2, vp.y + 120);
     const edit = t.ctl("step-edit-shape");
     await expect(edit).toBeVisible();
     const card = (await t.card(0).boundingBox())!;
@@ -6855,7 +6861,7 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
     expect(pb.x + pb.width).toBeLessThanOrEqual(stage.x + stage.width);
     expect(pb.y).toBeGreaterThanOrEqual(stage.y);
     expect(pb.y + pb.height).toBeLessThanOrEqual(stage.y + stage.height);
-    for (const id of ["#legend", "#timeline", "#viewcube", "#camera-cluster", "#filter-hud", "#triad", "#notices"]) {
+    for (const id of ["#legend", "#timeline", "#timeline-bar", "#viewcube", "#camera-cluster", "#filter-hud", "#triad", "#notices"]) {
       const el = page.locator(id);
       if (!(await el.isVisible())) continue;
       const r = (await el.boundingBox())!;
@@ -7303,7 +7309,7 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
       if (!(await boxes.nth(i).isVisible())) continue;
       seen++;
       const r = (await boxes.nth(i).boundingBox())!;
-      for (const id of ["#legend", "#timeline", "#viewcube", "#camera-cluster", "#filter-hud", "#notices"]) {
+      for (const id of ["#legend", "#timeline", "#timeline-bar", "#viewcube", "#camera-cluster", "#filter-hud", "#notices"]) {
         const el = page.locator(id);
         if (!(await el.isVisible())) continue;
         const o = (await el.boundingBox())!;
@@ -7355,7 +7361,7 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
       if (!(await boxes.nth(i).isVisible())) continue;
       seen++;
       const r = (await boxes.nth(i).boundingBox())!;
-      for (const id of ["#legend", "#timeline", "#viewcube", "#camera-cluster", "#filter-hud", "#notices"]) {
+      for (const id of ["#legend", "#timeline", "#timeline-bar", "#viewcube", "#camera-cluster", "#filter-hud", "#notices"]) {
         const el = page.locator(id);
         if (!(await el.isVisible())) continue;
         const o = (await el.boundingBox())!;
@@ -7805,7 +7811,7 @@ const resolvedToken = (page: Pg, token: string, prop = "backgroundColor") =>
     [token, prop],
   );
 /** Visible stage rectangles a palette or pill must not touch. */
-const STAGE_NEIGHBOURS = ["#legend", "#viewcube", "#camera-cluster", "#filter-hud", "#triad", "#timeline", "#band-pill", "#fbox-layer .fbox", "#notices > *"];
+const STAGE_NEIGHBOURS = ["#legend", "#viewcube", "#camera-cluster", "#filter-hud", "#triad", "#timeline", "#timeline-bar", "#band-pill", "#fbox-layer .fbox", "#notices > *"];
 const visibleRects = (page: Pg, selector: string) =>
   page.evaluate((sel) => {
     return [...document.querySelectorAll(sel)]
@@ -8417,4 +8423,80 @@ test("E2E-286 22-7 (Scope) the Scope radios change the candidate exactly as the 
   await expect(t.ctl("scope-displayed")).toBeFocused();
   await t.exact("Candidates", String(ROOM.wall));
   await expect(t.ctl("apply")).toBeEnabled();
+});
+
+test("E2E-303 22-8 the thin timeline: a 40 px bar of 26 px chips, the label on hover or focus below 1700 px (the chip widens over its neighbours) and inline from 1700; the marker drags with the real mouse between five steps; Edit shape sits inside its chip", async ({ page }) => {
+  test.setTimeout(240000);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const t = tl(page);
+  await t.threeSteps();
+  // two more steps: the left and the right half of what is left (extents from the fixture), the Active count read after each
+  const rows = roomValid();
+  const xs = rows.map((r) => r[0]);
+  const [lo, hi] = [Math.min(...xs), Math.max(...xs)];
+  const mid = (lo + hi) / 2;
+  const ext = (i: number) => [Math.min(...rows.map((r) => r[i])) - 0.1, Math.max(...rows.map((r) => r[i])) + 0.1] as const;
+  const [y0, y1] = ext(1);
+  const [z0, z1] = ext(2);
+  const actives: number[] = [];
+  for (const [a, b] of [[lo - 0.1, mid], [mid, hi + 0.1]] as const) {
+    await t.boxAt((a + b) / 2, (y0 + y1) / 2, (z0 + z1) / 2, b - a, y1 - y0, z1 - z0);
+    await expect(t.ctl("apply")).toBeEnabled();
+    await t.ctl("apply").click();
+    await expect(t.cards).toHaveCount(actives.length + 4);
+    await t.idle();
+    actives.push(await t.num("Active"));
+  }
+  await expect(t.cards).toHaveCount(5);
+  await page.mouse.move(640, 300); // a free stage point: no chip is hovered
+  const bar = (await page.locator("#timeline-bar").boundingBox())!;
+  expect(bar.height).toBeLessThanOrEqual(40.5);
+  const stage = (await page.locator("#stage").boundingBox())!;
+  expect(Math.abs(stage.y + stage.height - (bar.y + bar.height) - 8), "the bar sits 8 px above the stage bottom").toBeLessThanOrEqual(1);
+  for (let i = 0; i < 5; i++) expect(Math.abs((await t.card(i).boundingBox())!.height - 26), `chip ${i} height`).toBeLessThanOrEqual(1);
+  const label = (i: number) => t.card(i).locator(".step-label");
+  // a long name, so the hovered chip has more to show than its 112 px
+  await t.card(1).hover();
+  await label(1).dblclick();
+  await t.card(1).locator("input.step-rename").fill("Wall behind the cabinet at the north end");
+  await t.card(1).locator("input.step-rename").press("Enter");
+  await page.mouse.move(640, 300);
+  await t.card(1).blur();
+  await expect(label(1)).toBeHidden();
+  const [b0, b1, b2] = [await t.card(0).boundingBox(), await t.card(1).boundingBox(), await t.card(2).boundingBox()];
+  await t.card(1).hover();
+  await expect(label(1)).toBeVisible();
+  const h1 = (await t.card(1).boundingBox())!;
+  expect(h1.width, "the hovered chip widens").toBeGreaterThan(b1!.width + 1);
+  expect((await t.card(0).boundingBox())!.x).toBeCloseTo(b0!.x, 0);
+  expect((await t.card(2).boundingBox())!.x, "the neighbour keeps its x").toBeCloseTo(b2!.x, 0);
+  await page.mouse.move(640, 300);
+  await expect(label(1)).toBeHidden();
+  await t.card(2).focus();
+  await expect(label(2)).toBeVisible();
+  await page.mouse.move(640, 300);
+  await t.card(2).blur();
+  // the marker with the real mouse, slot 5 to slot 4: the state is the one seen right after the fourth step
+  t.rollbacks.length = 0;
+  await t.dragMarkerTo(4);
+  await expect(t.marker).toHaveAttribute("aria-valuenow", "4");
+  await expect.poll(() => t.num("Active")).toBe(actives[0]);
+  expect(t.rollbacks).toHaveLength(1);
+  await expect(t.card(4)).toHaveClass(/greyed/);
+  await expect.poll(async () => Number(await t.card(4).evaluate((e) => getComputedStyle(e).opacity)), "the undone chip is dimmed").toBeLessThan(1);
+  // Edit shape inside its chip, which keeps its width when the pointer leaves
+  await t.card(0).locator(".step-icon").click();
+  await page.mouse.move(640, 300);
+  const edit = t.ctl("step-edit-shape");
+  await expect(edit).toBeVisible();
+  const c0 = (await t.card(0).boundingBox())!;
+  const e0 = (await edit.boundingBox())!;
+  expect(e0.x).toBeGreaterThanOrEqual(c0.x - 1);
+  expect(e0.x + e0.width).toBeLessThanOrEqual(c0.x + c0.width + 1);
+  expect(c0.width).toBeCloseTo(112, 0);
+  // from 1700 px the labels are inline without hover
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.mouse.move(900, 300);
+  for (let i = 0; i < 5; i++) if (i !== 0) await expect(label(i), `label ${i} at 1920`).toBeVisible();
+  expect((await t.card(1).boundingBox())!.width).toBeCloseTo(184, 0);
 });
