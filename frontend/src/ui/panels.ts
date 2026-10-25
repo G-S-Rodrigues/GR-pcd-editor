@@ -128,7 +128,7 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
   const check = (id: string, label: string, get: (s: AppState) => boolean, set: (v: boolean) => void, cls?: string) => {
     const input = control("input", { id, type: "checkbox", class: cls, onchange: () => set(input.checked) });
     syncs.push((s) => (input.checked = get(s)));
-    return h("label", { class: "f" }, ...(cls ? [label, input] : [input, label]));
+    return h("label", { class: cls ? "f" : "f chk" }, ...(cls ? [label, input] : [input, label]));
   };
   const select = (id: string, label: string, options: [string, string][], get: (s: AppState) => string, set: (v: string) => void) => {
     const el = control("select", { id, onchange: () => set(el.value) }, ...options.map(([v, t]) => h("option", { value: v, text: t })));
@@ -694,15 +694,17 @@ export function buildEditPanels(root: HTMLElement, store: Store<AppState>, a: Pa
     tiltNote,
     prow("Show band", (() => {
       // "Show band": hides the whole band on the canvas (fill, outline, arrows, rings); protection stays on, so it is not a protection edit
-      const sw = control("button", { id: "prot-show-band", role: "switch", class: "toggle switch", onclick: () => store.update((s) => ({ ...s, bandVisible: !s.bandVisible })) }, iconSvg("eye", 16), " Show band");
+      // The switch is only its 36 px track (named by aria-label); the eye / eyeoff state icon sits beside it.
+      const sw = control("button", { id: "prot-show-band", role: "switch", class: "toggle switch", "aria-label": "Show band", onclick: () => store.update((s) => ({ ...s, bandVisible: !s.bandVisible })) });
+      const state = h("span", { class: "band-state" }, iconSvg("eye", 16));
       let drawn: boolean | null = null; // the icon is rebuilt only when bandVisible changes, not on every store update
       syncs.push((s) => {
         if (drawn === s.bandVisible) return;
         drawn = s.bandVisible;
         sw.setAttribute("aria-checked", String(s.bandVisible));
-        sw.replaceChildren(iconSvg(s.bandVisible ? "eye" : "eyeoff", 16), " Show band");
+        state.replaceChildren(iconSvg(s.bandVisible ? "eye" : "eyeoff", 16));
       });
-      return sw;
+      return h("div", { class: "band-ctl" }, sw, state);
     })()),
     prow("This edit", select("prot-mode", "", [["inherit", "Use global"], ["add_local", "Add local slab"], ["override", "Override global"]], (s) => s.tools.protection.mode, (v) => prot((m) => ({ ok: true, model: P.setOperationMode(m, v as P.OpMode) })))),
     row(

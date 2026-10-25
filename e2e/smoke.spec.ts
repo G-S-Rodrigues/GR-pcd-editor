@@ -8712,3 +8712,64 @@ test("E2E-309 22-fix with no steps the timeline shows 'No steps yet' on a clear 
   await expect(page.locator("#timeline .tl-line")).toBeAttached();
   await expect(page.locator("#timeline-marker")).toBeVisible();
 });
+
+const rectsOverlap = (a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) =>
+  a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-307 22-fix the Show band switch is only its track at ${w}x${h}: its content fits (scrollWidth <= clientWidth), no text of it lies on the This edit select, and the row label says Show band`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const t = hideHelpers(page);
+    await openRoom(page, t.exact);
+    const panel = page.locator("details.panel", { has: page.locator("summary", { hasText: "Height protection" }) });
+    if (!(await panel.evaluate((e) => (e as HTMLDetailsElement).open))) await protSummary(page).click();
+    await expect(panel).toHaveJSProperty("open", true);
+    const sw = t.ctl("prot-show-band");
+    await expect(sw).toBeVisible();
+    expect(await sw.evaluate((e) => ({ sw: e.scrollWidth, cw: e.clientWidth, text: (e.textContent ?? "").trim() })), "the switch holds no text and nothing wider than its track").toEqual({ sw: 36, cw: 36, text: "" });
+    await expect(sw).toHaveAttribute("aria-label", "Show band");
+    const mode = (await t.ctl("prot-mode").boundingBox())!;
+    const box = (await sw.boundingBox())!;
+    expect(rectsOverlap(box, mode), "the switch does not touch the This edit select").toBe(false);
+    // no text node inside the switch's row column lies on the select: every text range under the row's control cell
+    const stray = await page.evaluate((m) => {
+      const cell = document.querySelector('[data-control="prot-show-band"]')!.closest(".pctl")!;
+      const out: string[] = [];
+      const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        if (!(n.textContent ?? "").trim()) continue;
+        const r = document.createRange();
+        r.selectNodeContents(n);
+        for (const q of Array.from(r.getClientRects())) if (q.left < m.x + m.width && m.x < q.right && q.top < m.y + m.height && m.y < q.bottom) out.push(n.textContent ?? "");
+      }
+      return out;
+    }, mode);
+    expect(stray, "text of the Show band cell on the select").toEqual([]);
+    await expect(page.locator(".prow", { has: page.locator('[data-control="prot-show-band"]') }).locator(".plabel")).toHaveText("Show band");
+  });
+
+  test(`E2E-308 22-fix the I-understand row at ${w}x${h}: hidden in Use global and Add local slab, shown in Override global, and then its checkbox sits next to its text`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const t = hideHelpers(page);
+    await openRoom(page, t.exact);
+    const panel = page.locator("details.panel", { has: page.locator("summary", { hasText: "Height protection" }) });
+    if (!(await panel.evaluate((e) => (e as HTMLDetailsElement).open))) await protSummary(page).click();
+    await expect(panel).toHaveJSProperty("open", true);
+    const ack = t.ctl("prot-ack");
+    for (const mode of ["inherit", "add_local"]) {
+      await t.ctl("prot-mode").selectOption(mode);
+      await expect(ack, `mode ${mode}`).toBeHidden();
+    }
+    await t.ctl("prot-mode").selectOption("override");
+    await expect(ack).toBeVisible();
+    const gap = await ack.evaluate((e) => {
+      const label = e.closest("label")!;
+      const box = e.getBoundingClientRect();
+      const tn = Array.from(label.childNodes).find((n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? "").trim())!;
+      const r = document.createRange();
+      r.selectNodeContents(tn);
+      return r.getBoundingClientRect().left - box.right;
+    });
+    expect(gap, "gap between the checkbox and its text").toBeLessThanOrEqual(8);
+  });
+}

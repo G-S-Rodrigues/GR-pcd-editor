@@ -502,6 +502,10 @@
       .triple .f input[type=text] { width: 100%; min-width: 0; }
       .f { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: 2px 0; color: var(--label-2); min-width: 0; font: var(--t-callout); }
       .f input[type=text] { width: 6em; max-width: 100%; min-width: 0; }
+      .f[hidden] { display: none; }
+      .f.chk { justify-content: flex-start; gap: 4px; }
+      .band-ctl { display: flex; align-items: center; gap: 8px; }
+      .band-state { display: inline-flex; align-items: center; color: var(--label-2); }
       .note { font: var(--t-callout); }
       .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin: 6px 0; }
       .actions button { min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding-inline: 4px; }
