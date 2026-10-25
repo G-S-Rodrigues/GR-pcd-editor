@@ -502,6 +502,8 @@ Since 22-5 the fold ids are `box, polygon, cluster, sparse, plane, thin, layers`
   `PLN-14/15` and `THN-13/14` run one call in a fresh process under `RLIMIT_AS` (`tests/fixtures/plane_rss.py`) and are
   the worst of 3 runs of the committed code x1.5 (detect 1.50 s / 96 MiB, plane mask 0.03 s, duplicates at 1e-3
   2.96 s / 171 MiB, voxel 0.81 s / 133 MiB). The voxel number is slower than the Step 0 spike (0.25 s); reported, not tuned.
+  R22-22 raised the `THN-13/14` time bounds (4.45 s to 8.0 s, 1.22 s to 3.0 s; memory bounds unchanged): the gate host is a
+  shared WSL machine, and at load average 15-40 `THN-13` took up to 6.04 s and `THN-14` 2.00 s.
 - Frontend unit: `UI-954..983` (models, `bandFromPlane`, the detect flow in `orchestration/planes.ts`, panels, step cards).
   vitest 763 to 797. Changed existing test: `UI-890` (the tool order is box, polygon, cluster, sparse, plane, thin).
 - Smoke `E2E-186..194`: `E2E-186` Detect, held progress and Cancel; `E2E-187` ceiling Delete, Undo, Redo; `E2E-188` the
