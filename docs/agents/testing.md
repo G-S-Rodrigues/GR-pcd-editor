@@ -17,6 +17,7 @@ docker compose -f docker/compose.yaml --profile checks run --rm verify
 docker compose -f docker/compose.yaml --profile checks run --rm lint
 bash tests/container/test_compose.sh                # container tier
 bash tests/container/test_smoke_names.sh            # CTR-12, static, smoke.sh project/image env
+bash tests/container/test_shots_input.sh            # CTR-13, static, smoke.sh shots input (GR_PCD_SHOTS_PCD)
 bash tests/launcher/test_launcher.sh                # launcher, stub docker
 bash tests/launcher/test_launcher_smoke.sh          # launcher, real Docker
 ```
@@ -148,6 +149,12 @@ export, save, persist, unsaved, tooltips), under `frontend/src/**`; backend rend
   no tool, default cluster limit), `E2E-24b` (start banner with no session).
   `SMOKE_SHOTS_DIR=<dir> bash scripts/smoke.sh` keeps every screenshot to look at.
   Run a subset with `bash scripts/smoke.sh npx playwright test -g "E2E-2[01]"`.
+- README shots tool (not part of the smoke run or any gate; needs a PCD you own, never stage a `.pcd` or `.pcdsession`): the separate config
+  `e2e/shots.config.ts` matches only `*.shots.ts`, so `readme.shots.ts` is never in the default `--list` count.
+  `GR_PCD_SHOTS_PCD=/absolute/path/cloud.pcd SMOKE_SHOTS_DIR=<dir> bash scripts/smoke.sh npx playwright test -c shots.config.ts --workers=1`
+  mounts the file read-only at `/in/cloud.pcd` (an unset variable leaves the run line unchanged; a relative or missing path exits 2 before any
+  docker call, because Docker reads a relative `-v` source as a named volume). The spec opens it through the file picker and writes only to
+  `/out`, named `<w>x<h>-<theme>-<state>.png` (states idle, armed, draft; owner-only `owner-` shots are never committed).
 - Fast loop for vitest and `tsc` without a rebuild: bind-mount `frontend/src`
   over the checks image, e.g. `docker run --rm --network none -v "$PWD/frontend/src:/app/frontend/src:ro" gr-pcd-visualizer:checks bash -c "cd frontend && node node_modules/vitest/vitest.mjs run"`.
 
@@ -521,6 +528,36 @@ Since 22-5 the fold ids are `box, polygon, cluster, sparse, plane, thin, layers`
 - A pre-20 build refuses an archive holding a `plane` or `thin` step (`bad_archive`); documented, not tested.
 - Known load flakes unchanged: `test_pcd_61`, `E2E-57`, `test_nrm_07` timing.
 
+## Part 22-1 additions (tool disarm, R22-1)
+- New ids: `UI-991` (`escTarget`, the pure rule for what one Esc is for), `UI-992` (the Esc row says it disarms; `escapeInField`: Escape in a text
+  entry stays with the field, a checkbox, slider or button does not), `UI-993` (a successful Delete disarms; the polygon prism region is kept
+  unless the Polygon tool was armed), `UI-994` (the layer actions disarm before the params hook; each call runs with the Box armed, polygon
+  kept, and with the Polygon tool armed, polygon blanked), `UI-995` (table over the seven consuming layer calls against 409, 413 and 422
+  `layer_locked`: the tool stays armed), `UI-995b` (a layer's Delete points with a refused Apply, a missed one-shot and a declined confirm),
+  `UI-996` (layerOp and layer select disarm when the one-shot lands; polygon legs), `UI-997` (`disarmedKeepingRegion`),
+  `E2E-196` (Esc disarms, keeping the selection and its candidate; legs for a text field, a drag and the export dialog, which keep the tool), `E2E-197` (Delete disarms), `E2E-198`
+  (New layer disarms), `E2E-199` (owner shots, two sizes), `E2E-200` (Esc with a filter grip focused disarms).
+- Changed tests, setup or assertion forced by R22-1, nothing loosened: `UI-667` (assertion flipped to "none"), `UI-513` (title only),
+  `UI-995` (ad-hoc legs subsumed by the table), `UI-994` (polygon legs); smoke `E2E-07`, `E2E-10`, `E2E-44`, `E2E-52`, `E2E-90`, `E2E-142`,
+  `E2E-154`, `E2E-171`, `E2E-174`, `E2E-178`, `E2E-180`, `E2E-183`, and the `tl().threeSteps` helper (E2E-50..58, 65, 66, 76, 118, 119, 122).
+- The Esc rule: the first global keydown listener (`main.ts`) computes `escTarget` (field, drag, polygon, pick, layer edit, overlay, draft, then
+  tool) before any other Esc consumer acts, and disarms only on the "tool" target. A popover added later must report itself through the
+  `overlay` input, or one Esc would close it and also disarm the tool.
+- Counts: vitest 804 to 818; smoke 183 to 189 (E2E-199 runs at two sizes, E2E-200 is new).
+- Known: `E2E-85` fails in a subset run right after `E2E-75` (order dependence, same on 05c61a5); it passes alone and in file order.
+
+## Part 22-2 additions (layer colour on points, shield, R22-3)
+- New ids: `UI-1010..1012` (`colourizeMasked` gives a layer's points the layer colour before the protected slab colour, with the kept,
+  selected, preview-remove and deleted flags still winning; `UI-1012` is a characterisation), `UI-1013`, `UI-1014` (the shield on the layer row
+  and on the menu's Protected flag, the white chip ring gone), `UI-1015` (the shield on a protected layer's legend entry), `E2E-201`
+  (recolouring a protected Floor changes the canvas in Layers mode with Height protection open and folded; shield on row and legend), `E2E-202`
+  (owner shots, two sizes).
+- Changed tests: `UI-300` (the pinned icon names gain `shield`), `UI-922` (the chip has no protected class, the row has 7 children), `UI-1010`
+  (two more points with the preview-remove and deleted flags), `UI-996` (polygon legs), `UI-994` (polygon kept), `E2E-170` (the shield on the
+  Floor row, no protected ring class on its chip).
+- `steadyCanvas` (a smoke helper) masks the legend and the timeline strip before comparing canvases: the marker pulses.
+- Counts: vitest 818 to 824; smoke 189 to 192.
+
 ## Part 22-3 additions (the protection band with the Box handles, Show band)
 - Frontend unit: `UI-1060..1073`. `UI-1060..1062` (`tools/box/shared-handles.test.ts`) pin the helpers extracted from the Box
   (`shaftRing`, `handleOverlaySpec`, `advanceRing`) to the Box's own output; `UI-1063..1066` (`inspector/bandgizmo.test.ts`)
@@ -714,3 +751,13 @@ Since 22-5 the fold ids are `box, polygon, cluster, sparse, plane, thin, layers`
   band-hidden-pill) under `shots-22/part-8`; never committed.
 - Smoke order dependence (pre-existing, measured on 653ae96): E2E-19 fails in a subset run right after E2E-16 (the Left view persists); it passes alone
   and in full order.
+
+## Part 22-9 additions (docs, README screenshots)
+- New id: `CTR-13` (`tests/container/test_shots_input.sh`, static, a recording `docker` stub): unset leaves the run line exactly as before, a missing
+  or relative `GR_PCD_SHOTS_PCD` exits 2 with no docker call, an absolute file adds `-v <file>:/in/cloud.pcd:ro -e GR_PCD_SHOTS_PCD=/in/cloud.pcd`
+  to the `run --rm` line only.
+- The shots tool (`e2e/shots.config.ts`, `e2e/readme.shots.ts`) is described under Smoke above. It is in no gate: it needs the owner's private scan.
+- `scripts/check-bootstrap-contract.sh` now rejects a tracked `.pcdsession` and probes that `private.pcdsession` is ignored.
+- Committed screenshots: the six 1920x1080 shots in `docs/images/screenshots/` (`1920x1080-{dark,light}-{idle,armed,draft}.png`, R22-20); the full
+  owner set (both sizes, plus the owner-only states) stays in `shots-22/part-9`, never committed.
+- Smoke count unchanged: 251 (`npx playwright test --list`, the 22-8 end count); this part adds no smoke test. Changed tests: none.
