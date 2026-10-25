@@ -8235,6 +8235,12 @@ for (const [w, h] of SIZES) {
     await p.setBox([-1, 4.5, 2.5], [1, 10, 5]);
     await expect(page.locator("#draft-note")).toContainText("Preview, not applied", { timeout: 15000 });
     await shot("draft");
+    // m3: the inactive Invert / Select shown / Hide selected paint as a ghost of Select shown over Invert under a translucent
+    // button layer (seen in the 1280x720 draft shot); an inactive action is drawn by colour, never by opacity
+    for (const id of ["sel-select-displayed", "sel-invert", "sel-hide"]) {
+      await expect(page.locator(`#${id}`)).toHaveClass(/inactive/);
+      expect(await page.locator(`#${id}`).evaluate((e) => getComputedStyle(e).opacity), `${id} opacity`).toBe("1");
+    }
     await t.openMore(Number(floorId));
     await expect(page.locator("#layer-menu")).toBeVisible();
     await page.mouse.move(5, 5);

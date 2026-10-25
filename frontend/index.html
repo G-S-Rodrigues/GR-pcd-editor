@@ -509,6 +509,8 @@
       .note { font: var(--t-callout); }
       .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin: 6px 0; }
       .actions button { min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding-inline: 4px; }
+      /* inactive by colour, not opacity: a translucent layer painted a ghost of Select shown over Invert */
+      .actions button.inactive { opacity: 1; color: var(--label-3); }
       .actions button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .callout { background: var(--fill-1); border-radius: 8px; padding: 6px 8px; margin: 6px 0; display: flex; flex-direction: column; gap: 4px; }
       .callout.accent { background: var(--accent-soft); }
