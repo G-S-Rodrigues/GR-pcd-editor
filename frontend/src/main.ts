@@ -58,6 +58,7 @@ import { bindPopovers } from "./ui/popover";
 import { buildHistoryPopover } from "./ui/historypop";
 import { iconControl } from "./ui/iconbutton";
 import { buildHelp } from "./ui/help";
+import { noticeEl } from "./ui/notices";
 import { classifyKey, escapeInField } from "./ui/keys";
 import { buildViewCube } from "./ui/viewcube";
 import { buildTriad } from "./ui/triad";
@@ -472,9 +473,7 @@ store.select(
   (s) => s.notices,
   (notices) => {
     noticeBox.replaceChildren(
-      ...notices.map((n) =>
-        h("div", { class: `notice ${n.level}`, role: n.level === "error" ? "alert" : "status", title: "Click to dismiss", onclick: () => dismissNotice(store, n.id) }, n.text),
-      ),
+      ...notices.map((n) => noticeEl(n, (id) => dismissNotice(store, id))),
     );
   },
 );

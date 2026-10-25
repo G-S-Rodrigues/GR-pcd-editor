@@ -8304,6 +8304,21 @@ for (const [w, h] of SIZES) {
     expect(stack.y, `the camera stack (y ${stack.y}) is below the cube (bottom ${cube.y + cube.height})`).toBeGreaterThanOrEqual(cube.y + cube.height);
     expect(Math.abs(stack.x + stack.width / 2 - (cube.x + cube.width / 2)), "the stack is centred under the cube").toBeLessThanOrEqual(2);
     expect(stack.height, "the stack is a column").toBeGreaterThan(stack.width);
+    // toast leg (guard, written green-first: the toasts stay at top 80, centred; E2): a typed-in junk value raises a warning toast
+    await expandFilterBox(page, "filter-x-min");
+    await page.locator('[data-control="filter-x-min"]').fill("abc");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#notices > *")).toHaveCount(1);
+    const toast = await box("#notices > *");
+    console.info(`E2E-300 toast ${w}x${h}: x ${toast.x} y ${toast.y} w ${toast.width} h ${toast.height}; stage x ${stage.x} y ${stage.y} w ${stage.width}`);
+    expect(Math.abs(toast.x + toast.width / 2 - (stage.x + stage.width / 2)), "the toast is centred on the stage").toBeLessThanOrEqual(2);
+    expect(toast.y, "the toast is below the filter boxes' top lane (top 80)").toBeGreaterThanOrEqual(stage.y + 79);
+    const apart = (a: { x: number; y: number; width: number; height: number }, c: { x: number; y: number; width: number; height: number }) =>
+      a.x + a.width <= c.x || c.x + c.width <= a.x || a.y + a.height <= c.y || c.y + c.height <= a.y;
+    for (const sel of ["#palette", "#viewcube .cube-stage", "#camera-cluster", "#legend", "#filter-hud"]) {
+      expect(apart(toast, await box(sel)), `the toast overlaps ${sel}`).toBe(true);
+    }
+    if (await page.locator("#arm-pill").isVisible()) expect(apart(toast, await box("#arm-pill")), "the toast overlaps #arm-pill").toBe(true);
   });
 }
 
