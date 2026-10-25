@@ -8,6 +8,7 @@ import { describeControls } from "./describe";
 import { PALETTE } from "../colour/palette";
 import { RAMP_STOPS, cssGradient } from "../colour/ramps";
 import { buildLegend, cssColour, legendEntries } from "./legend";
+import { INDEX_HTML } from "../testing/tokens";
 import { TOOLTIPS } from "./tooltips";
 
 let dom: ReturnType<typeof installFakeDom>;
@@ -123,4 +124,19 @@ test("UI-369 the Unselected chip shows the active ramp (a grey chip would lie in
   store.update((s) => ({ ...s, colour: { ...s.colour, mode: "flat" } }));
   expect(baseChip().style.background).toBe(cssColour(PALETTE.base));
   expect(rows()).toEqual(legendEntries().map((e) => e.id));
+});
+
+test("UI-1236 the legend card keeps pointer-events none so the canvas gets the clicks, but its header, eyes, hidden chip and the protected shield (the hoverable tooltip) take them; the card is a 12 px glass card", () => {
+  const css = [...INDEX_HTML.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join("\n");
+  const body = (selector: string) => {
+    const rule = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].find((m) => m[1].trim() === selector);
+    expect(rule, `rule ${selector}`).toBeTruthy();
+    return rule![2];
+  };
+  expect(body("#legend")).toMatch(/pointer-events:\s*none/);
+  expect(body("#legend")).toMatch(/border-radius:\s*12px/);
+  expect(body("#legend")).toMatch(/padding:\s*4px 6px 8px/);
+  expect(body("#legend .legend-shield")).toMatch(/pointer-events:\s*auto/);
+  expect(body("#legend .legend-shield")).toMatch(/cursor:\s*help/);
+  for (const sel of ["#legend .legend-head", "#legend .legend-eye", "#legend .hidden-chip"]) expect(body(sel), sel).toMatch(/pointer-events:\s*auto/);
 });

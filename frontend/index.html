@@ -298,7 +298,7 @@
       .step.highlighted .step-label { display: none; }
       .step-btn { width: 16px; height: 16px; padding: 0; line-height: 1; font-size: 11px; }
       #viewport { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-      #legend { position: absolute; display: flex; flex-direction: column; gap: 2px; font: var(--t-callout); background: var(--glass-hud); padding: 2px 8px 4px; border-radius: var(--r-panel); pointer-events: none; z-index: 1; overflow: hidden; }
+      #legend { position: absolute; display: flex; flex-direction: column; gap: 2px; font: var(--t-callout); background: var(--glass-hud); padding: 4px 6px 8px; border-radius: 12px; pointer-events: none; z-index: 1; overflow: hidden; }
       #legend .legend-head { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 6px 0 2px; background: transparent; border-color: transparent; color: var(--label); font-weight: 600; pointer-events: auto; }
       #legend .legend-head:hover { background: var(--fill-2); }
       #legend .hidden-chip { align-self: flex-start; height: 22px; padding: 0 8px; margin: 0 0 2px; pointer-events: auto; font-size: 12px; }
@@ -312,7 +312,7 @@
       #band-pill { position: absolute; bottom: 56px; transform: translateX(-50%); z-index: 4; display: flex; align-items: center; gap: 8px; padding: 3px 4px 3px 10px; font-size: 12px; background: var(--glass-hud); border: 1px solid var(--separator); border-radius: var(--r-panel); pointer-events: auto; white-space: nowrap; }
       #band-pill[hidden] { display: none; }
       #band-pill button { height: 22px; padding: 0 10px; font-size: 12px; }
-      #legend .legend-shield { color: var(--protected-ui); margin-left: 3px; vertical-align: middle; }
+      #legend .legend-shield { color: var(--protected-ui); margin-left: 3px; vertical-align: middle; pointer-events: auto; cursor: help; }
       #legend .legend-head svg { transition: transform var(--dur); }
       #legend .legend-head.closed svg { transform: rotate(-90deg); }
       #legend-body { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; min-height: 0; }

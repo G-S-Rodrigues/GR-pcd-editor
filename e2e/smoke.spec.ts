@@ -8330,6 +8330,32 @@ test("E2E-301 22-8 the Reset filters icon sits in #filter-hud at the stage's bot
   await expect(reset).not.toHaveClass(/active/);
 });
 
+test("E2E-302 22-8 the legend's protected shield is the hit target at its centre (its tooltip can be hovered) while a point on the legend body away from every control still goes to the canvas", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const t = layerMenu(page);
+  const floor = await t.floorFromBand();
+  await t.wallLayer();
+  const shield = page.locator(`[data-legend-layer="${floor.id}"] [data-legend-shield]`);
+  await expect(shield).toBeVisible();
+  const title = (await shield.getAttribute("title")) ?? "";
+  expect(title, "the shield carries the protection tooltip").toMatch(/protect/i);
+  const b = (await shield.boundingBox())!;
+  const hit = await page.evaluate(([x, y]) => {
+    const e = document.elementFromPoint(x, y);
+    const s = e?.closest("[data-legend-shield]");
+    return { shield: s?.getAttribute("data-legend-shield") ?? null, id: e?.id ?? "", title: s?.getAttribute("title") ?? "" };
+  }, [b.x + b.width / 2, b.y + b.height / 2]);
+  expect(hit.shield, `the point at the shield's centre hits the shield (hit ${JSON.stringify(hit)})`).toBe(String(floor.id));
+  expect(hit.title).toBe(title);
+  // a point on the legend body that no control covers goes to the canvas
+  const body = (await page.locator("#legend").boundingBox())!;
+  const rows = await page.locator("#legend button, #legend [data-legend-shield]").evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).map((r) => ({ l: r.left, t: r.top, r: r.right, b: r.bottom })));
+  const px = body.x + body.width - 3;
+  const py = body.y + body.height / 2;
+  expect(rows.some((r) => px >= r.l && px <= r.r && py >= r.t && py <= r.b), "the free point is clear of every control").toBe(false);
+  expect(await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.id, [px, py])).toBe("viewport");
+});
+
 test("E2E-286 22-7 the Selection section folds by click and by Enter, the fold survives a reload and the counts do not change", async ({ page }) => {
   const { exact, ctl } = helpers(page);
   await openRoom(page, exact);
