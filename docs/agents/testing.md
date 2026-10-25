@@ -687,3 +687,30 @@ Since 22-5 the fold ids are `box, polygon, cluster, sparse, plane, thin, layers`
 - `scripts/smoke.sh` honours `GR_PCD_SMOKE_PROJECT` and `GR_PCD_SMOKE_IMAGE` (defaults `gr-pcd-smoke`, `gr-pcd-visualizer:smoke`) so parallel
   runs do not collide; CTR-12 (`tests/container/test_smoke_names.sh`) pins it.
 - Smoke count: 22-6 close + 8 (E2E-285 and E2E-289 at two sizes each, E2E-286 two tests, E2E-287 and E2E-288 one each).
+
+## Part 22-8 additions (canvas HUD and thin timeline)
+
+- New ids: `UI-1230..1232` (legend and reserved rectangles, camera stack), `UI-1233`/`UI-1234` (Reset filters icon), `UI-1235` (filter-box pills),
+  `UI-1236` (legend card, hoverable shield), `UI-1237` (toasts), `UI-1238` (chip geometry per breakpoint), `UI-1239`/`UI-1240` (thin bar CSS and
+  `strip.test.ts`), `E2E-300..305`.
+- Changed tests: UI-337, UI-344, UI-516, UI-1164, UI-1074, UI-710, UI-195, UI-326, UI-300, UI-1090, UI-206, UI-889, UI-1100, UI-351 (both themes over
+  `--tl-bar` and `--fill-1`, same 4.5 floor); E2E-72, E2E-132, E2E-40, E2E-156, E2E-230, E2E-36, E2E-224, E2E-57, E2E-58, E2E-122, and the overlap
+  lists of E2E-217, E2E-226, E2E-233, E2E-266 (selectors, setup and pinned text only; no threshold, tolerance or seed changed).
+- HUD map (corner to element): top-left `#palette` and the `#arm-pill`; top-right `#viewcube` with the vertical `#camera-cluster` under it;
+  bottom-left `#triad` and the `#legend` (right of the triad, bottom-aligned); bottom-right `#filter-hud` (the Reset filters icon, above the bar);
+  bottom `#timeline-bar` (40 px glass, 8 px above the stage bottom); top-centre `#notices` toasts at top 80 (the filter boxes' top lane); the filter
+  boxes (`.fbox` glass pills) float between them. E2E-300 logs `HUD <w>x<h> <id>:x,y,w,h ...` and checks that none overlap.
+- `BAND` = the bar 40 + 8 (`BAR` in `view/layout.ts`). Chip widths 112 below 1700 px and 184 from it (`--chip-w`, `CARD_W`/`CARD_W_WIDE` in
+  `timeline/model.ts`; keep them equal).
+- Below 1700 px a chip's label is hidden: hover (or focus) the chip before acting on its label (`await t.card(i).hover()` before a label dblclick);
+  the hovered chip takes `max-content` over its neighbours. A highlighted chip is fixed at `--chip-w` while only focused, and widens under the
+  pointer so Edit shape and the tools sit side by side: move the pointer to a free stage point before measuring it (E2E-122).
+- The Reset filters icon's `aria-description` carries the filter summary ("N filters active ..."); the Display filter section is gone (E2E-40 reads
+  the summary there).
+- Toasts stay at top 80, centred; `E2E-300` checks the toast against the other HUD rectangles.
+- Checks image caveat: a vitest run bind-mounting only `frontend/src` reads the image's old `index.html` (the theme tests read it); mount
+  `frontend/index.html` too.
+- E2E-305 writes 20 owner shots (`/out/part22-8-<w>x<h>-<theme>-<state>.png`: idle, box-armed-toast, five-steps-highlighted, legend-folded,
+  band-hidden-pill) under `shots-22/part-8`; never committed.
+- Smoke order dependence (pre-existing, measured on 653ae96): E2E-19 fails in a subset run right after E2E-16 (the Left view persists); it passes alone
+  and in full order.
