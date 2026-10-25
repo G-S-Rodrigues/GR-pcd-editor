@@ -30,23 +30,82 @@ function loadScan() {
   return { name: basename(file), buffer, points };
 }
 
-test("README shots: probe", async ({ page }) => {
-  const scan = loadScan();
-  const errors: string[] = [];
-  page.on("pageerror", (e) => errors.push(String(e)));
-  await page.setViewportSize({ width: 1280, height: 720 });
-  await page.emulateMedia({ colorScheme: "dark" });
-  await page.goto("/");
-  await page.locator("#file-input").setInputFiles({ name: scan.name, mimeType: "application/octet-stream", buffer: scan.buffer });
-  await expect(page.locator('#cloud-details [data-status="Original"]')).toContainText(scan.points.toLocaleString("en-US"), { timeout: 60_000 });
-  console.log("SHOTS original", await page.locator('#cloud-details [data-status="Original"]').textContent(), "header", scan.points);
-  await page.mouse.move(5, 5);
-  await settle(page);
-  await page.screenshot({ path: "/out/1280x720-dark-idle.png" });
-  await ctl(page, "tool-box").click();
-  await expect(page.locator("#arm-pill")).toBeVisible();
-  await settle(page);
-  console.log("SHOTS selected", await stat(page, "Selected").textContent());
-  void openPop;
-  expect(errors).toEqual([]);
+// The server keeps the previous test's session and a page load adopts it (as beforeEach in smoke.spec.ts): start every shot clean.
+test.beforeEach(async ({ request }) => {
+  await request.delete("/api/session");
 });
+
+const SIZES = [{ w: 1280, h: 720 }, { w: 1920, h: 1080 }] as const;
+const SCHEMES = ["dark", "light"] as const;
+
+// Each (size, scheme) is a fresh page load so every state starts from the same place. The three committed states (R22-20: only
+// the 1920x1080 ones are copied into the repo) are idle, armed and draft; the owner-only states (menu, details, bandhidden) are
+// taken in the dark scheme only and stay in the scratch shots folder. Every required step fails loudly.
+for (const size of SIZES) {
+  for (const scheme of SCHEMES) {
+    test(`README shots: ${size.w}x${size.h} ${scheme}`, async ({ page }) => {
+      test.setTimeout(300_000);
+      const scan = loadScan();
+      const errors: string[] = [];
+      page.on("pageerror", (e) => errors.push(String(e)));
+      page.on("console", (m) => {
+        if (m.type() === "error" && !/404/.test(m.text())) errors.push(m.text()); // the startup 404 rule from E2E-01
+      });
+      const shot = async (state: string) => {
+        await page.mouse.move(5, 5);
+        await settle(page);
+        await page.screenshot({ path: `/out/${size.w}x${size.h}-${scheme}-${state}.png` });
+      };
+      await page.setViewportSize({ width: size.w, height: size.h });
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.goto("/");
+      await page.locator("#file-input").setInputFiles({ name: "unitree_slam.pcd", mimeType: "application/octet-stream", buffer: scan.buffer });
+      // a wrong Original count fails here: the scan must be the 134,674 point owner cloud
+      expect(scan.points, "POINTS in the PCD header").toBe(134674);
+      await expect(stat(page, "Original")).toContainText("134,674", { timeout: 60_000 });
+      await settle(page);
+      await shot("idle");
+
+      await ctl(page, "tool-box").click();
+      await expect(page.locator("#arm-pill")).toBeVisible();
+      await expect.poll(async () => Number(((await stat(page, "Selected").textContent()) ?? "").replace(/[^0-9]/g, "")), { message: "Selected > 0", timeout: 30_000 }).toBeGreaterThan(0);
+      await shot("armed");
+
+      const num = async (id: string) => Number(await ctl(page, id).inputValue());
+      await ctl(page, "op-add").click();
+      const cx = await num("box-center-x");
+      const sx = await num("box-size-x");
+      await ctl(page, "box-center-x").fill(String(cx + sx));
+      await ctl(page, "box-center-x").press("Enter");
+      await expect(page.locator("#draft-note")).toContainText("Preview, not applied", { timeout: 30_000 });
+      await ctl(page, "box-center-x").blur(); // no focus ring on the edited field
+      await shot("draft");
+
+      if (scheme === "dark") {
+        await openPop(page, "details");
+        await shot("owner-details");
+        await page.keyboard.press("Escape");
+        await ctl(page, "sel-discard").click();
+        await expect(page.locator("#draft-note")).toBeHidden({ timeout: 15_000 });
+        await ctl(page, "layer-name").fill("Area");
+        await ctl(page, "layer-new").click();
+        const more = page.locator("[data-layer-more]").first();
+        await more.click();
+        await expect(page.locator("#layer-menu")).toBeVisible();
+        await shot("owner-menu");
+        await page.keyboard.press("Escape");
+        // Height protection with the band hidden: the pill shows
+        const sw = page.locator("#prot-show-band");
+        if (await sw.count()) {
+          if (!(await sw.isVisible())) await page.locator("details.panel > summary", { hasText: "Height protection" }).click({ timeout: 10_000 });
+          const on = page.locator("#prot-enabled");
+          if (!(await on.isChecked())) await on.check({ timeout: 10_000 });
+          if ((await sw.getAttribute("aria-checked")) === "true") await sw.click({ timeout: 10_000 });
+          await expect(page.locator("#band-pill")).toBeVisible();
+          await shot("owner-bandhidden");
+        }
+      }
+      expect(errors).toEqual([]);
+    });
+  }
+}

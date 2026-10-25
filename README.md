@@ -6,9 +6,14 @@ not want (for example reflection or ghost points), preview exactly what would be
 deleted, apply, undo, compare against the original, and export a new `.pcd`.
 The source file is never modified.
 
-![The editor with a synthetic room scene](docs/images/editor.png)
+![GR PCD Editor in the dark theme: the owner's scan with the Box tool armed, the left sidebar, the tool palette, the inspector and the timeline](docs/images/screenshots/1920x1080-dark-armed.png)
 
-*The editor on a synthetic room scene (the layout before Part 22; fresh screenshots of a real scan replace it).*
+*The editor on the owner's scan (`unitree_slam.pcd`, 134,674 points) at 1920x1080, dark theme, Box tool armed.*
+
+| Theme | Idle | Box armed | Box armed + draft |
+|---|---|---|---|
+| Dark | [idle](docs/images/screenshots/1920x1080-dark-idle.png) | [Box armed](docs/images/screenshots/1920x1080-dark-armed.png) | [+ draft](docs/images/screenshots/1920x1080-dark-draft.png) |
+| Light | [idle](docs/images/screenshots/1920x1080-light-idle.png) | [Box armed](docs/images/screenshots/1920x1080-light-armed.png) | [+ draft](docs/images/screenshots/1920x1080-light-draft.png) |
 
 ## Using the editor
 
