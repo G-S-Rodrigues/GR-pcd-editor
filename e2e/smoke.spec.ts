@@ -2201,6 +2201,7 @@ test("E2E-57 11 rename by double-click on the name, by the pencil and by F2; the
   const t = tl(page);
   await t.threeSteps();
   await t.card(1).hover(); // below 1700 px the label shows on hover or focus (22-8)
+  await expect.poll(async () => (await stepLayer(page)).visible).toBe(true); // the step points have arrived and the hover preview works
   await t.card(1).locator(".step-label").dblclick();
   const input = t.card(1).locator("input.step-rename");
   await expect(input).toBeFocused();
@@ -2210,6 +2211,7 @@ test("E2E-57 11 rename by double-click on the name, by the pencil and by F2; the
   await expect(t.card(1)).toHaveAttribute("title", /^Wall delete, 40 points/);
   await page.mouse.move(5, 5); // the pointer still over the card is a hover preview (by design), not a highlight
   await expect.poll(async () => (await stepLayer(page)).visible).toBe(false); // the double-click did not toggle a highlight
+  expect(await page.evaluate(() => (window as unknown as { __editor: { state: () => { timeline: { highlight: number | null } } } }).__editor.state().timeline.highlight)).toBeNull();
   await t.card(0).hover();
   await t.card(0).locator('[data-act="rename"]').click();
   await t.card(0).locator("input.step-rename").fill("Ghost");
