@@ -2208,7 +2208,8 @@ test("E2E-57 11 rename by double-click on the name, by the pencil and by F2; the
   await input.press("Enter");
   await expect(t.card(1).locator(".step-label")).toHaveText("Wall");
   await expect(t.card(1)).toHaveAttribute("title", /^Wall delete, 40 points/);
-  expect((await stepLayer(page)).visible).toBe(false); // the double-click did not toggle a highlight
+  await page.mouse.move(5, 5); // the pointer still over the card is a hover preview (by design), not a highlight
+  await expect.poll(async () => (await stepLayer(page)).visible).toBe(false); // the double-click did not toggle a highlight
   await t.card(0).hover();
   await t.card(0).locator('[data-act="rename"]').click();
   await t.card(0).locator("input.step-rename").fill("Ghost");
