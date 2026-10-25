@@ -2,6 +2,12 @@ import { expect, test } from "@playwright/test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { BIG, DUP, FLOOR, PLANE_ROOM, PLANE_ROOM_TOTAL, GHOST, NORMAL_ROOM_TOTAL, ROOM, ROOM_TOTAL, SPARSE, SPARSE_TOTAL, TILTED, TOTAL, bigRoomPcd, bigRoomXyz, countInTiltedSlab, clusterNearestTruth, countInXyz, countPlane, dupRoomPcd, dupTruth, normalRoomPcd, planeRoomPcd, voxelTruth, parsePcd, roomPcd, rowKey, sparseRoomPcd, syntheticPcd, tiltedFloorAngles, tiltedFloorPcd, truthKeys } from "./synthetic";
 
+// Each test opens its own file. The server keeps the previous test's session, and a page load adopts it (GET /api/session) a moment before
+// the new upload replaces it, so a late adoption could repaint the new session. Dropping the session first isolates the tests (setup only).
+test.beforeEach(async ({ request }) => {
+  await request.delete("/api/session");
+});
+
 test("open a cloud, navigate, pick a pivot, colour, read counts", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
@@ -28,7 +34,7 @@ test("open a cloud, navigate, pick a pivot, colour, read counts", async ({ page 
       buffer: syntheticPcd(),
     });
     const status = page.locator("#statusbar");
-    await expect(status.locator('[data-status="Original"]')).toContainText(String(TOTAL));
+    await expect(page.locator('#cloud-details [data-status="Original"]')).toContainText(String(TOTAL));
     await expect(status.locator('[data-status="Displayed"]')).toContainText(String(FLOOR + GHOST));
     await expect(status.locator('[data-status="Candidates"]')).toContainText("—");
     await expect(status.locator('[data-status="Invalid (active/total)"]')).toContainText("1 / 1");
@@ -40,16 +46,16 @@ test("open a cloud, navigate, pick a pivot, colour, read counts", async ({ page 
 
   await test.step("E2E-02 views and projection", async () => {
     await page.locator('[data-control="cube-top"]').click();
-    await expect(page.locator("#inspector")).toContainText("Orthographic");
+    await expect(page.locator("#cloud-details")).toContainText("Orthographic");
     await page.locator('[data-control="view-perspective"]').click();
-    await expect(page.locator("#inspector")).toContainText("Perspective");
+    await expect(page.locator("#cloud-details")).toContainText("Perspective");
     await page.locator('[data-control="view-perspective"]').click();
     await page.locator('[data-control="cube-top"]').click();
   });
 
   await test.step("E2E-02 pivot: reset, pick", async () => {
     await page.locator('[data-control="pivot-reset"]').click();
-    await expect(page.locator("#inspector")).toContainText("4.5, 4.5, 1.5");
+    await expect(page.locator("#cloud-details")).toContainText("4.5, 4.5, 1.5");
     // the typed fields and Set pivot are gone; the pivot is set by picking. Top view: the point under the click with the greatest Z is picked
     await expect(page.locator('[data-control="pivot-x"]')).toHaveCount(0);
     await expect(page.locator('[data-control="pivot-set"]')).toHaveCount(0);
@@ -57,7 +63,7 @@ test("open a cloud, navigate, pick a pivot, colour, read counts", async ({ page 
     await expect(page.locator("#modebar")).toContainText("Tool: Pick pivot");
     await expect(page.locator('[data-control="pivot-pick"]')).toHaveAttribute("aria-pressed", "true");
     await pickAtWorld(page, [4, 4, 0]);
-    await expect(page.locator("#inspector")).toContainText("Pivot4, 4, 3");
+    await expect(page.locator("#cloud-details")).toContainText("Pivot4, 4, 3");
     await expect(page.locator("#modebar")).toContainText("Tool: None");
   });
 
@@ -65,7 +71,9 @@ test("open a cloud, navigate, pick a pivot, colour, read counts", async ({ page 
     const colour = page.locator('[data-control="colour-mode"]');
     expect(await colour.locator("option").evaluateAll((o) => o.map((x) => (x as HTMLOptionElement).value))).toEqual(["turbo", "viridis", "flat", "distance", "normals"]);
     await expect(colour).toHaveValue("turbo");
+    await openPop(page, "display");
     await colour.selectOption("viridis");
+    await closePop(page, "display");
     await expect(colour).toHaveValue("viridis");
     await expect(page.locator("#legend-ramp")).toHaveAttribute("data-ramp", "viridis");
   });
@@ -88,7 +96,7 @@ test("E2E-01 open by dropping a file", async ({ page }) => {
     return d;
   }, syntheticPcd().toString());
   await page.dispatchEvent("body", "drop", { dataTransfer: dt });
-  await expect(page.locator('#statusbar [data-status="Original"]')).toContainText(String(TOTAL));
+  await expect(page.locator('#cloud-details [data-status="Original"]')).toContainText(String(TOTAL));
   const bad = await page.evaluateHandle(() => {
     const d = new DataTransfer();
     d.items.add(new File(["x"], "notes.txt"));
@@ -116,10 +124,7 @@ test("6b real UI: filter, box select by numbers, preview counts, apply, undo, re
   });
   await page.goto("/");
   await page.locator("#file-input").setInputFiles({ name: "synthetic.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
-  const status = page.locator("#statusbar");
-  const stat = (name: string) => status.locator(`[data-status="${name}"]`);
-  const exact = (name: string, v: number | string) => expect(stat(name)).toHaveText(new RegExp(`^${name.replace(/[()/]/g, "\\$&")}: ${v}$`), { timeout: 15000 });
-  const num = async (name: string) => Number((await stat(name).innerText()).replace(/[^0-9]/g, ""));
+  const { stat, exact, num } = statOf(page);
   const ctl = (id: string) => page.locator(`[data-control="${id}"]`);
   const setNum = async (id: string, v: number) => {
     await expandFilterBox(page, id);
@@ -178,10 +183,7 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
   });
   await page.goto("/");
   await page.locator("#file-input").setInputFiles({ name: "synthetic.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
-  const status = page.locator("#statusbar");
-  const stat = (name: string) => status.locator(`[data-status="${name}"]`);
-  const exact = (name: string, v: number | string) => expect(stat(name)).toHaveText(new RegExp(`^${name.replace(/[()/]/g, "\\$&")}: ${v}$`), { timeout: 15000 });
-  const num = async (name: string) => Number((await stat(name).innerText()).replace(/[^0-9]/g, ""));
+  const { stat, exact, num } = statOf(page);
   const ctl = (id: string) => page.locator(`[data-control="${id}"]`);
   const setNum = async (id: string, v: number) => {
     await expandFilterBox(page, id);
@@ -190,7 +192,8 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
   };
   await exact("Displayed", String(FLOOR + GHOST));
   const activeBefore = await num("Active");
-  await expect(page.locator("#unsaved-badge")).toHaveText("No unsaved edits");
+  await expect(page.locator("#unsaved-badge")).toBeHidden();
+  await expect(page.locator("#unsaved-badge")).toHaveAttribute("title", "No unsaved edits");
 
   await test.step("E2E-03 box numbers preview exactly the ghost; Protected 0", async () => {
     await ctl("tool-box").click();
@@ -225,7 +228,8 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
     await page.screenshot({ path: "/out/editor.png" });
     await ctl("apply").click();
     await exact("Active", String(activeBefore - GHOST));
-    await expect(page.locator("#unsaved-badge")).toHaveText("Unsaved edits");
+    await expect(page.locator("#unsaved-badge")).toHaveText("Edited");
+    await expect(page.locator("#unsaved-badge")).toHaveAttribute("title", "Unsaved edits");
     await ctl("undo").click();
     await exact("Active", String(activeBefore));
     await ctl("redo").click();
@@ -236,22 +240,23 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
     await ctl("compare-overlay").click();
     await expect(page.locator("#modebar")).toContainText("View: Overlay (read-only)");
     await expect(page.locator("#counts-panel")).toContainText(`Deleted${GHOST} (`);
-    await expect(page.locator("#fileinfo")).toContainText(`Rendered all ${GHOST} eligible points`);
+    await expect(page.locator("#cloud-details")).toContainText(`Rendered all ${GHOST} eligible points`);
     await expect(ctl("apply")).toBeDisabled();
     await expect(ctl("tool-box")).toBeDisabled();
     await ctl("compare-split").click();
     await expect(page.locator("#modebar")).toContainText("View: Split (read-only)");
-    await expect(page.locator("#fileinfo")).toContainText("Right drawn");
+    await expect(page.locator("#cloud-details")).toContainText("Right drawn");
     await exact("Active", String(activeBefore - GHOST));
     await ctl("compare-edited").click();
     await expect(page.locator("#modebar")).not.toContainText("View:");
     await exact("Active", String(activeBefore - GHOST));
-    await ctl("tool-box").click(); // leave the tool
   });
 
   await test.step("AC-17 view state: colouring is stored with the session", async () => {
     const put = page.waitForRequest((r) => r.method() === "PUT" && r.url().endsWith("/api/session/client-state") && JSON.parse(r.postData() ?? "{}")?.colour === "viridis");
+    await openPop(page, "display");
     await ctl("colour-mode").selectOption("viridis");
+    await closePop(page, "display");
     await put; // debounced one second after the last change
   });
 
@@ -279,7 +284,8 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
       void d.accept();
     });
     await tab.goto("/");
-    await expect(tab.locator("#unsaved-badge")).toHaveText("Unsaved edits");
+    await expect(tab.locator("#unsaved-badge")).toHaveText("Edited");
+    await expect(tab.locator("#unsaved-badge")).toHaveAttribute("title", "Unsaved edits");
     await tab.locator("body").click(); // browsers only show the dialog after a user gesture
     await tab.reload();
     expect(seen).toContain("beforeunload");
@@ -291,7 +297,8 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
     expect(dl.suggestedFilename()).toBe("synthetic_session_v1.pcdsession");
     const path = testInfo.outputPath("session.pcdsession");
     await dl.saveAs(path);
-    await expect(page.locator("#unsaved-badge")).toHaveText("No unsaved edits");
+    await expect(page.locator("#unsaved-badge")).toBeHidden();
+    await expect(page.locator("#unsaved-badge")).toHaveAttribute("title", "No unsaved edits");
     await expect(page.locator("#notices")).toContainText("Session download started");
     // another file replaces the open session, then the downloaded session is reopened through the picker
     await page.locator("#file-input").setInputFiles({ name: "other.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
@@ -300,7 +307,8 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
     await exact("Original", String(TOTAL));
     await exact("Active", String(activeBefore - GHOST));
     await exact("Displayed", String(FLOOR));
-    await expect(page.locator("#unsaved-badge")).toHaveText("No unsaved edits");
+    await expect(page.locator("#unsaved-badge")).toBeHidden();
+    await expect(page.locator("#unsaved-badge")).toHaveAttribute("title", "No unsaved edits");
     await expect(ctl("undo")).toBeEnabled();
     await expect(ctl("colour-mode")).toHaveValue("viridis"); // restored from the archive's client state
   });
@@ -315,7 +323,39 @@ test("6c real UI: protection, stale preview, compare, export and session downloa
   expect(errors).toEqual([]);
 });
 
+/** The popover anchors by popover id. */
+const POP_ANCHOR: Record<string, string> = { display: "display-open", details: "details-open", help: "help", history: "history-open" };
+/** Opens a popover through its anchor only if it is closed. */
+async function openPop(page: import("@playwright/test").Page, id: string) {
+  const a = page.locator(`[data-control="${POP_ANCHOR[id]}"]`);
+  if ((await a.getAttribute("aria-expanded")) !== "true") await a.click();
+  await expect(a).toHaveAttribute("aria-expanded", "true");
+}
+/** Closes a popover through its anchor only if it is open (Esc cannot, while a select holds the focus). */
+async function closePop(page: import("@playwright/test").Page, id: string) {
+  const a = page.locator(`[data-control="${POP_ANCHOR[id]}"]`);
+  if ((await a.getAttribute("aria-expanded")) === "true") await a.click();
+  await expect(a).toHaveAttribute("aria-expanded", "false");
+}
+
+/** The status readers: Original and Active live in the Cloud details popover (bare value), the rest in the status bar ("Name: value"). */
+function statOf(page: import("@playwright/test").Page) {
+  const inDetails = (name: string) => name === "Original" || name === "Active";
+  const stat = (name: string) => (inDetails(name) ? page.locator("#cloud-details") : page.locator("#statusbar")).locator(`[data-status="${name}"]`);
+  const exact = (name: string, v: number | string) =>
+    expect(stat(name)).toHaveText(inDetails(name) ? new RegExp(`^${v}$`) : new RegExp(`^${name.replace(/[()/]/g, "\\$&")}: ${v}$`), { timeout: 15000 });
+  const num = async (name: string) => Number((await stat(name).innerText()).replace(/[^0-9]/g, ""));
+  return { stat, exact, num };
+}
+
 /** Shared helpers for the part 7 tests. */
+/** Opens the Box panel's Fit menu (22-6); the next `box-fit-*` click then closes it. Never used in E2E-163..167. */
+const openFit = (page: import("@playwright/test").Page) => page.locator('[data-control="box-fit"]').click();
+/** Opens the Box panel's Handles disclosure when it is closed (22-6). Never used in E2E-163..167. */
+const openHandles = async (page: import("@playwright/test").Page) => {
+  if (!(await page.locator('[data-control="gizmo-step"]').isVisible())) await page.locator("details.disc > summary", { hasText: "Handles" }).click();
+};
+
 function helpers(page: import("@playwright/test").Page) {
   // an earlier test's session may still be open and unsaved: accept replacing it; bulk-delete confirms are recorded and dismissed
   const dialogs: string[] = [];
@@ -325,11 +365,7 @@ function helpers(page: import("@playwright/test").Page) {
       void d.dismiss();
     } else void d.accept();
   });
-  const status = page.locator("#statusbar");
-  const stat = (name: string) => status.locator(`[data-status="${name}"]`);
-  const exact = (name: string, v: number | string) =>
-    expect(stat(name)).toHaveText(new RegExp(`^${name.replace(/[()/]/g, "\\$&")}: ${v}$`), { timeout: 15000 });
-  const num = async (name: string) => Number((await stat(name).innerText()).replace(/[^0-9]/g, ""));
+  const { stat, exact, num } = statOf(page);
   const ctl = (id: string) => page.locator(`[data-control="${id}"]`);
   const setNum = async (id: string, v: number) => {
     await expandFilterBox(page, id);
@@ -390,8 +426,9 @@ test("E2E-10 7a filter redraws the canvas and a filter change never leaves a sta
   await exact("Active", String(activeBefore));
 
   // scope Active keeps the hidden floor selected and says so
+  await ctl("tool-box").click(); // Apply disarmed the Box (R22-1)
   await boxEverything();
-  await page.locator('[data-control="scope-select"]').selectOption("active");
+  await page.locator('[data-control="scope-active"]').click();
   await exact("Selected", String(FLOOR + GHOST));
   await expect(page.locator("#scope-note")).toContainText(`${FLOOR} selected points are outside the display filter`, { timeout: 15000 });
   expect(errors).toEqual([]);
@@ -520,7 +557,7 @@ test("E2E-14 7a first load logs no console errors or failed requests; a bad file
 });
 
 type EditorHook = {
-  state: () => { camera: { target: number[]; orientation: number[]; distance: number; ortho: boolean }; tools: { box: { center: number[]; dimensions: number[]; quat: number[] }; protection: { global: { enabled: boolean; min: number; max: number } } } };
+  state: () => { renderTheme: string; camera: { target: number[]; orientation: number[]; distance: number; ortho: boolean }; tools: { box: { center: number[]; dimensions: number[]; quat: number[] }; protection: { global: { enabled: boolean; min: number; max: number } } } };
   projectWorld: (p: number[]) => { x: number; y: number } | null;
   handlePositions: () => { id: string; x: number; y: number }[];
   boxBodyPoint: () => { x: number; y: number } | null;
@@ -628,11 +665,13 @@ test("E2E-16 7b1 rectangle select with the real mouse in Top then Left view, fit
   await exact("Candidates", String(truth));
   await exact("Selected", String(truth));
 
+  await openFit(page);
   await ctl("box-fit-view").click();
   await exact("Candidates", String(await num("Displayed")));
   await setNum("filter-z-min", 0.5);
   await setNum("filter-z-max", 10);
   await exact("Displayed", String(ROOM.wall + ROOM.ghost + ROOM.noise));
+  await openFit(page);
   await ctl("box-fit-displayed").click();
   await exact("Candidates", String(ROOM.wall + ROOM.ghost + ROOM.noise));
   await page.screenshot({ path: "/out/rect-select.png" });
@@ -644,7 +683,7 @@ test("E2E-18 7b1 legend, headline numbers and the kept-by-protection warning equ
   // legend chips use the palette colours
   await expect(page.locator('#legend [data-legend="selected"]')).toHaveCSS("background-color", "rgb(255, 159, 28)");
   await expect(page.locator('#legend [data-legend="protected"]')).toHaveCSS("background-color", "rgb(0, 209, 255)");
-  await expect(page.locator("#headline-delete")).toHaveText("Will delete —");
+  await expect(page.locator('[data-control="apply"]')).toHaveText("Delete");
   await expect(page.locator("#kept-warning")).toBeHidden();
 
   await ctl("prot-enabled").check();
@@ -657,8 +696,9 @@ test("E2E-18 7b1 legend, headline numbers and the kept-by-protection warning equ
   const kept = ROOM.floor + ROOM.floorGhost; // z 0 and z 0.02 lie inside +-0.05
   await exact("Selected", String(valid));
   await exact("Candidates", String(valid - kept));
-  await expect(page.locator("#headline-delete")).toHaveText(`Will delete ${valid - kept}`);
-  await expect(page.locator("#headline-kept")).toHaveText(`Kept by protection ${kept}`);
+  await expect(page.locator('[data-control="apply"]')).toHaveText(`Delete ${valid - kept}`);
+  await expect(page.locator("#kept-chip")).toHaveText(`${kept} kept`);
+  await expect(page.locator("#kept-chip")).toHaveAttribute("title", `Kept by protection ${kept}`);
   await expect(page.locator("#kept-warning")).toBeVisible();
   await expect(page.locator("#kept-warning")).toHaveText(`${kept} selected points lie inside the protected interval and will be kept (ghosts in the floor slab?)`);
 
@@ -674,7 +714,8 @@ test("E2E-18 7b1 legend, headline numbers and the kept-by-protection warning equ
   await ctl("prot-enabled").uncheck();
   await exact("Candidates", String(valid));
   await expect(page.locator("#kept-warning")).toBeHidden();
-  await expect(page.locator("#headline-kept")).toHaveText("Kept by protection 0");
+  await expect(page.locator("#kept-chip")).toBeHidden();
+  await expect(page.locator("#kept-chip")).toHaveAttribute("title", "Kept by protection 0");
 });
 
 test("E2E-18b 7b1 draw budget: Rendered equals the budget exactly, the default draws everything, Auto is offered", async ({ page }) => {
@@ -688,7 +729,9 @@ test("E2E-18b 7b1 draw budget: Rendered equals the budget exactly, the default d
   await exact("Original", "150,000");
   await expect(stat("Rendered")).toHaveText("Rendered: all 150,000 eligible points", { timeout: 20000 });
   await expect(page.locator('[data-control="budget"] option', { hasText: "Auto (max)" })).toHaveCount(1);
+  await openPop(page, "display");
   await page.locator('[data-control="budget"]').selectOption("100000");
+  await closePop(page, "display");
   await expect(stat("Rendered")).toHaveText("Rendered: 100,000 of 150,000 eligible (sampled to budget)", { timeout: 20000 });
 });
 
@@ -822,7 +865,7 @@ test("E2E-20 7b2 the ? key and the ? button open a help overlay listing every ke
   await expect(help).not.toBeVisible();
 });
 
-const OVERFLOW_SELECTORS = ["#toolbar", "#viewbar", "#tools", "#inspector", "#toolpanels", "#fileinfo", "#editpanels", "#statusbar", "#modebar"];
+const OVERFLOW_SELECTORS = ["#toolbar", "#tools", "#inspector", "#toolpanels", "#editpanels", "#statusbar", "#modebar", "#palette"];
 
 async function checkLayout(page: import("@playwright/test").Page, w: number, h: number) {
   const scan = () =>
@@ -914,7 +957,7 @@ test("E2E-22 7b2 a slow upload can be cancelled: the progress goes away, the ope
   await page.waitForTimeout(500);
   await expect(page.locator("#notices")).not.toContainText("Cannot open");
   await exact("Original", String(ROOM_TOTAL));
-  await expect(page.locator("#inspector")).toContainText("room.pcd");
+  await expect(page.locator("#cloud-details")).toContainText("room.pcd");
   await expect(ctl("upload-cancel")).toBeHidden();
 });
 
@@ -925,7 +968,7 @@ test("E2E-24 7b2 first page shows the start banner; a reloaded session starts Ad
   await expect(page.locator("#start-banner")).toBeHidden();
   await ctl("tool-cluster").click();
   await ctl("op-subtract").click();
-  await ctl("scope-select").selectOption("active");
+  await ctl("scope-active").click();
   await ctl("cluster-max-points").fill("1234");
   await ctl("cluster-max-points").press("Enter");
   await expect(page.locator("#modebar")).toContainText("Op: Subtract");
@@ -1105,6 +1148,7 @@ test("E2E-30 7c3 Fit displayed with a Y filter on non-float32 limits selects exa
   const displayed = rows.filter((r) => [0, 1, 2].every((i) => Number.isFinite(r[i])) && r[1] >= 3.2 && r[1] <= 8).length;
   await exact("Displayed", String(displayed));
   await ctl("tool-box").click();
+  await openFit(page);
   await ctl("box-fit-displayed").click();
   await exact("Selected", String(displayed));
   await exact("Candidates", String(displayed));
@@ -1170,7 +1214,7 @@ test("E2E-34 9 security headers reach the browser and the page frames nothing", 
   });
   await page.goto("/");
   await page.locator("#file-input").setInputFiles({ name: "synthetic.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
-  await expect(page.locator('#statusbar [data-status="Original"]')).toContainText(String(TOTAL));
+  await expect(page.locator('#cloud-details [data-status="Original"]')).toContainText(String(TOTAL));
   await page.waitForTimeout(500);
   expect(violations).toEqual([]);
 });
@@ -1242,6 +1286,7 @@ test("E2E-36 10 a collapsed but active box shows a chip with its value and the f
   const fbox = page.locator('.fbox[data-box="z-max"]');
   await expect(fbox).toHaveClass(/active/);
   await expect(fbox).toHaveClass(/collapsed/);
+  await transitionsSettled(page); // the chip's background fades to the accent: read the settled colour
   expect(await ctl("filter-z-max-toggle").evaluate((e) => getComputedStyle(e).backgroundColor)).not.toBe(await ctl("filter-z-min-toggle").evaluate((e) => getComputedStyle(e).backgroundColor));
   await expect(ctl("filter-z-max-toggle")).toContainText("1.5");
   await exact("Displayed", n);
@@ -1258,7 +1303,7 @@ test("E2E-156 17 the six filter boxes open collapsed as chips with no plane draw
   await expect(fboxes).toHaveCount(6);
   for (const b of await fboxes.all()) {
     await expect(b).toHaveClass(/collapsed/);
-    await expect(b.locator(".ftog")).toHaveText(/^[XYZ](>=|<=) /);
+    await expect(b.locator(".ftog")).toHaveText(/^[XYZ] (≥|≤) /);
   }
   await expect(ctl("filter-x-min")).toBeHidden();
   expect((await planesNow(page)).map((q) => q.key)).toEqual([]);
@@ -1273,7 +1318,7 @@ test("E2E-156 17 the six filter boxes open collapsed as chips with no plane draw
 });
 
 for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
-  test(`E2E-157 17 the armed tool's section is the first section of the right panel at ${w}x${hgt}; File, Counts and View keep their order and fold state`, async ({ page }) => {
+  test(`E2E-157 17 the armed tool's section is the first section of the right panel at ${w}x${hgt}; it is the only fold section of the right panel`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: hgt });
     const t = helpers(page);
     await openRoom(page, t.exact);
@@ -1282,7 +1327,7 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     const open = (id: string) => page.locator(`details[data-section="${id}"]`).evaluate((d) => (d as HTMLDetailsElement).open);
     const fold = (id: string) => page.locator(`details[data-section="${id}"] > summary`);
     const idle = await order();
-    expect(idle.slice(0, 3)).toEqual(["file", "counts", "view"]);
+    expect(idle).toEqual([]);
     await t.ctl("tool-cluster").click();
     expect(await first()).toBe("cluster:true");
     await fold("cluster").click(); // fold it while armed: respected
@@ -1291,14 +1336,12 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     expect(await order()).toEqual(idle);
     await t.ctl("tool-cluster").click(); // arm again: opens again, first again
     expect(await first()).toBe("cluster:true");
-    expect((await order()).slice(1, 4)).toEqual(["file", "counts", "view"]);
+    expect((await order()).slice(1)).toEqual(idle);
     await t.ctl("tool-box").click();
     expect(await first()).toBe("box:true");
     await t.ctl("tool-box").click();
-    expect(await first()).toBe("file:true");
-    expect(await open("file")).toBe(true);
-    expect(await open("counts")).toBe(true);
-    expect(await open("view")).toBe(true);
+    expect(await first()).toBeUndefined();
+    expect(await order()).toEqual([]);
   });
 }
 
@@ -1342,7 +1385,7 @@ test("E2E-40 10 per-box reset and global reset restore the cloud bound and the s
   await setNum("filter-z-max", 1.5);
   await setNum("filter-x-min", 5);
   await exact("Displayed", String(rows.filter((r) => r[2] <= 1.5 && r[0] >= 5).length));
-  await expect(page.locator("#inspector")).toContainText(/Displayed: /);
+  await expect(ctl("filter-reset-all")).toHaveAttribute("aria-description", /^2 filters active/);
   await ctl("filter-z-max-reset").click();
   await exact("Displayed", String(rows.filter((r) => r[0] >= 5).length));
   const f = await filtersNow(page);
@@ -1471,6 +1514,12 @@ const protNow = (page: import("@playwright/test").Page) =>
     const s = (window as unknown as { __editor: ProtHook }).__editor.state();
     return { g: s.tools.protection.global, floorT: s.floorT, open: s.floorPanelOpen };
   });
+/** The page position of a protection arrow's tip (the only place a 14b arrow is grabbed), by hook key such as "global-max". */
+const arrowTip = async (page: import("@playwright/test").Page, key: string) => {
+  const a = (await page.evaluate(() => (window as unknown as { __editor: TiltHook }).__editor.protectionArrows())).find((r) => r.key === key);
+  expect(a?.tip, `arrow ${key}`).toBeTruthy();
+  return a!.tip!;
+};
 const protSummary = (page: import("@playwright/test").Page) => page.locator("details.panel > summary", { hasText: "Height protection" });
 
 test("E2E-39 10 dragging the band's arrows with the real mouse sets the protected slab; counts equal fixture truth", async ({ page }) => {
@@ -1484,28 +1533,21 @@ test("E2E-39 10 dragging the band's arrows with the real mouse sets the protecte
   const inSlab = (lo: number, hi: number) => String(rows.filter((r) => r[2] >= lo && r[2] <= hi).length);
   await exact("Protected", inSlab(0.5, 1.5));
   await page.waitForTimeout(400);
-  // the arrows start at the XY centre of the active bounds
-  const centre = (z: number) =>
-    page.evaluate((zz) => {
-      const e = (window as unknown as { __editor: { projectWorld: (p: number[]) => { x: number; y: number } | null; state: () => { session: { active_bounds: { min: number[]; max: number[] } } } } }).__editor;
-      const b = e.state().session.active_bounds;
-      return e.projectWorld([(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, zz]);
-    }, z);
-  // the upper plane's arrow points up from the footprint centre: grab it 20 px above that point
-  const up = (await centre(1.5))!;
-  await page.mouse.move(up.x, up.y - 20);
+  // the upper plane's arrow points up from the footprint centre: grab it at its tip and drag it 20 px further up
+  const up = await arrowTip(page, "global-max");
+  await page.mouse.move(up.x, up.y);
   await page.mouse.down();
-  await page.mouse.move(up.x, up.y - 40, { steps: 6 });
+  await page.mouse.move(up.x, up.y - 20, { steps: 6 });
   await page.mouse.up();
   const after = await protNow(page);
   expect(after.g.min).toBe(0.5); // the lower edge is untouched
   expect(after.g.max).toBeGreaterThan(1.5);
   await exact("Protected", inSlab(0.5, after.g.max));
-  // the lower plane's arrow points down
-  const lo = (await centre(0.5))!;
-  await page.mouse.move(lo.x, lo.y + 20);
+  // the lower plane's arrow points down: its tip, 15 px further down
+  const lo = await arrowTip(page, "global-min");
+  await page.mouse.move(lo.x, lo.y);
   await page.mouse.down();
-  await page.mouse.move(lo.x, lo.y + 35, { steps: 5 });
+  await page.mouse.move(lo.x, lo.y + 15, { steps: 5 });
   await page.mouse.up();
   const after2 = await protNow(page);
   expect(after2.g.min).toBeLessThan(0.5);
@@ -1520,10 +1562,10 @@ test("E2E-39 10 dragging the band's arrows with the real mouse sets the protecte
   await expect(ctl("prot-min")).toHaveValue("-0.05", { timeout: 15000 });
   await page.keyboard.press("3");
   await page.waitForTimeout(400);
-  const top = (await centre(0.05))!;
-  await page.mouse.move(top.x, top.y - 20);
+  const top = await arrowTip(page, "global-max");
+  await page.mouse.move(top.x, top.y);
   await page.mouse.down();
-  await page.mouse.move(top.x, top.y - 35, { steps: 5 });
+  await page.mouse.move(top.x, top.y - 15, { steps: 5 });
   await page.mouse.up();
   const picked = await protNow(page);
   expect(picked.g.max).toBeGreaterThan(0.05);
@@ -1584,7 +1626,7 @@ const dragYRing = async (page: import("@playwright/test").Page, setNum: (id: str
   await setNum("prot-max", 0.5);
   await setNum("prot-min", -0.5);
   await page.waitForTimeout(400);
-  const ring = (await page.evaluate(() => (window as unknown as { __editor: TiltHook }).__editor.tiltRings())).find((r) => r.id === "y")!;
+  const ring = (await page.evaluate(() => (window as unknown as { __editor: TiltHook }).__editor.tiltRings())).find((r) => r.id === "tilt-y+")!;
   const a = ring.pts[0]!;
   const b = ring.pts[3]!;
   await realDrag(page, a, b);
@@ -1617,13 +1659,13 @@ test("E2E-44 10 the tilted slab is fitted to a tilted floor with the real mouse 
   expect(truth).toBe(TILTED.floor); // the fixture: the slab holds the floor and nothing else
   await exact("Protected", String(truth));
 
-  // the upper arrow, grabbed halfway along its shaft, widens the slab upwards
+  // the upper arrow, grabbed at its tip (14b arrows are picked only there), widens the slab upwards
   const arrows = await page.evaluate(() => (window as unknown as { __editor: TiltHook }).__editor.protectionArrows());
   const upper = arrows.filter((a) => a.base && a.tip).sort((p, q) => p.tip!.y - q.tip!.y)[0]!;
   const dx = upper.tip!.x - upper.base!.x;
   const dy = upper.tip!.y - upper.base!.y;
   const len = Math.hypot(dx, dy);
-  const g = { x: upper.base!.x + dx / 2, y: upper.base!.y + dy / 2 };
+  const g = { x: upper.tip!.x, y: upper.tip!.y };
   await realDrag(page, g, { x: g.x + (dx / len) * 25, y: g.y + (dy / len) * 25 });
   const widened = await tiltNow(page);
   expect(widened.max).toBeGreaterThan(hi);
@@ -1643,7 +1685,6 @@ test("E2E-44 10 the tilted slab is fitted to a tilted floor with the real mouse 
   await ctl("apply").click();
   await exact("Active", String(TILTED.floor));
   expect(await num("Original")).toBe(TILTED.floor + TILTED.ghost);
-  await ctl("tool-box").click(); // leave the tool
   await exact("Protected", String(TILTED.floor));
 
   // Level returns both angles to zero
@@ -1706,49 +1747,42 @@ test("E2E-46 10-8 each inspector section folds by click and keyboard, the fold s
   await openRoom(page, exact);
   const sum = (id: string) => page.locator(`details[data-section="${id}"] > summary`);
   const det = (id: string) => page.locator(`details[data-section="${id}"]`);
+  // the fold sections that survive part 22-5 and have their own controls: Layers (click) and the armed Box (keyboard)
+  await ctl("tool-box").click();
   const probes: Record<string, () => import("@playwright/test").Locator> = {
-    file: () => page.locator("#fileinfo details[data-section=file] dl"),
-    counts: () => page.locator("#counts-panel"),
-    view: () => page.locator("#fileinfo details[data-section=view] dl"),
-    display: () => ctl("filter-reset-all"),
-    history: () => page.locator("details[data-section=history] > p"), // "No edits yet" (an empty list has no height)
+    layers: () => ctl("layer-new"),
+    box: () => ctl("box-size-x"),
   };
   for (const id of Object.keys(probes)) {
     await expect(det(id)).toHaveAttribute("open", "");
     await expect(probes[id]()).toBeVisible();
   }
-  await expect(det("view")).toBeVisible();
-  const before = await page.locator("#counts-panel").innerText();
+  const countsText = () => page.locator("#counts-panel").innerText();
+  const before = await countsText();
+  const putWith = (ok: (folded: Record<string, boolean> | undefined) => boolean) =>
+    page.waitForRequest((r) => r.method() === "PUT" && r.url().endsWith("/api/session/client-state") && ok(JSON.parse(r.postData() ?? "{}")?.ui?.sectionsOpen));
   // click collapses; the keyboard (Enter on the focused summary) toggles too
-  for (const id of ["file", "counts", "view", "display"]) await sum(id).click();
-  await sum("history").focus();
+  const savedFolded = putWith((f) => f?.layers === false && f?.box === false);
+  await sum("layers").click();
+  await sum("box").focus();
   await page.keyboard.press("Enter");
   for (const id of Object.keys(probes)) await expect(probes[id]()).toBeHidden();
-  await ctl("tool-box").click();
-  await expect(ctl("box-size-x")).toBeVisible();
-  await sum("box").click();
-  await expect(ctl("box-size-x")).toBeHidden();
-  await expect.poll(async () => Object.keys(await SECTIONS_OPEN(page)).sort()).toEqual(["box", "counts", "display", "file", "history", "view"]);
-  await page.waitForTimeout(1600); // the client state is saved one second after the last change
+  await expect.poll(async () => Object.keys(await SECTIONS_OPEN(page)).sort()).toEqual(["box", "layers"]);
+  await savedFolded; // the client state is saved one second after the last change
   await page.reload();
   await exact("Original", String(ROOM_TOTAL));
-  await expect.poll(async () => Object.keys(await SECTIONS_OPEN(page)).sort()).toEqual(["box", "counts", "display", "file", "history", "view"]);
+  await expect.poll(async () => Object.keys(await SECTIONS_OPEN(page)).sort()).toEqual(["box", "layers"]);
   for (const id of Object.keys(probes)) await expect(probes[id]()).toBeHidden();
   await ctl("tool-box").click();
   // 17: arming a tool opens its folded section (it is the first section of the panel); the other folds are untouched
   await expect(ctl("box-size-x")).toBeVisible();
-  await expect.poll(async () => Object.keys(await SECTIONS_OPEN(page)).sort()).toEqual(["counts", "display", "file", "history", "view"]);
+  await expect.poll(async () => Object.keys(await SECTIONS_OPEN(page)).sort()).toEqual(["layers"]);
   // reopen all: nothing was lost and the counts read the same. The all-open state is also saved to the server (the next
   // test's page restores it), so this test leaves no folded section behind.
-  const savedOpen = page.waitForRequest((r) => {
-    if (r.method() !== "PUT" || !r.url().endsWith("/api/session/client-state")) return false;
-    const folded = JSON.parse(r.postData() ?? "{}")?.ui?.sectionsOpen;
-    return folded === undefined || Object.keys(folded).length === 0;
-  });
-  for (const id of ["file", "counts", "view", "display", "history"]) await sum(id).click();
+  const savedOpen = putWith((f) => f === undefined || Object.keys(f).length === 0);
+  await sum("layers").click();
   for (const id of Object.keys(probes)) await expect(probes[id]()).toBeVisible();
-  await expect(ctl("box-size-x")).toBeVisible();
-  expect(await page.locator("#counts-panel").innerText()).toBe(before);
+  expect(await countsText()).toBe(before);
   await savedOpen;
   // an inspector never scrolls sideways
   expect(await page.evaluate(() => { const a = document.getElementById("inspector")!; return a.scrollWidth <= a.clientWidth; })).toBe(true);
@@ -1845,7 +1879,6 @@ function tl(page: Pg) {
     await base.exact("Active", String(ROOM_TOTAL - ROOM.ghost - ROOM.wall));
     await base.setNum("filter-z-min", 1);
     await base.exact("Displayed", String(ROOM.noise));
-    await base.ctl("tool-cluster").click(); // Select displayed is refused while a tool is armed
     await base.ctl("sel-select-displayed").click();
     await base.exact("Candidates", String(ROOM.noise));
     await base.ctl("apply").click();
@@ -1877,7 +1910,7 @@ test("E2E-50 11 three deletions with three tools make three step cards with icon
   await expect(t.marker).toHaveAttribute("aria-valuetext", "After step 3 of 3");
   const h = await sidsOf(page);
   expect(h.entries.map((e) => e.count)).toEqual([ROOM.ghost, ROOM.wall, ROOM.noise]);
-  await expect(page.locator("#history-list li")).toHaveCount(3); // the right-panel list stays
+  await expect(page.locator("#history-list li")).toHaveCount(3); // the History popover's list (closed, but in the DOM)
   expect(errors).toEqual([]);
 });
 
@@ -1945,8 +1978,7 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     await t.boxAt(0, 0, 0, 0.5, 0.5, 0.5);
     await t.setNum("box-center-y", 0);
     for (let i = 0; i < 25; i++) {
-      await t.setNum("box-center-x", i % 20);
-      if (i >= 20) await t.setNum("box-center-y", 1);
+      await t.boxAt(i % 20, i >= 20 ? 1 : 0, 0, 0.5, 0.5, 0.5); // every Apply disarms the Box (R22-1): re-arm, same box
       await t.exact("Candidates", "1");
       await t.ctl("apply").click();
       await expect(t.cards).toHaveCount(i + 1);
@@ -2120,7 +2152,8 @@ test("E2E-55 11 deleting the middle step returns only its points; dismissing the
   await expect(t.card(0)).toHaveAttribute("title", /^Box delete, 27 points/);
   await expect(t.card(1)).toContainText(String(ROOM.noise));
   await expect(t.marker).toHaveAttribute("aria-valuenow", "2");
-  await expect(page.locator("#unsaved-badge")).toHaveText("Unsaved edits");
+  await expect(page.locator("#unsaved-badge")).toHaveText("Edited");
+  await expect(page.locator("#unsaved-badge")).toHaveAttribute("title", "Unsaved edits");
   // keyboard: Delete on a focused step removes it (with the confirmation) and never fires the global Apply.
   // The box tool restarts its preview after the delete above; a step gesture under that job is refused with a notice by
   // design (seen as the busy notice in 2 of 120 runs), so wait for idle like the marker gestures do.
@@ -2167,6 +2200,7 @@ test("E2E-56 11 applying while rolled back asks first: dismiss changes nothing, 
 test("E2E-57 11 rename by double-click on the name, by the pencil and by F2; the icon double-click highlights nothing new", async ({ page }) => {
   const t = tl(page);
   await t.threeSteps();
+  await t.card(1).hover(); // below 1700 px the label shows on hover or focus (22-8)
   await t.card(1).locator(".step-label").dblclick();
   const input = t.card(1).locator("input.step-rename");
   await expect(input).toBeFocused();
@@ -2174,7 +2208,8 @@ test("E2E-57 11 rename by double-click on the name, by the pencil and by F2; the
   await input.press("Enter");
   await expect(t.card(1).locator(".step-label")).toHaveText("Wall");
   await expect(t.card(1)).toHaveAttribute("title", /^Wall delete, 40 points/);
-  expect((await stepLayer(page)).visible).toBe(false); // the double-click did not toggle a highlight
+  await page.mouse.move(5, 5); // the pointer still over the card is a hover preview (by design), not a highlight
+  await expect.poll(async () => (await stepLayer(page)).visible).toBe(false); // the double-click did not toggle a highlight
   await t.card(0).hover();
   await t.card(0).locator('[data-act="rename"]').click();
   await t.card(0).locator("input.step-rename").fill("Ghost");
@@ -2191,6 +2226,7 @@ test("E2E-57 11 rename by double-click on the name, by the pencil and by F2; the
   await expect(t.card(2).locator(".step-label")).toHaveText("Noise");
   expect((await sidsOf(page)).entries.map((e) => e.name)).toEqual(["Ghost", "Wall", "Noise"]);
   // clearing the name goes back to the default label
+  await t.card(1).hover(); // below 1700 px the label shows on hover or focus (22-8)
   await t.card(1).locator(".step-label").dblclick();
   await t.card(1).locator("input.step-rename").fill("");
   await t.card(1).locator("input.step-rename").press("Enter");
@@ -2206,6 +2242,7 @@ test("E2E-57 11 rename by double-click on the name, by the pencil and by F2; the
 test("E2E-58 11 the strip survives save and reopen (names, order, marker, counts) and an export after a rollback holds exactly the active steps' result", async ({ page }, testInfo) => {
   const t = tl(page);
   await t.threeSteps();
+  await t.card(0).hover(); // below 1700 px the label shows on hover or focus (22-8)
   await t.card(0).locator(".step-label").dblclick();
   await t.card(0).locator("input.step-rename").fill("Ghost block");
   await t.card(0).locator("input.step-rename").press("Enter");
@@ -2400,10 +2437,10 @@ test("E2E-62 a single Cluster keeps Apply enabled across scope, protection and d
   await t.pickSeed(CL.wall);
   await t.exact("Candidates", String(ROOM.wall));
   await expect(t.ctl("apply")).toBeEnabled();
-  await t.ctl("scope-select").selectOption("active");
+  await t.ctl("scope-active").click();
   await t.exact("Candidates", String(ROOM.wall));
   await expect(t.ctl("apply")).toBeEnabled();
-  await t.ctl("scope-select").selectOption("displayed");
+  await t.ctl("scope-displayed").click();
   await t.ctl("prot-enabled").check();
   await t.setNum("prot-min", -0.1);
   await t.setNum("prot-max", 0.1);
@@ -2588,7 +2625,8 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     await page.setViewportSize({ width: w, height: hgt });
     const { exact, ctl } = helpers(page);
     await openRoom(page, exact);
-    for (const sel of ["#toolbar", "#viewbar", "#modebar"]) await expect(page.locator(sel)).toHaveCount(1); // E2E-21 skips a missing container
+    for (const sel of ["#toolbar", "#modebar"]) await expect(page.locator(sel)).toHaveCount(1); // E2E-21 skips a missing container
+    await expect(page.locator("#viewbar")).toHaveCount(0); // 22-5: the view row is gone, its controls moved into the top bar and the Display popover
     const labels: Record<string, string> = { "open-file": "Open from this computer", "save-session": "Save session", export: "Export", undo: "Undo", redo: "Redo" };
     const ys: number[] = [];
     for (const [id, label] of Object.entries(labels)) {
@@ -2625,7 +2663,7 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
   });
 }
 
-test("E2E-71 12-2 the four data modes are an icon group with exact counts; the opacity slider shows only in Overlay; Hold original and the O key are gone", async ({ page }) => {
+test("E2E-71 12-2 the four data modes are a text segment group with exact counts; the opacity slider shows only in Overlay; Hold original and the O key are gone", async ({ page }) => {
   const { exact, ctl } = helpers(page);
   await openRoom(page, exact);
   const group = page.locator('[role="group"][aria-label="Data mode"]');
@@ -2638,7 +2676,7 @@ test("E2E-71 12-2 the four data modes are an icon group with exact counts; the o
   for (const [i, id] of ids.entries()) {
     await expect(ctl(id)).toHaveCount(1);
     await expect(ctl(id)).toHaveAttribute("aria-label", names[i]);
-    await expect(ctl(id)).toHaveText("");
+    await expect(ctl(id)).toHaveText(names[i]);
     await expect(group.locator(`[data-control="${id}"]`)).toHaveCount(1);
   }
   await pressed("compare-edited");
@@ -2677,7 +2715,7 @@ test("E2E-71 12-2 the four data modes are an icon group with exact counts; the o
 });
 
 for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
-  test(`E2E-72 12-3 16-2 the camera cluster sits above the ViewCube, overlaps nothing, resets and picks the pivot; no typed pivot at ${w}x${hgt}`, async ({ page }) => {
+  test(`E2E-72 12-3 16-2 the camera cluster sits below the ViewCube, overlaps nothing, resets and picks the pivot; no typed pivot at ${w}x${hgt}`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: hgt });
     const { exact, ctl } = helpers(page);
     await openRoom(page, exact);
@@ -2692,7 +2730,7 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
       expect((await ctl(id).boundingBox())!.width).toBeGreaterThanOrEqual(30);
     }
     for (const gone of ["pivot-x", "pivot-y", "pivot-z", "pivot-set"]) await expect(ctl(gone)).toHaveCount(0);
-    await expect(page.locator("#viewbar").locator('[data-control="pivot-reset"]')).toHaveCount(0);
+    await expect(page.locator("#toolbar").locator('[data-control="pivot-reset"]')).toHaveCount(0);
     const box = async (sel: string) => (await page.locator(sel).first().boundingBox())!;
     const c = await box("#camera-cluster");
     const stage = await box("#stage");
@@ -2703,7 +2741,8 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     const hit = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
       a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
     expect(hit(c, await box("#viewcube")), "cluster vs #viewcube").toBe(false);
-    expect(c.y + c.height).toBeLessThanOrEqual((await box("#viewcube")).y);
+    const cubeBox = await box("#viewcube");
+    expect(c.y).toBeGreaterThanOrEqual(cubeBox.y + cubeBox.height);
     const fboxes = await page.locator(".fbox").all();
     expect(fboxes.length).toBeGreaterThan(0);
     for (const f of fboxes) expect(hit(c, (await f.boundingBox())!), "cluster vs .fbox").toBe(false);
@@ -2715,7 +2754,7 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     await ctl("view-perspective").click();
     await expect(ctl("view-perspective")).toHaveAttribute("aria-pressed", "false");
     await expect(ctl("view-perspective").locator("svg")).toHaveAttribute("data-icon", "ortho");
-    await expect(page.locator("#inspector")).toContainText("Orthographic");
+    await expect(page.locator("#cloud-details")).toContainText("Orthographic");
     await ctl("view-perspective").click();
     // pick: arm, the button is pressed, Esc disarms; the click sets the pivot; reset returns it to the cloud centre
     await ctl("cube-top").click();
@@ -2725,18 +2764,18 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     await expect(page.locator("#modebar")).toContainText("Tool: None");
     await expect(ctl("pivot-pick")).toHaveAttribute("aria-pressed", "false");
     await ctl("pivot-reset").click();
-    await expect(page.locator("#inspector")).toContainText("Pivot9, 9.5, 2");
+    await expect(page.locator("#cloud-details")).toContainText("Pivot9, 9.5, 2");
     await pickPivotAt(page, [15, 2, 0]);
-    await expect(page.locator("#inspector")).toContainText("Pivot15, 2, 0");
+    await expect(page.locator("#cloud-details")).toContainText("Pivot15, 2, 0");
     await expect(ctl("pivot-pick")).toHaveAttribute("aria-pressed", "false");
     await ctl("pivot-reset").click();
-    await expect(page.locator("#inspector")).toContainText("Pivot9, 9.5, 2");
+    await expect(page.locator("#cloud-details")).toContainText("Pivot9, 9.5, 2");
     await page.screenshot({ path: `/out/camera-cluster-${w}.png` });
   });
 }
 
 for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
-  test(`E2E-132 16-2 the cluster is above a smaller ViewCube and nothing in the top-right corner overlaps in Front, Left, Top and Back at ${w}x${hgt}`, async ({ page }) => {
+  test(`E2E-132 16-2 22-8 the cluster is below a smaller ViewCube and nothing in the top-right corner overlaps in Front, Left, Top and Back at ${w}x${hgt}`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: hgt });
     const { exact } = helpers(page);
     await openRoom(page, exact);
@@ -2769,8 +2808,8 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
       type R = { l: number; t: number; r: number; b: number };
       const hit = (a: R, b: R) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
       const tag = `${w} ${view}`;
-      expect(r.cluster.b, `${tag} cluster above cube`).toBeLessThanOrEqual(r.cube.t);
-      expect(r.cluster.l >= r.stage.l && r.cluster.r <= r.stage.r && r.cluster.t >= r.stage.t, `${tag} cluster inside stage`).toBe(true);
+      expect(r.cluster.t, `${tag} cluster below cube`).toBeGreaterThanOrEqual(r.cube.b);
+      expect(r.cluster.l >= r.stage.l && r.cluster.r <= r.stage.r && r.cluster.t >= r.stage.t && r.cluster.b <= r.stage.b, `${tag} cluster inside stage`).toBe(true);
       expect(r.cubeStage.r - r.cubeStage.l, `${tag} cube stage width`).toBeLessThanOrEqual(80);
       expect(hit(r.cluster, r.cubeStage), `${tag} cluster x cube stage`).toBe(false);
       for (const a of r.parts) expect(hit(r.cluster, a), `${tag} cluster x arrow or zone`).toBe(false);
@@ -2865,13 +2904,13 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
 }
 
 for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
-  test(`E2E-75 12-5 the legend is a menu, open by default, folding by click and keyboard survives a reload, and it holds the mode line without overlapping boxes or the cube at ${w}x${hgt}`, async ({ page }) => {
+  test(`E2E-75 12-5 the legend is a menu, open by default, folding by click and keyboard survives a reload, and the mode line stays in the footer without overlapping boxes or the cube at ${w}x${hgt}`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: hgt });
     const { exact, ctl } = helpers(page);
     await openRoom(page, exact);
     for (const sel of ["#legend", "#legend-menu", "#modebar"]) await expect(page.locator(sel)).toHaveCount(1);
     await expect(page.locator('#legend [data-legend="selected"]')).toBeVisible();
-    await expect(page.locator("#legend #modebar")).toBeVisible();
+    await expect(page.locator("#footer #modebar")).toBeVisible();
     await expect(page.locator("#modebar")).toContainText("Tool: None");
     await expect(ctl("legend-menu")).toHaveAttribute("aria-expanded", "true");
     await expect(ctl("legend-menu")).toHaveAttribute("aria-label", "Legend menu");
@@ -2893,7 +2932,7 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     await ctl("legend-menu").click();
     await expect(ctl("legend-menu")).toHaveAttribute("aria-expanded", "false");
     await expect(page.locator('#legend [data-legend="selected"]')).toBeHidden();
-    await expect(page.locator("#modebar")).toBeHidden();
+    await expect(page.locator("#modebar")).toBeVisible(); // the mode line lives in the footer and does not fold with the legend
     await page.screenshot({ path: `/out/legend-closed-${w}.png`, clip: { ...(await box("#legend")), x: 0, y: (await box("#stage")).y, width: 260 } });
     await ctl("legend-menu").focus();
     await page.keyboard.press("Enter");
@@ -2919,6 +2958,68 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     await savedOpen;
     await expect(ctl("legend-menu")).toHaveAttribute("aria-expanded", "true");
   });
+}
+
+/** A clear stage corner: the first #stage corner on the canvas, outside the legend and the triad (both are pointer-events: none). Call it after the state that sizes the legend. */
+async function stageCorner(page: import("@playwright/test").Page): Promise<{ x: number; y: number }> {
+  return page.evaluate(() => {
+    const r = document.querySelector("#stage")!.getBoundingClientRect();
+    const out = ["#legend", "#triad"].map((q) => document.querySelector(q)?.getBoundingClientRect()).filter((x): x is DOMRect => !!x);
+    const spots = [[r.left + 4, r.top + 4], [r.right - 4, r.top + 4], [r.left + 4, r.bottom - 4], [r.right - 4, r.bottom - 4]];
+    for (const [x, y] of spots) {
+      const clear = out.every((o) => x < o.left || x > o.right || y < o.top || y > o.bottom);
+      if (clear && document.elementFromPoint(x, y)?.id === "viewport") return { x, y };
+    }
+    throw new Error("no clear stage corner");
+  });
+}
+
+/** Polls until the 3D clear colour at a stage corner is the theme's --canvas (the renderer follows the theme on a later frame, so no sleep). */
+async function expectStageCorner(page: import("@playwright/test").Page, corner: { x: number; y: number }, want: "dark" | "light", timeout = 5000): Promise<void> {
+  await expect.poll(() => brightestPixel(page, corner, 1).then((p) => near([p[0], p[1], p[2], 1], want === "light" ? [233, 235, 239] : [12, 13, 16])), { timeout, message: `stage corner under ${want}` }).toBe(true);
+}
+
+/** Every pixel of a (2r+1) square of the page around a screen point (a screenshot decoded in a blank tab, as brightestPixel does). */
+async function pixelWindow(page: import("@playwright/test").Page, at: { x: number; y: number }, r: number): Promise<number[][]> {
+  const buf = await page.screenshot({ clip: { x: Math.round(at.x) - r, y: Math.round(at.y) - r, width: 2 * r + 1, height: 2 * r + 1 } });
+  const tab = await page.context().newPage();
+  try {
+    return await tab.evaluate(async (b64) => {
+      const img = new Image();
+      img.src = `data:image/png;base64,${b64}`;
+      await img.decode();
+      const c = document.createElement("canvas");
+      c.width = img.width;
+      c.height = img.height;
+      const g = c.getContext("2d")!;
+      g.drawImage(img, 0, 0);
+      const d = g.getImageData(0, 0, c.width, c.height).data;
+      const out: number[][] = [];
+      for (let i = 0; i < d.length; i += 4) out.push([d[i], d[i + 1], d[i + 2]]);
+      return out;
+    }, buf.toString("base64"));
+  } finally {
+    await tab.close();
+  }
+}
+
+/** The pixel of a window farthest from the stage colour: finds a dark mark on a light stage, where brightestPixel would return the stage. */
+async function farthestFromStage(page: import("@playwright/test").Page, at: { x: number; y: number }, stage: number[], r = 3): Promise<number[]> {
+  let best = stage;
+  let score = -1;
+  for (const p of await pixelWindow(page, at, r)) {
+    const d = Math.abs(p[0] - stage[0]) + Math.abs(p[1] - stage[1]) + Math.abs(p[2] - stage[2]);
+    if (d > score) {
+      score = d;
+      best = p;
+    }
+  }
+  return best;
+}
+
+/** How many pixels of a window are within `tol` per channel of a colour. */
+async function countNear(page: import("@playwright/test").Page, at: { x: number; y: number }, r: number, rgb: number[], tol = 3): Promise<number> {
+  return (await pixelWindow(page, at, r)).filter((p) => [0, 1, 2].every((i) => Math.abs(p[i] - rgb[i]) <= tol)).length;
 }
 
 /** The brightest pixel of a (2r+1) square of the page around a screen point, read from a screenshot decoded in a blank tab (the app's CSP is not involved). */
@@ -2972,14 +3073,18 @@ test("E2E-77 12-7 colour modes Turbo (default), Viridis and Grey: the select lis
   const turbo = await read();
   await page.screenshot({ path: "/out/colour-turbo.png" });
   await page.locator("#legend").screenshot({ path: "/out/legend-turbo.png" });
+  await openPop(page, "display");
   await modes.selectOption("viridis");
+  await closePop(page, "display");
   await expect(page.locator("#legend-ramp")).toHaveAttribute("data-ramp", "viridis");
   await expect(page.locator("#legend-ramp")).toContainText("Height (Viridis)");
   await expect.poll(async () => sum(turbo, await read()), { timeout: 5000 }).toBeGreaterThan(40);
   const viridis = await read();
   await page.screenshot({ path: "/out/colour-viridis.png" });
   await page.locator("#legend").screenshot({ path: "/out/legend-viridis.png" });
+  await openPop(page, "display");
   await modes.selectOption("flat");
+  await closePop(page, "display");
   await expect(page.locator("#legend-ramp")).toBeHidden();
   await expect.poll(async () => sum(viridis, await read()), { timeout: 5000 }).toBeGreaterThan(40);
   const grey = await read();
@@ -2987,7 +3092,9 @@ test("E2E-77 12-7 colour modes Turbo (default), Viridis and Grey: the select lis
   await page.screenshot({ path: "/out/colour-flat.png" });
   await page.locator("#legend").screenshot({ path: "/out/legend-flat.png" });
   await expect(page.locator('#legend [data-legend="base"]')).toHaveCSS("background-color", "rgb(176, 176, 176)");
+  await openPop(page, "display");
   await modes.selectOption("turbo");
+  await closePop(page, "display");
 });
 
 test("E2E-78 12-8 Distance to viewer: the legend reads near to far, the drawn colour of a fixed point follows the view, a selected point keeps its selection colour, the console stays clean", async ({ page }) => {
@@ -3005,7 +3112,9 @@ test("E2E-78 12-8 Distance to viewer: the legend reads near to far, the drawn co
   // an isolated noise point (nothing else shares its screen position from the front or the back)
   const lone = [16.5, 3.5, 3];
   const pixel = async () => brightestPixel(page, await settledScreen(page, lone));
+  await openPop(page, "display");
   await modes.selectOption("distance");
+  await closePop(page, "display");
   await expect(page.locator("#legend-ramp")).toHaveAttribute("data-ramp", "distance");
   await expect(page.locator("#legend-ramp .ramp-min")).toHaveText("near");
   await expect(page.locator("#legend-ramp .ramp-max")).toHaveText("far");
@@ -3029,11 +3138,15 @@ test("E2E-78 12-8 Distance to viewer: the legend reads near to far, the drawn co
   await page.mouse.wheel(0, 200);
   await expect.poll(() => hook(page, (e) => e.drawnCount())).toBeGreaterThan(0);
   // a selected point keeps the selection colour (the shader leaves flagged points alone)
+  await openPop(page, "display");
   await modes.selectOption("turbo");
+  await closePop(page, "display");
   await ctl("sel-select-displayed").click();
   await expect.poll(async () => (await page.locator('#statusbar [data-status="Selected"]').innerText()).replace(/\D/g, ""), { timeout: 15000 }).not.toBe("0");
   const selectedTurbo = await pixel();
+  await openPop(page, "display");
   await modes.selectOption("distance");
+  await closePop(page, "display");
   await expect.poll(async () => sum(selectedTurbo, await pixel()), { timeout: 5000 }).toBeLessThanOrEqual(6);
   expect(errors).toEqual([]);
 });
@@ -3045,7 +3158,9 @@ test("E2E-78 12-8 the interaction LOD still draws at most 200k points during an 
   await page.goto("/");
   await page.locator("#file-input").setInputFiles({ name: "big.pcd", mimeType: "application/octet-stream", buffer: bigRoomPcd(bigRoomXyz()) });
   await exact("Original", total.toLocaleString("en-US"));
+  await openPop(page, "display");
   await ctl("colour-mode").selectOption("distance");
+  await closePop(page, "display");
   await expect.poll(() => hook(page, (e) => e.drawnCount()), { timeout: 15000 }).toBe(total);
   const box = (await page.locator("#viewport").boundingBox())!;
   const cx = box.x + box.width / 2;
@@ -3076,7 +3191,9 @@ test("E2E-79 12-9 Normal shading: the legend shows the X/Y/Z swatches, a floor p
   await exact("Original", NORMAL_ROOM_TOTAL.toLocaleString("en-US"));
   const modes = ctl("colour-mode");
   await expect(modes.locator('option[value="normals"]')).toHaveText("Normal shading");
+  await openPop(page, "display");
   await modes.selectOption("normals");
+  await closePop(page, "display");
   await expect(page.locator("#legend-ramp")).toHaveAttribute("data-ramp", "normals");
   await expect(page.locator("#legend-ramp")).toContainText("Normal shading");
   await expect(page.locator("#legend-ramp [data-swatch]")).toHaveCount(3);
@@ -3100,7 +3217,9 @@ test("E2E-79 12-9 Normal shading: the legend shows the X/Y/Z swatches, a floor p
   await dl.saveAs(path);
   await page.locator("#file-input").setInputFiles({ name: "other.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
   await exact("Active", String(TOTAL));
+  await openPop(page, "display");
   await modes.selectOption("flat");
+  await closePop(page, "display");
   await page.locator("#file-input").setInputFiles({ name: "room_session_v1.pcdsession", mimeType: "application/octet-stream", buffer: readFileSync(path) });
   await exact("Original", NORMAL_ROOM_TOTAL.toLocaleString("en-US"));
   await expect(ctl("colour-mode")).toHaveValue("normals");
@@ -4053,7 +4172,7 @@ test("E2E-121 13 Sparse points selects only the floating artifacts of a dense fl
   await page.goto("/");
   await page.locator("#file-input").setInputFiles({ name: "sparse.pcd", mimeType: "application/octet-stream", buffer: sparseRoomPcd() });
   await t.exact("Original", SPARSE_TOTAL.toLocaleString("en-US"));
-  await expect(t.ctl("tool-sparse")).toHaveText("Sparse points");
+  await expect(t.ctl("tool-sparse")).toHaveAttribute("aria-label", "Sparse points");
   await t.ctl("tool-sparse").click();
   await expect(t.ctl("tool-sparse")).toHaveClass(/active/);
   await expect(page.locator("#inspector")).toContainText("fewer than 8 points");
@@ -4100,6 +4219,9 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
     expect(opRow.scroll[0]).toBeLessThanOrEqual(opRow.scroll[1]);
     const plain = (await t.card(0).boundingBox())!;
     await t.card(0).locator(".step-icon").click();
+    // the chip widens under the pointer below 1700 px (22-8): measure it with the pointer on a free stage point
+    const vp = (await page.locator("#viewport").boundingBox())!;
+    await page.mouse.move(vp.x + vp.width / 2, vp.y + 120);
     const edit = t.ctl("step-edit-shape");
     await expect(edit).toBeVisible();
     const card = (await t.card(0).boundingBox())!;
@@ -4208,26 +4330,27 @@ async function selectWholeRoom(page: import("@playwright/test").Page, t: ReturnT
 }
 
 for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
-  test(`E2E-155 17 the focused Scope select and the selected-colour swatches keep their focus outlines apart at ${w}x${hgt}`, async ({ page }) => {
+  test(`E2E-155 17 the focused Scope radio and the selected-colour swatches keep their focus outlines apart at ${w}x${hgt}`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: hgt });
     const t = helpers(page);
     await openRoom(page, t.exact);
     await t.ctl("preview-live").focus();
     await page.keyboard.press("Tab");
-    await expect(t.ctl("scope-select")).toBeFocused();
+    await expect(t.ctl("scope-displayed")).toBeFocused();
     const r = await page.evaluate(() => {
       const grow = (el: Element) => {
         const b = el.getBoundingClientRect();
-        return { l: b.left - 3, t: b.top - 3, r: b.right + 3, b: b.bottom + 3 };
+        // the focus ring is 3px wide and 1px off the edge (22-4): 4px
+        return { l: b.left - 4, t: b.top - 4, r: b.right + 4, b: b.bottom + 4 };
       };
-      const sel = grow(document.querySelector('[data-control="scope-select"]')!);
+      const sel = grow(document.querySelector('[data-control="scope-displayed"]')!);
       const sw = [...document.querySelectorAll('[data-control="sel-colour"] [data-control^="sel-colour-"]')].map(grow);
       return { sel, sw };
     });
     expect(r.sw.length).toBeGreaterThan(0);
     for (const s of r.sw) {
       const overlap = s.l < r.sel.r && s.r > r.sel.l && s.t < r.sel.b && s.b > r.sel.t;
-      expect(overlap, "a swatch outline touches the Scope select outline").toBe(false);
+      expect(overlap, "a swatch outline touches the Scope radio outline").toBe(false);
     }
   });
 }
@@ -4252,7 +4375,7 @@ test("E2E-133 16-3 the selected colour: swatches by real mouse and keyboard reco
   expect(await pixelsNear(page, RGB_OF.magenta)).toBeGreaterThan(20);
   expect(await pixelsNear(page, RGB_OF.orange)).toBeLessThan(orangeBefore - 20); // the points left orange (the handles stay)
   // keyboard: Tab from the Scope select lands on the checked swatch, Arrow moves and selects, Space selects
-  await ctl("scope-select").focus();
+  await ctl("scope-displayed").focus();
   await page.keyboard.press("Tab");
   await expect(ctl("sel-colour-magenta")).toBeFocused();
   await page.keyboard.press("ArrowRight");
@@ -4266,7 +4389,9 @@ test("E2E-133 16-3 the selected colour: swatches by real mouse and keyboard reco
   await expect(legend).toHaveCSS("background-color", "rgb(255, 0, 255)");
   // the choice persists across colour modes
   for (const mode of ["viridis", "distance", "turbo"]) {
+    await openPop(page, "display");
     await ctl("colour-mode").selectOption(mode);
+    await closePop(page, "display");
     await page.waitForTimeout(500);
     await expect(legend).toHaveCSS("background-color", "rgb(255, 0, 255)");
     expect(await pixelsNear(page, RGB_OF.magenta), mode).toBeGreaterThan(20);
@@ -4295,7 +4420,9 @@ test("E2E-134 16-3 an Add preview keeps its own pink in the legend with a chosen
   await ctl("cube-top").click();
   await selectWholeRoom(page, t);
   for (const mode of ["turbo", "viridis", "distance"]) {
+    await openPop(page, "display");
     await ctl("colour-mode").selectOption(mode);
+    await closePop(page, "display");
     for (const preset of ["orange", "magenta", "white", "lime"] as const) {
       await ctl(`sel-colour-${preset}`).click();
       await expect(page.locator('#legend [data-legend="selected"]')).toHaveCSS("background-color", `rgb(${RGB_OF[preset].join(", ")})`);
@@ -4303,7 +4430,9 @@ test("E2E-134 16-3 an Add preview keeps its own pink in the legend with a chosen
       await page.screenshot({ path: `/out/selected-colour-${mode}-${preset}.png` });
     }
   }
+  await openPop(page, "display");
   await ctl("colour-mode").selectOption("turbo");
+  await closePop(page, "display");
   await ctl("sel-colour-magenta").click();
   // select the wall, press Add, move the box over the ghosts: the added points are previewed in the add colour
   await ctl("sel-clear").click();
@@ -4376,6 +4505,7 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
       await page.waitForTimeout(500);
       if (view === "cube-top") out[`${view} default`] = await measureBox(page);
       for (const fit of ["box-fit-cloud", "box-fit-displayed", "box-fit-view"] as const) {
+        await openFit(page);
         await t.ctl(fit).click();
         await page.waitForTimeout(500);
         out[`${view} ${fit}`] = await measureBox(page);
@@ -4527,6 +4657,7 @@ test("E2E-103 14 three real ring drags (X, Y, then Z) give a box with roll, pitc
 
 test("E2E-104 14 one keyboard sequence (nudge, grow, turn) edits the box and Selected equals the independent count", async ({ page }) => {
   const t = await gizmoBox(page, "top");
+  await openHandles(page);
   await t.setNum("gizmo-step", 1);
   await t.setNum("gizmo-angle-step", 30);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
@@ -4825,9 +4956,8 @@ test("E2E-90 15a Hide selected: the drawn count drops by exactly the hidden coun
   await expect(t.hideBtn).toHaveText(`Show hidden (${n})`);
   await expect(t.hideBtn).toHaveAttribute("aria-pressed", "true");
   await expect(t.chip).toHaveText(`${n} hidden - Show`);
-  await expect(t.ctl("tool-box")).toHaveClass(/active/); // hiding never disarms the tool
-  // Select displayed and Invert are not refused: the server leaves the hidden floor out (disarm the tool first)
-  await t.ctl("tool-box").click();
+  await expect(t.ctl("tool-box")).not.toHaveClass(/active/); // Hide selected disarms the tool (R22-1)
+  // Select displayed and Invert are not refused: the server leaves the hidden floor out (Hide selected already disarmed the tool)
   const visible = finiteRows().length - n;
   await t.ctl("sel-select-displayed").click();
   await t.exact("Selected", String(visible));
@@ -4884,6 +5014,7 @@ test("E2E-154 17 Show hidden also reselects the hidden points: the union with th
     await t.hideBtn.click();
     await expect.poll(t.drawn, { timeout: 15000 }).toBe(drawn0 - n);
     await t.exact("Selected", "0");
+    await t.ctl("tool-box").click(); // Hide selected disarmed the Box (R22-1)
     await t.setBox(WALL.c, WALL.d);
     await t.exact("Selected", String(ROOM.wall));
     await (via === "button" ? t.hideBtn : t.chip).click();
@@ -4937,6 +5068,65 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
   });
 }
 
+test("E2E-287 22-7 the row's actions are revealed: the more button is 0 at rest, 1 on row hover, on the active row and on keyboard focus; the eye of a hidden layer is always 1", async ({ page }) => {
+  const t = layerMenu(page);
+  const floor = await t.floorFromBand();
+  const wallId = await t.wallLayer();
+  await page.locator(`[data-layer-eye="${wallId}"]`).click();
+  await expect(page.locator(`[data-layer-eye="${wallId}"]`)).toHaveAttribute("aria-pressed", "false");
+  await page.locator(`[data-layer-row="${floor.id}"]`).click(); // Floor is the active layer
+  await page.mouse.move(5, 5);
+  await transitionsSettled(page);
+  const opacity = (sel: string) => page.locator(sel).evaluate((el) => getComputedStyle(el).opacity);
+  const wallMore = `[data-layer-more="${wallId}"]`;
+  expect(await opacity(wallMore)).toBe("0");
+  expect(await opacity(`[data-layer-more="${floor.id}"]`)).toBe("1");
+  expect(await opacity(`[data-layer-eye="${wallId}"]`)).toBe("1");
+  await page.locator(`[data-layer-row="${wallId}"]`).hover();
+  await transitionsSettled(page);
+  expect(await opacity(wallMore)).toBe("1");
+  await page.mouse.move(5, 5);
+  await transitionsSettled(page);
+  expect(await opacity(wallMore)).toBe("0");
+  await page.locator(wallMore).focus();
+  await transitionsSettled(page);
+  expect(await opacity(wallMore)).toBe("1");
+  await page.keyboard.press("Enter"); // the keyboard opens the menu
+  await expect(page.locator("#layer-menu")).toBeVisible();
+});
+
+test("E2E-288 22-7 the layer menu is a popover beside the row's more button, inside the window, keeps the lock mark on the row, and Esc closes it to the button without disarming the tool; a second Esc does", async ({ page }) => {
+  const t = layerMenu(page);
+  const floor = await t.floorFromBand();
+  const wallId = await t.wallLayer();
+  const tool = () => hook(page, (e) => e.state().tool);
+  await t.ctl("sel-clear").click(); // New layer disarmed the Box (R22-1) and kept the Wall selected: clear it so the re-armed box holds no draft
+  if ((await tool()) !== "box") await t.ctl("tool-box").click();
+  expect(await tool()).toBe("box");
+  await t.openMore(wallId);
+  await t.m("lock", wallId).click();
+  await expect.poll(async () => (await t.byName("Wall"))?.locked, { timeout: 15000 }).toBe(true);
+  await expect(page.locator(`[data-layer-row="${wallId}"] [data-layer-lock]`)).toBeVisible();
+  const floorMore = page.locator(`[data-layer-more="${floor.id}"]`);
+  await floorMore.click();
+  const menu = page.locator("#layer-menu");
+  await expect(menu).toBeVisible();
+  await expect(floorMore).toHaveAttribute("aria-expanded", "true");
+  const box = (await menu.boundingBox())!;
+  const mb = (await floorMore.boundingBox())!;
+  const vp = page.viewportSize()!;
+  expect(box.x).toBeGreaterThanOrEqual(mb.x + mb.width + 8 - 1);
+  expect(box.x + box.width).toBeLessThanOrEqual(vp.width - 8 + 1);
+  expect(box.y).toBeGreaterThanOrEqual(8 - 1);
+  expect(box.y + box.height).toBeLessThanOrEqual(vp.height - 8 + 1);
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(floorMore).toBeFocused();
+  expect(await tool()).toBe("box");
+  await page.keyboard.press("Escape");
+  await expect.poll(tool).toBe("none");
+});
+
 // ---- part 15b: named sub layers (E2E-140..146)
 const layerHelpers = (page: Pg) => {
   const t = hideHelpers(page);
@@ -4944,7 +5134,7 @@ const layerHelpers = (page: Pg) => {
   const eye = (id: number) => page.locator(`[data-layer-eye="${id}"]`);
   const edit = (id: number) => page.locator(`[data-layer-edit="${id}"]`);
   const more = (id: number) => page.locator(`[data-layer-more="${id}"]`);
-  /** 17: Edit layer and To main sit in the row's details area; open it first. */
+  /** 22-7: the row's options (Edit layer, To main, flags, operations) live in the #layer-menu popover; open it first. */
   const openMore = async (id: number) => {
     if ((await more(id).getAttribute("aria-expanded")) !== "true") await more(id).click();
   };
@@ -5010,9 +5200,11 @@ test("E2E-142 15b with the floor layer hidden, a ghost box with Apply deletes on
   const t = layerHelpers(page);
   const asked: string[] = [];
   const { id } = await t.floorLayer();
+  await t.ctl("sel-clear").click(); // New layer disarmed the Box and kept the floor selected (R22-1): clear, then re-arm below so the ghost box is a live first selection
   page.on("dialog", (d) => asked.push(d.message())); // after the open: the "unsaved edits" ask of an earlier test's file is not under test
   await t.eye(id).click();
   await expect.poll(async () => (await t.layers()).find((l) => l.id === id)?.visible, { timeout: 15000 }).toBe(false);
+  await t.ctl("tool-box").click();
   await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
   await t.exact("Selected", String(ROOM.ghost));
   await expect(t.ctl("apply")).toBeEnabled();
@@ -5240,7 +5432,7 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
 // 17-11: the step-0 stage height at HEAD 73870ad (room open, no tool, no layers)
 const STEP0_STAGE = { 720: 596.8, 1080: 956.8 } as const;
 for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
-  test(`E2E-159 17 the header rows are thinner at ${w}x${h}: one line each, every control inside its row, the stage is taller`, async ({ page }) => {
+  test(`E2E-159 17 the top bar is one 52 px row at ${w}x${h}: every control inside it, the stage is taller`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: h });
     const t = helpers(page);
     await openRoom(page, t.exact);
@@ -5254,16 +5446,14 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
         });
         return { height: rb.height, ctl };
       };
-      return { toolbar: row("toolbar"), viewbar: row("viewbar"), stage: document.getElementById("viewport")!.getBoundingClientRect().height };
+      return { toolbar: row("toolbar"), stage: document.getElementById("viewport")!.getBoundingClientRect().height };
     });
-    expect(m.toolbar.height).toBeLessThanOrEqual(33);
-    expect(m.viewbar.height).toBeLessThanOrEqual(29);
-    for (const c of [...m.toolbar.ctl, ...m.viewbar.ctl]) {
+    expect(m.toolbar.height).toBeLessThanOrEqual(52.5); // --tb-h: the one top bar of 22-5
+    for (const c of m.toolbar.ctl) {
       expect(c.visible, `${c.id} is visible`).toBe(true);
       expect(c.inside, `${c.id} is inside its row`).toBe(true);
     }
-    expect(m.toolbar.ctl.length).toBeGreaterThan(5);
-    expect(m.viewbar.ctl.length).toBeGreaterThan(3);
+    expect(m.toolbar.ctl.length).toBeGreaterThan(10); // the bar now also holds the data mode and the three popover anchors
     expect(m.stage).toBeGreaterThan(STEP0_STAGE[h]);
   });
 }
@@ -5315,7 +5505,7 @@ const layerMenu = (page: Pg) => {
   const t = layerHelpers(page);
   const flags = () => hook(page, (e) => e.state().session!.layers.map((l: { id: number; name: string; colour: number; count: number; protected?: boolean; locked?: boolean }) => ({ id: l.id, name: l.name, colour: l.colour, count: l.count, protected: l.protected === true, locked: l.locked === true })));
   const byName = async (name: string) => (await flags()).find((l) => l.name === name);
-  const m = (attr: string, id: number) => page.locator(`[data-layer-${attr}="${id}"]`);
+  const m = (attr: string, id: number) => page.locator(`[data-layer-${attr}="${id}"]:not(.layer-lock)`); // 22-7: a locked row also carries the lock mark
   const op = (id: number, o: string) => page.locator(`[data-layer-op="${o}"][data-layer-of="${id}"]`);
   const bandOn = async () => {
     await t.ctl("prot-enabled").check();
@@ -5353,7 +5543,8 @@ test("E2E-170 18 New layer from protected points makes a protected Floor layer w
   await expect.poll(async () => (await t.byName("Floor"))?.count, { timeout: 15000 }).toBe(truth);
   const floor = (await t.byName("Floor"))!;
   expect(floor.protected).toBe(true);
-  await expect(page.locator(`[data-layer-row="${floor.id}"] .chip`)).toHaveClass(/protected/);
+  await expect(page.locator(`[data-layer-row="${floor.id}"] [data-layer-shield]`)).toBeVisible(); // R22-3: the shield, not a chip ring
+  await expect(page.locator(`[data-layer-row="${floor.id}"] .chip`)).not.toHaveClass(/protected/);
   await t.exact("Selected", "0");
   await t.exact("Active", String(ROOM_TOTAL));
   expect(asked).toEqual([]);
@@ -5368,13 +5559,14 @@ test("E2E-171 18 a protected Floor is never deleted: with the band off Kept by p
   const selected = finiteRows().filter((r) => inBox(r, ALL_BOX.c, ALL_BOX.d)).length;
   await t.exact("Selected", String(selected));
   await t.exact("Candidates", String(selected - floor.count));
-  await expect(page.locator("#headline-kept")).toHaveText(`Kept by protection ${floor.count}`);
+  await expect(page.locator("#kept-chip")).toHaveText(`${floor.count} kept`);
   await expect(t.ctl("apply")).toBeEnabled();
   await t.ctl("apply").click();
   await t.exact("Active", String(ROOM_TOTAL - (selected - floor.count)));
   expect((await t.byName("Floor"))!.count).toBe(floor.count);
   await t.ctl("undo").click();
   await t.exact("Active", String(ROOM_TOTAL));
+  await t.ctl("tool-box").click(); // Apply disarmed the Box (R22-1)
   await t.setBox(ALL_BOX.c, [ALL_BOX.d[0] + 1, ALL_BOX.d[1], ALL_BOX.d[2]]); // Apply cleared the selection and Undo does not bring it back: a slightly larger box holds the same points
   await t.exact("Selected", String(selected));
   // a band over the top of the wall protects those points too; Also delete the kept points frees the wall (the band) but never the Floor layer
@@ -5386,7 +5578,7 @@ test("E2E-171 18 a protected Floor is never deleted: with the band off Kept by p
   await t.exact("Candidates", String(selected - floor.count - wallBand));
   await t.ctl("sel-delete-kept").click();
   await t.exact("Candidates", String(selected - floor.count));
-  await expect(page.locator("#headline-kept")).toHaveText(`Kept by protection ${floor.count}`);
+  await expect(page.locator("#kept-chip")).toHaveText(`${floor.count} kept`);
   await t.ctl("apply").click();
   await t.exact("Active", String(ROOM_TOTAL - (selected - floor.count)));
   expect((await t.byName("Floor"))!.count).toBe(floor.count);
@@ -5442,6 +5634,7 @@ test("E2E-173 18 menu flows: rename with Enter, a colour swatch, lock refuses Ed
   await t.setBox([9.5, 9.5, 2.5], [1, 1, 5]);
   await expect(t.ctl("layer-assign")).toHaveAttribute("aria-disabled", "true");
   await expect(t.ctl("layer-assign")).toHaveAttribute("title", /Ground is locked/);
+  await t.openMore(floor.id); // a click elsewhere closed the menu
   await t.m("lock", floor.id).click();
   await expect.poll(async () => (await t.byName("Ground"))?.locked, { timeout: 15000 }).toBe(false);
   const wallCount = (await t.byName("Wall"))!.count;
@@ -5457,15 +5650,18 @@ test("E2E-174 18 Select, Add, Subtract and Intersect with a layer as the operand
   const t = layerMenu(page);
   const floor = await t.floorFromBand();
   const wallId = await t.wallLayer();
-  await t.openMore(floor.id);
-  await t.openMore(wallId);
-  await t.setBox(ALL_BOX.c, ALL_BOX.d); // the Box is still armed from the Wall layer's selection
+  await t.ctl("sel-clear").click(); // New layer disarmed the Box and kept the Wall selected (R22-1): clear, re-arm, the box is a live first selection
+  await t.ctl("tool-box").click();
+  await t.setBox(ALL_BOX.c, ALL_BOX.d);
   const S = finiteRows().filter((r) => inBox(r, ALL_BOX.c, ALL_BOX.d)).length;
   await t.exact("Selected", String(S));
+  await t.openMore(floor.id); // one menu at a time: open the layer whose operation is next
   await t.op(floor.id, "subtract").click();
   await t.exact("Selected", String(S - floor.count));
+  await t.openMore(wallId);
   await t.op(wallId, "select").click();
   await t.exact("Selected", String(ROOM.wall));
+  await t.openMore(floor.id);
   await t.op(floor.id, "add").click();
   await t.exact("Selected", String(ROOM.wall + floor.count));
   await t.op(floor.id, "intersect").click();
@@ -5497,7 +5693,7 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
       };
       const q = (s: string) => document.querySelector(s)!;
       const tools = q("#tools") as HTMLElement;
-      const menu = q("[data-layer-details]:not([hidden])") as HTMLElement;
+      const menu = q("#layer-menu") as HTMLElement;
       return {
         legend: box(q("#legend")),
         tools: box(tools),
@@ -5506,7 +5702,9 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
         scroll: [tools.scrollHeight, tools.clientHeight],
         overflowY: getComputedStyle(tools).overflowY,
         menuHeight: menu.getBoundingClientRect().height,
-        menuInside: menu.getBoundingClientRect().right <= tools.getBoundingClientRect().right + 1,
+        menuInWindow: [menu.getBoundingClientRect().left, menu.getBoundingClientRect().top, window.innerWidth - menu.getBoundingClientRect().right, window.innerHeight - menu.getBoundingClientRect().bottom],
+        menuLeftOfInspector: menu.getBoundingClientRect().right <= q("#inspector").getBoundingClientRect().left + 1,
+        menuVisible: !menu.hidden,
       };
     });
     console.log(`LEFT-PANEL-MENU ${w}x${h} menu ${r.menuHeight.toFixed(1)} scroll ${r.scroll[0]}/${r.scroll[1]}`);
@@ -5515,7 +5713,10 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
       expect(hit(r.legend, o), `legend x ${o.s}`).toBe(false);
       expect(hit(r.tools, o), `left panel x ${o.s}`).toBe(false);
     }
-    expect(r.menuInside, "menu inside the left panel").toBe(true);
+    expect(r.menuVisible, "the menu is open").toBe(true);
+    for (const m of r.menuInWindow) expect(m, "menu inside the window with 8 px margins").toBeGreaterThanOrEqual(8 - 1);
+    expect(r.menuLeftOfInspector, "menu left of the right inspector").toBe(true);
+    expect(r.scroll[0], "the left panel does not scroll while the menu is open").toBeLessThanOrEqual(r.scroll[1]);
     expect(["auto", "scroll"]).toContain(r.overflowY);
     await checkLayout(page, w, h);
   });
@@ -5538,10 +5739,101 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
     await page.mouse.move(5, 5);
     await page.waitForTimeout(400);
     await page.screenshot({ path: `/out/part18-${w}x${h}-menu.png` });
+    await openPop(page, "display");
     await t.ctl("colour-mode").selectOption("layers");
+    await closePop(page, "display");
     await t.ctl("cube-top").click();
     await page.waitForTimeout(600);
     await page.screenshot({ path: `/out/part18-${w}x${h}-floor.png` });
+    expect(errors).toEqual([]);
+  });
+}
+
+// ---- 22-2: layer colour on the points, the protected shield (R22-3)
+/** The canvas bytes once two consecutive shots are equal (the legend is masked: in Layers mode its chips recolour too; so is the timeline strip, whose current-step marker pulses over the canvas bottom). */
+const steadyCanvas = async (page: Pg): Promise<Buffer> => {
+  const shot = () => page.locator("#viewport").screenshot({ mask: [page.locator("#legend"), page.locator("#timeline")] });
+  let prev = await shot();
+  await expect
+    .poll(async () => {
+      const next = await shot();
+      const same = Buffer.compare(prev, next) === 0;
+      prev = next;
+      return same;
+    }, { timeout: 15000 })
+    .toBe(true);
+  return prev;
+};
+
+test("E2E-201 22-2 recolouring a protected Floor layer changes the canvas in Layers mode with the protection section open, and the shield sits on its row and its legend entry", async ({ page }) => {
+  const t = layerMenu(page);
+  const floor = await t.floorFromBand();
+  const asked: string[] = [];
+  page.on("dialog", (d) => asked.push(d.message())); // registered after the open (E2E-90 rule)
+  await openPop(page, "display");
+  await t.ctl("colour-mode").selectOption("layers");
+  await closePop(page, "display");
+  await t.ctl("cube-top").click();
+  await page.mouse.move(5, 5);
+  await expect(t.ctl("prot-min")).toBeVisible(); // the section is open: the region colour is live
+  expect(floor.protected).toBe(true);
+  await t.openMore(floor.id);
+  const swatch = (c: number) => page.locator(`[data-layer-colour="${floor.id}"][data-colour="${c}"]`);
+  const recolour = async (c: number) => {
+    await swatch(c).click();
+    await expect.poll(async () => (await t.byName("Floor"))?.colour, { timeout: 15000 }).toBe(c);
+    await page.mouse.move(5, 5);
+  };
+  const other = (floor.colour + 4) % 16;
+  const a = await steadyCanvas(page);
+  await recolour(other);
+  await expect.poll(async () => Buffer.compare(a, await steadyCanvas(page)) !== 0, { timeout: 15000 }).toBe(true);
+  await recolour(floor.colour);
+  expect(Buffer.compare(a, await steadyCanvas(page))).toBe(0); // back to the first colour: the same pixels
+  // control leg: with the section folded there is no region colour, and the recolour shows too
+  await protSummary(page).click();
+  await expect(t.ctl("prot-min")).not.toBeVisible();
+  await t.openMore(floor.id); // the click on the section summary closed the menu
+  const b = await steadyCanvas(page);
+  await recolour(other);
+  await expect.poll(async () => Buffer.compare(b, await steadyCanvas(page)) !== 0, { timeout: 15000 }).toBe(true);
+  // R22-3: the shield is the protection mark, on the row and on the legend entry
+  await expect(page.locator(`[data-layer-row="${floor.id}"] [data-layer-shield]`)).toBeVisible();
+  await expect(page.locator(`[data-legend-layer="${floor.id}"] [data-legend-shield]`)).toBeVisible();
+  expect(asked).toEqual([]);
+});
+
+// 22-2: owner screenshots of the shield on the row and the legend, and of the recoloured Floor
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-202 22-2 owner screenshots at ${w}x${h}: Floor protected with its menu open (the shield on row, menu and legend), then recoloured in Layers mode`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => {
+      if (m.type() === "error" && !/404/.test(m.text())) errors.push(m.text());
+    });
+    const t = layerMenu(page);
+    const floor = await t.floorFromBand();
+    await t.wallLayer();
+    await t.openMore(floor.id);
+    await expect(page.locator(`[data-layer-details="${floor.id}"]`)).toBeVisible();
+    await expect(page.locator(`[data-layer-row="${floor.id}"] [data-layer-shield]`)).toBeVisible();
+    await expect(page.locator(`[data-layer-protected="${floor.id}"] svg`)).toBeVisible();
+    await page.mouse.move(5, 5);
+    await steadyCanvas(page);
+    await page.screenshot({ path: `/out/part22-2-${w}x${h}-menu.png` });
+    await openPop(page, "display");
+    await t.ctl("colour-mode").selectOption("layers");
+    await closePop(page, "display");
+    await t.ctl("cube-top").click();
+    await page.mouse.move(5, 5);
+    await t.openMore(floor.id); // the Display popover replaced the menu (one popover at a time)
+    await steadyCanvas(page);
+    await page.locator(`[data-layer-colour="${floor.id}"][data-colour="${(floor.colour + 4) % 16}"]`).click();
+    await expect.poll(async () => (await t.byName("Floor"))?.colour, { timeout: 15000 }).toBe((floor.colour + 4) % 16);
+    await page.mouse.move(5, 5);
+    await steadyCanvas(page);
+    await page.screenshot({ path: `/out/part22-2-${w}x${h}-floor.png` });
     expect(errors).toEqual([]);
   });
 }
@@ -5576,6 +5868,7 @@ test("E2E-178 19 dragging the marker across a layer step and a deletion step giv
   const t = layerHelpers(page);
   const { n } = await t.floorLayer();
   const k = tl(page);
+  await k.ctl("sel-clear").click(); // New layer disarmed the Box and kept the floor selection (R22-1): clear it, so the re-armed box is a live first selection
   await k.boxAt(3, 13, 2, 4, 4, 3);
   await k.exact("Candidates", String(ROOM.ghost));
   await k.ctl("apply").click();
@@ -5636,6 +5929,7 @@ test("E2E-180 19 with steps rolled back, New layer asks the discard text; No cha
   const t = layerHelpers(page);
   await t.floorLayer();
   const k = tl(page);
+  await k.ctl("sel-clear").click(); // New layer disarmed the Box and kept the floor selection (R22-1): clear it, so the re-armed box is a live first selection
   await k.boxAt(3, 13, 2, 4, 4, 3);
   await k.ctl("apply").click();
   await k.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
@@ -5725,6 +6019,29 @@ test("E2E-182 19 One file per layer: one download per layer, each equal to fixtu
   await expect(page.locator("#export-dialog")).toBeHidden();
 });
 
+test("E2E-250 22-5 the Export sheet is 440 wide under the top bar with a .35 scrim, lists one file per layer, and Cancel closes it", async ({ page }) => {
+  const t = layerMenu(page);
+  await t.floorFromBand();
+  await t.wallLayer();
+  await t.ctl("export").click();
+  const dlg = page.locator("#export-dialog");
+  await expect(dlg).toBeVisible();
+  const box = (await dlg.boundingBox())!;
+  const bar = (await page.locator("#toolbar").boundingBox())!;
+  const vp = page.viewportSize()!;
+  expect(Math.abs(box.width - 440)).toBeLessThanOrEqual(1);
+  expect(Math.abs(box.x + box.width / 2 - vp.width / 2)).toBeLessThanOrEqual(2);
+  expect(Math.abs(box.y - (bar.y + bar.height + 10))).toBeLessThanOrEqual(1);
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(await page.evaluate(() => getComputedStyle(document.getElementById("export-dialog")!, "::backdrop").backgroundColor)).toBe("rgba(0, 0, 0, 0.35)");
+  await page.locator("#export-per-layer").check();
+  await t.ctl("export-go").click();
+  await expect(page.locator("[data-export-file]")).toHaveCount(3, { timeout: 30000 });
+  await expect(page.locator("[data-export-file]").nth(1)).toContainText("room_Floor_cleaned.pcd");
+  await page.locator("#export-cancel").click();
+  await expect(dlg).toBeHidden();
+});
+
 test("E2E-183 19 Hide selected then Undo: the points are drawn and selectable again", async ({ page }) => {
   const t = hideHelpers(page);
   const n = await t.floorSelected();
@@ -5734,8 +6051,7 @@ test("E2E-183 19 Hide selected then Undo: the points are drawn and selectable ag
   await t.ctl("undo").click();
   await expect.poll(t.drawn, { timeout: 15000 }).toBe(drawn0);
   await expect(t.hideBtn).toHaveText("Hide selected");
-  await t.ctl("tool-box").click(); // disarm: Select displayed is refused while a tool is armed
-  await t.ctl("sel-select-displayed").click();
+  await t.ctl("sel-select-displayed").click(); // Hide selected already disarmed the Box (R22-1)
   await t.exact("Selected", String(finiteRows().length));
 });
 
@@ -5771,7 +6087,9 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
     await t.ctl("apply").click();
     await expect(layerCards(page)).toHaveCount(3);
     await expect(layerCards(page).first()).toBeVisible();
+    await openPop(page, "display");
     await t.ctl("colour-mode").selectOption("layers");
+    await closePop(page, "display");
     await page.mouse.move(5, 5);
     await page.waitForTimeout(400);
     await page.screenshot({ path: `/out/part19-${w}x${h}-strip.png` });
@@ -5815,8 +6133,15 @@ const planeUi = (page: Pg) => {
     if (!(await t.ctl(id).evaluate((e) => e.classList.contains("active")))) await t.ctl(id).click();
     await unfold();
   };
+  /** The O7 values (0.03 / 30 / 4) a plane test needing floor and ceiling or a 30 degree window sets; the defaults are 0.1 / 5 / 1 (R22-15). Call it once the tool is armed. */
+  const o7Params = async () => {
+    await t.setNum("plane-distance", 0.03);
+    await t.setNum("plane-max-tilt", 30);
+    await t.setNum("plane-max", 4);
+  };
   const detect = async (n: number) => {
     await useTool("tool-plane");
+    await o7Params();
     await t.ctl("plane-detect").click();
     await expect(rows).toHaveCount(n, { timeout: 30000 });
   };
@@ -5834,7 +6159,7 @@ const planeUi = (page: Pg) => {
     await dl.saveAs(path);
     return parsePcd(readFileSync(path)).rows;
   };
-  return { ...t, exact, k, asked, mode, unfold, rows, openCloud, useTool, detect, rowOf, exportRows };
+  return { ...t, exact, k, asked, mode, unfold, rows, openCloud, useTool, o7Params, detect, rowOf, exportRows };
 };
 const planeRows = () => parsePcd(planeRoomPcd()).rows;
 const dupRows = () => parsePcd(dupRoomPcd()).rows;
@@ -5893,6 +6218,7 @@ test("E2E-188 20 Use as protection band on a tilted floor: the band tilt is the 
   const t = planeUi(page);
   await t.openCloud("tilted.pcd", tiltedFloorPcd(), TILTED.floor + TILTED.ghost);
   await t.useTool("tool-plane");
+  await t.o7Params();
   await t.ctl("plane-detect").click();
   await expect(t.rows.first()).toBeVisible({ timeout: 30000 });
   const first = await t.rowOf(0);
@@ -6112,6 +6438,25 @@ for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
   });
 }
 
+// ---- part 22-10: tool defaults (R22-15)
+test("E2E-260 22-10 a fresh page: Sparse radius 0.4; Planes 0.1 / 5 / 1; a default Detect lists exactly the floor with the fixture-truth count", async ({ page }) => {
+  const t = planeUi(page);
+  await t.openCloud("planes.pcd", planeRoomPcd(), PLANE_ROOM_TOTAL);
+  await t.useTool("tool-sparse");
+  await expect(page.locator("#sparse-radius")).toHaveValue("0.4");
+  await t.useTool("tool-plane");
+  await expect(page.locator("#plane-distance")).toHaveValue("0.1");
+  await expect(page.locator("#plane-max-tilt")).toHaveValue("5");
+  await expect(page.locator("#plane-max")).toHaveValue("1");
+  await t.ctl("plane-detect").click();
+  await expect(t.rows).toHaveCount(1, { timeout: 30000 });
+  const only = await t.rowOf(0);
+  expect(only.text).toContain("Lowest (floor?)");
+  expect(Math.abs(only.z)).toBeLessThan(0.01);
+  expect(only.count).toBe(PLANE_ROOM.floor);
+  expect(only.count).toBe(countPlane(planeRows(), [0, 0, 1], 0, 0.1));
+});
+
 // ---- final fixes (part 21)
 test("E2E-195 21 a newly opened file forgets the chosen layer and the open fold-outs of the previous one", async ({ page }) => {
   page.on("dialog", (d) => void d.accept());
@@ -6126,3 +6471,2323 @@ test("E2E-195 21 a newly opened file forgets the chosen layer and the open fold-
   await expect.poll(() => hook(page, (e) => e.state().session?.filename), { timeout: 15000 }).toBe("other.pcd");
   expect(await ui()).toEqual({ active: null, editing: null });
 });
+
+// ---- part 22-1: tool disarm (R22-1)
+test("E2E-197 22-1 Box then Delete leaves no tool armed; a dismissed bulk confirm leaves it armed", async ({ page }) => {
+  const t = previewHelpers(page);
+  await openRoom(page, t.exact);
+  const asked: string[] = [];
+  page.removeAllListeners("dialog"); // the helpers accept every ask; this test answers by text
+  page.on("dialog", (d) => {
+    asked.push(d.message());
+    if (/^This deletes /.test(d.message())) void d.dismiss();
+    else void d.accept();
+  }); // after the open: the "unsaved edits" ask of a file left by an earlier test is not under test
+  await t.ctl("cube-top").click();
+  await t.ctl("tool-box").click();
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  await t.exact("Selected", String(ROOM.ghost));
+  await expect(t.ctl("apply")).toBeEnabled();
+  await t.ctl("apply").click();
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
+  await expect(t.ctl("tool-box")).not.toHaveClass(/active/);
+  await expect(page.locator("#box-center-x")).toBeHidden(); // the Box section shows only while armed
+  // Apply cleared the selection and Undo does not bring it back: arming the Box again is a live first selection
+  await t.ctl("undo").click();
+  await t.exact("Active", String(ROOM_TOTAL));
+  await t.ctl("tool-box").click();
+  await t.setBox(ALL_BOX.c, ALL_BOX.d);
+  await expect(t.ctl("apply")).toBeEnabled();
+  await t.ctl("apply").click();
+  await expect.poll(() => asked.filter((m) => /^This deletes /.test(m)).length, { timeout: 15000 }).toBe(1);
+  await t.exact("Active", String(ROOM_TOTAL));
+  await expect(t.ctl("tool-box")).toHaveClass(/active/);
+  // the Delete key does the same as the button
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  await t.exact("Selected", String(ROOM.ghost));
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("Delete");
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
+  await expect(t.ctl("tool-box")).not.toHaveClass(/active/);
+});
+
+test("E2E-198 22-1 layer actions that consume the selection disarm; a declined one keeps the tool armed", async ({ page }) => {
+  const t = layerMenu(page);
+  // the helpers accept every ask and each leaves an unsaved session; the listener below replaces them after the open
+  const { id: floor, n } = await t.floorLayer();
+  const asked: string[] = [];
+  const mode = { answer: "accept" as "accept" | "dismiss" };
+  page.removeAllListeners("dialog");
+  page.on("dialog", (d) => {
+    asked.push(d.message());
+    void (mode.answer === "accept" ? d.accept() : d.dismiss());
+  });
+  const armed = (on: boolean) => (on ? expect(t.ctl("tool-box")).toHaveClass(/active/) : expect(t.ctl("tool-box")).not.toHaveClass(/active/));
+  // 1: New layer consumed the selection
+  await armed(false);
+  // 2: Hide selected disarms; Show hidden is not a consumer
+  await t.ctl("sel-clear").click();
+  await t.ctl("tool-box").click();
+  await t.setBox(WALL18.c, WALL18.d);
+  await t.exact("Selected", String(ROOM.wall));
+  await t.ctl("sel-hide").click();
+  await expect(t.chip).toHaveText(`${ROOM.wall} hidden - Show`);
+  await t.exact("Selected", "0");
+  await armed(false);
+  await t.ctl("sel-hide").click();
+  await t.exact("Selected", String(ROOM.wall));
+  await armed(false);
+  // 3: a declined steal confirm keeps the Box armed
+  await t.ctl("sel-clear").click();
+  await t.ctl("tool-box").click();
+  await t.setBox(FLOOR_BOX.c, FLOOR_BOX.d);
+  await t.exact("Selected", String(n));
+  mode.answer = "dismiss";
+  const before = asked.length;
+  await page.locator('[data-control="layer-name"]').fill("Steal");
+  await t.ctl("layer-new").click();
+  await expect.poll(() => asked.length, { timeout: 15000 }).toBe(before + 1);
+  expect(asked[before]).toMatch(/out of other layers/);
+  expect((await t.layers()).some((l) => l.name === "Steal")).toBe(false);
+  await armed(true);
+  // 4: a layer menu Subtract consumes the selection
+  await t.openMore(floor);
+  await t.op(floor, "subtract").click();
+  await t.exact("Selected", "0");
+  await armed(false);
+  // 5: New layer from protected points disarms
+  mode.answer = "accept";
+  const layersBefore = (await t.layers()).length;
+  await t.bandOn();
+  await t.ctl("tool-box").click();
+  await armed(true);
+  await t.exact("Selected", "0");
+  await t.ctl("layer-from-band").click();
+  await expect.poll(async () => (await t.layers()).length, { timeout: 15000 }).toBe(layersBefore + 1);
+  expect((await t.flags()).some((l) => l.protected)).toBe(true);
+  await armed(false);
+});
+
+test("E2E-196 22-1 Esc disarms the armed tool only when nothing more specific is pending, keeps the candidate, and stays out of fields, help, dialogs and drafts", async ({ page }) => {
+  const t = hideHelpers(page);
+  await t.floorSelected();
+  page.removeAllListeners("dialog"); // the helpers accept every ask; none is expected below
+  page.on("dialog", (d) => void d.accept());
+  const armed = (on: boolean) => (on ? expect(t.ctl("tool-box")).toHaveClass(/active/) : expect(t.ctl("tool-box")).not.toHaveClass(/active/));
+  const blur = () => page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await t.ctl("sel-clear").click();
+  await t.ctl("tool-box").click();
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  await t.exact("Selected", String(ROOM.ghost));
+  await t.exact("Candidates", String(ROOM.ghost));
+  // 2: Escape in a filter box field is the field's own
+  await expandFilterBox(page, "filter-x-min");
+  await page.locator("#filter-x-min").focus();
+  await page.keyboard.press("Escape");
+  await armed(true);
+  // 3: Escape closes the help overlay and leaves the tool
+  await blur();
+  await page.keyboard.press("?");
+  await expect(page.locator("#help-overlay")).toHaveClass(/on/);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#help-overlay")).not.toHaveClass(/on/);
+  await armed(true);
+  // 4: Escape in the export dialog closes it and leaves the tool; the page probe proves the dialog still reads open during keydown
+  await page.evaluate(() => {
+    const w = window as unknown as { __escDialog: boolean | null };
+    w.__escDialog = null;
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") w.__escDialog = document.querySelector("dialog[open]") !== null;
+    });
+  });
+  await t.ctl("export").click();
+  await expect(page.locator("dialog[open]")).toHaveCount(1);
+  await t.ctl("export-cancel").focus(); // a BUTTON: the dialog's first control is a SELECT, a field
+  await page.keyboard.press("Escape");
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as { __escDialog: boolean | null }).__escDialog)).toBe(true);
+  await armed(true);
+  // 5: nothing pending (a checkbox has the focus, not a text field): Escape disarms and keeps the selection and its candidate
+  await openHandles(page);
+  await t.ctl("gizmo-snap").focus();
+  await page.keyboard.press("Escape");
+  await armed(false);
+  await expect(page.locator("#modebar")).toContainText("Tool: None");
+  await expect(page.locator("#box-center-x")).toBeHidden();
+  await t.exact("Selected", String(ROOM.ghost));
+  await expect(t.ctl("apply")).toBeEnabled();
+  await t.ctl("apply").click();
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
+  // 6: a pending draft takes the Escape: the draft goes, the selection and the tool stay
+  await t.ctl("tool-box").click();
+  await t.setBox(WALL18.c, WALL18.d);
+  await t.exact("Selected", String(ROOM.wall));
+  await t.ctl("op-add").click();
+  await t.setBox(FLOOR_BOX.c, FLOOR_BOX.d);
+  await expect(t.ctl("sel-discard")).toBeEnabled();
+  await blur();
+  await page.keyboard.press("Escape");
+  await expect(t.ctl("sel-discard")).toBeDisabled();
+  await t.exact("Selected", String(ROOM.wall));
+  await armed(true);
+  // 7: Cluster in pick mode: the first Escape leaves pick mode, the second disarms
+  await t.ctl("tool-cluster").click();
+  await expect(t.ctl("cluster-pick-seed")).toHaveAttribute("data-state", "waiting");
+  await page.keyboard.press("Escape");
+  await expect(t.ctl("cluster-pick-seed")).toHaveAttribute("data-state", "paused");
+  await expect(t.ctl("tool-cluster")).toHaveClass(/active/);
+  await page.keyboard.press("Escape");
+  await expect(t.ctl("tool-cluster")).not.toHaveClass(/active/);
+});
+
+test("E2E-200 22-1 Esc disarms the armed tool while a filter grip has the keyboard focus (focus alone is not a drag)", async ({ page }) => {
+  const t = hideHelpers(page);
+  await t.floorSelected();
+  page.removeAllListeners("dialog"); // the helpers accept every ask; none is expected below
+  page.on("dialog", (d) => void d.accept());
+  await t.ctl("sel-clear").click();
+  await t.ctl("tool-box").click();
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  await t.exact("Selected", String(ROOM.ghost));
+  await expandFilterBox(page, "filter-x-min");
+  await page.locator("#filter-x-min-grip").focus();
+  await expect(page.locator("#filter-x-min-grip")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(t.ctl("tool-box")).not.toHaveClass(/active/);
+  await expect(page.locator("#modebar")).toContainText("Tool: None");
+  await t.exact("Selected", String(ROOM.ghost));
+  await t.exact("Candidates", String(ROOM.ghost));
+});
+
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-199 22-1 owner screenshots at ${w}x${h}: the Box armed over the ghosts, then the same view after Delete with no tool, gizmo or Box section`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => {
+      if (m.type() === "error" && !/404/.test(m.text())) errors.push(m.text());
+    });
+    const t = hideHelpers(page);
+    await t.floorSelected();
+    page.removeAllListeners("dialog"); // after the open: the helpers accept every ask
+    page.on("dialog", (d) => void d.accept());
+    await t.ctl("sel-clear").click();
+    await t.ctl("tool-box").click();
+    await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+    await t.exact("Selected", String(ROOM.ghost));
+    await expect(t.ctl("tool-box")).toHaveClass(/active/);
+    await page.mouse.move(5, 5);
+    await appIdle(page);
+    await page.screenshot({ path: `/out/part22-1-${w}x${h}-armed.png` });
+    await t.ctl("apply").click();
+    await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
+    await expect(t.ctl("tool-box")).not.toHaveClass(/active/);
+    await expect(page.locator("#box-center-x")).toBeHidden();
+    await page.mouse.move(5, 5);
+    await appIdle(page);
+    await page.screenshot({ path: `/out/part22-1-${w}x${h}-after-delete.png` });
+    expect(errors).toEqual([]);
+  });
+}
+
+// ---- part 22-3: the protection band with the Box handles (E2E-215..217)
+test("E2E-215 22-3 with the real mouse the band's upper z arrow tip widens max only, and a tilt ring (X facing the camera) turns rx; #prot-tilt-x shows state; Protected equals fixture truth", async ({ page }) => {
+  const { exact, ctl, setNum } = helpers(page);
+  await openTilted(page, exact);
+  // the camera outlives the page (a Top view an earlier test left is restored), so the view is set here, not assumed
+  await cornerView(page);
+  const rows = tiltedRows();
+  await ctl("prot-enabled").check();
+  await setNum("prot-max", 0.5);
+  await setNum("prot-min", -0.5);
+  await appIdle(page);
+  // the corner view set above: grab the upper arrow at its tip and pull it 25 px further out
+  const upper = (await page.evaluate(() => (window as unknown as { __editor: TiltHook }).__editor.protectionArrows())).find((r) => r.key === "global-max")!;
+  const dx = upper.tip!.x - upper.base!.x;
+  const dy = upper.tip!.y - upper.base!.y;
+  const len = Math.hypot(dx, dy);
+  await realDrag(page, upper.tip!, { x: upper.tip!.x + (dx / len) * 25, y: upper.tip!.y + (dy / len) * 25 });
+  const widened = await tiltNow(page);
+  expect(widened.min).toBe(-0.5); // the lower edge is untouched
+  expect(widened.max).toBeGreaterThan(0.5);
+  expect(widened.rx).toBe(0);
+  expect(widened.ry).toBe(0);
+  await exact("Protected", String(countInTiltedSlab(rows, 0, 0, widened.pivot, widened.min, widened.max)));
+  // the Left view looks along +X, so the X rings are full circles there (ortho: tilt-x+ and tilt-x- coincide)
+  await page.keyboard.press("5");
+  await appIdle(page);
+  const ring = (await page.evaluate(() => (window as unknown as { __editor: TiltHook }).__editor.tiltRings())).find((r) => r.id === "tilt-x+")!;
+  expect(ring.pts).toHaveLength(32);
+  await realDrag(page, ring.pts[0]!, ring.pts[3]!);
+  const turned = await tiltNow(page);
+  expect(Math.abs(turned.rx)).toBeGreaterThan(5);
+  expect(Math.abs(turned.rx)).toBeLessThan(60);
+  expect(turned.ry).toBe(0);
+  expect(turned.max).toBe(widened.max);
+  await expect.poll(async () => Math.abs(Number(await ctl("prot-tilt-x").inputValue()) - turned.rx)).toBeLessThan(1e-4); // the field shows the state value
+  await exact("Protected", String(countInTiltedSlab(rows, turned.rx, turned.ry, turned.pivot, turned.min, turned.max)));
+});
+
+/** The tilted fixture with the slab fitted to the floor by typing (as E2E-44), in the Front view unless `front` is false. */
+const fitTiltedFloor = async (page: import("@playwright/test").Page, setNum: (id: string, v: number) => Promise<void>, ctl: (id: string) => import("@playwright/test").Locator, front = true) => {
+  await ctl("prot-enabled").check();
+  const ang = tiltedFloorAngles();
+  await setNum("prot-tilt-y", ang.ry);
+  await setNum("prot-tilt-x", ang.rx);
+  const t = await tiltNow(page);
+  const rx = (t.rx * Math.PI) / 180;
+  const ry = (t.ry * Math.PI) / 180;
+  const c = -(Math.cos(rx) * Math.sin(ry) * t.pivot[0] - Math.sin(rx) * t.pivot[1]);
+  const lo = c - TILTED.half;
+  const hi = c + TILTED.half;
+  const order = hi > t.min ? ["prot-max", "prot-min"] : ["prot-min", "prot-max"];
+  for (const id of order) await setNum(id, id === "prot-max" ? hi : lo);
+  if (front) await ctl("cube-front").click(); // not the "3" key: after the last field's Tab it would be typed into a number field
+  await appIdle(page);
+  return tiltNow(page);
+};
+const bandHidden = (page: import("@playwright/test").Page) => page.evaluate(() => !(window as unknown as { __editor: { state: () => { bandVisible: boolean } } }).__editor.state().bandVisible);
+
+test("E2E-216 22-3 Show band off: protection and counts stay, the band's handles and drawing go, a press where the arrow tip was grabs nothing, a box Delete removes exactly the unprotected points, the pill says so; Show and reload keep to the switch", async ({ page }) => {
+  const { exact, ctl, setNum, num } = helpers(page);
+  await openTilted(page, exact);
+  const rows = tiltedRows();
+  const fitted = await fitTiltedFloor(page, setNum, ctl);
+  await exact("Protected", String(TILTED.floor));
+  expect(countInTiltedSlab(rows, fitted.rx, fitted.ry, fitted.pivot, fitted.min, fitted.max)).toBe(TILTED.floor);
+  const hooks = () => page.evaluate(() => ({ arrows: (window as unknown as { __editor: TiltHook }).__editor.protectionArrows().length, rings: (window as unknown as { __editor: TiltHook }).__editor.tiltRings().length }));
+  expect(await hooks()).toEqual({ arrows: 2, rings: 4 });
+  const tip = await arrowTip(page, "global-max");
+  const pill = page.locator("#band-pill");
+  await expect(pill).toBeHidden();
+  // pixels: the viewport above the pill with the section folded, band shown
+  const summary = page.locator("details.panel > summary", { hasText: "Height protection" });
+  const fold = async (open: boolean) => {
+    if ((await protNow(page)).open !== open) await summary.click();
+    await expect.poll(async () => (await protNow(page)).open).toBe(open);
+  };
+  const clipOf = async () => {
+    const v = (await page.locator("#viewport").boundingBox())!;
+    return { x: v.x, y: v.y, width: v.width, height: v.height - 130 }; // the pill sits in the bottom 130 px (checked below)
+  };
+  const snap = async () => {
+    await page.mouse.move(5, 5);
+    await appIdle(page);
+    // the HUD glass blurs what is behind it, and the blur's edge pixels differ by one level between two identical frames (22-4): compare the canvas, not the blur
+    return page.screenshot({ clip: await clipOf(), style: "#stage * { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }" });
+  };
+  await fold(false); // folded: no strong colour, so only the band can differ
+  const shownShot = await snap();
+  await fold(true);
+
+  await ctl("prot-show-band").click();
+  await expect(ctl("prot-show-band")).toHaveAttribute("aria-checked", "false");
+  expect(await bandHidden(page)).toBe(true);
+  await expect(pill).toBeVisible();
+  await expect(pill).toContainText("Protection on · band hidden");
+  const pb = (await pill.boundingBox())!;
+  const vb = (await page.locator("#viewport").boundingBox())!;
+  expect(pb.y).toBeGreaterThan(vb.y + vb.height - 130); // inside the clip's complement
+  expect(pb.y + pb.height).toBeLessThanOrEqual(vb.y + vb.height);
+  expect(await hooks()).toEqual({ arrows: 0, rings: 0 });
+  await exact("Protected", String(TILTED.floor));
+  expect(await tiltNow(page)).toEqual(fitted); // protection untouched
+  await fold(false);
+  const hiddenShot = await snap();
+  await fold(true);
+  // protection off and folded draws the same canvas as the hidden band (above the pill), and shown differs
+  await ctl("prot-enabled").uncheck();
+  await expect(pill).toBeHidden();
+  await fold(false);
+  const offShot = await snap();
+  await fold(true);
+  expect(hiddenShot.equals(offShot)).toBe(true);
+  expect(shownShot.equals(hiddenShot)).toBe(false);
+  await ctl("prot-enabled").check();
+  await exact("Protected", String(TILTED.floor));
+  await expect(pill).toBeVisible();
+  // a real press and drag where the arrow tip was leaves min and max alone (the camera gets it and orbits)
+  await realDrag(page, tip, { x: tip.x, y: tip.y - 30 });
+  const after = await tiltNow(page);
+  expect(after.min).toBe(fitted.min);
+  expect(after.max).toBe(fitted.max);
+  await exact("Protected", String(TILTED.floor));
+
+  // a box over the floor and the ghosts: Delete removes exactly the unprotected points
+  await ctl("tool-box").click();
+  for (const [id, v] of [["box-center-x", 10], ["box-center-y", 10], ["box-center-z", 3], ["box-size-x", 30], ["box-size-y", 30], ["box-size-z", 20]] as const) await setNum(id, v);
+  await exact("Candidates", String(TILTED.ghost));
+  await ctl("apply").click();
+  await exact("Active", String(TILTED.floor));
+  expect(await num("Original")).toBe(TILTED.floor + TILTED.ghost);
+  await exact("Protected", String(TILTED.floor));
+
+  // reload keeps hidden (E1), and Show brings the handles and hides the pill
+  // the client state is saved a second after the last change: wait for the archive to hold the flag before reloading
+  await expect
+    .poll(() => page.evaluate(async () => (await (await fetch("/api/session")).json()).client_state?.ui?.bandHidden), { timeout: 15000 })
+    .toBe(true);
+  await page.reload();
+  await exact("Original", String(TILTED.floor + TILTED.ghost));
+  await expect.poll(() => bandHidden(page), { timeout: 15000 }).toBe(true);
+  await expect(pill).toBeVisible();
+  await pill.getByRole("button", { name: "Show" }).click();
+  await expect(pill).toBeHidden();
+  expect(await bandHidden(page)).toBe(false);
+  expect((await hooks()).arrows).toBe(2);
+  // leave the archive shown (the flag is absent while shown), so the next test's reopened session does not start hidden
+  await expect
+    .poll(() => page.evaluate(async () => (await (await fetch("/api/session")).json()).client_state?.ui?.bandHidden), { timeout: 15000 })
+    .toBeUndefined();
+});
+
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-217 22-3 owner screenshots at ${w}x${h}: the band shown (corner view, section open) and hidden with the pill; the pill sits in the canvas and overlaps nothing`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => {
+      if (m.type() === "error" && !/404/.test(m.text())) errors.push(m.text());
+    });
+    const { exact, ctl, setNum } = helpers(page);
+    await openTilted(page, exact);
+    await fitTiltedFloor(page, setNum, ctl, false); // the default corner view
+    expect(await bandHidden(page)).toBe(false); // the band starts shown
+    await page.mouse.move(5, 5);
+    await appIdle(page);
+    await page.screenshot({ path: `/out/part22-3-${w}x${h}-band.png` });
+    await ctl("prot-show-band").click();
+    const pill = page.locator("#band-pill");
+    await expect(pill).toBeVisible();
+    await page.mouse.move(5, 5);
+    await appIdle(page);
+    await page.screenshot({ path: `/out/part22-3-${w}x${h}-band-hidden.png` });
+    const pb = (await pill.boundingBox())!;
+    const stage = (await page.locator("#stage").boundingBox())!;
+    expect(pb.x).toBeGreaterThanOrEqual(stage.x);
+    expect(pb.x + pb.width).toBeLessThanOrEqual(stage.x + stage.width);
+    expect(pb.y).toBeGreaterThanOrEqual(stage.y);
+    expect(pb.y + pb.height).toBeLessThanOrEqual(stage.y + stage.height);
+    for (const id of ["#legend", "#timeline", "#timeline-bar", "#viewcube", "#camera-cluster", "#filter-hud", "#triad", "#notices"]) {
+      const el = page.locator(id);
+      if (!(await el.isVisible())) continue;
+      const r = (await el.boundingBox())!;
+      const apart = pb.x + pb.width <= r.x || r.x + r.width <= pb.x || pb.y + pb.height <= r.y || r.y + r.height <= pb.y;
+      expect(apart, `${id} overlaps the pill`).toBe(true);
+    }
+    // the box the placement reserves for the pill (PILL in view/layout.ts) must cover the pill as drawn
+    expect(pb.width).toBeLessThanOrEqual(260);
+    expect(pb.height).toBeLessThanOrEqual(34);
+    expect(stage.y + stage.height - (pb.y + pb.height)).toBeGreaterThanOrEqual(46);
+    const chips = page.locator("#fbox-layer .fbox");
+    let seen = 0;
+    for (let i = 0; i < (await chips.count()); i++) {
+      const chip = chips.nth(i);
+      if (!(await chip.isVisible())) continue;
+      seen++;
+      const r = (await chip.boundingBox())!;
+      const apart = pb.x + pb.width <= r.x || r.x + r.width <= pb.x || pb.y + pb.height <= r.y || r.y + r.height <= pb.y;
+      expect(apart, `filter box ${i} overlaps the pill`).toBe(true);
+    }
+    expect(seen, "the six filter boxes are on the canvas").toBe(6);
+    expect(errors).toEqual([]);
+  });
+}
+
+// ---- part 22-4: design tokens, themes, type and focus (E2E-220..226)
+type Rgba = [number, number, number, number];
+/** A computed CSS colour (`rgb(...)` or `rgba(...)`) as numbers. */
+const cssRgba = (css: string): Rgba => {
+  const m = css.match(/rgba?\(\s*([\d.]+)[ ,]+([\d.]+)[ ,]+([\d.]+)(?:[ ,/]+([\d.]+))?\s*\)/);
+  if (!m) throw new Error(`not a computed colour: ${css}`);
+  return [Number(m[1]), Number(m[2]), Number(m[3]), m[4] === undefined ? 1 : Number(m[4])];
+};
+/** `fg` over an opaque `bg`. */
+const over = (fg: Rgba, bg: Rgba): Rgba => [0, 1, 2].map((i) => fg[i] * fg[3] + bg[i] * (1 - fg[3])).concat([1]) as Rgba;
+const lumOf = (c: Rgba): number => {
+  const f = (v: number) => {
+    const x = v / 255;
+    return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+};
+/** WCAG contrast of a (possibly translucent) text colour on an opaque background. */
+const contrastOf = (fg: Rgba, bg: Rgba): number => {
+  const [a, b] = [lumOf(over(fg, bg)), lumOf(bg)].sort((x, y) => y - x);
+  return (a + 0.05) / (b + 0.05);
+};
+const near = (a: Rgba, b: number[], tol = 2) => [0, 1, 2].every((i) => Math.abs(a[i] - b[i]) <= tol);
+type Scheme = "dark" | "light";
+const themeRead = (page: Pg) =>
+  page.evaluate(() => {
+    const cs = (sel: string) => getComputedStyle(document.querySelector(sel)!);
+    const root = getComputedStyle(document.documentElement);
+    return {
+      attr: document.documentElement.getAttribute("data-theme"),
+      body: cs("body").backgroundColor,
+      label: cs("body").color,
+      aside: cs("#tools").backgroundColor,
+      hud: cs("#legend").backgroundColor,
+      fbox: cs("#fbox-layer .fbox").backgroundColor,
+      canvas: root.getPropertyValue("--canvas").trim(),
+      accent: root.getPropertyValue("--accent").trim(),
+      family: cs("body").fontFamily,
+    };
+  });
+
+test("E2E-220 22-4 the default is the dark theme on the real cascade: body, aside, label, accent and font, no data-theme, and no request leaves the machine", async ({ page }) => {
+  const hosts = new Set<string>();
+  page.on("request", (r) => {
+    const u = new URL(r.url());
+    if (u.protocol === "http:" || u.protocol === "https:") hosts.add(u.hostname);
+  });
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  const { exact } = helpers(page);
+  await openRoom(page, exact);
+  const t = await themeRead(page);
+  expect(t.attr).toBeNull();
+  expect(cssRgba(t.body)).toEqual([12, 13, 16, 1]);
+  expect(cssRgba(t.label)).toEqual([245, 245, 247, 1]);
+  expect(cssRgba(t.aside)).toEqual([30, 31, 36, 0.7]);
+  expect(t.accent).toBe("#0a84ff");
+  expect(t.family).toMatch(/^-apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, sans-serif$/);
+  expect([...hosts].filter((h) => h !== "localhost" && h !== "127.0.0.1")).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test("E2E-221 22-4 prefers-color-scheme light switches the aside, the body, the stage HUD and the 3D stage backdrop to the light tokens, and data-theme overrides it both ways", async ({ page }) => {
+  const { exact } = helpers(page);
+  await openRoom(page, exact);
+  await appIdle(page);
+  const corner = await stageCorner(page);
+  const expectStage = (want: Scheme) => expectStageCorner(page, corner, want);
+  const expectTheme = async (want: Scheme) => {
+    const light = want === "light";
+    await expect
+      .poll(async () => {
+        const t = await themeRead(page);
+        const canvas = cssRgba(t.body);
+        const lumHud = lumOf(over(cssRgba(t.hud), canvas));
+        const lumFbox = lumOf(over(cssRgba(t.fbox), canvas));
+        return {
+          body: near(canvas, light ? [233, 235, 239] : [12, 13, 16]),
+          aside: cssRgba(t.aside).slice(0, 3).join(",") === (light ? "248,248,250" : "30,31,36"),
+          text: near(cssRgba(t.label), light ? [29, 29, 31] : [245, 245, 247]),
+          hud: light ? lumHud >= 0.8 : lumHud <= 0.02,
+          fbox: light ? lumFbox >= 0.8 : lumFbox <= 0.02,
+        };
+      }, { timeout: 5000 })
+      .toEqual({ body: true, aside: true, text: true, hud: true, fbox: true });
+    await expectStage(want);
+  };
+  await expectTheme("dark");
+  await page.emulateMedia({ colorScheme: "light" });
+  await expectTheme("light");
+  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+  await expectTheme("dark");
+  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "light"));
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expectTheme("light");
+  await page.evaluate(() => document.documentElement.removeAttribute("data-theme"));
+  await expectTheme("dark");
+});
+
+test("E2E-222 22-4 a keyboard-focused toolbar button, side-panel field and stage control each get a 3px accent focus ring, in both themes", async ({ page }) => {
+  const { exact, ctl } = helpers(page);
+  await openRoom(page, exact);
+  await ctl("filter-x-min-toggle").click(); // expand one filter box so it has a field
+  for (const [scheme, accent] of [["dark", [10, 132, 255]], ["light", [0, 122, 255]]] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    for (const id of ["open-file", "scope-displayed", "filter-x-min-toggle"]) {
+      await page.locator("body").click({ position: { x: 1, y: 1 } });
+      await page.keyboard.press("Tab"); // keyboard modality, so focus() shows the ring
+      await ctl(id).focus();
+      await expect(ctl(id)).toBeFocused();
+      const o = await ctl(id).evaluate((e) => {
+        const s = getComputedStyle(e);
+        return { w: s.outlineWidth, st: s.outlineStyle, c: s.outlineColor };
+      });
+      expect(`${scheme} ${id} ${o.st} ${o.w}`).toBe(`${scheme} ${id} solid 3px`);
+      expect(near(cssRgba(o.c), accent, 1), `${scheme} ${id} ring colour ${o.c}`).toBe(true);
+    }
+  }
+});
+
+test("E2E-223 22-4 reduced motion gives 0s transitions; without it a button fades in 0.12-0.25 s", async ({ page }) => {
+  const { exact, ctl } = helpers(page);
+  await openRoom(page, exact);
+  const durations = () => ctl("open-file").evaluate((e) => getComputedStyle(e).transitionDuration.split(",").map((d) => parseFloat(d)));
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const normal = await durations();
+  expect(normal.length).toBeGreaterThan(0);
+  for (const d of normal) {
+    expect(d).toBeGreaterThanOrEqual(0.12);
+    expect(d).toBeLessThanOrEqual(0.25);
+  }
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  expect((await durations()).every((d) => d === 0)).toBe(true);
+  expect(await page.locator("#legend .legend-head svg").evaluate((e) => getComputedStyle(e).transitionDuration)).toBe("0s");
+});
+
+
+/** Every visible element under `scope` that carries its own text, with its colour and the translucent layers behind it (innermost first), up to the first opaque one. `stage` is true inside #stage, whose backdrop is the clear colour (--canvas, with --canvas-vignette as the other end of the stage gradient the approved mockup draws). */
+const textBackdrops = (page: Pg, scope: string, max = 40) =>
+  page.evaluate(
+    ([sel, limit]) => {
+      const probe = document.createElement("i");
+      document.body.appendChild(probe);
+      const norm = (v: string) => {
+        probe.style.color = v;
+        return getComputedStyle(probe).color;
+      };
+      const root = getComputedStyle(document.documentElement);
+      const canvas = norm(root.getPropertyValue("--canvas").trim());
+      const vignette = norm(root.getPropertyValue("--canvas-vignette").trim());
+      const out: { what: string; fg: string; layers: string[]; stage: boolean; canvas: string; vignette: string }[] = [];
+      for (const el of Array.from(document.querySelectorAll(sel as string)).slice(0, limit as number)) {
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0 || getComputedStyle(el).visibility === "hidden") continue;
+        const layers: string[] = [];
+        let stage = false;
+        for (let n: Element | null = el; n; n = n.parentElement) {
+          if (n.id === "stage") stage = true;
+          const bg = getComputedStyle(n).backgroundColor;
+          if (bg !== "rgba(0, 0, 0, 0)") {
+            layers.push(bg);
+            if (/^rgb\(/.test(bg)) break;
+          }
+        }
+        out.push({ what: `${el.tagName.toLowerCase()}${el.id ? "#" + el.id : ""}.${(el as HTMLElement).className || ""} "${(el.textContent ?? "").trim().slice(0, 24)}"`, fg: getComputedStyle(el).color, layers, stage, canvas, vignette });
+      }
+      probe.remove();
+      return out;
+    },
+    [scope, max] as const,
+  );
+/** Wait until no CSS transition is running: a colour read mid-transition after a theme switch is neither theme's colour. */
+const transitionsSettled = (page: Pg) => expect.poll(() => page.evaluate(() => document.getAnimations().length), { message: "CSS transitions finished" }).toBe(0);
+/** The worst WCAG ratio of one element's text over its backdrop: the layers composited over each possible stage colour (both ends of the stage) when the element is inside #stage. */
+const worstContrast = (t: Awaited<ReturnType<typeof textBackdrops>>[number]): number => {
+  const solidBase = t.layers.length && /^rgb\(/.test(t.layers[t.layers.length - 1]) ? [cssRgba(t.layers[t.layers.length - 1])] : [];
+  const bases = t.stage || !solidBase.length ? [cssRgba(t.canvas), cssRgba(t.vignette)] : solidBase;
+  const layers = (solidBase.length && !t.stage ? t.layers.slice(0, -1) : t.layers).map(cssRgba);
+  const ordered = [...layers].reverse();
+  return Math.min(
+    ...bases.map((base) => {
+      let bg: Rgba = [base[0], base[1], base[2], 1];
+      for (const l of ordered) bg = over(l, bg);
+      return contrastOf(cssRgba(t.fg), bg);
+    }),
+  );
+};
+
+test("E2E-225 22-4 measured contrast on real elements, both themes: status count, aside h2, a note, a layer count, the help key, Delete, the legend rows and a filter-box label over the stage, and #empty straight on the stage", async ({ page }) => {
+  const t = layerMenu(page);
+  const { ctl } = t;
+  // #empty is on the stage before any file is opened
+  // a session left by an earlier test would be reopened and hide it: answer "no session" for this first load only
+  await page.route("**/api/session", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ no_session: true }) }), { times: 1 });
+  await page.goto("/");
+  await expect(page.locator("#empty")).toBeVisible();
+  const checkEmpty = async (scheme: Scheme) => {
+    await page.emulateMedia({ colorScheme: scheme });
+    await expect.poll(async () => (await textBackdrops(page, "#empty")).length).toBe(1);
+    const [e] = await textBackdrops(page, "#empty");
+    expect(worstContrast(e), `${scheme} #empty`).toBeGreaterThanOrEqual(4.5);
+  };
+  await checkEmpty("dark");
+  await checkEmpty("light");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await t.floorFromBand(); // opens the room and makes a protected Floor layer, so a layer row and its count exist
+  await ctl("help").click();
+  await expect(page.locator("#help-overlay")).toBeVisible();
+  const scopes: [string, string][] = [
+    ["status count", "#statusbar .item"],
+    ["aside h2", "aside h2"],
+    ["a note", "#tools .note"],
+    ["layer count", ".layer-row .layer-count"],
+    ["help key", "#help-overlay td.k"],
+    ["Delete", "#apply"],
+    ["legend", "#legend, #legend *"],
+    ["filter box", "#fbox-layer .fbox, #fbox-layer .fbox *"],
+  ];
+  for (const scheme of ["dark", "light"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await transitionsSettled(page);
+    for (const [name, sel] of scopes) {
+      // elements that carry their own text only: the others have no glyphs to read
+      await expect.poll(async () => (await textBackdrops(page, sel)).length, { message: name }).toBeGreaterThan(0);
+      for (const t of await textBackdrops(page, sel)) {
+        if (!/"[^"]+"$/.test(t.what) && !/input/.test(t.what)) continue;
+        expect(worstContrast(t), `${scheme} ${name}: ${t.what}`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  }
+});
+
+
+test("E2E-224 22-4 every visible icon-only button has an aria-label and a title: idle, Box armed with a layer, the legend, a filter box, the export dialog and help", async ({ page }) => {
+  const t = helpers(page);
+  const { exact, ctl } = t;
+  await openRoom(page, exact);
+  const offenders = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll("button, [role=button], [role=switch], [role=radio]")]
+        .filter((e) => {
+          const r = e.getBoundingClientRect();
+          const cs = getComputedStyle(e);
+          return r.width > 0 && r.height > 0 && cs.visibility !== "hidden" && !/[A-Za-z0-9]/.test(e.textContent ?? "") && !e.querySelector("input");
+        })
+        .filter((e) => !(e.getAttribute("aria-label") ?? "").trim() || !(e.getAttribute("title") ?? "").trim())
+        .map((e) => `${e.id ? "#" + e.id : e.tagName.toLowerCase()}[${["data-control", "data-layer-eye", "data-layer-more", "data-layer-edit"].map((a) => (e.hasAttribute(a) ? `${a}=${e.getAttribute(a)}` : "")).join("")}] ${e.outerHTML.slice(0, 90)}`),
+    );
+  const states: Record<string, string[]> = {};
+  states.idle = await offenders();
+  await ctl("tool-box").click();
+  await t.boxEverything();
+  await page.locator('[data-control="layer-name"]').fill("Probe");
+  await ctl("layer-new").click();
+  await expect(page.locator("[data-layer-row]")).toHaveCount(2, { timeout: 15000 });
+  const more = page.locator("[data-layer-more]").last();
+  if ((await more.getAttribute("aria-expanded")) !== "true") await more.click();
+  states["box armed with a layer"] = await offenders();
+  if ((await ctl("legend-menu").getAttribute("aria-expanded")) === "false") await ctl("legend-menu").click();
+  states.legend = await offenders();
+  // the layer menu is a popover over the right of the stage, where the legend at the bottom left no longer pushes the boxes (22-8): close it before the box is clicked
+  await page.keyboard.press("Escape");
+  await expect(more).toHaveAttribute("aria-expanded", "false");
+  await t.setNum("filter-x-min", 0);
+  states["filter box"] = await offenders();
+  await ctl("help").click();
+  states.help = await offenders();
+  await ctl("help").click();
+  await ctl("export").click();
+  states["export dialog"] = await offenders();
+  expect(states).toEqual({ idle: [], "box armed with a layer": [], legend: [], "filter box": [], help: [], "export dialog": [] });
+});
+
+test("E2E-230 22-4b a collapsed filter box's accessible name contains the chip it shows (WCAG 2.5.3): the X ≥ button is the X min toggle, and expanded it is the plain box name", async ({ page }) => {
+  const t = helpers(page);
+  await openRoom(page, t.exact);
+  const chip = page.getByRole("button", { name: /X ≥/ });
+  await expect(chip).toHaveCount(1);
+  await expect(chip).toBeVisible();
+  await expect(chip).toHaveAttribute("id", "filter-x-min-toggle");
+  const visible = ((await chip.textContent()) ?? "").trim();
+  expect((await chip.getAttribute("aria-label")) ?? "").toContain(visible);
+  await chip.click();
+  await expect(page.locator("#filter-x-min-toggle")).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator("#filter-x-min-toggle")).toHaveAttribute("aria-label", "X min filter box");
+  await expect(page.getByRole("button", { name: "X min filter box", exact: true })).toBeVisible();
+});
+
+const LIGHT_STAGE = [233, 235, 239];
+const DARK_STAGE = [12, 13, 16];
+const rgbOf = (hex: string): number[] => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+
+test("E2E-231 22-4b light points on the real stage: a lone base point draws the light base colour under a light OS, the dark colour under data-theme dark, and light again, with no reload and no page error", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("console", (m) => {
+    if (m.type() === "error" && !/404/.test(m.text())) errors.push(m.text());
+  });
+  const { exact, ctl } = helpers(page);
+  await openRoom(page, exact);
+  await appIdle(page);
+  await openPop(page, "display");
+  await ctl("colour-mode").selectOption("flat"); // Grey: the base colour, not a height ramp
+  await closePop(page, "display");
+  await page.evaluate(() => ((window as unknown as { __mark: number }).__mark = 1));
+  const lone = await settledScreen(page, [16.5, 3.5, 3]);
+  const corner = await stageCorner(page);
+  const theme = () => hook(page, (e) => e.state().renderTheme);
+  const expectPoint = async (stage: number[], want: number[], label: string) => {
+    await expect.poll(async () => {
+      const px = await farthestFromStage(page, lone, stage, 3);
+      return near([...px, 1], want, 2) ? "ok" : `${label}: wanted ${want}, read ${px}`;
+    }, { timeout: 8000 }).toBe("ok");
+  };
+  expect(await theme()).toBe("dark");
+  await expectPoint(DARK_STAGE, [216, 216, 216], "dark base point");
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect.poll(theme, { message: "renderTheme under a light OS" }).toBe("light");
+  await expectStageCorner(page, corner, "light");
+  await expectPoint(LIGHT_STAGE, [135, 135, 135], "light base point");
+  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+  await expect.poll(theme, { message: "renderTheme under data-theme dark" }).toBe("dark");
+  await expectStageCorner(page, corner, "dark");
+  await expectPoint(DARK_STAGE, [216, 216, 216], "dark base point again");
+  await page.evaluate(() => document.documentElement.removeAttribute("data-theme"));
+  await expect.poll(theme, { message: "renderTheme once data-theme is gone" }).toBe("light");
+  await expectStageCorner(page, corner, "light");
+  await expectPoint(LIGHT_STAGE, [135, 135, 135], "light base point again");
+  expect(await page.evaluate(() => (window as unknown as { __mark?: number }).__mark), "the page was reloaded").toBe(1);
+  expect(errors).toEqual([]);
+});
+
+test("E2E-232 22-4b light Box armed: the arrows, a ring and an edge of the box draw in the light colours, the triad and the legend chip follow, and data-theme dark gives back the exact dark values", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("console", (m) => {
+    if (m.type() === "error" && !/404/.test(m.text())) errors.push(m.text());
+  });
+  const t = hideHelpers(page);
+  await openRoom(page, t.exact);
+  await t.ctl("tool-box").click();
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  await t.exact("Selected", String(ROOM.ghost));
+  await appIdle(page);
+  const readTriad = () =>
+    page.evaluate(() => [...document.querySelectorAll(".cube-triad line")].map((l) => l.getAttribute("stroke")));
+  const chip = () => page.locator('#legend [data-legend="selected"]');
+  const checks = async (axes: string[], outline: string, candidate: string, label: string) => {
+    for (const [i, axis] of axes.entries()) {
+      const arrows = (await hook(page, (e) => e.handlePositions())).filter((h) => h.id === `resize-${i}+`);
+      expect(arrows.length, `${label}: arrow resize-${i}+ is on screen`).toBe(1);
+      await expect.poll(() => countNear(page, arrows[0], 8, rgbOf(axis), 3), { timeout: 8000, message: `${label}: arrow resize-${i}+ in ${axis}` }).toBeGreaterThan(0);
+    }
+    const b = await hook(page, (e) => e.state().tools.box);
+    const edge = await settledScreen(page, [b.center[0], b.center[1] - b.dimensions[1] / 2, b.center[2] - b.dimensions[2] / 2]);
+    await expect.poll(() => countNear(page, edge, 4, rgbOf(outline), 3), { timeout: 8000, message: `${label}: box edge in ${outline}` }).toBeGreaterThan(0);
+    await expect(chip(), label).toHaveCSS("background-color", `rgb(${rgbOf(candidate).join(", ")})`);
+  };
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect.poll(() => hook(page, (e) => e.state().renderTheme)).toBe("light");
+  await expectStageCorner(page, await stageCorner(page), "light");
+  const lightAxes = ["#e0352b", "#1f9b3b", "#1f6fe0"];
+  await checks(lightAxes, "#34343d", "#be7715", "light");
+  // a ring: its dimmed axis colour (75%) near a sample of its outline
+  const rings = await hook(page, (e) => e.boxRings());
+  const ring = rings.find((r) => r.id === "rotate-2+") ?? rings[0];
+  const dim = (hex: string) => rgbOf(hex).map((v) => Math.round(v * 0.75));
+  const ringHex = lightAxes[Number(ring.id.match(/rotate-(\d)/)![1])];
+  let seen = 0;
+  for (const p of ring.pts.filter((_, i) => i % 3 === 0)) seen += await countNear(page, p, 3, dim(ringHex), 3);
+  expect(seen, `ring ${ring.id} in ${ringHex} at 75%`).toBeGreaterThan(0);
+  expect(await readTriad()).toEqual(lightAxes);
+  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+  await expect.poll(() => hook(page, (e) => e.state().renderTheme)).toBe("dark");
+  await expectStageCorner(page, await stageCorner(page), "dark");
+  const darkAxes = ["#ff5555", "#55ff55", "#5599ff"];
+  await checks(darkAxes, "#ffd23f", "#ff9f1c", "dark");
+  expect(await readTriad()).toEqual(darkAxes);
+  expect(errors).toEqual([]);
+});
+
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-226 22-4 owner screenshots at ${w}x${h}: dark and light, idle and the Box armed with its preview up; the page does not scroll, nothing throws, and the filter boxes overlap no other stage control`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => {
+      if (m.type() === "error" && !/404/.test(m.text())) errors.push(m.text());
+    });
+    const t = hideHelpers(page);
+    await t.floorSelected();
+    page.removeAllListeners("dialog");
+    page.on("dialog", (d) => void d.accept());
+    await t.ctl("sel-clear").click();
+    const shoot = async (scheme: Scheme, name: string) => {
+      await page.emulateMedia({ colorScheme: scheme });
+      await expect.poll(async () => (await themeRead(page)).canvas, { message: `${scheme} theme applied` }).toBe(scheme === "light" ? "#e9ebef" : "#0c0d10");
+      await page.mouse.move(5, 5);
+      await appIdle(page);
+      await expectStageCorner(page, await stageCorner(page), scheme); // the clear colour follows the theme on a later frame
+      await page.screenshot({ path: `/out/part22-4-${w}x${h}-${name}.png` });
+      expect(await page.evaluate(() => document.scrollingElement!.scrollHeight <= window.innerHeight), `${scheme} ${name}: the page scrolls`).toBe(true);
+    };
+    await shoot("dark", "dark");
+    await shoot("light", "light");
+    await t.ctl("tool-box").click();
+    await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+    await t.exact("Selected", String(ROOM.ghost));
+    await expect(t.ctl("tool-box")).toHaveClass(/active/);
+    await shoot("dark", "dark-armed");
+    await shoot("light", "light-armed");
+    // the type scale must not grow the legend: 214 px at 1280x720 before part 4 (review m4)
+    if (w === 1280) for (const scheme of ["dark", "light"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await expect.poll(async () => (await page.locator("#legend").boundingBox())!.height, { message: `${scheme} legend height, Box armed` }).toBeLessThanOrEqual(214);
+    }
+    const boxes = page.locator("#fbox-layer .fbox");
+    let seen = 0;
+    for (let i = 0; i < (await boxes.count()); i++) {
+      if (!(await boxes.nth(i).isVisible())) continue;
+      seen++;
+      const r = (await boxes.nth(i).boundingBox())!;
+      for (const id of ["#legend", "#timeline", "#timeline-bar", "#viewcube", "#camera-cluster", "#filter-hud", "#notices"]) {
+        const el = page.locator(id);
+        if (!(await el.isVisible())) continue;
+        const o = (await el.boundingBox())!;
+        const apart = r.x + r.width <= o.x || o.x + o.width <= r.x || r.y + r.height <= o.y || o.y + o.height <= r.y;
+        expect(apart, `filter box ${i} overlaps ${id}`).toBe(true);
+      }
+    }
+    expect(seen, "the six filter boxes are on the canvas").toBe(6);
+    expect(errors).toEqual([]);
+  });
+}
+
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-233 22-4b owner screenshots at ${w}x${h}: dark and light render palettes, idle and the Box armed; the render theme follows the page, the page does not scroll, nothing throws, and the legend and the filter boxes overlap nothing`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => {
+      if (m.type() === "error" && !/404/.test(m.text())) errors.push(m.text());
+    });
+    const t = hideHelpers(page);
+    await t.floorSelected();
+    page.removeAllListeners("dialog");
+    page.on("dialog", (d) => void d.accept());
+    await t.ctl("sel-clear").click();
+    const shoot = async (scheme: Scheme, name: string) => {
+      await page.emulateMedia({ colorScheme: scheme });
+      await expect.poll(async () => (await themeRead(page)).canvas, { message: `${scheme} theme applied` }).toBe(scheme === "light" ? "#e9ebef" : "#0c0d10");
+      await expect.poll(() => hook(page, (e) => e.state().renderTheme), { message: `${scheme} render theme` }).toBe(scheme);
+      await page.mouse.move(5, 5);
+      await appIdle(page);
+      // a longer bound than the default: each read forces a full-frame capture, slow at 1920x1080 under SwiftShader with the Box up
+      const corner = await stageCorner(page);
+      await expectStageCorner(page, corner, scheme, 20000);
+      await page.screenshot({ path: `/out/part22-4b-${w}x${h}-${name}.png` });
+      expect(await page.evaluate(() => document.scrollingElement!.scrollHeight <= window.innerHeight), `${scheme} ${name}: the page scrolls`).toBe(true);
+    };
+    await shoot("dark", "dark");
+    await shoot("light", "light");
+    await t.ctl("tool-box").click();
+    await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+    await t.exact("Selected", String(ROOM.ghost));
+    await expect(t.ctl("tool-box")).toHaveClass(/active/);
+    await shoot("dark", "dark-armed");
+    await shoot("light", "light-armed");
+    const boxes = page.locator("#fbox-layer .fbox");
+    let seen = 0;
+    for (let i = 0; i < (await boxes.count()); i++) {
+      if (!(await boxes.nth(i).isVisible())) continue;
+      seen++;
+      const r = (await boxes.nth(i).boundingBox())!;
+      for (const id of ["#legend", "#timeline", "#timeline-bar", "#viewcube", "#camera-cluster", "#filter-hud", "#notices"]) {
+        const el = page.locator(id);
+        if (!(await el.isVisible())) continue;
+        const o = (await el.boundingBox())!;
+        const apart = r.x + r.width <= o.x || o.x + o.width <= r.x || r.y + r.height <= o.y || o.y + o.height <= r.y;
+        expect(apart, `filter box ${i} overlaps ${id}`).toBe(true);
+      }
+    }
+    expect(seen, "the six filter boxes are on the canvas").toBe(6);
+    expect(errors).toEqual([]);
+  });
+}
+
+// ---------------------------------------------------------------- part 22-5: popovers
+test("E2E-246 22-5 a popover opens from its anchor, closes on a click elsewhere, and its Esc closes it before the tool disarms and before a pending draft is discarded", async ({ page }) => {
+  const t = hideHelpers(page);
+  await t.floorSelected();
+  page.removeAllListeners("dialog");
+  page.on("dialog", (d) => void d.accept());
+  const pop = page.locator("#cloud-details");
+  const anchor = t.ctl("details-open");
+  const armed = (on: boolean) => (on ? expect(t.ctl("tool-box")).toHaveClass(/active/) : expect(t.ctl("tool-box")).not.toHaveClass(/active/));
+  await expect(pop).toBeHidden();
+  await anchor.click();
+  await expect(pop).toBeVisible();
+  await expect(anchor).toHaveAttribute("aria-expanded", "true");
+  await page.locator("#viewport").click({ position: { x: 40, y: 420 } });
+  await expect(pop).toBeHidden();
+  await expect(anchor).toHaveAttribute("aria-expanded", "false");
+  // Esc with no draft: the popover closes, the Box stays armed, the focus returns to the anchor; the second Esc disarms
+  await t.ctl("sel-clear").click();
+  await t.ctl("tool-box").click();
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  await t.exact("Selected", String(ROOM.ghost));
+  await anchor.click();
+  await expect(pop).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(pop).toBeHidden();
+  await armed(true);
+  await expect(page.locator("#modebar")).toContainText("Tool: Box");
+  await expect(anchor).toBeFocused();
+  await page.keyboard.press("Escape");
+  await armed(false);
+  await expect(page.locator("#modebar")).toContainText("Tool: None");
+  // E6b: a pending draft survives the Esc that closes the popover; the next Esc discards it, the one after disarms
+  await t.ctl("apply").click();
+  await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
+  await t.ctl("tool-box").click();
+  await t.setBox(WALL18.c, WALL18.d);
+  await t.exact("Selected", String(ROOM.wall));
+  await t.ctl("op-add").click();
+  await t.setBox(FLOOR_BOX.c, FLOOR_BOX.d);
+  await expect(t.ctl("sel-discard")).toBeEnabled();
+  await anchor.click();
+  await expect(pop).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(pop).toBeHidden();
+  await expect(t.ctl("sel-discard")).toBeEnabled();
+  await armed(true);
+  await page.keyboard.press("Escape");
+  await expect(t.ctl("sel-discard")).toBeDisabled();
+  await armed(true);
+  await page.keyboard.press("Escape");
+  await armed(false);
+  // part 3: the History popover opens from history-open, replaces any other popover, and its Esc leaves the Box armed
+  const hist = page.locator("#history-pop");
+  await t.ctl("tool-box").click();
+  await armed(true);
+  await anchor.click();
+  await expect(pop).toBeVisible();
+  await t.ctl("history-open").click();
+  await expect(hist).toBeVisible();
+  await expect(pop).toBeHidden();
+  await page.keyboard.press("Escape");
+  await expect(hist).toBeHidden();
+  await armed(true);
+});
+
+test("E2E-249 22-5 the History popover lists the three deletions with their counts, marks the undone one, and its button sits at the right end of the timeline", async ({ page }) => {
+  const t = tl(page);
+  await t.threeSteps();
+  const hist = page.locator("#history-pop");
+  await expect(hist).toBeHidden();
+  await page.locator('[data-control="history-open"]').click();
+  await expect(hist).toBeVisible();
+  const rows = hist.locator("#history-list li");
+  await expect(rows).toHaveCount(3);
+  const fmt = (n: number) => new Intl.NumberFormat("en-US").format(n);
+  for (const [i, n] of [ROOM.ghost, ROOM.wall, ROOM.noise].entries()) await expect(rows.nth(i)).toContainText(`(${fmt(n)})`);
+  const strip = (await page.locator("#timeline").boundingBox())!;
+  const btn = (await page.locator('#timeline [data-control="history-open"]').boundingBox())!;
+  expect(btn.x + btn.width, "right end of the timeline").toBeGreaterThan(strip.x + strip.width - 24);
+  await page.keyboard.press("Escape");
+  await expect(hist).toBeHidden();
+  await page.locator('[data-control="undo"]').click();
+  await page.locator('[data-control="history-open"]').click();
+  await expect(rows.nth(2)).toHaveClass(/undone/);
+  await expect(rows.nth(0)).not.toHaveClass(/undone/);
+});
+
+test("E2E-253 22-5 fix a History popover with 60 steps stays between the top bar and the footer, scrolls inside, and its last row can be reached", async ({ page }) => {
+  const t = tl(page);
+  await t.threeSteps();
+  const hist = page.locator("#history-pop");
+  await page.locator('[data-control="history-open"]').click();
+  await expect(hist).toBeVisible();
+  const rows = hist.locator("#history-list li");
+  await expect(rows).toHaveCount(3);
+  // grow the list in the DOM (the layout, not the model, is under test), then let the popover place itself again as a resize does
+  await page.evaluate(() => {
+    const list = document.getElementById("history-list")!;
+    for (let i = 0; i < 57; i++) {
+      const li = document.createElement("li");
+      li.textContent = `Delete step ${i + 4} (${i + 1})`;
+      list.append(li);
+    }
+    window.dispatchEvent(new Event("resize"));
+  });
+  await expect(rows).toHaveCount(60);
+  const vp = page.viewportSize()!;
+  const bar = (await page.locator("#toolbar").boundingBox())!;
+  const foot = (await page.locator("#footer").boundingBox())!;
+  const box = (await hist.boundingBox())!;
+  expect(box.y, "below the top bar").toBeGreaterThanOrEqual(bar.y + bar.height);
+  expect(box.y + box.height, "above the footer").toBeLessThanOrEqual(foot.y + 0.5);
+  expect(box.y + box.height).toBeLessThanOrEqual(vp.height);
+  expect(await hist.evaluate((e) => e.scrollHeight > e.clientHeight), "scrolls inside").toBe(true);
+  await rows.last().scrollIntoViewIfNeeded();
+  const last = (await rows.last().boundingBox())!;
+  const now = (await hist.boundingBox())!;
+  expect(last.y + last.height, "last row inside the panel").toBeLessThanOrEqual(now.y + now.height + 0.5);
+  expect(last.y).toBeGreaterThanOrEqual(now.y - 0.5);
+});
+
+test("E2E-248 22-5 Cloud details shows the file, the counts and the view, and Remove invalid lives in it", async ({ page }) => {
+  const { exact, ctl } = helpers(page);
+  await openRoom(page, exact);
+  const pop = page.locator("#cloud-details");
+  await ctl("details-open").click();
+  await expect(pop).toBeVisible();
+  const box = (await pop.boundingBox())!;
+  const at = (await ctl("details-open").boundingBox())!;
+  const vp = page.viewportSize()!;
+  expect(box.y, "8 px under its anchor").toBeGreaterThanOrEqual(at.y + at.height + 7.5);
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(vp.width);
+  expect(box.y + box.height).toBeLessThanOrEqual(vp.height);
+  await expect(pop).toContainText("room.pcd");
+  await expect(pop).toContainText("Fields");
+  await expect(pop).toContainText("m (assumed)");
+  await expect(pop.locator('[data-status="Original"]')).toHaveText(new Intl.NumberFormat("en-US").format(ROOM_TOTAL));
+  await expect(pop.locator('[data-status="Active"]')).toHaveText(new Intl.NumberFormat("en-US").format(ROOM_TOTAL));
+  await expect(pop.locator("#counts-panel")).toContainText("Remaining");
+  await expect(pop).toContainText("Perspective");
+  await expect(pop).toContainText("Pivot");
+  // a cloud with one invalid point: Remove invalid sits in the popover and removes it
+  await page.locator("#file-input").setInputFiles({ name: "synthetic.pcd", mimeType: "application/octet-stream", buffer: syntheticPcd() });
+  await exact("Original", String(TOTAL));
+  await expect(pop).toBeVisible();
+  await expect(ctl("remove-invalid")).toBeVisible();
+  await ctl("remove-invalid").click();
+  await exact("Active", String(TOTAL - 1));
+  // the footer's Invalid item is a button that opens Cloud details
+  await page.keyboard.press("Escape");
+  await expect(pop).toBeHidden();
+  await page.locator('#footer [data-status="Invalid (active/total)"] [data-control="status-invalid"]').click();
+  await expect(pop).toBeVisible();
+  await expect(pop.locator("#counts-panel")).toContainText("Invalid");
+});
+
+for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-245 22-5 the top bar is one 52 px row at ${w}x${hgt}: left, centre and right groups, Delete N and the kept chip, and no two controls overlap in Edited or Overlay`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: hgt });
+    const t = hideHelpers(page);
+    await openRoom(page, t.exact);
+    await t.ctl("prot-enabled").check();
+    await t.setNum("prot-min", -0.05);
+    await t.setNum("prot-max", 0.05);
+    await t.ctl("tool-box").click();
+    for (const [id, v] of [["box-center-x", 9], ["box-center-y", 9], ["box-center-z", 2], ["box-size-x", 30], ["box-size-y", 30], ["box-size-z", 10]] as const) await t.setNum(id, v);
+    const foot = (await page.locator("#footer").boundingBox())!;
+    expect(foot.height).toBeGreaterThan(25.5);
+    expect(foot.height).toBeLessThan(26.5);
+    for (const name of ["Original", "Active", "Unsaved"]) await expect(page.locator(`#footer [data-status="${name}"]`)).toHaveCount(0);
+    await expect(page.locator("#footer #modebar")).toHaveCount(1);
+    const kept = ROOM.floor + ROOM.floorGhost;
+    const n = ROOM_TOTAL - ROOM.invalid - kept;
+    await t.exact("Candidates", String(n));
+    await expect(page.locator("#kept-chip")).toHaveText(`${kept} kept`);
+    const bar = page.locator("#toolbar");
+    await expect(bar).toBeVisible();
+    const scan = async (label: string) => {
+      const m = await page.evaluate(() => {
+        const rb = document.getElementById("toolbar")!.getBoundingClientRect();
+        const boxes = [...document.querySelectorAll<HTMLElement>("#toolbar [data-control]")].map((e) => {
+          const b = e.getBoundingClientRect();
+          return { id: e.getAttribute("data-control")!, l: b.left, r: b.right, t: b.top, b: b.bottom, w: b.width, h: b.height };
+        });
+        const centre = document.querySelector<HTMLElement>("#toolbar .grp.centre")!.getBoundingClientRect();
+        const apply = document.getElementById("apply")!.getBoundingClientRect();
+        return { bar: { l: rb.left, r: rb.right, t: rb.top, b: rb.bottom, h: rb.height }, boxes, centre: { l: centre.left, r: centre.right }, applyRight: apply.right };
+      });
+      expect(m.bar.h, `${label} bar height`).toBeGreaterThan(51.5);
+      expect(m.bar.h, `${label} bar height`).toBeLessThan(52.5);
+      for (const b of m.boxes) {
+        expect(b.w > 0 && b.h > 0, `${label} ${b.id} is visible`).toBe(true);
+        expect(b.l >= m.bar.l - 0.5 && b.r <= m.bar.r + 0.5 && b.t >= m.bar.t - 0.5 && b.b <= m.bar.b + 0.5, `${label} ${b.id} is inside the bar`).toBe(true);
+      }
+      for (let i = 0; i < m.boxes.length; i++) {
+        for (let j = i + 1; j < m.boxes.length; j++) {
+          const a = m.boxes[i];
+          const b = m.boxes[j];
+          const apart = a.r <= b.l + 0.5 || b.r <= a.l + 0.5 || a.b <= b.t + 0.5 || b.b <= a.t + 0.5;
+          expect(apart, `${label} ${a.id} and ${b.id} do not overlap`).toBe(true);
+        }
+      }
+      expect(m.bar.r - m.applyRight, `${label} Delete N ends within 12 px of the right edge`).toBeLessThanOrEqual(12.5);
+      if (w >= 1920) expect(Math.abs((m.centre.l + m.centre.r) / 2 - (m.bar.l + m.bar.r) / 2), `${label} centre group is centred`).toBeLessThanOrEqual(2);
+      return m;
+    };
+    const m = await scan("edited");
+    const order = m.boxes.map((b) => b.id);
+    expect(order.indexOf("open-file")).toBeLessThan(order.indexOf("redo"));
+    expect(order.indexOf("redo")).toBeLessThan(order.indexOf("compare-original"));
+    expect(order.indexOf("compare-split")).toBeLessThan(order.indexOf("display-open"));
+    expect(order.slice(order.indexOf("display-open"))).toEqual(["display-open", "details-open", "help", "preview", "apply"]);
+    await expect(t.ctl("apply")).toHaveText(`Delete ${n}`);
+    await t.exact("Candidates", String(n));
+    await expect(page.locator("#kept-chip")).toBeVisible();
+    await expect(page.locator("#doc-title")).toBeVisible();
+    expect((await page.locator("#doc-title").boundingBox())!.width).toBeLessThanOrEqual(190.5);
+    await t.ctl("compare-overlay").click();
+    await expect(t.ctl("overlay-opacity")).toBeVisible();
+    expect(await page.locator("#toolbar .grp.centre").locator('[data-control="overlay-opacity"]').count()).toBe(1);
+    await expect(page.locator("#kept-chip")).toBeVisible();
+    await expect(t.ctl("apply")).toHaveText(`Delete ${n}`);
+    await scan("overlay");
+  });
+}
+
+test("E2E-246 22-5 (Display and Keyboard) opening one popover closes the other, Esc in a select keeps the popover and the Box armed, Esc elsewhere in it closes it, ? opens the Keyboard popover", async ({ page }) => {
+  const t = hideHelpers(page);
+  await t.floorSelected();
+  page.removeAllListeners("dialog");
+  page.on("dialog", (d) => void d.accept());
+  const display = page.locator("#display-pop");
+  const details = page.locator("#cloud-details");
+  const help = page.locator("#help-overlay");
+  const armed = () => expect(t.ctl("tool-box")).toHaveClass(/active/);
+  await t.ctl("details-open").click();
+  await expect(details).toBeVisible();
+  await t.ctl("display-open").click();
+  await expect(display).toBeVisible();
+  await expect(details).toBeHidden();
+  // Esc on the colour select is the select's own: the popover stays and the Box stays armed
+  await t.ctl("colour-mode").focus();
+  await page.keyboard.press("Escape");
+  await expect(display).toBeVisible();
+  await armed();
+  // Esc on the point-size slider closes the popover, the focus returns to the anchor, the Box stays armed
+  await t.ctl("point-size").focus();
+  await page.keyboard.press("Escape");
+  await expect(display).toBeHidden();
+  await expect(t.ctl("display-open")).toBeFocused();
+  await armed();
+  // ? opens the Keyboard popover and closes Display; Esc closes it and the Box stays armed
+  await t.ctl("display-open").click();
+  await expect(display).toBeVisible();
+  await page.locator("body").click({ position: { x: 1, y: 1 } });
+  await page.locator("#viewport").hover();
+  await t.ctl("display-open").click();
+  await expect(display).toBeVisible();
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("?");
+  await expect(help).toBeVisible();
+  await expect(display).toBeHidden();
+  await page.keyboard.press("Escape");
+  await expect(help).toBeHidden();
+  await armed();
+  // every anchor opens its popover with aria-expanded true, opening another closes the first, each box keeps an 8 px margin, a click on the stage closes it
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const vp = page.viewportSize()!;
+  const all: [string, string][] = [["display-open", "#display-pop"], ["details-open", "#cloud-details"], ["help", "#help-overlay"], ["history-open", "#history-pop"]];
+  let prev: string | null = null;
+  for (const [anchor, sel] of all) {
+    await t.ctl(anchor).click();
+    await expect(page.locator(sel)).toBeVisible();
+    await expect(t.ctl(anchor)).toHaveAttribute("aria-expanded", "true");
+    if (prev) await expect(page.locator(prev)).toBeHidden();
+    const b = (await page.locator(sel).boundingBox())!;
+    expect(b.x, `${sel} left margin`).toBeGreaterThanOrEqual(7.5);
+    expect(b.y, `${sel} top margin`).toBeGreaterThanOrEqual(7.5);
+    expect(b.x + b.width, `${sel} right margin`).toBeLessThanOrEqual(vp.width - 7.5);
+    expect(b.y + b.height, `${sel} bottom margin`).toBeLessThanOrEqual(vp.height - 7.5);
+    prev = sel;
+  }
+  await page.locator("#viewport").click({ position: { x: 40, y: 420 } });
+  await expect(page.locator(prev!)).toBeHidden();
+});
+
+test("E2E-247 22-5 the Display popover lists the colour modes, changes the budget, and its Theme group sets, persists and clears data-theme and the canvas follows", async ({ page }) => {
+  const t = hideHelpers(page);
+  await t.floorSelected();
+  await t.ctl("layer-new").click();
+  await t.ctl("display-open").click();
+  await expect(page.locator("#display-pop")).toBeVisible();
+  const state = () => page.evaluate(() => (window as unknown as { __editor: { state: () => { budget: number; renderTheme: string } } }).__editor.state());
+  const canvasToken = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--canvas").trim());
+  const theme = () => page.evaluate(() => document.documentElement.getAttribute("data-theme"));
+  expect(await t.ctl("colour-mode").locator("option").count()).toBe(6);
+  await t.ctl("budget").selectOption("100000");
+  expect((await state()).budget).toBe(100000);
+  await t.ctl("theme-light").click();
+  expect(await theme()).toBe("light");
+  expect(await canvasToken()).toBe("#e9ebef");
+  await expect.poll(async () => (await state()).renderTheme).toBe("light");
+  await expect(t.ctl("theme-light")).toHaveAttribute("aria-pressed", "true");
+  await page.reload();
+  expect(await theme()).toBe("light");
+  await t.exact("Original", String(ROOM_TOTAL));
+  await t.ctl("display-open").click();
+  await expect(t.ctl("theme-light")).toHaveAttribute("aria-pressed", "true");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await t.ctl("theme-system").click();
+  expect(await theme()).toBeNull();
+  expect(await canvasToken()).toBe("#0c0d10");
+  await page.emulateMedia({ colorScheme: "light" });
+  expect(await canvasToken()).toBe("#e9ebef");
+  await expect.poll(async () => (await state()).renderTheme).toBe("light");
+  await t.ctl("theme-dark").click();
+  expect(await theme()).toBe("dark");
+  expect(await canvasToken()).toBe("#0c0d10");
+  await expect.poll(async () => (await state()).renderTheme).toBe("dark");
+  await t.ctl("theme-system").click(); // leave no stored choice behind for the next test
+});
+
+test("E2E-251 22-5 measured contrast on the new surfaces in both themes: the document title, the kept chip, the footer items and mode line, Cloud details, Display, History and the Export sheet are at least 4.5", async ({ page }) => {
+  const t = hideHelpers(page);
+  await t.floorSelected();
+  page.removeAllListeners("dialog");
+  page.on("dialog", (d) => void d.accept());
+  await t.ctl("prot-enabled").check();
+  await t.setNum("prot-min", -0.05);
+  await t.setNum("prot-max", 0.05);
+  await t.ctl("sel-clear").click();
+  await t.ctl("tool-box").click();
+  for (const [id, v] of [["box-center-x", 9], ["box-center-y", 9], ["box-center-z", 2], ["box-size-x", 30], ["box-size-y", 30], ["box-size-z", 10]] as const) await t.setNum(id, v);
+  await expect(page.locator("#kept-chip")).toBeVisible();
+  const check = async (scheme: Scheme, name: string, sel: string) => {
+    await expect.poll(async () => (await textBackdrops(page, sel)).length, { message: `${scheme} ${name}` }).toBeGreaterThan(0);
+    await transitionsSettled(page);
+    for (const e of await textBackdrops(page, sel)) {
+      if (!/"[^"]+"$/.test(e.what) && !/input/.test(e.what)) continue;
+      expect(worstContrast(e), `${scheme} ${name}: ${e.what}`).toBeGreaterThanOrEqual(4.5);
+    }
+  };
+  const bars: [string, string][] = [["title", "#toolbar .doc, #toolbar .doc *"], ["kept chip", "#kept-chip"], ["status", "#statusbar .item"], ["mode line", "#modebar"]];
+  const popovers: [string, string, string][] = [
+    ["details-open", "Cloud details", "#cloud-details dt, #cloud-details dd"],
+    ["display-open", "Display", "#display-pop label, #display-pop .plabel"],
+  ];
+  for (const scheme of ["dark", "light"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    for (const [name, sel] of bars) await check(scheme, name, sel);
+    for (const [anchor, name, sel] of popovers) {
+      await t.ctl(anchor).click();
+      await check(scheme, name, sel);
+      await page.keyboard.press("Escape");
+    }
+    await t.ctl("export").click();
+    await check(scheme, "export", "#export-dialog p, #export-dialog label");
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#export-dialog")).toBeHidden();
+  }
+  await t.ctl("apply").click();
+  await expect(page.locator("#kept-chip")).toBeHidden();
+  for (const scheme of ["dark", "light"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await t.ctl("history-open").click();
+    await check(scheme, "history", "#history-list li");
+    await page.keyboard.press("Escape");
+  }
+});
+
+for (const [w, hgt] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-252 22-5 owner screenshots at ${w}x${hgt}: Display, Cloud details, Keyboard, History and Export in dark and light; no scroll, no page error, every open popover inside the viewport`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: hgt });
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => {
+      if (m.type() === "error" && !/404/.test(m.text())) errors.push(m.text());
+    });
+    const t = hideHelpers(page);
+    await t.floorSelected();
+    page.removeAllListeners("dialog");
+    page.on("dialog", (d) => void d.accept());
+    await t.ctl("sel-clear").click();
+    await t.ctl("tool-box").click();
+    await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+    await t.exact("Selected", String(ROOM.ghost));
+    await t.ctl("apply").click();
+    await t.exact("Active", String(ROOM_TOTAL - ROOM.ghost));
+    const shots: [string, string, string][] = [
+      ["display-open", "#display-pop", "display"],
+      ["details-open", "#cloud-details", "details"],
+      ["help", "#help-overlay", "keyboard"],
+      ["history-open", "#history-pop", "history"],
+    ];
+    for (const scheme of ["dark", "light"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await expect.poll(() => hook(page, (e) => e.state().renderTheme), { message: `${scheme} render theme` }).toBe(scheme);
+      for (const [anchor, sel, name] of shots) {
+        await t.ctl(anchor).click();
+        await expect(page.locator(sel)).toBeVisible();
+        await page.mouse.move(5, 5);
+        await appIdle(page);
+        const b = (await page.locator(sel).boundingBox())!;
+        expect(b.x >= 0 && b.y >= 0 && b.x + b.width <= w && b.y + b.height <= hgt, `${scheme} ${name} inside the viewport`).toBe(true);
+        await page.screenshot({ path: `/out/part22-5-${w}x${hgt}-${scheme}-${name}.png` });
+        expect(await page.evaluate(() => document.scrollingElement!.scrollHeight <= window.innerHeight && document.scrollingElement!.scrollWidth <= window.innerWidth), `${scheme} ${name}: the page scrolls`).toBe(true);
+        await page.keyboard.press("Escape");
+        await expect(page.locator(sel)).toBeHidden();
+      }
+      await t.ctl("export").click();
+      await expect(page.locator("#export-dialog")).toBeVisible();
+      await page.screenshot({ path: `/out/part22-5-${w}x${hgt}-${scheme}-export.png` });
+      await page.keyboard.press("Escape");
+      await expect(page.locator("#export-dialog")).toBeHidden();
+    }
+    expect(errors).toEqual([]);
+  });
+}
+
+// ---- part 22-6: floating tool palette and right inspector
+const TOOL_NAMES: [string, string][] = [["tool-box", "Box"], ["tool-polygon", "Polygon"], ["tool-cluster", "Cluster"], ["tool-sparse", "Sparse points"], ["tool-plane", "Planes"], ["tool-thin", "Thin"]];
+const SIZES: [number, number][] = [[1280, 720], [1920, 1080]];
+/** The computed colour of a custom property resolved through a probe element (so `var()` chains and colour spaces settle). */
+const resolvedToken = (page: Pg, token: string, prop = "backgroundColor") =>
+  page.evaluate(
+    ([tk, pr]) => {
+      const el = document.createElement("div");
+      el.style.setProperty(pr === "color" ? "color" : "background-color", `var(${tk})`);
+      document.body.append(el);
+      const v = getComputedStyle(el).getPropertyValue(pr === "color" ? "color" : "background-color");
+      el.remove();
+      return v;
+    },
+    [token, prop],
+  );
+/** Visible stage rectangles a palette or pill must not touch. */
+const STAGE_NEIGHBOURS = ["#legend", "#viewcube", "#camera-cluster", "#filter-hud", "#triad", "#timeline", "#timeline-bar", "#band-pill", "#fbox-layer .fbox", "#notices > *"];
+const visibleRects = (page: Pg, selector: string) =>
+  page.evaluate((sel) => {
+    return [...document.querySelectorAll(sel)]
+      .filter((e) => {
+        const r = e.getBoundingClientRect();
+        const cs = getComputedStyle(e);
+        return r.width > 0 && r.height > 0 && cs.visibility !== "hidden" && cs.display !== "none";
+      })
+      .map((e) => {
+        const r = e.getBoundingClientRect();
+        return { l: r.left, t: r.top, r: r.right, b: r.bottom, what: e.id || e.className.toString() };
+      });
+  }, selector);
+const apart = (a: { l: number; t: number; r: number; b: number }, b: { l: number; t: number; r: number; b: number }) =>
+  a.r <= b.l + 1 || b.r <= a.l + 1 || a.b <= b.t + 1 || b.b <= a.t + 1;
+
+for (const [w, h] of SIZES) {
+  test(`E2E-266 22-6 the tool palette at ${w}x${h}: six buttons stacked on the stage's left edge, the armed one filled with the accent, the pill names it, Esc disarms, and the palette and pill overlap no other stage control for any tool`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const t = hideHelpers(page);
+    await openRoom(page, t.exact);
+    const pal = (await visibleRects(page, "#palette"))[0];
+    expect(pal, "the palette is on the stage").toBeDefined();
+    const stage = (await page.locator("#stage").boundingBox())!;
+    expect(pal.l - stage.x).toBeLessThanOrEqual(12);
+    const tops = await Promise.all(TOOL_NAMES.map(([id]) => t.ctl(id).boundingBox()));
+    for (let i = 1; i < tops.length; i++) expect(tops[i]!.y, `${TOOL_NAMES[i][0]} is below ${TOOL_NAMES[i - 1][0]}`).toBeGreaterThan(tops[i - 1]!.y + tops[i - 1]!.height - 1);
+    for (const [id, name] of TOOL_NAMES) {
+      await t.ctl(id).click();
+      await expect(t.ctl(id)).toHaveClass(/active/);
+      const accent = await resolvedToken(page, "--accent");
+      await expect.poll(() => t.ctl(id).evaluate((e) => getComputedStyle(e).backgroundColor), { message: `${id} fill` }).toBe(accent);
+      await expect(page.locator("#arm-pill")).toBeVisible();
+      await expect(page.locator("#arm-pill")).toHaveText(`${name} · Esc to exit`);
+      const mine = [...(await visibleRects(page, "#palette")), ...(await visibleRects(page, "#arm-pill"))];
+      for (const sel of STAGE_NEIGHBOURS) {
+        for (const o of await visibleRects(page, sel)) for (const m of mine) expect(apart(m, o), `${id}: ${m.what} overlaps ${sel} (${o.what})`).toBe(true);
+      }
+      // Esc closes the most specific thing first (R22-1): Polygon is drawing and Cluster is picking a seed when armed, so their first Esc ends that
+      for (let i = 0; i < 3 && (await page.locator("#arm-pill").isVisible()); i++) await page.keyboard.press("Escape");
+      for (const [other] of TOOL_NAMES) await expect(t.ctl(other)).not.toHaveClass(/active/);
+      await expect(page.locator("#arm-pill")).toBeHidden();
+    }
+  });
+}
+
+const SECTION_OF: [string, string][] = [["tool-box", "box"], ["tool-polygon", "polygon"], ["tool-cluster", "cluster"], ["tool-sparse", "sparse"], ["tool-plane", "plane"], ["tool-thin", "thin"]];
+/** The element at the centre of a locator's box, as a tag name plus whether a button or input sits there. */
+const hitAtCentre = async (page: Pg, loc: ReturnType<Pg["locator"]>) => {
+  const b = (await loc.boundingBox())!;
+  return page.evaluate(([x, y]) => {
+    const e = document.elementFromPoint(x, y);
+    return { tag: e?.tagName ?? "none", control: !!e?.closest("button, input, select, a") };
+  }, [b.x + b.width / 2, b.y + b.height / 2]);
+};
+const clickCentre = async (page: Pg, loc: ReturnType<Pg["locator"]>) => {
+  const b = (await loc.boundingBox())!;
+  await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
+};
+
+for (const [w, h] of SIZES) {
+  test(`E2E-265 22-6 at ${w}x${h} the ?, close and switch inside a section header act on themselves and never fold it, the header centre folds and is no button, and a folded section still shows its help`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const t = hideHelpers(page);
+    await openRoom(page, t.exact);
+    for (const [tool, sec] of SECTION_OF) {
+      await t.ctl(tool).click();
+      const det = page.locator(`details[data-section="${sec}"]`);
+      const sum = det.locator("> summary");
+      await expect(det).toBeVisible();
+      expect((await hitAtCentre(page, sum)).control, `${sec}: the header centre is no button`).toBe(false);
+      await t.ctl(`${sec}-help`).click();
+      await expect(det).toHaveJSProperty("open", true);
+      await expect(page.locator(`#${sec}-help-pop`)).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.locator(`#${sec}-help-pop`)).toBeHidden();
+      await expect(t.ctl(tool)).toHaveClass(/active/);
+      await clickCentre(page, sum);
+      await expect(det).toHaveJSProperty("open", false);
+      await t.ctl(`${sec}-help`).click();
+      await expect(page.locator(`#${sec}-help-pop`)).toBeVisible();
+      expect(await page.locator(`#${sec}-help-pop`).boundingBox(), `${sec}: help has a box while folded`).not.toBeNull();
+      await page.keyboard.press("Escape");
+      await expect(page.locator(`#${sec}-help-pop`)).toBeHidden();
+      await clickCentre(page, sum);
+      await expect(det).toHaveJSProperty("open", true);
+      await t.ctl(`${sec}-exit`).click();
+      await expect(t.ctl(tool)).not.toHaveClass(/active/);
+    }
+    expect((await hitAtCentre(page, protSummary(page))).control, "protection: the header centre is no button").toBe(false);
+  });
+}
+
+test("E2E-267 22-6 the inspector shows one line while idle and only the armed tool's section otherwise, Height protection below it, and the ? help closes before the tool does", async ({ page }) => {
+  const t = hideHelpers(page);
+  await openRoom(page, t.exact);
+  await expect(page.locator("#toolpanels .idle-tool")).toBeVisible();
+  await expect(page.locator("#toolpanels details[data-section]:visible")).toHaveCount(0);
+  await t.ctl("tool-box").click();
+  await expect(page.locator("#toolpanels .idle-tool")).toBeHidden();
+  await expect(page.locator("#toolpanels details[data-section]:visible")).toHaveCount(1);
+  await expect(page.locator('#toolpanels details[data-section="box"]')).toBeVisible();
+  const order = await page.evaluate(() => {
+    const box = document.querySelector('details[data-section="box"]')!;
+    const prot = [...document.querySelectorAll("details.panel")].find((d) => d.querySelector("h2")?.textContent === "Height protection")!;
+    return !!(box.compareDocumentPosition(prot) & Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+  expect(order, "Height protection follows the tool section").toBe(true);
+  await t.ctl("box-help").click();
+  await expect(page.locator("#box-help-pop")).toContainText(/small ring on an arrow/);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#box-help-pop")).toBeHidden();
+  await expect(t.ctl("tool-box")).toHaveClass(/active/);
+  await page.keyboard.press("Escape");
+  await expect(t.ctl("tool-box")).not.toHaveClass(/active/);
+});
+
+test("E2E-268 22-6 the Box panel end to end: Outside inverts Selected, Fit opens a menu that closes on use, Min / max and Handles are disclosures, Reset box resets", async ({ page }) => {
+  const t = previewHelpers(page);
+  await t.wallSelected();
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  const inside = ROOM.ghost;
+  await t.exact("Selected", String(inside));
+  await page.getByRole("radio", { name: "Outside" }).click();
+  await t.exact("Selected", String(ROOM_TOTAL - ROOM.invalid - inside)); // the NaN row is invalid, never selected
+  await page.getByRole("radio", { name: "Inside" }).click();
+  await t.exact("Selected", String(inside));
+  await expect(page.locator("#box-fit-menu")).toBeHidden();
+  await openFit(page);
+  await expect(page.locator("#box-fit-menu")).toBeVisible();
+  await t.ctl("box-fit-cloud").click();
+  await expect(page.locator("#box-fit-menu")).toBeHidden();
+  const size = await hook(page, (e) => [...e.state().tools.box.dimensions]);
+  const bounds = await hook(page, (e) => e.state().session!.active_bounds);
+  size.forEach((v, i) => {
+    const range = bounds.max[i] - bounds.min[i];
+    expect(v).toBeGreaterThanOrEqual(range);
+    expect(v).toBeLessThan(range + 0.01);
+  });
+  await expect(t.ctl("box-min-x")).toBeHidden();
+  await page.locator("details.disc > summary", { hasText: "Min / max" }).click();
+  await expect(t.ctl("box-min-x")).toBeVisible();
+  await expect(t.ctl("gizmo-snap")).toBeHidden();
+  await openHandles(page);
+  await t.ctl("gizmo-snap").check();
+  await expect(t.ctl("gizmo-snap")).toBeChecked();
+  await t.ctl("box-reset").click();
+  const after = await hook(page, (e) => [...e.state().tools.box.dimensions]);
+  expect(after).not.toEqual(size);
+});
+
+test("E2E-269 22-6 the Height protection header: the ? works while folded, the switch turns protection on and off without folding, and the Floor, Tilt, Show band rows work", async ({ page }) => {
+  const t = hideHelpers(page);
+  await openRoom(page, t.exact);
+  const rows = roomValid();
+  const fold = () => page.evaluate(() => (window as unknown as { __editor: { state: () => { floorPanelOpen: boolean } } }).__editor.state().floorPanelOpen);
+  await protSummary(page).click(); // fold it
+  await expect(page.locator("details.panel", { has: page.locator("summary", { hasText: "Height protection" }) })).toHaveJSProperty("open", false);
+  await t.ctl("prot-help").click();
+  await expect(page.locator("#prot-help-pop")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#prot-help-pop")).toBeHidden();
+  await protSummary(page).click(); // unfold
+  await expect.poll(fold).toBe(true); // the toggle event is queued: wait for the store
+  await expect(page.locator("details.panel > summary [data-control=prot-enabled]"), "the switch lives in the header").toHaveCount(1);
+  await t.ctl("prot-enabled").check();
+  await expect(t.ctl("prot-enabled")).toBeChecked();
+  await t.setNum("prot-max", 1.5);
+  await t.setNum("prot-min", 0.5);
+  await t.exact("Protected", String(rows.filter((r) => r[2] >= 0.5 && r[2] <= 1.5).length));
+  expect(await fold(), "the switch does not fold the section").toBe(true);
+  await expect(page.locator("details.panel", { has: page.locator("summary", { hasText: "Height protection" }) })).toHaveJSProperty("open", true);
+  await t.ctl("prot-enabled").uncheck();
+  await expect(t.ctl("prot-enabled")).not.toBeChecked();
+  await t.exact("Protected", "0");
+  await t.setNum("prot-floor-t", 0.3);
+  await t.setNum("prot-tilt-x", 5);
+  await expect(t.ctl("prot-tilt-x")).toHaveValue("5");
+  await t.ctl("prot-level").click();
+  await expect(t.ctl("prot-tilt-x")).toHaveValue("0");
+  await expect(t.ctl("prot-tilt-y")).toHaveValue("0");
+  const band = t.ctl("prot-show-band");
+  await expect(band).toHaveAttribute("aria-checked", "true");
+  await band.click();
+  await expect(band).toHaveAttribute("aria-checked", "false");
+  await band.click();
+});
+
+/** An element's own background and the backgrounds behind it (innermost first) up to the first opaque layer: what a graphic is drawn over. */
+const graphicBackdrop = (page: Pg, selector: string) =>
+  page.evaluate((sel) => {
+    const el = document.querySelector(sel)!;
+    const own = getComputedStyle(el).backgroundColor;
+    const layers: string[] = [];
+    for (let n: Element | null = el.parentElement; n; n = n.parentElement) {
+      const bg = getComputedStyle(n).backgroundColor;
+      if (bg !== "rgba(0, 0, 0, 0)") {
+        layers.push(bg);
+        if (/^rgb\(/.test(bg)) break;
+      }
+    }
+    return { own, layers };
+  }, selector);
+const graphicContrast = (g: Awaited<ReturnType<typeof graphicBackdrop>>) => {
+  let bg: Rgba = [0, 0, 0, 1];
+  for (const l of [...g.layers].reverse()) bg = over(cssRgba(l), bg);
+  return contrastOf(cssRgba(g.own), bg);
+};
+
+for (const scheme of ["dark", "light"] as const) {
+  test(`E2E-270 22-6 contrast under the ${scheme} theme: the armed icon on the accent, the pill, the header name and kbd, the ? and the switch on-track meet their floors; the switch off-track is measured and recorded`, async ({ page }, testInfo) => {
+    const t = hideHelpers(page);
+    await page.emulateMedia({ colorScheme: scheme });
+    await openRoom(page, t.exact);
+    await t.ctl("tool-box").click();
+    await t.ctl("prot-enabled").check();
+    await transitionsSettled(page);
+    const icon = await page.evaluate(() => {
+      const b = document.querySelector('[data-control="tool-box"]')!;
+      return { fg: getComputedStyle(b).color, bg: getComputedStyle(b).backgroundColor };
+    });
+    expect(contrastOf(cssRgba(icon.fg), cssRgba(icon.bg)), `${scheme} armed icon on accent`).toBeGreaterThanOrEqual(3);
+    for (const [name, sel, floor] of [
+      ["pill", "#arm-pill, #arm-pill *", 4.5],
+      ["header name and kbd", 'details[data-section="box"] > summary h2, details[data-section="box"] > summary .kbd', 4.5],
+      ["? button", 'details[data-section="box"] > summary .qm', 3],
+    ] as const) {
+      await expect.poll(async () => (await textBackdrops(page, sel)).length, { message: name }).toBeGreaterThan(0);
+      for (const e of await textBackdrops(page, sel)) {
+        if (!/"[^"]+"$/.test(e.what)) continue;
+        expect(worstContrast(e), `${scheme} ${name}: ${e.what}`).toBeGreaterThanOrEqual(floor);
+      }
+    }
+    const on = graphicContrast(await graphicBackdrop(page, '[data-control="prot-enabled"]'));
+    expect(on, `${scheme} switch on-track`).toBeGreaterThanOrEqual(3);
+    await t.ctl("prot-enabled").uncheck();
+    await transitionsSettled(page);
+    const off = graphicContrast(await graphicBackdrop(page, '[data-control="prot-enabled"]'));
+    testInfo.annotations.push({ type: "measure", description: `${scheme} switch on-track ${on.toFixed(2)}, off-track ${off.toFixed(2)} (owner E12: no floor)` });
+    console.log(`E2E-270 ${scheme} switch on ${on.toFixed(2)} off ${off.toFixed(2)}`);
+  });
+}
+
+for (const [w, h] of SIZES) {
+  test(`E2E-271 22-6 owner screenshots at ${w}x${h}, dark and light: idle, Box armed with a preview, help open, Fit menu open, Height protection open; the page never scrolls and raises no error`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const errors: string[] = [];
+    const t = previewHelpers(page);
+    await openRoom(page, t.exact);
+    page.on("pageerror", (e) => errors.push(String(e)));
+    const noScroll = () => page.evaluate(() => document.scrollingElement!.scrollHeight <= document.scrollingElement!.clientHeight + 1 && document.scrollingElement!.scrollWidth <= document.scrollingElement!.clientWidth + 1);
+    const shot = async (state: string) => {
+      for (const scheme of ["dark", "light"] as const) {
+        await page.emulateMedia({ colorScheme: scheme });
+        await transitionsSettled(page);
+        await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))); // two frames: the canvas redraws with the theme's render palette
+        expect(await noScroll(), `${state} ${scheme}: the page does not scroll`).toBe(true);
+        await page.screenshot({ path: `/out/part22-6-${w}x${h}-${state}-${scheme}.png` });
+      }
+    };
+    await shot("idle");
+    await t.wallSelected();
+    await t.ctl("op-add").click();
+    await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+    await t.previewIs(ROOM.wall + ROOM.ghost);
+    await shot("box-armed");
+    await t.ctl("box-help").click();
+    await expect(page.locator("#box-help-pop")).toBeVisible();
+    await shot("help-open");
+    await page.keyboard.press("Escape");
+    await openFit(page);
+    await expect(page.locator("#box-fit-menu")).toBeVisible();
+    await shot("fit-open");
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#box-fit-menu")).toBeHidden();
+    await t.ctl("prot-enabled").check();
+    await shot("protection");
+    expect(errors).toEqual([]);
+  });
+}
+
+
+// ---- part 22-7: left sidebar (Selection and Layers)
+/** Main plus three layers (Floor from the band, Wall, Ghost), the band on, the selection cleared, Box armed. */
+const sidebarState = async (page: Pg) => {
+  const t = layerMenu(page);
+  await t.floorFromBand();
+  await t.wallLayer();
+  await t.ctl("sel-clear").click();
+  await t.ctl("tool-box").click();
+  await t.setBox(GHOST_BOX.c, GHOST_BOX.d);
+  await t.exact("Selected", String(ROOM.ghost));
+  await t.newLayer("Ghost");
+  await t.ctl("sel-clear").click();
+  await t.exact("Selected", "0");
+  await t.ctl("tool-box").click();
+  return t;
+};
+const sidebarMeasure = (page: Pg) =>
+  page.evaluate(() => {
+    const el = document.getElementById("tools")!;
+    const kids = ([...el.children] as HTMLElement[]).filter((k) => k.getBoundingClientRect().height > 0);
+    const w = (s: string) => Math.round(document.querySelector<HTMLElement>(s)!.getBoundingClientRect().width);
+    const names = [...document.querySelectorAll<HTMLElement>("#layer-list [data-layer-row]")].map((r) => `${r.getAttribute("data-layer-row")}:${r.querySelector<HTMLElement>(".layer-name")!.clientWidth}/${r.querySelector<HTMLElement>(".layer-name")!.scrollWidth}`);
+    return {
+      scroll: [el.scrollHeight, el.clientHeight] as const,
+      blocks: kids.map((k) => `${k.tagName}#${k.id}.${k.className.toString().slice(0, 12)}:${Math.round(k.getBoundingClientRect().height)}`),
+      stage: w("#stage"),
+      left: w("#tools"),
+      right: w("#inspector"),
+      names,
+      note: document.getElementById("draft-note")?.getBoundingClientRect().height ?? 0,
+    };
+  });
+
+/** Every visible control in the left column, scrolled into view in turn: it must sit inside the column, and the topmost element at its centre must be itself (so it is clickable). Returns the failures. */
+const sidebarReach = (page: Pg) =>
+  page.evaluate(() => {
+    const col = document.getElementById("tools")!;
+    const out: string[] = [];
+    let n = 0;
+    for (const el of [...col.querySelectorAll<HTMLElement>("button, input, select, summary, [role=radio]")]) {
+      const cs = getComputedStyle(el);
+      if (cs.visibility === "hidden" || cs.display === "none") continue;
+      if (el.getClientRects().length === 0 || el.getBoundingClientRect().height === 0) continue;
+      el.scrollIntoView({ block: "center" });
+      const r = el.getBoundingClientRect();
+      const c = col.getBoundingClientRect();
+      const name = `${el.tagName}#${el.id}[${el.getAttribute("data-control") ?? el.getAttribute("aria-label") ?? el.textContent?.trim().slice(0, 16)}]`;
+      n++;
+      if (r.top < c.top - 1 || r.bottom > c.bottom + 1 || r.left < c.left - 1 || r.right > c.right + 1) { out.push(`${name} outside the column`); continue; }
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      if (!hit || !(el === hit || el.contains(hit) || hit.contains(el) || el.closest("label")?.contains(hit))) out.push(`${name} covered by ${hit?.tagName}#${hit?.id}.${hit?.className}`);
+    }
+    col.scrollTop = 0;
+    return { n, out };
+  });
+
+for (const [w, h] of SIZES) {
+  test(`E2E-285 22-7 the left sidebar at ${w}x${h}: no scroll at 1920x1080 in both states and at 1280x720 with the Box armed; with an Add draft over the kept points at 1280x720 it may scroll, every control stays reachable, there is no sideways scroll and it never overlaps the stage (heights, widths and layer name widths are logged)`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const t = await sidebarState(page);
+    const p = previewHelpers(page);
+    const log = async (state: string) => {
+      const m = await sidebarMeasure(page);
+      console.log(`LEFT-SIDEBAR ${w}x${h} ${state} ${m.scroll[0]}/${m.scroll[1]} ${m.blocks.join(",")} stage=${m.stage} left=${m.left} right=${m.right} note=${m.note}`);
+      console.log(`LEFT-SIDEBAR-NAMES ${w}x${h} ${m.names.join(",")}`);
+      return m;
+    };
+    const geometry = async (state: string) =>
+      page.evaluate(() => {
+        const col = document.getElementById("tools")!;
+        const stage = document.getElementById("stage")!.getBoundingClientRect();
+        return { sideways: col.scrollWidth - col.clientWidth, gap: stage.left - col.getBoundingClientRect().right, ownsScroll: ["auto", "scroll"].includes(getComputedStyle(col).overflowY), page: document.scrollingElement!.scrollHeight - document.scrollingElement!.clientHeight };
+      }).then((g) => {
+        expect(g.sideways, `${state}: no horizontal scroll in the sidebar`).toBeLessThanOrEqual(0);
+        expect(g.gap, `${state}: the sidebar does not overlap the stage`).toBeGreaterThanOrEqual(0);
+        expect(g.ownsScroll, `${state}: the sidebar scrolls itself when it cannot fit (R22-19)`).toBe(true);
+        expect(g.page, `${state}: the page does not scroll`).toBeLessThanOrEqual(1);
+      });
+    const a = await log("A");
+    expect(a.scroll[0], `${w}x${h} Box armed: scrollHeight ${a.scroll[0]} <= clientHeight ${a.scroll[1]}`).toBeLessThanOrEqual(a.scroll[1]);
+    await geometry("A");
+    // B: commit a floor selection (inside the band, so the kept warning shows), then an Add over the wall
+    await p.setBox(FLOOR_BOX.c, FLOOR_BOX.d);
+    await expect(page.locator("#kept-warning")).toBeVisible({ timeout: 15000 });
+    await t.ctl("op-add").click();
+    await p.setBox([-1, 4.5, 2.5], [1, 10, 5]);
+    await expect(page.locator("#draft-note")).toContainText("Preview, not applied", { timeout: 15000 });
+    await expect(page.locator("#kept-warning")).toBeVisible();
+    const b = await log("B");
+    if (w === 1920) expect(b.scroll[0], `${w}x${h} + draft with the kept callout: scrollHeight ${b.scroll[0]} <= clientHeight ${b.scroll[1]}`).toBeLessThanOrEqual(b.scroll[1]);
+    await geometry("B");
+    // R22-19 path: at 1280x720 + draft the column really overflows, so the scroll and the reach check below are exercised, not vacuous
+    if (w === 1280) expect(b.scroll[0], `${w}x${h} + draft: the sidebar overflows (scrollHeight ${b.scroll[0]} > clientHeight ${b.scroll[1]})`).toBeGreaterThan(b.scroll[1]);
+    const reach = await sidebarReach(page);
+    expect(reach.n, "the reach check saw the controls").toBeGreaterThan(20);
+    expect(reach.out, `${w}x${h} + draft: every control reachable by scrolling`).toEqual([]);
+    if (w === 1280) expect(b.stage, "the stage keeps 0.6 of the window").toBeGreaterThanOrEqual(768);
+  });
+}
+
+for (const [w, h] of SIZES) {
+  test(`E2E-289 22-7 owner screenshots at ${w}x${h}, dark and light: idle (room, 3 layers), Box armed, + draft with the kept callout, Floor's menu open; only the menu is open in the last, nothing throws`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => {
+      if (m.type() === "error" && !/404/.test(m.text())) errors.push(m.text());
+    });
+    const t = await sidebarState(page);
+    const p = previewHelpers(page);
+    const floorId = await page.locator("#layer-list [data-layer-row]").nth(1).getAttribute("data-layer-row");
+    const shot = async (state: string) => {
+      for (const scheme of ["dark", "light"] as const) {
+        await page.emulateMedia({ colorScheme: scheme });
+        await transitionsSettled(page);
+        await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))); // two frames: the canvas redraws with the theme's render palette
+        await page.screenshot({ path: `/out/part22-7-${w}x${h}-${scheme}-${state}.png` });
+      }
+    };
+    await t.ctl("tool-box").click(); // disarm: idle
+    await shot("idle");
+    await t.ctl("tool-box").click();
+    await shot("armed");
+    // The armed Box's first live selection (the ghost box) lands about now; it lands once, and arming again after it would make the next edits
+    // drafts over it. Wait for it, clear it (which disarms) and arm on nothing: the Floor box below is then the live first selection.
+    await t.exact("Selected", String(ROOM.ghost));
+    await t.ctl("sel-clear").click();
+    await t.exact("Selected", "0");
+    await t.ctl("tool-box").click();
+    await p.setBox(FLOOR_BOX.c, FLOOR_BOX.d);
+    await expect(page.locator("#kept-warning")).toBeVisible({ timeout: 15000 });
+    await t.ctl("op-add").click();
+    await p.setBox([-1, 4.5, 2.5], [1, 10, 5]);
+    await expect(page.locator("#draft-note")).toContainText("Preview, not applied", { timeout: 15000 });
+    await shot("draft");
+    // m3: the inactive Invert / Select shown / Hide selected paint as a ghost of Select shown over Invert under a translucent
+    // button layer (seen in the 1280x720 draft shot); an inactive action is drawn by colour, never by opacity
+    for (const id of ["sel-select-displayed", "sel-invert", "sel-hide"]) {
+      await expect(page.locator(`#${id}`)).toHaveClass(/inactive/);
+      expect(await page.locator(`#${id}`).evaluate((e) => getComputedStyle(e).opacity), `${id} opacity`).toBe("1");
+    }
+    await t.openMore(Number(floorId));
+    await expect(page.locator("#layer-menu")).toBeVisible();
+    await page.mouse.move(5, 5);
+    await shot("menu");
+    await expect(page.locator("#layer-menu")).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+}
+
+for (const [w, h] of SIZES) {
+  test(`E2E-290 22-8 first commit: in the Selection actions grid at ${w}x${h} (Box armed, so Select shown and Invert are inactive) each button's label box stays inside its button, clear of its icon and of its sibling; an ellipsised label keeps its full text in the title or aria-label`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const { ctl } = await sidebarState(page);
+    const p = previewHelpers(page);
+    await expect(ctl("sel-invert"), "the Box is armed after sidebarState, so Invert is inactive").toHaveAttribute("aria-disabled", "true");
+    const measure = () => page.evaluate(() =>
+      [...document.querySelectorAll<HTMLElement>(".actions button")].map((b) => {
+        const span = b.querySelector("span")!;
+        const range = document.createRange();
+        range.selectNodeContents(span);
+        const r = (x: DOMRect) => ({ l: x.left, r: x.right, t: x.top, b: x.bottom });
+        return {
+          id: b.getAttribute("data-control"),
+          button: r(b.getBoundingClientRect()),
+          icon: r(b.querySelector("svg")!.getBoundingClientRect()),
+          span: r(span.getBoundingClientRect()),
+          text: r(range.getBoundingClientRect()),
+          clipped: span.scrollWidth > span.clientWidth,
+          full: span.textContent ?? "",
+          names: `${b.title} ${b.getAttribute("aria-label") ?? ""}`,
+        };
+      }),
+    );
+    const hit = (a: { l: number; r: number }, b: { l: number; r: number }) => a.l < b.r - 0.5 && b.l < a.r - 0.5;
+    const check = async (state: string) => {
+    const boxes = await measure();
+    console.log(`ACTIONS ${w}x${h} ${state} ${JSON.stringify(boxes)}`);
+    for (const [i, b] of boxes.entries()) {
+      expect(b.span.l, `${b.id} label inside its button (left)`).toBeGreaterThanOrEqual(b.button.l - 0.5);
+      expect(b.span.r, `${b.id} label inside its button (right)`).toBeLessThanOrEqual(b.button.r + 0.5);
+      expect(hit(b.span, b.icon), `${b.id} label box overlaps its icon`).toBe(false);
+      if (!b.clipped) expect(b.text.r, `${b.id} text inside its label box`).toBeLessThanOrEqual(b.span.r + 0.5);
+      if (b.clipped) expect(b.names, `${b.id} is ellipsised, so its full text must be in title/aria-label`).toContain(b.full);
+      for (const o of boxes.slice(i + 1)) {
+        const sameRow = b.button.t < o.button.b && o.button.t < b.button.b;
+        if (sameRow) {
+          expect(hit(b.button, o.button), `${b.id} button overlaps ${o.id}`).toBe(false);
+          expect(hit(b.span, o.span) || hit(b.text, o.text), `${b.id} label overlaps ${o.id}'s label`).toBe(false);
+          expect(hit(b.text, o.icon) || hit(o.text, b.icon), `${b.id} text overlaps ${o.id}'s icon`).toBe(false);
+        }
+      }
+    }
+    };
+    await check("armed");
+    // the draft state of the owner shot: an Add draft over the kept floor
+    await p.setBox(FLOOR_BOX.c, FLOOR_BOX.d);
+    await expect(page.locator("#kept-warning")).toBeVisible({ timeout: 15000 });
+    await ctl("op-add").click();
+    await p.setBox([-1, 4.5, 2.5], [1, 10, 5]);
+    await expect(page.locator("#draft-note")).toContainText("Preview, not applied", { timeout: 15000 });
+    await check("draft");
+  });
+}
+
+for (const [w, h] of SIZES) {
+  test(`E2E-300 22-8 HUD layout at ${w}x${h}: the legend is in the stage's bottom-left quarter, right of the triad and above the timeline bar; the camera stack is a column centred under the ViewCube`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const { exact } = helpers(page);
+    await openRoom(page, exact);
+    const box = async (sel: string) => {
+      const b = await page.locator(sel).first().boundingBox();
+      expect(b, `${sel} is visible`).not.toBeNull();
+      return b!;
+    };
+    const stage = await box("#stage");
+    const legend = await box("#legend");
+    const triad = await box("#triad");
+    const band = stage.y + stage.height - 48;
+    expect(legend.y, `legend is in the bottom half (y ${legend.y}, stage ${stage.y}+${stage.height})`).toBeGreaterThan(stage.y + stage.height / 2);
+    expect(legend.x, "legend is in the left half").toBeLessThan(stage.x + stage.width / 2);
+    expect(legend.x, "legend is right of the triad").toBeGreaterThanOrEqual(triad.x + triad.width);
+    expect(legend.y + legend.height, "legend's bottom edge is above the timeline bar").toBeLessThanOrEqual(band);
+    expect(Math.abs(legend.y + legend.height - (triad.y + triad.height)), "legend is bottom-aligned with the triad").toBeLessThanOrEqual(2);
+    // camera leg: the stack is under the cube, centred on it, and taller than wide
+    const cube = await box("#viewcube .cube-stage");
+    const stack = await box("#camera-cluster");
+    expect(stack.y, `the camera stack (y ${stack.y}) is below the cube (bottom ${cube.y + cube.height})`).toBeGreaterThanOrEqual(cube.y + cube.height);
+    expect(Math.abs(stack.x + stack.width / 2 - (cube.x + cube.width / 2)), "the stack is centred under the cube").toBeLessThanOrEqual(2);
+    expect(stack.height, "the stack is a column").toBeGreaterThan(stack.width);
+    // toast leg (guard, written green-first: the toasts stay at top 80, centred; E2): a typed-in junk value raises a warning toast
+    await expandFilterBox(page, "filter-x-min");
+    await page.locator('[data-control="filter-x-min"]').fill("abc");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#notices > *")).toHaveCount(1);
+    const toast = await box("#notices > *");
+    console.info(`E2E-300 toast ${w}x${h}: x ${toast.x} y ${toast.y} w ${toast.width} h ${toast.height}; stage x ${stage.x} y ${stage.y} w ${stage.width}`);
+    expect(Math.abs(toast.x + toast.width / 2 - (stage.x + stage.width / 2)), "the toast is centred on the stage").toBeLessThanOrEqual(2);
+    expect(toast.y, "the toast is below the filter boxes' top lane (top 80)").toBeGreaterThanOrEqual(stage.y + 79);
+    const apart = (a: { x: number; y: number; width: number; height: number }, c: { x: number; y: number; width: number; height: number }) =>
+      a.x + a.width <= c.x || c.x + c.width <= a.x || a.y + a.height <= c.y || c.y + c.height <= a.y;
+    for (const sel of ["#palette", "#viewcube .cube-stage", "#camera-cluster", "#legend", "#filter-hud"]) {
+      expect(apart(toast, await box(sel)), `the toast overlaps ${sel}`).toBe(true);
+    }
+    if (await page.locator("#arm-pill").isVisible()) expect(apart(toast, await box("#arm-pill")), "the toast overlaps #arm-pill").toBe(true);
+    // the completed map (Step 9): the Box armed, the toast up; the Reset icon bottom right, the timeline bar thin and 8 px above the stage bottom,
+    // no two stage controls overlap, the page does not scroll and the stage keeps the checkLayout 0.6 share of the window
+    await page.locator('[data-control="tool-box"]').click();
+    await expect(page.locator("#arm-pill")).toBeVisible();
+    await expect(page.locator("#notices > *")).toHaveCount(1);
+    const hud = await box("#filter-hud");
+    expect(hud.x, "the Reset icon is in the right half").toBeGreaterThan(stage.x + stage.width / 2);
+    expect(hud.y, "the Reset icon is in the bottom half").toBeGreaterThan(stage.y + stage.height / 2);
+    const bar = await box("#timeline-bar").catch(() => null);
+    if (bar) {
+      expect(bar.height, "the timeline bar is at most 40 px tall").toBeLessThanOrEqual(40.5);
+      expect(Math.abs(stage.y + stage.height - (bar.y + bar.height) - 8), "the bar's bottom is 8 px above the stage bottom").toBeLessThanOrEqual(1);
+    }
+    const all: [string, { x: number; y: number; width: number; height: number }][] = [];
+    for (const sel of ["#palette", "#arm-pill", "#viewcube .cube-stage", "#camera-cluster", "#triad", "#legend", "#filter-hud", "#timeline-bar", "#notices > *"]) {
+      const loc = page.locator(sel);
+      for (let i = 0; i < (await loc.count()); i++) if (await loc.nth(i).isVisible()) all.push([`${sel}#${i}`, (await loc.nth(i).boundingBox())!]);
+    }
+    const fb = page.locator("#fbox-layer .fbox");
+    for (let i = 0; i < (await fb.count()); i++) if (await fb.nth(i).isVisible()) all.push([`fbox#${i}`, (await fb.nth(i).boundingBox())!]);
+    console.info(`HUD ${w}x${h} ${all.map(([n, b]) => `${n}:${Math.round(b.x)},${Math.round(b.y)},${Math.round(b.width)},${Math.round(b.height)}`).join(" ")}`);
+    for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) expect(apart(all[i][1], all[j][1]), `${all[i][0]} overlaps ${all[j][0]}`).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight && document.documentElement.scrollWidth <= window.innerWidth), "the page does not scroll").toBe(true);
+    expect(stage.width, "the stage keeps the checkLayout share (0.6, unedited)").toBeGreaterThanOrEqual(0.6 * w);
+  });
+}
+
+test("E2E-301 22-8 the Reset filters icon sits in #filter-hud at the stage's bottom right, is active with two filters and says so in its description; a click restores Displayed to all; the Display filter section is gone and the tooltip carries the filter copy", async ({ page }) => {
+  const { exact, ctl, setNum } = helpers(page);
+  await openRoom(page, exact);
+  await page.keyboard.press("3");
+  const rows = roomValid();
+  await setNum("filter-z-max", 1.5);
+  await setNum("filter-x-min", 5);
+  await exact("Displayed", String(rows.filter((r) => r[2] <= 1.5 && r[0] >= 5).length));
+  const reset = page.locator('#filter-hud [data-control="filter-reset-all"]');
+  await expect(reset).toBeVisible();
+  const stage = (await page.locator("#stage").boundingBox())!;
+  const b = (await reset.boundingBox())!;
+  expect(b.x, "the icon is in the right half").toBeGreaterThan(stage.x + stage.width / 2);
+  expect(b.y, "the icon is in the bottom half").toBeGreaterThan(stage.y + stage.height / 2);
+  await expect(reset).toHaveClass(/active/);
+  await expect(reset).toHaveAttribute("aria-description", /^2 filters active/);
+  await expect(reset).toHaveAttribute("title", /does not delete them/);
+  await expect(page.locator("#display-filter")).toHaveCount(0);
+  await ctl("filter-reset-all").click();
+  await exact("Displayed", String(rows.length));
+  await expect(reset).not.toHaveClass(/active/);
+});
+
+test("E2E-302 22-8 the legend's protected shield is the hit target at its centre (its tooltip can be hovered) while a point on the legend body away from every control still goes to the canvas", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const t = layerMenu(page);
+  const floor = await t.floorFromBand();
+  await t.wallLayer();
+  const shield = page.locator(`[data-legend-layer="${floor.id}"] [data-legend-shield]`);
+  await expect(shield).toBeVisible();
+  const title = (await shield.getAttribute("title")) ?? "";
+  expect(title, "the shield carries the protection tooltip").toMatch(/protect/i);
+  const b = (await shield.boundingBox())!;
+  const hit = await page.evaluate(([x, y]) => {
+    const e = document.elementFromPoint(x, y);
+    const s = e?.closest("[data-legend-shield]");
+    return { shield: s?.getAttribute("data-legend-shield") ?? null, id: e?.id ?? "", title: s?.getAttribute("title") ?? "" };
+  }, [b.x + b.width / 2, b.y + b.height / 2]);
+  expect(hit.shield, `the point at the shield's centre hits the shield (hit ${JSON.stringify(hit)})`).toBe(String(floor.id));
+  expect(hit.title).toBe(title);
+  // a point on the legend body that no control covers goes to the canvas
+  const body = (await page.locator("#legend").boundingBox())!;
+  const rows = await page.locator("#legend button, #legend [data-legend-shield]").evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).map((r) => ({ l: r.left, t: r.top, r: r.right, b: r.bottom })));
+  const px = body.x + body.width - 3;
+  const py = body.y + body.height / 2;
+  expect(rows.some((r) => px >= r.l && px <= r.r && py >= r.t && py <= r.b), "the free point is clear of every control").toBe(false);
+  expect(await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.id, [px, py])).toBe("viewport");
+});
+
+test("E2E-286 22-7 the Selection section folds by click and by Enter, the fold survives a reload and the counts do not change", async ({ page }) => {
+  const { exact, ctl } = helpers(page);
+  await openRoom(page, exact);
+  const sum = page.locator('details[data-section="selection"] > summary');
+  const det = page.locator('details[data-section="selection"]');
+  await expect(det).toHaveAttribute("open", "");
+  await expect(ctl("sel-clear")).toBeVisible();
+  const countsText = () => page.locator("#counts-panel").innerText();
+  const before = await countsText();
+  const putWith = (ok: (folded: Record<string, boolean> | undefined) => boolean) =>
+    page.waitForRequest((r) => r.method() === "PUT" && r.url().endsWith("/api/session/client-state") && ok(JSON.parse(r.postData() ?? "{}")?.ui?.sectionsOpen));
+  const savedFolded = putWith((f) => f?.selection === false);
+  await sum.click();
+  await expect(ctl("sel-clear")).toBeHidden();
+  await savedFolded;
+  await page.reload();
+  await exact("Original", String(ROOM_TOTAL));
+  await expect.poll(async () => Object.keys(await SECTIONS_OPEN(page))).toEqual(["selection"]);
+  await expect(ctl("sel-clear")).toBeHidden();
+  expect(await countsText()).toBe(before);
+  // the keyboard: Enter on the focused summary unfolds it again (saved, so the next test starts open)
+  const savedOpen = putWith((f) => f === undefined || Object.keys(f).length === 0);
+  await sum.focus();
+  await page.keyboard.press("Enter");
+  await expect(ctl("sel-clear")).toBeVisible();
+  expect(await countsText()).toBe(before);
+  await savedOpen;
+});
+
+test("E2E-286 22-7 (Scope) the Scope radios change the candidate exactly as the select did, by mouse and by keyboard", async ({ page }) => {
+  const t = clusterHelpers(page);
+  await openRoom(page, t.exact);
+  await t.ctl("tool-cluster").click();
+  await t.setNum("cluster-radius", 1.1);
+  await t.pickSeed(CL.wall);
+  await t.exact("Candidates", String(ROOM.wall));
+  await t.ctl("scope-active").click();
+  await expect(t.ctl("scope-active")).toHaveAttribute("aria-checked", "true");
+  await t.exact("Candidates", String(ROOM.wall));
+  await expect(t.ctl("apply")).toBeEnabled();
+  await t.ctl("scope-active").focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(t.ctl("scope-displayed")).toHaveAttribute("aria-checked", "true");
+  await expect(t.ctl("scope-displayed")).toBeFocused();
+  await t.exact("Candidates", String(ROOM.wall));
+  await expect(t.ctl("apply")).toBeEnabled();
+});
+
+test("E2E-303 22-8 the thin timeline: a 40 px bar of 26 px chips, the label on hover or focus below 1700 px (the chip widens over its neighbours) and inline from 1700; the marker drags with the real mouse between five steps; Edit shape sits inside its chip", async ({ page }) => {
+  test.setTimeout(240000);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const t = tl(page);
+  await t.threeSteps();
+  // two more steps: the left and the right half of what is left (extents from the fixture), the Active count read after each
+  const rows = roomValid();
+  const xs = rows.map((r) => r[0]);
+  const [lo, hi] = [Math.min(...xs), Math.max(...xs)];
+  const mid = (lo + hi) / 2;
+  const ext = (i: number) => [Math.min(...rows.map((r) => r[i])) - 0.1, Math.max(...rows.map((r) => r[i])) + 0.1] as const;
+  const [y0, y1] = ext(1);
+  const [z0, z1] = ext(2);
+  const actives: number[] = [];
+  for (const [a, b] of [[lo - 0.1, mid], [mid, hi + 0.1]] as const) {
+    await t.boxAt((a + b) / 2, (y0 + y1) / 2, (z0 + z1) / 2, b - a, y1 - y0, z1 - z0);
+    await expect(t.ctl("apply")).toBeEnabled();
+    await t.ctl("apply").click();
+    await expect(t.cards).toHaveCount(actives.length + 4);
+    await t.idle();
+    actives.push(await t.num("Active"));
+  }
+  await expect(t.cards).toHaveCount(5);
+  await page.mouse.move(640, 300); // a free stage point: no chip is hovered
+  const bar = (await page.locator("#timeline-bar").boundingBox())!;
+  expect(bar.height).toBeLessThanOrEqual(40.5);
+  const stage = (await page.locator("#stage").boundingBox())!;
+  expect(Math.abs(stage.y + stage.height - (bar.y + bar.height) - 8), "the bar sits 8 px above the stage bottom").toBeLessThanOrEqual(1);
+  for (let i = 0; i < 5; i++) expect(Math.abs((await t.card(i).boundingBox())!.height - 26), `chip ${i} height`).toBeLessThanOrEqual(1);
+  const label = (i: number) => t.card(i).locator(".step-label");
+  // a long name, so the hovered chip has more to show than its 112 px
+  await t.card(1).hover();
+  await label(1).dblclick();
+  await t.card(1).locator("input.step-rename").fill("Wall behind the cabinet at the north end");
+  await t.card(1).locator("input.step-rename").press("Enter");
+  await page.mouse.move(640, 300);
+  await t.card(1).blur();
+  await expect(label(1)).toBeHidden();
+  const [b0, b1, b2] = [await t.card(0).boundingBox(), await t.card(1).boundingBox(), await t.card(2).boundingBox()];
+  await t.card(1).hover();
+  await expect(label(1)).toBeVisible();
+  const h1 = (await t.card(1).boundingBox())!;
+  expect(h1.width, "the hovered chip widens").toBeGreaterThan(b1!.width + 1);
+  expect((await t.card(0).boundingBox())!.x).toBeCloseTo(b0!.x, 0);
+  expect((await t.card(2).boundingBox())!.x, "the neighbour keeps its x").toBeCloseTo(b2!.x, 0);
+  await page.mouse.move(640, 300);
+  await expect(label(1)).toBeHidden();
+  await t.card(2).focus();
+  await expect(label(2)).toBeVisible();
+  await page.mouse.move(640, 300);
+  await t.card(2).blur();
+  // the marker with the real mouse, slot 5 to slot 4: the state is the one seen right after the fourth step
+  t.rollbacks.length = 0;
+  await t.dragMarkerTo(4);
+  await expect(t.marker).toHaveAttribute("aria-valuenow", "4");
+  await expect.poll(() => t.num("Active")).toBe(actives[0]);
+  expect(t.rollbacks).toHaveLength(1);
+  await expect(t.card(4)).toHaveClass(/greyed/);
+  await expect.poll(async () => Number(await t.card(4).evaluate((e) => getComputedStyle(e).opacity)), "the undone chip is dimmed").toBeLessThan(1);
+  // Edit shape inside its chip, which keeps its width when the pointer leaves
+  await t.card(0).locator(".step-icon").click();
+  await page.mouse.move(640, 300);
+  const edit = t.ctl("step-edit-shape");
+  await expect(edit).toBeVisible();
+  const c0 = (await t.card(0).boundingBox())!;
+  const e0 = (await edit.boundingBox())!;
+  expect(e0.x).toBeGreaterThanOrEqual(c0.x - 1);
+  expect(e0.x + e0.width).toBeLessThanOrEqual(c0.x + c0.width + 1);
+  expect(c0.width).toBeCloseTo(112, 0);
+  // from 1700 px the labels are inline without hover
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.mouse.move(900, 300);
+  for (let i = 0; i < 5; i++) if (i !== 0) await expect(label(i), `label ${i} at 1920`).toBeVisible();
+  expect((await t.card(1).boundingBox())!.width).toBeCloseTo(184, 0);
+});
+
+test("E2E-304 22-8 contrast in both themes on the new surfaces: the chip counts, the Timeline head and the toast text read at 4.5:1, the Reset icon and the marker grip at 3:1", async ({ page }) => {
+  test.setTimeout(240000);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const t = tl(page);
+  await t.threeSteps();
+  await page.mouse.move(640, 300);
+  for (const scheme of ["dark", "light"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await transitionsSettled(page);
+    const row = async (name: string, sel: string, floor: number) => {
+      await expect.poll(async () => (await textBackdrops(page, sel)).length, { message: name }).toBeGreaterThan(0);
+      let asserted = 0;
+      for (const b of await textBackdrops(page, sel)) {
+        if (floor === 4.5 && !/"[^"]+"$/.test(b.what)) continue;
+        const r = worstContrast(b);
+        console.info(`CONTRAST ${scheme} ${name} ${b.what.slice(0, 40)}: ${r.toFixed(2)}`);
+        expect(r, `${scheme} ${name}: ${b.what}`).toBeGreaterThanOrEqual(floor);
+        asserted++;
+      }
+      expect(asserted, `${scheme} ${name}: backdrops actually asserted (no vacuous pass)`).toBeGreaterThan(0);
+    };
+    await row("step count", "#timeline .step-count", 4.5);
+    await row("Timeline head", "#timeline-bar .tl-head b, #tl-sum", 4.5);
+    await row("Reset icon", '#filter-hud [data-control="filter-reset-all"]', 3);
+    // the marker grip: its fill (the accent) against the layers behind the bar
+    const [bar] = await textBackdrops(page, "#timeline-bar", 1);
+    const accent = await page.locator("#timeline-marker .marker-grip").evaluate((e) => getComputedStyle(e).backgroundColor);
+    const rg = worstContrast({ ...bar, fg: accent });
+    console.info(`CONTRAST ${scheme} marker grip: ${rg.toFixed(2)}`);
+    expect(rg, `${scheme} marker grip against the bar`).toBeGreaterThanOrEqual(3);
+    // a toast: raised by a typed-in junk value, read while it is up
+    await expandFilterBox(page, "filter-x-min");
+    await page.locator('[data-control="filter-x-min"]').fill("abc");
+    await page.keyboard.press("Enter");
+    await expect.poll(async () => (await textBackdrops(page, "#notices > *, #notices > * *")).length, { message: "a toast is up" }).toBeGreaterThan(0);
+    for (const b of await textBackdrops(page, "#notices > *, #notices > * *")) {
+      if (!/"[^"]+"$/.test(b.what)) continue;
+      const r = worstContrast(b);
+      console.info(`CONTRAST ${scheme} toast ${b.what.slice(0, 40)}: ${r.toFixed(2)}`);
+      expect(r, `${scheme} toast: ${b.what}`).toBeGreaterThanOrEqual(4.5);
+    }
+  }
+});
+
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-305 22-8 owner screenshots at ${w}x${h}: idle, the Box armed with its preview and a toast, five steps with one highlighted, the legend folded, and the band hidden with its pill, in dark and light`, async ({ page }) => {
+    test.setTimeout(420000);
+    await page.setViewportSize({ width: w, height: h });
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => {
+      if (m.type() === "error" && !/404/.test(m.text())) errors.push(m.text());
+    });
+    const t = tl(page);
+    const shoot = async (name: string) => {
+      for (const scheme of ["dark", "light"] as const) {
+        await page.emulateMedia({ colorScheme: scheme });
+        await transitionsSettled(page);
+        await appIdle(page);
+        await page.screenshot({ path: `/out/part22-8-${w}x${h}-${scheme}-${name}.png` });
+      }
+    };
+    await t.open();
+    await page.keyboard.press("3");
+    await page.mouse.move(5, 5);
+    await shoot("idle");
+    await t.boxAt(GHOST_BOX.c[0], GHOST_BOX.c[1], GHOST_BOX.c[2], GHOST_BOX.d[0], GHOST_BOX.d[1], GHOST_BOX.d[2]);
+    await t.exact("Candidates", String(ROOM.ghost));
+    await expandFilterBox(page, "filter-x-min");
+    await page.locator('[data-control="filter-x-min"]').fill("abc");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#notices > *")).toHaveCount(1);
+    await page.mouse.move(5, 5);
+    await shoot("box-armed-toast");
+    await t.ctl("tool-box").click(); // disarm
+    await t.threeSteps();
+    const rows = roomValid();
+    const xs = rows.map((r) => r[0]);
+    const [lo, hi] = [Math.min(...xs), Math.max(...xs)];
+    const mid = (lo + hi) / 2;
+    const ext = (i: number) => [Math.min(...rows.map((r) => r[i])) - 0.1, Math.max(...rows.map((r) => r[i])) + 0.1] as const;
+    const [y0, y1] = ext(1);
+    const [z0, z1] = ext(2);
+    for (const [a, b] of [[lo - 0.1, mid], [mid, hi + 0.1]] as const) {
+      await t.boxAt((a + b) / 2, (y0 + y1) / 2, (z0 + z1) / 2, b - a, y1 - y0, z1 - z0);
+      await expect(t.ctl("apply")).toBeEnabled();
+      await t.ctl("apply").click();
+      await t.idle();
+    }
+    await expect(t.cards).toHaveCount(5);
+    await t.card(2).locator(".step-icon").click();
+    await page.mouse.move(w / 2, 200);
+    await t.card(2).blur();
+    await shoot("five-steps-highlighted");
+    await t.ctl("legend-menu").click();
+    await expect(t.ctl("legend-menu")).toHaveAttribute("aria-expanded", "false");
+    await shoot("legend-folded");
+    await t.ctl("legend-menu").click();
+    expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight), "the page does not scroll").toBe(true);
+    // the band hidden with its pill (the 22-3 setup)
+    const { exact, ctl, setNum } = t;
+    await openTilted(page, exact);
+    await fitTiltedFloor(page, setNum, ctl, false);
+    await ctl("prot-show-band").click();
+    await expect(page.locator("#band-pill")).toBeVisible();
+    await page.mouse.move(5, 5);
+    await shoot("band-hidden-pill");
+    await ctl("prot-show-band").click();
+    expect(errors).toEqual([]);
+  });
+}
+
+/** RGB rows of a page clip, decoded in the page from the screenshot PNG: rows[y][x] = [r, g, b]. */
+const clipPixels = async (page: Pg, clip: { x: number; y: number; width: number; height: number }): Promise<number[][][]> => {
+  const png = await page.screenshot({ clip });
+  return page.evaluate(async (b64) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const bmp = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+    const cv = document.createElement("canvas");
+    cv.width = bmp.width;
+    cv.height = bmp.height;
+    const cx = cv.getContext("2d")!;
+    cx.drawImage(bmp, 0, 0);
+    const d = cx.getImageData(0, 0, bmp.width, bmp.height).data;
+    const rows: number[][][] = [];
+    for (let y = 0; y < bmp.height; y++) {
+      const row: number[][] = [];
+      for (let x = 0; x < bmp.width; x++) row.push([d[(y * bmp.width + x) * 4], d[(y * bmp.width + x) * 4 + 1], d[(y * bmp.width + x) * 4 + 2]]);
+      rows.push(row);
+    }
+    return rows;
+  }, png.toString("base64"));
+};
+
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-306 22-fix the timeline line does not run through a chip at ${w}x${h}: in both themes the pixel row at the line's y inside the chip's left padding equals the rows above it`, async ({ page }) => {
+    test.setTimeout(240000);
+    await page.setViewportSize({ width: w, height: h });
+    const t = tl(page);
+    await t.threeSteps();
+    for (const scheme of ["dark", "light"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await transitionsSettled(page);
+      await page.mouse.move(w / 2, 200); // no chip is hovered
+      await t.idle();
+      const line = (await page.locator(".tl-line").boundingBox())!;
+      const lineY = Math.round(line.y + line.height / 2); // the 1 px line is centred in its 14 px hit strip
+      let checked = 0;
+      for (let i = 0; i < 3; i++) {
+        const c = (await t.card(i).boundingBox())!;
+        const x = Math.round(c.x) + 1;
+        // 6 columns of the left padding (8 px), rows lineY-9 .. lineY+3 relative to the line
+        const rows = await clipPixels(page, { x, y: lineY - 9, width: 6, height: 13 });
+        const at = rows[9];
+        const ref = rows[3]; // 6 px above the line, same chip fill
+        const noise = Math.max(...rows[1].map((p, k) => Math.max(...p.map((v, ch) => Math.abs(v - rows[3][k][ch])))));
+        const diff = Math.max(...at.map((p, k) => Math.max(...p.map((v, ch) => Math.abs(v - ref[k][ch])))));
+        expect(diff, `${scheme} chip ${i}: line row vs the row 6 px above (noise ${noise})`).toBeLessThanOrEqual(noise);
+        checked++;
+      }
+      expect(checked, `${scheme}: chips checked`).toBe(3);
+    }
+  });
+}
+
+test("E2E-309 22-fix with no steps the timeline shows 'No steps yet' on a clear bar: no line and no marker are drawn, and both return with the first step", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const t = tl(page);
+  await t.open();
+  const empty = page.locator("#timeline .tl-empty");
+  await expect(empty).toHaveText("No steps yet");
+  const e = (await empty.boundingBox())!;
+  expect(e.width).toBeGreaterThan(0);
+  await expect(page.locator("#timeline .tl-line")).toBeHidden();
+  await expect(page.locator("#timeline-marker")).toBeHidden();
+  expect(await page.locator("#timeline .tl-line").boundingBox(), "the line has no box").toBeNull();
+  expect(await page.locator("#timeline-marker").boundingBox(), "the marker has no box").toBeNull();
+  await t.boxAt(3, 13, 2, 4, 4, 3);
+  await t.exact("Candidates", String(ROOM.ghost));
+  await t.ctl("apply").click();
+  await expect(t.cards).toHaveCount(1);
+  await expect(page.locator("#timeline .tl-line")).toBeAttached();
+  await expect(page.locator("#timeline-marker")).toBeVisible();
+});
+
+const rectsOverlap = (a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) =>
+  a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-307 22-fix the Show band switch is only its track at ${w}x${h}: its content fits (scrollWidth <= clientWidth), no text of it lies on the This edit select, and the row label says Show band`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const t = hideHelpers(page);
+    await openRoom(page, t.exact);
+    const panel = page.locator("details.panel", { has: page.locator("summary", { hasText: "Height protection" }) });
+    if (!(await panel.evaluate((e) => (e as HTMLDetailsElement).open))) await protSummary(page).click();
+    await expect(panel).toHaveJSProperty("open", true);
+    const sw = t.ctl("prot-show-band");
+    await expect(sw).toBeVisible();
+    expect(await sw.evaluate((e) => ({ sw: e.scrollWidth, cw: e.clientWidth, text: (e.textContent ?? "").trim() })), "the switch holds no text and nothing wider than its track").toEqual({ sw: 36, cw: 36, text: "" });
+    await expect(sw).toHaveAttribute("aria-label", "Show band");
+    const mode = (await t.ctl("prot-mode").boundingBox())!;
+    const box = (await sw.boundingBox())!;
+    expect(rectsOverlap(box, mode), "the switch does not touch the This edit select").toBe(false);
+    // no text node inside the switch's row column lies on the select: every text range under the row's control cell
+    const stray = await page.evaluate((m) => {
+      const cell = document.querySelector('[data-control="prot-show-band"]')!.closest(".pctl")!;
+      const out: string[] = [];
+      const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        if (!(n.textContent ?? "").trim()) continue;
+        const r = document.createRange();
+        r.selectNodeContents(n);
+        for (const q of Array.from(r.getClientRects())) if (q.left < m.x + m.width && m.x < q.right && q.top < m.y + m.height && m.y < q.bottom) out.push(n.textContent ?? "");
+      }
+      return out;
+    }, mode);
+    expect(stray, "text of the Show band cell on the select").toEqual([]);
+    await expect(page.locator(".prow", { has: page.locator('[data-control="prot-show-band"]') }).locator(".plabel")).toHaveText("Show band");
+  });
+
+  test(`E2E-308 22-fix the I-understand row at ${w}x${h}: hidden in Use global and Add local slab, shown in Override global, and then its checkbox sits next to its text`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    const t = hideHelpers(page);
+    await openRoom(page, t.exact);
+    const panel = page.locator("details.panel", { has: page.locator("summary", { hasText: "Height protection" }) });
+    if (!(await panel.evaluate((e) => (e as HTMLDetailsElement).open))) await protSummary(page).click();
+    await expect(panel).toHaveJSProperty("open", true);
+    const ack = t.ctl("prot-ack");
+    for (const mode of ["inherit", "add_local"]) {
+      await t.ctl("prot-mode").selectOption(mode);
+      await expect(ack, `mode ${mode}`).toBeHidden();
+    }
+    await t.ctl("prot-mode").selectOption("override");
+    await expect(ack).toBeVisible();
+    const gap = await ack.evaluate((e) => {
+      const label = e.closest("label")!;
+      const box = e.getBoundingClientRect();
+      const tn = Array.from(label.childNodes).find((n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? "").trim())!;
+      const r = document.createRange();
+      r.selectNodeContents(tn);
+      return r.getBoundingClientRect().left - box.right;
+    });
+    expect(gap, "gap between the checkbox and its text").toBeLessThanOrEqual(8);
+  });
+}

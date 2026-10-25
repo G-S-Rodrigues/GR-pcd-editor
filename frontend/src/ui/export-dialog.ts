@@ -78,6 +78,7 @@ export function buildExportDialog(store: Store<AppState>, run: (o: { scope: Expo
     "button",
     {
       id: "export-go",
+      class: "primary",
       onclick: async () => {
         go.disabled = true;
         let keepOpen = false;
@@ -107,7 +108,7 @@ export function buildExportDialog(store: Store<AppState>, run: (o: { scope: Expo
     hiddenNote,
     h("p", { class: "note", text: "The file is a new download named <original>_cleaned.pcd; your browser decides where it is saved and the source file is never overwritten." }),
     filesBox,
-    h("div", { class: "stack" }, go, cancel, close),
+    h("div", { class: "foot" }, cancel, close, go),
   );
   document.body.append(dialog);
 

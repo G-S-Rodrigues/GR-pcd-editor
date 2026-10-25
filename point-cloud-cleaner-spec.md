@@ -452,7 +452,8 @@ Initial targets, to be benchmarked on a documented desktop Linux reference PC wi
   Delete (the old Apply) is red. The Slice view and its keys are removed; rectangle select spans the whole cloud along
   the view axis. The Box tool starts as a 3 m cube and a click moves it.
 - Tool flow: Cluster arms at once and waits for a seed click (Pick point toggles waiting, set and paused); Clear
-  selection and pressing a tool again disarm it; Select displayed and Invert refuse while a tool is armed. The Polygon
+  selection, pressing a tool again, Esc and any successful action that consumes the selection disarm it (Part 22
+  addendum); Select displayed and Invert refuse while a tool is armed. The Polygon
   tool has an edit mode (add and remove vertices); a polygon delete blanks the polygon.
 - History steps store their editable shape (box, polygon, cluster with its region, sparse parameters; a filter step
   becomes the box of its bounds) in the session archive as an optional manifest key (archive VERSION unchanged; an older
@@ -486,7 +487,7 @@ Initial targets, to be benchmarked on a documented desktop Linux reference PC wi
 - AC-07 is refined by owner ruling 571: Override protection replaces only the height band; protected layers always
   apply, so the effective protection line of an override preview adds "plus protected layers (N points)".
 - New layer from protected points snapshots the global band (it must be on) into a protected layer named Floor.
-- Each layer row has a fold-out menu: rename, 16 colours, visible, protected, lock, Select/Add/Subtract/Intersect with
+- Each layer row has a fold-out menu (a popover from the row's more button since Part 22): rename, 16 colours, visible, protected, lock, Select/Add/Subtract/Intersect with
   the layer as operand (one shot, scope Active), Edit layer, To main, Up/Down (stored order), Merge, Delete points
   (confirmed, a timeline step, refused for a protected layer). A locked layer refuses assignments, set-members, merge,
   To main and Hide selected over its points with 422 `layer_locked`; Apply and Undo still delete and restore them.
@@ -519,3 +520,33 @@ Initial targets, to be benchmarked on a documented desktop Linux reference PC wi
 - Owner decisions built as defaults: O10 keepers are eligible points only; O11 an enabled band is replaced after a confirm.
 - Licence: the algorithms are published ones (RANSAC plane fitting, voxel grid downsampling, fixed-radius neighbour
   search); no CloudCompare code is used.
+
+## Part 22 addendum (visual rework, Apple-style)
+
+This addendum supersedes the layout wording of section 4 and of the older addenda wherever they differ; behaviour not named here is unchanged.
+
+- Section 4 is reorganised (R22-5). The main toolbar becomes one top bar: the title with the Edited dot, Open, Save and Export, Undo and Redo, the
+  Original, Edited, Overlay and Split segmented control, the Display, Cloud details and Keyboard popovers, Preview, the "N kept" chip and the red
+  Delete N button. The editing tools become a floating tool palette at the canvas's left edge. The inspector shows the armed tool's panel and
+  Height protection. The XYZ display limits stay as the canvas filter boxes (R22-8). The status bar moves to the footer. Export is a sheet and
+  History a popover at the timeline's end.
+- R22-1 (reverses R17-2): Esc and every action that consumes the selection and succeeds disarm the tool; refused or cancelled actions keep it. The
+  Esc order is drag, text field, polygon or pick, layer edit, overlay, draft, then the tool. The closed polygon prism region is kept unless the
+  Polygon tool was armed. Pinned by UI-991, UI-993, UI-994, UI-995, E2E-196, E2E-197.
+- R22-2: the Display filter section is removed; Reset filters is an icon at the bottom right of the canvas (E2E-301, E2E-40).
+- R22-3 (reverses Part 18 O9): a layer's points always show the layer colour, protected or not; a shield marks a protected layer on its row, its
+  menu and its legend entry (UI-1010, E2E-201).
+- R22-4, R22-6, R22-7, R22-11: the protection band uses the Part 14b arrows and rings (the Box gizmo is unchanged). Show band hides the whole band
+  while protection stays on, with the "Protection on, band hidden, Show" pill. Band visibility is client-only and not in the archive (archive
+  version 3 unchanged) (E2E-215, E2E-216).
+- R22-8: the six filter boxes and the selection behave as before (restyle only). R22-9: the timeline is a thin 40 px glass bar with one chip per
+  step (E2E-303). R22-10: the six colour modes stay, in the Display popover.
+- R22-13, R22-14: the light theme gets a light canvas and a light render palette; dark is unchanged.
+- R22-15: tool defaults: Sparse radius 0.4; Plane distance 0.1, tilt 5 degrees, max planes 1.
+- R22-16: side widths 232 and 280 below 1440 px, 256 and 296 from 1440, 288 and 332 from 1700; the stage keeps at least 0.6 of the window
+  (E2E-285).
+- R22-19: the left sidebar scrolls vertically when it cannot fit (1280x720 with a draft); nothing is removed or shrunk.
+- Process rulings R22-12, R22-17, R22-18, R22-20: part 22 is built on the `prototype` branch first and merged to main after the owner's validation; the
+  README screenshots are the 1920x1080 set of the owner's own scan.
+- Acceptance: the AC numbering is unchanged; the part 22 acceptance criteria live in the part 22 spec. The landed tests pin them (UI-991 to
+  UI-1015, UI-1230 to UI-1240, E2E-196 to E2E-202, E2E-285, E2E-300 to E2E-304).

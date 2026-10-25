@@ -1,0 +1,226 @@
+import { expect, test } from "vitest";
+import { FakeEl } from "../testing/fakedom";
+import { bindPopovers, placePopover, popoverReducer } from "./popover";
+
+const VIEW = { w: 1280, h: 720 };
+
+test("UI-1130 placePopover centres under the anchor at bottom + 8, flips above near the footer, clamps to an 8 px margin", () => {
+  const size = { w: 300, h: 200 };
+  // centre
+  expect(placePopover({ left: 600, top: 10, width: 40, height: 30 }, size, VIEW)).toEqual({ x: 470, y: 48 });
+  // left edge: clamped to 8
+  expect(placePopover({ left: 0, top: 10, width: 40, height: 30 }, size, VIEW)).toEqual({ x: 8, y: 48 });
+  // right edge: clamped to view - size - 8
+  expect(placePopover({ left: 1240, top: 10, width: 40, height: 30 }, size, VIEW)).toEqual({ x: 972, y: 48 });
+  // flip: bottom + 8 + h = 718 > 720 - 34
+  expect(placePopover({ left: 600, top: 480, width: 40, height: 30 }, size, VIEW)).toEqual({ x: 470, y: 272 });
+  // too tall for either side: it flips and is floored at the top bar plus 8 (UI-1144)
+  expect(placePopover({ left: 600, top: 10, width: 40, height: 30 }, { w: 300, h: 900 }, VIEW)).toEqual({ x: 470, y: 60 });
+});
+
+test("UI-1144 a flipped popover is floored at the top bar plus 8 (60 px) and never runs under the bar", () => {
+  const size = { w: 300, h: 200 };
+  // flipped and too tall for the room above: the top is 60, not 8
+  expect(placePopover({ left: 600, top: 480, width: 40, height: 30 }, { w: 300, h: 500 }, VIEW)).toEqual({ x: 470, y: 60 });
+  // flipped with room above keeps its place
+  expect(placePopover({ left: 600, top: 480, width: 40, height: 30 }, size, VIEW)).toEqual({ x: 470, y: 272 });
+  // a popover that opens below the anchor is unchanged by the floor
+  expect(placePopover({ left: 600, top: 10, width: 40, height: 30 }, size, VIEW)).toEqual({ x: 470, y: 48 });
+});
+
+test("UI-1131 popoverReducer: toggle opens, closes and switches; an outside pointerdown closes; Esc closes unless typed in a text field", () => {
+  expect(popoverReducer(null, { type: "toggle", id: "a" })).toBe("a");
+  expect(popoverReducer("a", { type: "toggle", id: "a" })).toBeNull();
+  expect(popoverReducer("a", { type: "toggle", id: "b" })).toBe("b");
+  expect(popoverReducer("a", { type: "pointerdown", inside: null, onAnchor: null })).toBeNull();
+  expect(popoverReducer("a", { type: "pointerdown", inside: "a", onAnchor: null })).toBe("a");
+  expect(popoverReducer("a", { type: "pointerdown", inside: null, onAnchor: "a" })).toBe("a");
+  expect(popoverReducer("a", { type: "pointerdown", inside: null, onAnchor: "b" })).toBeNull();
+  expect(popoverReducer(null, { type: "pointerdown", inside: null, onAnchor: null })).toBeNull();
+  expect(popoverReducer("a", { type: "escape", inField: false })).toBeNull();
+  expect(popoverReducer("a", { type: "escape", inField: true })).toBe("a");
+  expect(popoverReducer("a", { type: "close" })).toBeNull();
+});
+
+function setup() {
+  const mk = (id: string) => {
+    const anchor = new FakeEl("button");
+    const panel = new FakeEl("div");
+    panel.setAttribute("id", id);
+    panel.hidden = true;
+    const inner = new FakeEl("input");
+    panel.append(inner);
+    return { id, anchor, panel, inner };
+  };
+  const a = mk("pa");
+  const b = mk("pb");
+  let down: (e: { target: unknown }) => void = () => undefined;
+  let key: (e: { key: string; target: unknown }) => void = () => undefined;
+  const pops = bindPopovers(
+    [
+      { id: "a", anchor: a.anchor as unknown as HTMLElement, panel: a.panel as unknown as HTMLElement },
+      { id: "b", anchor: b.anchor as unknown as HTMLElement, panel: b.panel as unknown as HTMLElement },
+    ],
+    {
+      listenPointerDown: (f) => (down = f as typeof down),
+      listenKey: (f) => (key = f as typeof key),
+      listenResize: () => undefined,
+      viewport: () => VIEW,
+      measure: () => ({ anchor: { left: 600, top: 10, width: 40, height: 30 }, size: { w: 300, h: 200 } }),
+    },
+  );
+  return { a, b, pops, down: (t: unknown) => down({ target: t }), key: (k: string, target: unknown = {}) => key({ key: k, target }) };
+}
+
+test("UI-1132 bindPopovers mirrors the state on the anchor and panel, focuses the panel on open and the anchor on an Esc close, one popover at a time", () => {
+  const s = setup();
+  expect(s.pops.isOpen()).toBe(false);
+  expect(s.a.anchor.getAttribute("aria-expanded")).toBe("false");
+  expect(s.a.anchor.getAttribute("aria-controls")).toBe("pa");
+  expect(s.a.panel.hidden).toBe(true);
+  s.a.anchor.fire("click");
+  expect(s.pops.openId()).toBe("a");
+  expect(s.a.anchor.getAttribute("aria-expanded")).toBe("true");
+  expect(s.a.panel.hidden).toBe(false);
+  expect(s.a.panel.classList.contains("on")).toBe(true);
+  expect(s.a.panel.focused).toBe(1);
+  expect(s.a.panel.style.left).toBe("470px");
+  expect(s.a.panel.style.top).toBe("48px");
+  // opening b closes a
+  s.b.anchor.fire("click");
+  expect(s.pops.openId()).toBe("b");
+  expect(s.a.panel.hidden).toBe(true);
+  expect(s.a.anchor.getAttribute("aria-expanded")).toBe("false");
+  // a pointerdown inside b, or on its anchor, keeps it; elsewhere closes it
+  s.down(s.b.inner);
+  s.down(s.b.anchor);
+  expect(s.pops.openId()).toBe("b");
+  s.down(new FakeEl("canvas"));
+  expect(s.pops.isOpen()).toBe(false);
+  expect(s.b.panel.focused).toBe(1);
+  expect(s.b.anchor.focused).toBe(0); // a pointer close does not steal focus
+  // Esc closes and returns focus to the anchor; Esc typed in a text field does not
+  s.a.anchor.fire("click");
+  s.key("Escape", { tagName: "INPUT", type: "text" });
+  expect(s.pops.openId()).toBe("a");
+  s.key("Escape", { tagName: "INPUT", type: "range" });
+  expect(s.pops.isOpen()).toBe(false);
+  expect(s.a.anchor.focused).toBe(1);
+  // Esc with nothing open does nothing
+  s.key("Escape");
+  expect(s.a.anchor.focused).toBe(1);
+  // programmatic open and a close that names an entry
+  s.pops.open("b");
+  s.pops.closeIf("a");
+  expect(s.pops.openId()).toBe("b");
+  s.pops.closeIf("b");
+  expect(s.pops.isOpen()).toBe(false);
+});
+
+test("UI-1146 replace() places the open popover again after its content changed size, and does nothing when none is open", () => {
+  const a = { anchor: new FakeEl("button"), panel: new FakeEl("div") };
+  a.panel.setAttribute("id", "pa");
+  let h = 200;
+  const pops = bindPopovers([{ id: "a", anchor: a.anchor as unknown as HTMLElement, panel: a.panel as unknown as HTMLElement }], {
+    listenPointerDown: () => undefined,
+    listenKey: () => undefined,
+    listenResize: () => undefined,
+    viewport: () => VIEW,
+    measure: () => ({ anchor: { left: 600, top: 480, width: 40, height: 30 }, size: { w: 300, h } }),
+  });
+  pops.replace();
+  expect(a.panel.style.top).toBeUndefined();
+  pops.open("a");
+  expect(a.panel.style.top).toBe("272px");
+  h = 300; // flipped above the anchor: the panel grows upward, its bottom stays put
+  pops.replace();
+  expect(a.panel.style.top).toBe("172px");
+});
+
+test("UI-1160 add(entry) wires a late popover: aria-controls, toggle, one-open with the old entries, Esc refocuses its anchor, a pointerdown inside keeps it", () => {
+  const s = setup();
+  const late = { anchor: new FakeEl("button"), panel: new FakeEl("div") };
+  late.panel.setAttribute("id", "pl");
+  late.panel.hidden = true;
+  const inner = new FakeEl("span");
+  late.panel.append(inner);
+  s.pops.add({ id: "late", anchor: late.anchor as unknown as HTMLElement, panel: late.panel as unknown as HTMLElement });
+  expect(late.anchor.getAttribute("aria-controls")).toBe("pl");
+  expect(late.panel.hidden).toBe(true);
+  late.anchor.fire("click");
+  expect(s.pops.openId()).toBe("late");
+  expect(late.panel.hidden).toBe(false);
+  s.down(inner);
+  expect(s.pops.openId()).toBe("late");
+  // one open at a time with the old entries
+  s.a.anchor.fire("click");
+  expect(s.pops.openId()).toBe("a");
+  expect(late.panel.hidden).toBe(true);
+  late.anchor.fire("click");
+  expect(s.a.panel.hidden).toBe(true);
+  s.key("Escape");
+  expect(s.pops.isOpen()).toBe(false);
+  expect(late.anchor.focused).toBe(1);
+});
+
+test("UI-1200 placePopover with where=beside sits right of the anchor at top - 10, flips above near the footer (floor 60), clamps to the window, and without where is unchanged", () => {
+  const size = { w: 262, h: 300 };
+  expect(placePopover({ left: 206, top: 200, width: 22, height: 22 }, size, { w: 1280, h: 720 }, "beside")).toEqual({ x: 236, y: 190 });
+  // 460 + 300 > 686: flips to top - h - 8 = 162
+  expect(placePopover({ left: 206, top: 470, width: 22, height: 22 }, size, { w: 1280, h: 720 }, "beside")).toEqual({ x: 236, y: 162 });
+  // too tall for the room above: floored at the top bar plus 8 (UI-1144)
+  expect(placePopover({ left: 206, top: 470, width: 22, height: 22 }, { w: 262, h: 460 }, { w: 1280, h: 720 }, "beside")).toEqual({ x: 236, y: 60 });
+  // right edge clamp: 1280 - 262 - 8
+  expect(placePopover({ left: 1200, top: 200, width: 22, height: 22 }, size, { w: 1280, h: 720 }, "beside")).toEqual({ x: 1010, y: 190 });
+  // the default is the centred-below rule of UI-1130
+  expect(placePopover({ left: 600, top: 10, width: 40, height: 30 }, { w: 300, h: 200 }, VIEW)).toEqual({ x: 470, y: 48 });
+  expect(placePopover({ left: 600, top: 10, width: 40, height: 30 }, { w: 300, h: 200 }, VIEW, "below")).toEqual({ x: 470, y: 48 });
+});
+
+test("UI-1201 toggleAt opens a popover at a movable anchor, moves it to another anchor, closes on the same anchor; reanchor moves it without refocus; outside pointerdown and Esc close it", () => {
+  const s = setup();
+  const layerPanel = new FakeEl("div");
+  layerPanel.setAttribute("id", "layer-menu");
+  layerPanel.hidden = true;
+  const a1 = new FakeEl("button");
+  const a2 = new FakeEl("button");
+  const a3 = new FakeEl("button");
+  s.pops.add({ id: "layer", anchor: new FakeEl("span") as unknown as HTMLElement, panel: layerPanel as unknown as HTMLElement, where: "beside", movable: true });
+  s.pops.toggleAt("layer", a1 as unknown as HTMLElement);
+  expect(s.pops.openId()).toBe("layer");
+  expect(a1.getAttribute("aria-expanded")).toBe("true");
+  expect(layerPanel.hidden).toBe(false);
+  expect(layerPanel.focused).toBe(1);
+  expect(layerPanel.style.left).toBe("648px"); // beside the 600..640 anchor: right + 8
+  expect(layerPanel.style.top).toBe("8px"); // top - 10 clamped to the 8 px margin
+  s.pops.toggleAt("layer", a2 as unknown as HTMLElement);
+  expect(s.pops.openId()).toBe("layer");
+  expect(a1.getAttribute("aria-expanded")).toBe("false");
+  expect(a2.getAttribute("aria-expanded")).toBe("true");
+  s.pops.toggleAt("layer", a2 as unknown as HTMLElement);
+  expect(s.pops.isOpen()).toBe(false);
+  expect(a2.getAttribute("aria-expanded")).toBe("false");
+  // an outside pointerdown closes; one on the current anchor keeps it
+  s.pops.toggleAt("layer", a1 as unknown as HTMLElement);
+  s.down(a1);
+  expect(s.pops.openId()).toBe("layer");
+  s.down(new FakeEl("canvas"));
+  expect(s.pops.isOpen()).toBe(false);
+  // reanchor while open moves aria-expanded, does not refocus
+  s.pops.toggleAt("layer", a1 as unknown as HTMLElement);
+  const focused = layerPanel.focused;
+  s.pops.reanchor("layer", a3 as unknown as HTMLElement);
+  expect(a3.getAttribute("aria-expanded")).toBe("true");
+  expect(layerPanel.focused).toBe(focused);
+  s.key("Escape");
+  expect(s.pops.isOpen()).toBe(false);
+  expect(a3.focused).toBe(1);
+  // one at a time
+  s.pops.toggleAt("layer", a1 as unknown as HTMLElement);
+  s.a.anchor.fire("click");
+  expect(s.pops.openId()).toBe("a");
+  expect(layerPanel.hidden).toBe(true);
+  // reanchor while closed only stores the anchor
+  s.pops.reanchor("layer", a2 as unknown as HTMLElement);
+  expect(s.pops.isOpen() && s.pops.openId() === "layer").toBe(false);
+});

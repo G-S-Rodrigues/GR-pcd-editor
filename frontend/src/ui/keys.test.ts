@@ -22,7 +22,7 @@ test("UI-133 the six view buttons are gone; the six ViewCube faces are described
   expect(ids).toContain("view-perspective");
 });
 
-import { KEY_DOCS, classifyKey, helpOpenAfter } from "./keys";
+import { KEY_DOCS, classifyKey, escapeInField, helpOpenAfter } from "./keys";
 
 const ev = (o: Partial<Parameters<typeof classifyKey>[0]>) => ({ key: "", ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, target: "BODY", ...o });
 
@@ -74,4 +74,19 @@ test("UI-664 Backspace is the polygon vertex removal key, Delete stays Apply, ty
   expect(doc.keys).toBe("Backspace");
   expect(doc.label).toMatch(/edit mode/);
   expect(KEY_DOCS.find((d) => d.id === "cancel")!.label).toContain("leave polygon edit mode");
+});
+
+test("UI-992 the Esc row says it disarms the tool last", () => {
+  const label = KEY_DOCS.find((d) => d.id === "cancel")!.label;
+  expect(label).toMatch(/disarm the (armed )?tool/i);
+  expect(label.search(/disarm the (armed )?tool/i)).toBeGreaterThan(label.indexOf("discard a pending draft"));
+});
+
+test("UI-992 escapeInField owns Escape for text entry only, not for checkbox, radio, range or buttons", () => {
+  for (const [tag, type] of [["INPUT", "text"], ["INPUT", "number"], ["INPUT", ""], ["TEXTAREA", ""], ["SELECT", ""]]) {
+    expect(escapeInField(tag, type), `${tag} ${type}`).toBe(true);
+  }
+  for (const [tag, type] of [["INPUT", "checkbox"], ["INPUT", "radio"], ["INPUT", "range"], ["BUTTON", ""], ["BODY", ""], ["CANVAS", ""]]) {
+    expect(escapeInField(tag, type), `${tag} ${type}`).toBe(false);
+  }
 });

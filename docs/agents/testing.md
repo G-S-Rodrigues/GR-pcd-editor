@@ -16,6 +16,8 @@ docker compose -f docker/compose.yaml --profile checks build verify lint
 docker compose -f docker/compose.yaml --profile checks run --rm verify
 docker compose -f docker/compose.yaml --profile checks run --rm lint
 bash tests/container/test_compose.sh                # container tier
+bash tests/container/test_smoke_names.sh            # CTR-12, static, smoke.sh project/image env
+bash tests/container/test_shots_input.sh            # CTR-13, static, smoke.sh shots input (GR_PCD_SHOTS_PCD)
 bash tests/launcher/test_launcher.sh                # launcher, stub docker
 bash tests/launcher/test_launcher_smoke.sh          # launcher, real Docker
 ```
@@ -90,8 +92,10 @@ by running `node node_modules/vitest/vitest.mjs run <file>` in `frontend/`.
 
 ## Smoke (browser, part 6)
 
-`bash scripts/smoke.sh` builds the app image (tag `gr-pcd-visualizer:smoke`),
-starts it under compose project `gr-pcd-smoke` (profile `smoke`, tmpfs `/work`,
+`bash scripts/smoke.sh` builds the app image (tag `gr-pcd-visualizer:smoke`, or
+`$GR_PCD_SMOKE_IMAGE`), starts it under compose project `gr-pcd-smoke` (or
+`$GR_PCD_SMOKE_PROJECT`; set both to different values per run and two smoke runs
+can go at once, `CTR-12` in `tests/container/test_smoke_names.sh`) (profile `smoke`, tmpfs `/work`,
 no published port) and runs Playwright `mcr.microsoft.com/playwright:v1.64.1-noble`
 with `network_mode: service:smoke-app`, so the page is `http://localhost:8080`
 (the Host guard only allows loopback). `e2e/node_modules` is installed once
@@ -145,6 +149,12 @@ export, save, persist, unsaved, tooltips), under `frontend/src/**`; backend rend
   no tool, default cluster limit), `E2E-24b` (start banner with no session).
   `SMOKE_SHOTS_DIR=<dir> bash scripts/smoke.sh` keeps every screenshot to look at.
   Run a subset with `bash scripts/smoke.sh npx playwright test -g "E2E-2[01]"`.
+- README shots tool (not part of the smoke run or any gate; needs a PCD you own, never stage a `.pcd` or `.pcdsession`): the separate config
+  `e2e/shots.config.ts` matches only `*.shots.ts`, so `readme.shots.ts` is never in the default `--list` count.
+  `GR_PCD_SHOTS_PCD=/absolute/path/cloud.pcd SMOKE_SHOTS_DIR=<dir> bash scripts/smoke.sh npx playwright test -c shots.config.ts --workers=1`
+  mounts the file read-only at `/in/cloud.pcd` (an unset variable leaves the run line unchanged; a relative or missing path exits 2 before any
+  docker call, because Docker reads a relative `-v` source as a named volume). The spec opens it through the file picker and writes only to
+  `/out`, named `<w>x<h>-<theme>-<state>.png` (states idle, armed, draft; owner-only `owner-` shots are never committed).
 - Fast loop for vitest and `tsc` without a rebuild: bind-mount `frontend/src`
   over the checks image, e.g. `docker run --rm --network none -v "$PWD/frontend/src:/app/frontend/src:ro" gr-pcd-visualizer:checks bash -c "cd frontend && node node_modules/vitest/vitest.mjs run"`.
 
@@ -248,10 +258,14 @@ export, save, persist, unsaved, tooltips), under `frontend/src/**`; backend rend
 
 ## Collapsible inspector sections (part 10-8)
 
+(Part 22-6: tool sections now carry the shared header, icon tile, name, `?` and close, inside the summary.)
+
 IDs: `UI-230..232` (`frontend/src/ui/sections.test.ts`: all open by default, per-section
 fold, client-state round trip, old sessions all open) and `E2E-46` (click and Enter fold
 each section, reload restores, counts unchanged). Fold state is `AppState.sectionsOpen`
 (only closed ids stored; ids avoid the UI-92 words) next to `floorPanelOpen`.
+Since 22-5 the fold ids are `box, polygon, cluster, sparse, plane, thin, layers` (`file`, `counts`, `view`, `history` and
+`display` left; old archives that still list them load, the ids are dropped). `E2E-46` folds `layers` and `box`.
 
 ## Part 11 additions (history timeline)
 
@@ -348,7 +362,7 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
   the Cluster toggle (waiting, set, paused), Clear selection disarms, the Polygon pencil with the real mouse (draw, drag,
   insert on an edge, Backspace, double click, Esc), Box click to centre, Live preview off, a step click centres the
   camera and Edit shape (box, polygon, cluster) leaves the history alone, save and reopen keep the shapes, Delete is red
-  and Select displayed refuses while armed, Sparse points on `sparseRoomPcd` (`e2e/synthetic.ts`: dense floor and wall with
+  and Select shown refuses while armed, Sparse points on `sparseRoomPcd` (`e2e/synthetic.ts`: dense floor and wall with
   ten floating points above z 3; truth is the points above z 3), layout at 1280x720 and 1920x1080 with a highlighted step,
   and keyboard only.
 - Not covered by a browser test: an old `.pcdsession` without step shapes (the disabled Edit shape button and its reason are
@@ -392,7 +406,7 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
 - Unit `UI-500..504` (`view/hidden.test.ts`: the id bitmap, exactness, `applyHidden` compaction, same object when empty),
   `UI-505/506` (`orchestration/refresh.test.ts`: primary and second render compacted, the deleted overlay is not, the set
   drops with the cache or a different session id), `UI-507..514` (`orchestration/hide.test.ts`: button states, refusal
-  reasons, Select displayed and Invert refused, the extra Apply confirm, hidden seed pick, never persisted, hide keeps the
+  reasons, Select shown and Invert refused, the extra Apply confirm, hidden seed pick, never persisted, hide keeps the
   tool armed, Save notice), `UI-515/516` (`ui/hiddenchip.test.ts`: the legend chip), `UI-517` (export dialog note).
 - Smoke `E2E-90` (hide the floor and its ghosts, the drawn count drops by exactly the count, Apply asks with the exact
   text, the export re-parsed with the independent reader equals the room minus the ghosts and includes the hidden floor,
@@ -428,7 +442,7 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
   commit them.
 - Step-0 measurements at HEAD 73870ad (room open, no tool, no layers): `#toolbar` 45 px and `#viewbar` 51 px, one line
   each; `#tools` content 385.7 px (369.7 like for like); stage 596.8 px at 720 and 956.8 px at 1080. After 17-10 the
-  `#tools` content is 345.4 px at both sizes; after 17-11 `#toolbar` is at most 33 px and `#viewbar` at most 29 px.
+  `#tools` content is 345.4 px at both sizes; after 17-11 `#toolbar` is at most 33 px and `#viewbar` at most 29 px. Since 22-5 one 52 px top bar replaces `#toolbar` and `#viewbar`.
 - Changed existing tests (setup, selector, text or geometry only, nothing loosened): UI-62, UI-65, UI-202, UI-203,
   UI-300, UI-400, UI-513, UI-666, UI-816, UI-831..838, UI-863, UI-864, UI-890; E2E-10, E2E-13, E2E-16, E2E-20, E2E-24,
   E2E-25, E2E-30, E2E-35, E2E-35b, E2E-36, E2E-37, E2E-38, E2E-40, E2E-41, E2E-46, E2E-62, E2E-90, E2E-113..115,
@@ -513,3 +527,237 @@ each section, reload restores, counts unchanged). Fold state is `AppState.sectio
 - One job worker: a select queues behind a running detect, so the panel shows "Detecting planes..." as busy (`API-110`).
 - A pre-20 build refuses an archive holding a `plane` or `thin` step (`bad_archive`); documented, not tested.
 - Known load flakes unchanged: `test_pcd_61`, `E2E-57`, `test_nrm_07` timing.
+
+## Part 22-1 additions (tool disarm, R22-1)
+- New ids: `UI-991` (`escTarget`, the pure rule for what one Esc is for), `UI-992` (the Esc row says it disarms; `escapeInField`: Escape in a text
+  entry stays with the field, a checkbox, slider or button does not), `UI-993` (a successful Delete disarms; the polygon prism region is kept
+  unless the Polygon tool was armed), `UI-994` (the layer actions disarm before the params hook; each call runs with the Box armed, polygon
+  kept, and with the Polygon tool armed, polygon blanked), `UI-995` (table over the seven consuming layer calls against 409, 413 and 422
+  `layer_locked`: the tool stays armed), `UI-995b` (a layer's Delete points with a refused Apply, a missed one-shot and a declined confirm),
+  `UI-996` (layerOp and layer select disarm when the one-shot lands; polygon legs), `UI-997` (`disarmedKeepingRegion`),
+  `E2E-196` (Esc disarms, keeping the selection and its candidate; legs for a text field, a drag and the export dialog, which keep the tool), `E2E-197` (Delete disarms), `E2E-198`
+  (New layer disarms), `E2E-199` (owner shots, two sizes), `E2E-200` (Esc with a filter grip focused disarms).
+- Changed tests, setup or assertion forced by R22-1, nothing loosened: `UI-667` (assertion flipped to "none"), `UI-513` (title only),
+  `UI-995` (ad-hoc legs subsumed by the table), `UI-994` (polygon legs); smoke `E2E-07`, `E2E-10`, `E2E-44`, `E2E-52`, `E2E-90`, `E2E-142`,
+  `E2E-154`, `E2E-171`, `E2E-174`, `E2E-178`, `E2E-180`, `E2E-183`, and the `tl().threeSteps` helper (E2E-50..58, 65, 66, 76, 118, 119, 122).
+- The Esc rule: the first global keydown listener (`main.ts`) computes `escTarget` (field, drag, polygon, pick, layer edit, overlay, draft, then
+  tool) before any other Esc consumer acts, and disarms only on the "tool" target. A popover added later must report itself through the
+  `overlay` input, or one Esc would close it and also disarm the tool.
+- Counts: vitest 804 to 818; smoke 183 to 189 (E2E-199 runs at two sizes, E2E-200 is new).
+- Known: `E2E-85` fails in a subset run right after `E2E-75` (order dependence, same on 05c61a5); it passes alone and in file order.
+
+## Part 22-2 additions (layer colour on points, shield, R22-3)
+- New ids: `UI-1010..1012` (`colourizeMasked` gives a layer's points the layer colour before the protected slab colour, with the kept,
+  selected, preview-remove and deleted flags still winning; `UI-1012` is a characterisation), `UI-1013`, `UI-1014` (the shield on the layer row
+  and on the menu's Protected flag, the white chip ring gone), `UI-1015` (the shield on a protected layer's legend entry), `E2E-201`
+  (recolouring a protected Floor changes the canvas in Layers mode with Height protection open and folded; shield on row and legend), `E2E-202`
+  (owner shots, two sizes).
+- Changed tests: `UI-300` (the pinned icon names gain `shield`), `UI-922` (the chip has no protected class, the row has 7 children), `UI-1010`
+  (two more points with the preview-remove and deleted flags), `UI-996` (polygon legs), `UI-994` (polygon kept), `E2E-170` (the shield on the
+  Floor row, no protected ring class on its chip).
+- `steadyCanvas` (a smoke helper) masks the legend and the timeline strip before comparing canvases: the marker pulses.
+- Counts: vitest 818 to 824; smoke 189 to 192.
+
+## Part 22-3 additions (the protection band with the Box handles, Show band)
+- Frontend unit: `UI-1060..1073`. `UI-1060..1062` (`tools/box/shared-handles.test.ts`) pin the helpers extracted from the Box
+  (`shaftRing`, `handleOverlaySpec`, `advanceRing`) to the Box's own output; `UI-1063..1066` (`inspector/bandgizmo.test.ts`)
+  the band's arrows, rings, visibility and the Show band off state; `UI-1067..1069` (`viewport/interact.test.ts`, describe
+  "band gizmo routing (22-3)") the arrow-tip drag, the ring drag and Esc, and the hidden band falling through to the camera;
+  `UI-1070` and `UI-1073` (`ui/bandswitch.test.ts`) the switch and the ring-colour tooltips; `UI-1071` (`ui/bandpill.test.ts`)
+  the pill; `UI-1072` (`state/persist.test.ts`) `ui.bandHidden`. vitest 824 to 838.
+- Changed existing tests (setup only, assertions kept): `UI-224` (the ring comes from `bandGizmo(..).rings`, id `tilt-y+`),
+  `E2E-39` (all three grabs are at the arrow tip), `E2E-44` (the upper arrow is grabbed at its tip; `dragYRing` finds
+  `tilt-y+`), `E2E-45` (only through `dragYRing`). Why: the band now uses the Box's part-14b handles, which are picked at
+  the arrow tip and the 8 px ring only, so "20 px past the anchor" and "halfway along the shaft" no longer grab. Box tests
+  (`tools/box/*.test.ts`, `UI-902`, `UI-563`, `E2E-163..167`) are unmodified.
+- Hooks: `__editor.tiltRings()` returns ids `tilt-x+`, `tilt-x-`, `tilt-y+`, `tilt-y-` with 32 points each (the old ids `x`
+  and `y` with 48 points are gone); `protectionArrows()` keeps its `{ key, base, tip }` shape, with the arrows now 72 px long
+  and grabbed only at the tip. Both return `[]` while Show band is off.
+- Smoke `E2E-215..217`: `E2E-215` real-mouse arrow tip and ring (Left view, where the X ring is a full circle);
+  `E2E-216` Show band off (hooks empty, pixels equal to protection off above the pill, a press at the old tip orbits, a box
+  Delete removes only the unprotected points, reload keeps hidden, Show restores); `E2E-217` writes
+  `/out/part22-3-<w>x<h>-band.png` and `-band-hidden.png` (keep with `SMOKE_SHOTS_DIR`, never commit). The full smoke
+  run with `--workers=1` is 196 tests (the four new ones are `E2E-215`, `E2E-216` and `E2E-217` at two sizes).
+- Lessons: after a `setNum` the Tab leaves focus in a number field, so a view key such as `3` is typed into it (the later
+  blur commits it): click the ViewCube face (`fitTiltedFloor` does). Client state is saved one second after the last change,
+  so a test that reloads must poll `/api/session` for `client_state.ui.bandHidden` first. The flag is not reset by opening
+  another file (like `previewLive`), so a test that ends hidden must leave the archive shown.
+- Branch-review fixes (after 22-3): `UI-1074` (`filterboxes/placement.test.ts`) the filter boxes never cover the band-hidden
+  pill (`placeBoxes` takes extra reserved rectangles, `pillRect` is passed while `bandPillShown`; `PILL` in `view/layout.ts`
+  must stay at least as big as `#band-pill`, which `E2E-217` bounds at 260 x 34); `UI-1075` (`ui/bandswitch.test.ts`) the
+  Show band icon is rebuilt only when `bandVisible` changes. Changed: `E2E-217` (also scans the six `.fbox` chips against
+  the pill), `UI-1073` (also the mouse help row), `UI-1070` (no `aria-pressed` on the role=switch), `UI-1067` (title only).
+
+## Part 22-4 additions (design tokens, palette, type and themes)
+- Frontend unit: `UI-1080..1091`. `UI-1080..1085` (`ui/tokens.test.ts` parser, `ui/theme.test.ts`) pin the three token blocks (dark
+  `:root`, the `prefers-color-scheme: light` block and the `:root[data-theme="light"]` block must agree), the values from `notes.md`
+  (with the measured departures listed in the test's comment), the contrast of every text, icon and fill token over its own
+  theme's `--canvas` and `--canvas-vignette`, the data and axis tokens (dark `:root` only), and the Box and band arrows and rings
+  against the dark stage. `UI-1086` no colour literal outside the token blocks (small allow-list) and no `var(--x)` that nothing
+  declares, across `index.html`, `timelineCss()` and `cubeNavCss()`. `UI-1087` one `:focus-visible` rule (3 px `--focus`), no other
+  outline except the locked-chip dashed marker, and no `outline: none`. `UI-1088` every transition is 120-250 ms and a global
+  reduced-motion block. `UI-1089` the font stack, the type tokens and tabular numerals, no remote font. `UI-1090` the glass rules
+  (`blur(28px) saturate(170%)` with the `-webkit-` twin on the stage HUD and the sheets, none on the side panels or `#viewport`, and the
+  `@supports not` opaque fallback). `UI-1091` (`viewport/canvastoken.test.ts`) the clear colour follows `--canvas`.
+- Changed existing tests (setup only, thresholds kept): `UI-306` and `UI-620` read the new token names through `testing/tokens.ts`
+  (`glass` composited over `--canvas`, `label`, `label-2`, `destructive`, `on-destructive`); `UI-721` measures the presets against
+  the dark theme's `--canvas` and `--canvas-vignette` at the same floor of 100; `E2E-155` grows each rect by 4 px (the new 3 px ring
+  plus its 1 px offset) instead of 3. `UI-906` is deliberately not edited (R22-6): its `0x15181d` constant is stale, `UI-1085`
+  protects the same floors on the real dark stage.
+- `testing/tokens.ts` is a test-only reader: it parses the three token blocks out of `index.html`, resolves `var()` chains and
+  composites translucent tokens over their backdrop. It is not bundled.
+- Smoke `E2E-220..226`: `E2E-220` the dark default on the real cascade and no request leaves the machine; `E2E-221` the light theme
+  from `prefers-color-scheme` and `data-theme` both ways, for the chrome, the HUD and a clear stage corner (the 3D clear colour);
+  `E2E-222` the 3 px accent ring; `E2E-223` reduced motion; `E2E-224` every icon-only button has an `aria-label` and a title (the
+  filter box reset and toggle were missing the label); `E2E-225` measured text contrast on real elements in both themes, including
+  `#empty` on the stage; `E2E-226` writes `/out/part22-4-<w>x<h>-{dark,dark-armed,light,light-armed}.png` (keep with
+  `SMOKE_SHOTS_DIR`, never commit). The full smoke run with `--workers=1` is 204 tests (196 + 8).
+- The Playwright config pins `colorScheme: "dark"`. Playwright defaults to light, which would now switch the app, so every existing
+  pixel test keeps the dark stage and a light test opts in with `page.emulateMedia({ colorScheme: "light" })`.
+- R22-13: the light theme has a light stage (`--canvas #e9ebef`) and light HUD glass. Part 22-4 pins no point, highlight or axis
+  contrast on it; the render colours followed in part 22-4b (see "Part 22-4b additions").
+- The vignette is not drawn (E9). A transparent canvas over a `#stage` radial gradient changed `E2E-216` by one dither level, so the
+  stage is the opaque clear colour, which follows `--canvas` (`viewport/canvastoken.ts`). `E2E-216` run in one `-g` selection straight
+  after `E2E-201` times out, also at 7067cd7; it passes alone and in file order.
+- Rule: part 4 adds no new border, padding, margin, width or height declaration; edges are inset shadows and state moves from
+  outline to fill and border. The type scale shrinks text-driven heights (inspector fields 26 to 24 px, `aside h2` 17 to 14 px,
+  status bar 27 to 23 px, stage 631 to 635 px at 1280x720), and the legend is pinned at <= 214 px (E2E-226).
+- `E2E-216`'s screenshots turn `backdrop-filter` off for everything in `#stage`; a new blurred element inside its clip needs no
+  test change.
+- 22-4 minors (part 22-4b, Block 1): `UI-1100` (a collapsed filter toggle's accessible name carries its chip text), `UI-1101`
+  (`#webgl-notice` declares no border), `E2E-230` (the same in the browser's accessible name), and the changed `E2E-216`
+  (capture style), `E2E-221` and `E2E-226` (shared `stageCorner`/`expectStageCorner` poll instead of a sleep; the legend height pin).
+
+## Part 22-4b additions (light-theme render palette)
+
+- Block 1, the 22-4 minors: `UI-1100`, `UI-1101`, `E2E-230` and the changed `E2E-216`, `E2E-221`, `E2E-226` (listed under part 22-4 above).
+- Block 2, the light render palette: `UI-1102` (light point palette = the R22-14 measured 3:1 set, step layers 3:1 as composited),
+  `UI-1103` (light presets, the White slot is Blue), `UI-1104` (light axes: arrows 3:1, dimmed rings 3:1, both light backdrops),
+  `UI-1105` (light tool overlay colours 3:1, live and draft outlines apart), `UI-1106` (`renderTheme` defaults to dark, is never
+  saved, follows the page colour scheme, a same-theme apply is a no-op), `UI-1107` (colouriser and colour cache key), `UI-1108`
+  (step and deleted overlay styles, legend entries), `UI-1109` (legend chips, Selected dots, Main chip recolour without a rebuild),
+  `UI-1110` (Box and band specs at the light floors), `UI-1111` (axis triad, letters 4.5:1), `UI-1112` (the light palette is
+  converted sRGB to linear where it enters three.js, so drawn pixels equal the hex; the dark path is the same objects). The
+  `LIGHT_FLOORS` constants live in `frontend/src/testing/floors.ts`.
+  Smoke `E2E-231` (a lone base point draws 135 in light, the dark 216 in dark, and light again, no reload), `E2E-232` (light Box
+  armed: arrows, a ring, a box edge, triad and legend chip in the light colours; `data-theme="dark"` gives back the exact dark values)
+  and `E2E-233` (owner shots `/out/part22-4b-<w>x<h>-{dark,dark-armed,light,light-armed}.png`, keep with `SMOKE_SHOTS_DIR`, never
+  commit; a screenshot test, green before and after by design; its stage-corner poll is bounded at 20 s because each read forces a
+  full-frame capture, through the shared `expectStageCorner` timeout parameter). The changed `UI-1084` (the light-block clause flips: both light blocks declare the `--pt-*` and `--ax-*` tokens).
+  The full smoke run with `--workers=1` is 209 tests (204 + 5).
+- R22-14: in the light theme the arrows are held to 3:1 (WCAG 1.4.11 graphics), the triad letters to 4.5:1 as text
+  (`LIGHT_TRIAD_LETTER`). The dark arrows stay at 4.5:1 (`UI-906`, `UI-1085`, unedited).
+- `renderTheme` is app state, never saved, set from `colorScheme`. The scene, the colour cache key and the overlays read it, so a theme
+  switch recolours without a reload. The White slot draws Blue `#0000f0` in the light theme and keeps the saved id `white`.
+- A light test opts in with `page.emulateMedia({ colorScheme: "light" })`. Read dark marks with `farthestFromStage`, not
+  `brightestPixel`, on the light stage.
+- Drawn colours: point colours are written as linear floats and sRGB-encoded on output, so the dark base `#b0b0b0` draws 216. Only the
+  light palette is converted (`gpuRgb`/`gpuPalette` in `colour/palette.ts`); ramps, normals and layer colours are unchanged.
+- Frontend unit checks need `frontend/index.html` mounted next to `frontend/src` (`UI-1084`, `UI-1101` read it). `npx` is absent in the
+  checks image: run tsc as `node node_modules/typescript/bin/tsc --noEmit`.
+
+## Part 22-10 additions (tool defaults, R22-15)
+
+- New: `UI-1150` (a fresh store: Sparse radius 0.4, Planes 0.1 / 5 / 1, arming Sparse sends 0.4), `UI-1151` (the Sparse radius field opens
+  at 0.4 and clearing it still stores null, derived), `UI-1152` (the plane fields open at 0.1 / 5 / 1), smoke `E2E-260` (a default
+  Detect on the plane room lists exactly the floor, with the fixture-truth count at 0.1). The full smoke run with `--workers=1` is 210.
+- Changed, expected value: `UI-678` (defaults; the cleared radius is now a change from 0.4), `UI-679`, `UI-954`, `UI-958`, `UI-967`,
+  `UI-971`, `UI-973`, `UI-974`. Changed, setup only: `UI-681`, `UI-683`, `UI-955`, `UI-975a`, `E2E-186`, `187`, `188`, `189`, `192`,
+  `193` (both sizes), `194` (both sizes).
+- A plane E2E that needs more than one row, or the 30 degree window, sets the O7 values through `planeUi().o7Params()` once the tool is
+  armed (`detect(n)` does it). The backend request defaults are unchanged (the client always sends all values).
+
+## Part 22-5 additions (top bar and popovers, R22-2)
+
+- New unit: `UI-1130..1132` (`ui/popover.ts`: placement, the reducer, the binder with injected listeners), `UI-1133` (Display popover),
+  `UI-1134..1136` (top bar, Delete N, kept chip, title and Edited), `UI-1137` (theme storage), `UI-1138` (Cloud details), `UI-1139`
+  (footer items and the Invalid button), `UI-1140` (History popover), `UI-1141` (Keyboard popover), `UI-1142` (the sections left),
+  `UI-1143` (popover glass; sheet and bars CSS). New smoke: `E2E-245` (top bar, both sizes, plus the footer), `E2E-246` (popover Esc
+  order, Display and Keyboard, History, all anchors and 8 px margins), `E2E-247` (Display and Theme), `E2E-248` (Cloud details and the
+  footer Invalid), `E2E-249` (History), `E2E-250` (Export sheet), `E2E-251` (contrast), `E2E-252` (owner shots
+  `/out/part22-5-<w>x<h>-{dark,light}-{display,details,keyboard,history,export}.png`; keep with `SMOKE_SHOTS_DIR`, never commit).
+  The full smoke run with `--workers=1` is 221 tests (210 + 11).
+- 22-5 fix round: `UI-1144` (a flipped popover is floored at 60 px), `UI-1145` (`#history-pop` max-height and scroll), `E2E-253` (60 History rows
+  stay between the top bar and the footer; rows are appended in the DOM, then a resize re-places the popover). `UI-1146` (`replace()` re-places an open popover when its content changes size; main.ts calls it on a store change while History is
+  open). E2E-215 sets its own corner view: the camera persists across pages, so an earlier Top view made the arrow tip equal its base. Smoke is 222.
+- Changed (setup, selector, text or geometry only): every `Original` and `Active` reader goes through the shared `statOf` helper
+  (they live in Cloud details); filter and selection tests open a popover with `openPop` and close it before the next step. The
+  `modebar` argument left `buildLegend`. See each commit message for the per-test list.
+- Popover Esc rule: the popover's key listener is on `window`, registered after the main handler, so the main handler still sees the
+  popover as open (`pops.isOpen()` into `overlay`); `popOpenAtEsc` stops the same Esc from also discarding a pending draft. Esc on a
+  select inside a popover is the select's own (`escapeInField`).
+- `--protected-text` is the kept chip's text token (light `#006585`): `--protected-ui` measured 4.196 on the light bar, under 4.5.
+
+## Part 22-6 additions (floating tool palette and right inspector)
+
+- New ids: `UI-1160` (`pops.add`), `UI-1161..1164` (palette, arm pill, reserved corner), `UI-1165..1167` (shared tool header, `?` helps, idle
+  line), `UI-1168`/`UI-1169` (Box rows, Min / max and Handles disclosures), `UI-1170` (Height protection header), `UI-1171` (Polygon
+  segmented mode, switches), `UI-1172` a/b (tokens, widths, `.switch`), `E2E-265..271`. E2E-270 measures the switch off track (about 1.64 dark,
+  1.31 light) and logs it as an annotation with no floor (owner E12); E2E-271 keeps 20 owner shots under `shots-22/part-6` (never committed).
+- Changed tests: UI-300, UI-682, UI-893, UI-969, UI-983, E2E-121, E2E-16, E2E-30, E2E-100, E2E-104, E2E-196, UI-890, UI-1166 (selectors,
+  setup and pinned text only), and `OVERFLOW_SELECTORS` gained `#palette`.
+- Summary-centre rule: a click on a tool section's summary must land on its centre, so the `?`, kbd and switch sit clear of it (E2E-265).
+- `openFit(page)` and `openHandles(page)` open the Fit menu and the Handles disclosure; never use them inside E2E-163..167.
+- `pops.add(entry)` registers late panels (Fit menu, tool helps) in the one-open, outside-click and Esc rules.
+- Reserved corner: the palette lives inside the legend's reserved corner (`LEGEND_BOX` left 60, top 40); UI-1164 keeps them apart.
+- Widths: `--rs-w` is 280 px below 1440, 296 from 1440, 332 from 1700 (R22-16); the 0.6 stage bound in `checkLayout` is untouched. 22-7 must keep
+  `--ls-w` at 232 px or less below 1440.
+- The Fit menu is `position: fixed` inside the aside: a later `backdrop-filter`, `filter` or `transform` on `aside` would break it.
+- Counts after this part: see the gate run in the commit message.
+
+## Part 22-7 additions (left sidebar)
+
+- New ids: `UI-1200`/`UI-1201` (popover `beside` placement, `toggleAt`, `reanchor`), `UI-1202` (Selection foldable section), `UI-1203`/`UI-1204`
+  (Operation seg icons, Live preview switch, Scope radiogroup, Highlight dots), `UI-1205..1207` (actions grid, callouts), `UI-1208`/`UI-1209`
+  (layer row lock, `.layer-acts`, hover reveal), `UI-1210`/`UI-1211` (`#layer-menu` popover), `UI-1212` (footer `.lfoot`/`.lfoot2`),
+  `UI-1213` (`--ls-w` 232/256/288), `E2E-285..289`.
+- Changed tests: UI-1142, UI-887, UI-892, UI-893 (HEAD_IDS), UI-300, UI-639, UI-922, UI-832, UI-863, UI-921, UI-1014, UI-925, UI-926, UI-923,
+  UI-984, UI-1172b (regex for `--ls-w`), E2E-10, E2E-24, E2E-62, E2E-133, E2E-155, E2E-222, E2E-173, E2E-174, E2E-175, E2E-201, E2E-202
+  (selectors, setup and pinned text only; no threshold changed).
+- The layer menu is a popover (`#layer-menu`): call `openMore(id)` before menu clicks after any outside click or another popover closed it.
+- Widths (R22-16): `--ls-w` 232 px below 1440, 256 from 1440, 288 from 1700; stage exactly 768 at 1280x720.
+- R22-19: the left sidebar scrolls (`overflow-y: auto`) when it cannot fit; nothing is shrunk or cut. E2E-285 pins no scroll at 1920x1080 (Box
+  armed and + draft) and at 1280x720 Box armed; 1280x720 + draft scrolls (694/642 measured), with every control reachable, no sideways scroll,
+  no overlap with the stage. It logs a `LEFT-SIDEBAR` line (scrollHeight/clientHeight, block heights, column widths, draft-note height) and a
+  `LEFT-SIDEBAR-NAMES` line (layer name clientWidth/scrollWidth, no floor).
+- E2E-289 keeps 16 owner shots (`/out/part22-7-<w>x<h>-<theme>-<state>.png`: idle, armed, draft, menu) under `shots-22/part-7`; never committed.
+- `scripts/smoke.sh` honours `GR_PCD_SMOKE_PROJECT` and `GR_PCD_SMOKE_IMAGE` (defaults `gr-pcd-smoke`, `gr-pcd-visualizer:smoke`) so parallel
+  runs do not collide; CTR-12 (`tests/container/test_smoke_names.sh`) pins it.
+- Smoke count: 22-6 close + 8 (E2E-285 and E2E-289 at two sizes each, E2E-286 two tests, E2E-287 and E2E-288 one each).
+
+## Part 22-8 additions (canvas HUD and thin timeline)
+
+- New ids: `UI-1230..1232` (legend and reserved rectangles, camera stack), `UI-1233`/`UI-1234` (Reset filters icon), `UI-1235` (filter-box pills),
+  `UI-1236` (legend card, hoverable shield), `UI-1237` (toasts), `UI-1238` (chip geometry per breakpoint), `UI-1239`/`UI-1240` (thin bar CSS and
+  `strip.test.ts`), `E2E-300..305`.
+- Changed tests: UI-337, UI-344, UI-516, UI-1164, UI-1074, UI-710, UI-195, UI-326, UI-300, UI-1090, UI-206, UI-889, UI-1100, UI-351 (both themes over
+  `--tl-bar` and `--fill-1`, same 4.5 floor); E2E-72, E2E-132, E2E-40, E2E-156, E2E-230, E2E-36, E2E-224, E2E-57, E2E-58, E2E-122, and the overlap
+  lists of E2E-217, E2E-226, E2E-233, E2E-266 (selectors, setup and pinned text only; no threshold, tolerance or seed changed).
+- HUD map (corner to element): top-left `#palette` and the `#arm-pill`; top-right `#viewcube` with the vertical `#camera-cluster` under it;
+  bottom-left `#triad` and the `#legend` (right of the triad, bottom-aligned); bottom-right `#filter-hud` (the Reset filters icon, above the bar);
+  bottom `#timeline-bar` (40 px glass, 8 px above the stage bottom); top-centre `#notices` toasts at top 80 (the filter boxes' top lane); the filter
+  boxes (`.fbox` glass pills) float between them. E2E-300 logs `HUD <w>x<h> <id>:x,y,w,h ...` and checks that none overlap.
+- `BAND` = the bar 40 + 8 (`BAR` in `view/layout.ts`). Chip widths 112 below 1700 px and 184 from it (`--chip-w`, `CARD_W`/`CARD_W_WIDE` in
+  `timeline/model.ts`; keep them equal).
+- Below 1700 px a chip's label is hidden: hover (or focus) the chip before acting on its label (`await t.card(i).hover()` before a label dblclick);
+  the hovered chip takes `max-content` over its neighbours. A highlighted chip is fixed at `--chip-w` while only focused, and widens under the
+  pointer so Edit shape and the tools sit side by side: move the pointer to a free stage point before measuring it (E2E-122).
+- The Reset filters icon's `aria-description` carries the filter summary ("N filters active ..."); the Display filter section is gone (E2E-40 reads
+  the summary there).
+- Toasts stay at top 80, centred; `E2E-300` checks the toast against the other HUD rectangles.
+- Checks image caveat: a vitest run bind-mounting only `frontend/src` reads the image's old `index.html` (the theme tests read it); mount
+  `frontend/index.html` too.
+- E2E-305 writes 20 owner shots (`/out/part22-8-<w>x<h>-<theme>-<state>.png`: idle, box-armed-toast, five-steps-highlighted, legend-folded,
+  band-hidden-pill) under `shots-22/part-8`; never committed.
+- Smoke order dependence (pre-existing, measured on 653ae96): E2E-19 fails in a subset run right after E2E-16 (the Left view persists); it passes alone
+  and in full order.
+
+## Part 22-9 additions (docs, README screenshots)
+- New id: `CTR-13` (`tests/container/test_shots_input.sh`, static, a recording `docker` stub): unset leaves the run line exactly as before, a missing
+  or relative `GR_PCD_SHOTS_PCD` exits 2 with no docker call, an absolute file adds `-v <file>:/in/cloud.pcd:ro -e GR_PCD_SHOTS_PCD=/in/cloud.pcd`
+  to the `run --rm` line only.
+- The shots tool (`e2e/shots.config.ts`, `e2e/readme.shots.ts`) is described under Smoke above. It is in no gate: it needs the owner's private scan.
+- `scripts/check-bootstrap-contract.sh` now rejects a tracked `.pcdsession` and probes that `private.pcdsession` is ignored.
+- Committed screenshots: the six 1920x1080 shots in `docs/images/screenshots/` (`1920x1080-{dark,light}-{idle,armed,draft}.png`, R22-20); the full
+  owner set (both sizes, plus the owner-only states) stays in `shots-22/part-9`, never committed.
+- Smoke count unchanged: 251 (`npx playwright test --list`, the 22-8 end count); this part adds no smoke test. Changed tests: none.

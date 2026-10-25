@@ -1,3 +1,4 @@
+import { fakeLayerMenu } from "../testing/layermenu";
 import { afterAll, beforeEach, expect, test } from "vitest";
 import { createAppStore } from "../state/app";
 import { candidateFixture, sessionFixture } from "../testing/fixtures";
@@ -12,18 +13,17 @@ const store = createAppStore();
 const actions = new Proxy({} as Record<string, unknown>, { get: (t, k: string) => t[k] ?? (() => undefined) }) as unknown as PanelActions;
 buildToolPalette(dom.root as unknown as HTMLElement, store, actions);
 const slot = dom.root.all().find((e) => e.getAttribute("id") === "layers-slot") as FakeEl;
-buildLayersPanel(slot as unknown as HTMLElement, store, actions);
+buildLayersPanel(slot as unknown as HTMLElement, store, actions, fakeLayerMenu(new (dom.root.constructor as new (t: string) => FakeEl)("div")).host);
 const byId = (id: string) => dom.root.all().find((e) => e.getAttribute("id") === id) as FakeEl;
 beforeEach(() => {
   store.set({ ...createAppStore().get(), session: sessionFixture(), tool: "box", liveFirst: true });
 });
 
-test("UI-892 (slot) the Layers section sits in #layers-slot between the Selection block and the Cloud heading", () => {
+test("UI-892 (slot) the Layers section sits in #layers-slot after the Selection section, as the last child", () => {
   const kids = dom.root.children;
   const i = kids.indexOf(slot);
-  expect(i).toBeGreaterThan(kids.findIndex((c) => c.tag === "h2" && c.text() === "Selection"));
-  expect(kids[i + 1].tag).toBe("h2");
-  expect(kids[i + 1].text()).toBe("Cloud");
+  expect(i).toBeGreaterThan(kids.findIndex((c) => c.tag === "details" && c.getAttribute("data-section") === "selection"));
+  expect(kids[kids.length - 1]).toBe(slot);
   expect(slot.children[0].getAttribute("data-section")).toBe("layers");
 });
 
@@ -42,6 +42,6 @@ test("UI-893 the short texts are visible and the long ones are tooltips; Select 
   expect(rowOf("sel-select-displayed")).toBe(rowOf("sel-invert"));
   expect(rowOf("sel-clear")).toBe(rowOf("sel-hide"));
   expect(rowOf("sel-commit")).toBe(rowOf("sel-discard"));
-  const HEAD_IDS = ["tool-box", "tool-polygon", "tool-cluster", "tool-sparse", "op-select", "op-add", "op-subtract", "op-intersect", "preview-live", "scope-select", "sel-colour", "sel-commit", "sel-discard", "sel-select-displayed", "sel-invert", "sel-clear", "sel-hide", "sel-delete-kept", "sel-show-kept", "remove-invalid", "layer-name", "layer-new", "layer-assign", "layer-release", "layer-set"];
+  const HEAD_IDS = ["op-select", "op-add", "op-subtract", "op-intersect", "preview-live", "scope-select", "scope-displayed", "scope-active", "sel-colour", "sel-commit", "sel-discard", "sel-select-displayed", "sel-invert", "sel-clear", "sel-hide", "sel-delete-kept", "sel-show-kept", "layer-name", "layer-new", "layer-assign", "layer-release", "layer-set"];
   for (const id of HEAD_IDS) expect(dom.root.control(id), id).toBeDefined();
 });

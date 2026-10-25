@@ -1,8 +1,9 @@
-import { PALETTE, type Rgb } from "../colour/palette";
+import { type RenderTheme, type Rgb, paletteFor } from "../colour/palette";
 import type { SessionState } from "../state/types";
 
-/** Geometry of the strip (px): every step card is CARD_W wide, GAP apart; the track starts PAD in. */
-export const CARD_W = 76;
+/** Geometry of the strip (px): every step chip is CARD_W wide (CARD_W_WIDE from 1700 px, label inline), GAP apart; the track starts PAD in. */
+export const CARD_W = 112;
+export const CARD_W_WIDE = 184;
 export const GAP = 8;
 export const PAD = 12;
 export const MARKER_W = 14;
@@ -95,11 +96,11 @@ export function stepsOf(session: SessionState | null): StepView[] {
 
 export const PITCH = CARD_W + GAP;
 /** Centre x of marker slot k (0 = before the first step, n = after the last) in strip content pixels. */
-export const slotX = (k: number): number => PAD + k * PITCH - GAP / 2;
-export const markerSlots = (n: number): number[] => Array.from({ length: n + 1 }, (_, k) => slotX(k));
+export const slotX = (k: number, w: number = CARD_W): number => PAD + k * (w + GAP) - GAP / 2;
+export const markerSlots = (n: number, w: number = CARD_W): number[] => Array.from({ length: n + 1 }, (_, k) => slotX(k, w));
 /** Nearest slot to a content x (client x - scroller left + scrollLeft), clamped to 0..n. */
-export const slotFromX = (contentX: number, n: number): number => {
-  const k = Math.round((contentX - PAD + GAP / 2) / PITCH);
+export const slotFromX = (contentX: number, n: number, w: number = CARD_W): number => {
+  const k = Math.round((contentX - PAD + GAP / 2) / (w + GAP));
   return Math.max(0, Math.min(n, k));
 };
 
@@ -249,7 +250,7 @@ export interface TimelineView {
   trackWidth: number;
 }
 
-export function timelineView(session: SessionState | null, t: TimelineState): TimelineView {
+export function timelineView(session: SessionState | null, t: TimelineState, w: number = CARD_W): TimelineView {
   const steps = stepsOf(session);
   const n = steps.length;
   const cursor = session ? Math.max(0, Math.min(n, session.history.cursor)) : 0;
@@ -260,8 +261,8 @@ export function timelineView(session: SessionState | null, t: TimelineState): Ti
     empty: n === 0,
     emptyText: "No steps yet",
     cards: steps.map((s) => ({ ...s, highlighted: t.highlight === s.sid, renaming: t.renaming === s.sid })),
-    marker: { slot: cursor, max: n, now: cursor, valuetext, x: slotX(cursor) },
-    trackWidth: PAD * 2 + n * PITCH - GAP,
+    marker: { slot: cursor, max: n, now: cursor, valuetext, x: slotX(cursor, w) },
+    trackWidth: PAD * 2 + n * (w + GAP) - GAP,
   };
 }
 
@@ -274,10 +275,11 @@ export interface StepLayerStyle {
   hover: boolean;
 }
 /** How the highlight layer looks: null when no step is shown. Hovering another step previews it lighter. */
-export function stepLayerStyle(t: TimelineState): StepLayerStyle | null {
+export function stepLayerStyle(t: TimelineState, theme: RenderTheme = "dark"): StepLayerStyle | null {
+  const P = paletteFor(theme);
   if (t.hover !== null && t.hover !== t.highlight) {
-    return { sid: t.hover, colour: PALETTE.stepHover, opacity: 0.7, sizeDelta: 2, hover: true };
+    return { sid: t.hover, colour: P.stepHover, opacity: 0.7, sizeDelta: 2, hover: true };
   }
-  if (t.highlight !== null) return { sid: t.highlight, colour: PALETTE.step, opacity: 0.95, sizeDelta: 2, hover: false };
+  if (t.highlight !== null) return { sid: t.highlight, colour: P.step, opacity: 0.95, sizeDelta: 2, hover: false };
   return null;
 }

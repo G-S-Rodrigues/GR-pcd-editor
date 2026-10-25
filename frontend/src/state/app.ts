@@ -1,5 +1,6 @@
 import type { SectionsOpen } from "../ui/sections";
 import type { ColourMode } from "../colour/modes";
+import type { RenderTheme } from "../colour/palette";
 import { DEFAULT_SELECTED, type SelectedColourId } from "../colour/selectcolour";
 import { type FilterModel, emptyFilter } from "../inspector/filters";
 import { DEFAULT_FLOOR_T, type ProtectionModel, emptyProtection } from "../inspector/protection";
@@ -93,6 +94,8 @@ export interface AppState {
   filterUi: FilterUi;
   /** The "Height protection" panel section is expanded (protected points are drawn stronger while it is). */
   floorPanelOpen: boolean;
+  /** "Show band" (22-3): false hides the whole protection band on the canvas (fill, outline, arrows, rings); protection stays on. */
+  bandVisible: boolean;
   /** Inspector sections the user folded (missing = open); see ui/sections.ts. */
   sectionsOpen: SectionsOpen;
   /** The legend and mode-line menu on the canvas is unfolded (only a folded menu is saved). */
@@ -103,6 +106,8 @@ export interface AppState {
   layerUi: LayerUi;
   /** Detected planes (client only, never saved) and the plane the Planes tool has chosen. */
   planes: PlanesState;
+  /** Which render palette is in force (point colours, axes, presets); set from the page's colour scheme, never saved. */
+  renderTheme: RenderTheme;
 }
 
 export function initialState(): AppState {
@@ -148,11 +153,13 @@ export function initialState(): AppState {
     notices: [],
     filterUi: { collapsed: {}, interacting: null },
     floorPanelOpen: true,
+    bandVisible: true,
     sectionsOpen: {},
     legendOpen: true,
     timeline: emptyTimeline(),
     layerUi: { editing: null, active: null },
     planes: emptyPlanes(),
+    renderTheme: "dark",
   };
 }
 

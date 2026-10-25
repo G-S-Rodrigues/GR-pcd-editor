@@ -2,17 +2,17 @@ import { afterAll, beforeAll, expect, test } from "vitest";
 import { createAppStore } from "../state/app";
 import { restoreClientState, serialiseClientState, applyClientPatch } from "../state/persist";
 import { FakeEl, installFakeDom } from "../testing/fakedom";
-import { LEGEND } from "../filterboxes/placement";
+import { LEGEND, legendRect } from "../filterboxes/placement";
 import { LEGEND_BOX } from "../view/layout";
 import { describeControls } from "./describe";
 import { PALETTE } from "../colour/palette";
 import { RAMP_STOPS, cssGradient } from "../colour/ramps";
 import { buildLegend, cssColour, legendEntries } from "./legend";
+import { INDEX_HTML } from "../testing/tokens";
 import { TOOLTIPS } from "./tooltips";
 
 let dom: ReturnType<typeof installFakeDom>;
 let root: FakeEl;
-let modebar: FakeEl;
 let api: ReturnType<typeof buildLegend>;
 const store = createAppStore();
 const header = () => root.control("legend-menu") as FakeEl;
@@ -21,8 +21,7 @@ const rows = () => root.all().filter((e) => e.getAttribute("data-legend")).map((
 beforeAll(() => {
   dom = installFakeDom();
   root = dom.root;
-  modebar = new FakeEl("div");
-  api = buildLegend(root as unknown as HTMLElement, store, modebar as unknown as HTMLElement);
+  api = buildLegend(root as unknown as HTMLElement, store);
 });
 afterAll(() => dom.restore());
 
@@ -85,12 +84,18 @@ test("UI-343 the header is a real button with a name and a tooltip (Enter and Sp
 test("UI-344 the reserved LEGEND rectangle is the expanded size the builder sets, so folding never moves the boxes", () => {
   expect(root.style.width).toBe(`${LEGEND_BOX.w}px`);
   expect(root.style.maxHeight).toBe(`${LEGEND_BOX.maxH}px`);
-  expect(LEGEND).toEqual({ w: LEGEND_BOX.left + LEGEND_BOX.w + LEGEND_BOX.pad, h: LEGEND_BOX.top + LEGEND_BOX.maxH + LEGEND_BOX.pad });
+  expect(root.style.left).toBe(`${LEGEND_BOX.left}px`);
+  expect(root.style.bottom).toBe(`${LEGEND_BOX.bottom}px`);
+  expect(root.style.top).toBeFalsy();
+  expect(LEGEND).toEqual({ w: LEGEND_BOX.w + 2 * LEGEND_BOX.pad, h: LEGEND_BOX.maxH + 2 * LEGEND_BOX.pad });
+  const stage = { w: 768, h: 642 };
+  expect(legendRect(stage)).toEqual({ l: LEGEND_BOX.left - LEGEND_BOX.pad, t: stage.h - LEGEND_BOX.bottom - LEGEND_BOX.maxH - 2 * LEGEND_BOX.pad, r: LEGEND_BOX.left + LEGEND_BOX.w + LEGEND_BOX.pad, b: stage.h - LEGEND_BOX.bottom + LEGEND_BOX.pad });
 });
 
-test("UI-345 the mode line (id modebar) lives in the menu body, after the rows", () => {
+test("UI-345 the mode line (id modebar) no longer lives in the menu body: it moved to the footer", () => {
   const body = root.all().find((e) => e.getAttribute("data-legend-body") === "1") as FakeEl;
-  expect(body.children[body.children.length - 1]).toBe(modebar);
+  expect(body.all().some((e) => e.getAttribute("id") === "modebar")).toBe(false);
+  expect(body.children[body.children.length - 1].className).toBe("legend-layers");
 });
 
 const ramp = () => root.all().find((e) => e.getAttribute("id") === "legend-ramp") as FakeEl;
@@ -119,4 +124,19 @@ test("UI-369 the Unselected chip shows the active ramp (a grey chip would lie in
   store.update((s) => ({ ...s, colour: { ...s.colour, mode: "flat" } }));
   expect(baseChip().style.background).toBe(cssColour(PALETTE.base));
   expect(rows()).toEqual(legendEntries().map((e) => e.id));
+});
+
+test("UI-1236 the legend card keeps pointer-events none so the canvas gets the clicks, but its header, eyes, hidden chip and the protected shield (the hoverable tooltip) take them; the card is a 12 px glass card", () => {
+  const css = [...INDEX_HTML.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join("\n");
+  const body = (selector: string) => {
+    const rule = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].find((m) => m[1].trim() === selector);
+    expect(rule, `rule ${selector}`).toBeTruthy();
+    return rule![2];
+  };
+  expect(body("#legend")).toMatch(/pointer-events:\s*none/);
+  expect(body("#legend")).toMatch(/border-radius:\s*12px/);
+  expect(body("#legend")).toMatch(/padding:\s*4px 6px 8px/);
+  expect(body("#legend .legend-shield")).toMatch(/pointer-events:\s*auto/);
+  expect(body("#legend .legend-shield")).toMatch(/cursor:\s*help/);
+  for (const sel of ["#legend .legend-head", "#legend .legend-eye", "#legend .hidden-chip"]) expect(body(sel), sel).toMatch(/pointer-events:\s*auto/);
 });

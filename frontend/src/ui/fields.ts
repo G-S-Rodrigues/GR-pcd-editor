@@ -1,3 +1,8 @@
+import { BOX_NOTE, CLUSTER_HELP, PLANE_HELP, SPARSE_HELP, THIN_HELP } from "./copy";
+import { FILTER_COPY } from "../inspector/filters";
+import { PROTECTION_COPY } from "../inspector/protection";
+import { POLYGON_DEPTH_NOTE } from "../tools/polygon/model";
+
 export type FieldGroup = "tool" | "box" | "polygon" | "cluster" | "sparse" | "plane" | "thin" | "filter" | "protection" | "history" | "layer";
 
 export interface FieldSpec {
@@ -22,6 +27,8 @@ export const FIELD_SPECS: FieldSpec[] = [
   f("op-subtract", "Subtract from selection", "tool", "Remove the tool shape's points from the selection; previewed, applied on Commit"),
   f("op-intersect", "Intersect with selection", "tool", "Keep only the selected points that are also in the tool shape; previewed, applied on Commit"),
   f("preview-live", "Live preview", "tool", "On: shape edits preview the result at once. Off: edits only move the outline and Commit computes and applies the result in one step (the first selection is always live)"),
+  f("scope-displayed", "Scope Displayed", "tool", "Tools select among the displayed points: those that pass the display filter"),
+  f("scope-active", "Scope Active", "tool", "Tools select among every point still in the cloud, filtered out or not"),
   f("scope-select", "Scope", "tool", "Displayed: only points that pass the display filter. Active: every point still in the cloud"),
   f("sel-colour", "Selected colour", "tool", "Colour of the selected points on the canvas (view only; saved with the session). Pick one that stands out from the cloud colours"),
   f("sel-colour-orange", "Selected colour Orange", "tool", "Draw the selected points in orange (default)"),
@@ -55,6 +62,7 @@ export const FIELD_SPECS: FieldSpec[] = [
   ...AX.map((a) => f(`box-max-${a}`, `Max ${up(a)}`, "box", `Box maximum ${up(a)} edge; editable only for an unrotated box`)),
   f("box-mode", "Box mode", "box", "Inside selects points in the box; outside selects everything else"),
   f("box-reset-rotation", "Reset rotation", "box", "Set the box roll, pitch and yaw back to 0"),
+  f("box-fit", "Fit…", "box", "Fit the box to the cloud, the displayed points, the view or the selection: opens a menu"),
   f("box-reset", "Reset box", "box", "Replace the box by a unit box at the orbit pivot"),
   f("box-fit-cloud", "Fit cloud", "box", "Make the box exactly cover the active cloud"),
   f("box-fit-selection", "Fit selection", "box", "Make the box exactly cover the current candidate"),
@@ -109,7 +117,7 @@ export const FIELD_SPECS: FieldSpec[] = [
       ];
     }),
   ),
-  f("filter-reset-all", "Reset filters", "filter", "Put all six display filter sides back to the whole cloud (nothing hidden)"),
+  f("filter-reset-all", "Reset filters", "filter", "Put all six display filter sides back to the whole cloud (nothing hidden). " + FILTER_COPY),
   f("prot-enabled", "Global protection", "protection", "Protect every point whose Z is inside the interval from deletion; off by default"),
   f("prot-min", "Protect min Z", "protection", "Lower Z of the protected slab (inclusive)"),
   f("prot-max", "Protect max Z", "protection", "Upper Z of the protected slab (inclusive)"),
@@ -118,9 +126,23 @@ export const FIELD_SPECS: FieldSpec[] = [
   f("prot-mode", "Operation protection", "protection", "Inherit uses the global slab; add a local slab for one operation; or override the global slab"),
   f("prot-local-min", "Local min Z", "protection", "Lower Z of the local protected slab for this operation"),
   f("prot-local-max", "Local max Z", "protection", "Upper Z of the local protected slab for this operation"),
-  f("prot-tilt-x", "Tilt about X", "protection", "Tilt of the protected slab about the X axis in degrees, -60 to 60; drag the blue X ring on the canvas for the same"),
-  f("prot-tilt-y", "Tilt about Y", "protection", "Tilt of the protected slab about the Y axis in degrees, -60 to 60; drag the blue Y ring on the canvas for the same"),
+  f("prot-tilt-x", "Tilt about X", "protection", "Tilt of the protected slab about the X axis in degrees, -60 to 60; drag the red X ring on the canvas for the same"),
+  f("prot-tilt-y", "Tilt about Y", "protection", "Tilt of the protected slab about the Y axis in degrees, -60 to 60; drag the green Y ring on the canvas for the same"),
   f("prot-level", "Level slab", "protection", "Make the protected slab horizontal again (tilt 0 and 0); the Min and Max numbers keep their values"),
+  f("prot-show-band", "Show band", "protection", "Show band on canvas"),
   f("prot-ack", "Acknowledge override", "protection", "Confirm that this operation ignores the global protection"),
+  f("box-help", "Box help", "box", BOX_NOTE),
+  f("box-exit", "Exit Box", "box", "Exit the Box tool (Esc); the selection and the shape stay"),
+  f("polygon-help", "Polygon help", "polygon", POLYGON_DEPTH_NOTE),
+  f("polygon-exit", "Exit Polygon", "polygon", "Exit the Polygon tool (Esc); the selection and the shape stay"),
+  f("cluster-help", "Cluster help", "cluster", CLUSTER_HELP),
+  f("cluster-exit", "Exit Cluster", "cluster", "Exit the Cluster tool (Esc); the selection and the shape stay"),
+  f("sparse-help", "Sparse points help", "sparse", SPARSE_HELP),
+  f("sparse-exit", "Exit Sparse points", "sparse", "Exit the Sparse points tool (Esc); the selection and the shape stay"),
+  f("plane-help", "Planes help", "plane", PLANE_HELP),
+  f("plane-exit", "Exit Planes", "plane", "Exit the Planes tool (Esc); the selection and the shape stay"),
+  f("thin-help", "Thin help", "thin", THIN_HELP),
+  f("thin-exit", "Exit Thin", "thin", "Exit the Thin tool (Esc); the selection and the shape stay"),
+  f("prot-help", "Height protection help", "protection", PROTECTION_COPY),
   f("step-edit-shape", "Edit shape", "history", "Reopen the highlighted step as a live selection of its own tool and numbers: clears the selection first, changes no history, and applying it afterwards adds a new step"),
 ];

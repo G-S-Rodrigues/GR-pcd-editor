@@ -47,7 +47,7 @@ export const KEY_DOCS: KeyDoc[] = [
   { id: "rect", keys: "R (hold)", label: "Rectangle select in a face view while held", probes: [{ key: "r" }, { key: "R" }] },
   { id: "polygon-close", keys: "Enter", label: "Close the polygon being drawn, or leave polygon edit mode", probes: [{ key: "Enter" }] },
   { id: "polygon-remove-vertex", keys: "Backspace", label: "Remove the polygon vertex under the pointer while the polygon pencil (edit mode) is on", probes: [{ key: "Backspace" }] },
-  { id: "cancel", keys: "Esc", label: "Leave pick mode, cancel polygon drawing, leave polygon edit mode, discard a pending draft, close help", probes: [{ key: "Escape" }] },
+  { id: "cancel", keys: "Esc", label: "Leave pick mode, cancel polygon drawing, leave polygon edit mode, close help, discard a pending draft; with none of these, disarm the armed tool", probes: [{ key: "Escape" }] },
   { id: "apply", keys: "Delete", label: "Apply: delete the previewed points (same as the Apply button)", probes: [{ key: "Delete" }] },
   { id: "undo", keys: "Ctrl+Z", label: "Undo the last step", probes: [{ key: "z", ctrlKey: true }, { key: "Z", metaKey: true }] },
   { id: "redo", keys: "Ctrl+Y", label: "Redo (also Ctrl+Shift+Z)", probes: [{ key: "y", ctrlKey: true }, { key: "Z", ctrlKey: true, shiftKey: true }] },
@@ -58,6 +58,13 @@ export const KEY_DOCS: KeyDoc[] = [
 ];
 
 const TYPING = ["INPUT", "TEXTAREA", "SELECT"];
+const NON_TEXT_INPUTS = ["checkbox", "radio", "range", "button", "submit", "reset", "color", "file", "image"];
+
+/** Escape typed in a text entry (text-like INPUT, TEXTAREA, SELECT) belongs to the field; on a checkbox, slider or button it does not (22-1, R22-1). */
+export function escapeInField(tag: string, type = ""): boolean {
+  if (tag === "INPUT") return !NON_TEXT_INPUTS.includes(type.toLowerCase());
+  return tag === "TEXTAREA" || tag === "SELECT";
+}
 
 /** Which documented key a keydown is, or null. Typing in a field only lets Escape through. */
 export function classifyKey(e: KeyEvent): KeyId | null {
@@ -104,7 +111,7 @@ export const MOUSE_DOCS: { keys: string; label: string }[] = [
   { keys: "Click a ViewCube face", label: "Look along that axis; edges and corners look diagonally" },
   { keys: "Drag a filter box grip, or the arrow on its plane", label: "Set that side of the display filter along the view; Shift is finer, Esc cancels the drag" },
   { keys: "Drag a protection arrow, or the band's edge", label: "Move that side of the protected slab along its normal; Esc cancels the drag" },
-  { keys: "Drag a blue ring around the slab", label: "Tilt the protected slab (X ring and Y ring, limit 60 degrees); the Level button resets it" },
+  { keys: "Drag the red X or green Y ring beside the band", label: "Tilt the protected slab (X ring and Y ring, limit 60 degrees); the Level button resets it" },
   { keys: "Click a timeline step icon", label: "Highlight the points that step deleted or moved (click again, the strip background or Esc clears; hover previews)" },
   { keys: "Drag the timeline marker", label: "Roll the history back or forward to that point (one step per cursor slot); the button Roll back to here and the Left/Right/Home/End keys do the same" },
   { keys: "Double-click a step name", label: "Rename the step (also the pencil button or F2); Delete or Backspace on a focused step removes it after a confirmation" },

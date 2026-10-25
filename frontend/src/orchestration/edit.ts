@@ -4,8 +4,8 @@ import { type AppState, addNotice } from "../state/app";
 import type { Store } from "../state/store";
 import type { SessionState } from "../state/types";
 import { DELETE_BLOCKED_TEXT, deleteLayerStepText, deleteStepText, discardCount, discardText, mergeStepNames, stepsOf } from "../timeline/model";
-import { emptyPolygon } from "../tools/polygon/model";
 import { canApply } from "./runner";
+import { disarmedKeepingRegion } from "./toolstate";
 
 export interface EditApi {
   apply(cloudRevision: number, candidateId: string, description: string): Promise<SessionState>;
@@ -111,13 +111,13 @@ export function createEditor(store: Store<AppState>, api: EditApi, confirmFn: (m
     await guarded(async () => {
       api.supersedePreview?.();
       const state = await api.apply(rev(), c.candidate_id, `Delete ${c.candidates} points (${tool})`);
+      // R22-1: a Delete consumes the selection, so the tool disarms and keeps the polygon region unless Polygon was armed (read after the await: edits made during the call are kept)
+      const d = disarmedKeepingRegion(store.get());
       await afterChange(state, {
-        tools: {
-          ...store.get().tools,
-          protection: resetOperation(store.get().tools.protection),
-          // the polygon that made the deleted points is spent: the tool stays armed with a blank polygon for the next shape
-          polygon: tool === "polygon" ? emptyPolygon() : store.get().tools.polygon,
-        },
+        tool: d.tool,
+        interaction: d.interaction,
+        planes: d.planes,
+        tools: { ...d.tools, protection: resetOperation(d.tools.protection) },
       });
     });
   }

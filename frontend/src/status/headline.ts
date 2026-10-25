@@ -5,6 +5,10 @@ export interface Headline {
   kept: string;
   keptCount: number;
   warning: string | null;
+  /** The Delete button's text: "Delete", or "Delete 1,234" while a current candidate exists. */
+  deleteLabel: string;
+  /** The kept chip's text ("1,204 kept"), or null when nothing is kept or there is no current candidate. */
+  keptLabel: string | null;
   /** Label of the one-click 'also delete the kept points' button, or null when nothing is kept. */
   deleteKeptLabel: string | null;
 }
@@ -15,7 +19,7 @@ const n = (v: number) => v.toLocaleString("en-US");
 export function headline(s: AppState): Headline {
   const c = s.candidate;
   const cur = c && s.session && c.cloud_revision === s.session.revision.cloud && c.params_revision === s.session.revision.params ? c : null;
-  if (!cur) return { willDelete: "Will delete —", kept: "Kept by protection —", keptCount: 0, warning: null, deleteKeptLabel: null };
+  if (!cur) return { willDelete: "Will delete —", kept: "Kept by protection —", keptCount: 0, warning: null, deleteLabel: "Delete", keptLabel: null, deleteKeptLabel: null };
   const m = cur.protected_retained;
   const byLayers = Math.min(cur.protected_by_layers ?? 0, m);
   const band = m - byLayers;
@@ -23,6 +27,8 @@ export function headline(s: AppState): Headline {
     willDelete: `Will delete ${n(cur.candidates)}`,
     kept: `Kept by protection ${n(m)}`,
     keptCount: m,
+    deleteLabel: `Delete ${n(cur.candidates)}`,
+    keptLabel: m > 0 ? `${n(m)} kept` : null,
     warning:
       m <= 0
         ? null

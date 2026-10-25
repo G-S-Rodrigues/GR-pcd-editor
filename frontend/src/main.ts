@@ -18,7 +18,7 @@ import { createEditor } from "./orchestration/edit";
 import { createRunner, deleteKeyOutcome } from "./orchestration/runner";
 import { createPlanesController } from "./orchestration/planes";
 import { emptyPlanes } from "./tools/plane/model";
-import { armTool, disarmed } from "./orchestration/toolstate";
+import { armTool, disarmed, disarmedKeepingRegion, escTarget } from "./orchestration/toolstate";
 import { createUploadCanceller } from "./orchestration/upload-cancel";
 import { type UploadOptions, uploadFile } from "./files/upload";
 import { startBanner } from "./status/startbanner";
@@ -30,10 +30,12 @@ import { polygonKeyAction } from "./tools/polygon/edit";
 import { boxForOpen } from "./tools/box/model";
 import { applyPreset } from "./view/presets";
 import { buildEditPanels, buildToolPalette } from "./ui/panels";
+import { buildPalette } from "./ui/palette";
 import { buildLayersPanel } from "./ui/layerspanel";
 import { createToolInteraction } from "./viewport/interact";
 import { attachDropZone } from "./files/dragdrop";
 import { dropNotice, openSource } from "./orchestration/open";
+import { adoptExisting } from "./orchestration/adopt";
 import { createRefresher } from "./orchestration/refresh";
 import { createStepView } from "./orchestration/stepview";
 import { createSessionSync } from "./orchestration/session-sync";
@@ -42,8 +44,9 @@ import { createJobHint } from "./orchestration/jobhint";
 import type { SessionState, ToolKind } from "./state/types";
 import { h } from "./ui/dom";
 import { control } from "./ui/controls";
-import { buildInspector } from "./ui/inspector-shell";
+import { buildCloudDetails } from "./ui/inspector-shell";
 import { buildStatusbar } from "./ui/statusbar";
+import { buildBandPill } from "./ui/bandpill";
 import { buildLegend } from "./ui/legend";
 import { createHide } from "./orchestration/hide";
 import { editEnded, layerModeFix } from "./layers/model";
@@ -52,14 +55,20 @@ import { discardEnabled } from "./tools/preview";
 import { buildTimeline } from "./timeline/strip";
 import { createStepCentre } from "./timeline/centre";
 import { createEditShape } from "./orchestration/editshape";
+import { bindPopovers } from "./ui/popover";
+import { buildHistoryPopover } from "./ui/historypop";
+import { iconControl } from "./ui/iconbutton";
 import { buildHelp } from "./ui/help";
-import { classifyKey } from "./ui/keys";
+import { noticeEl } from "./ui/notices";
+import { classifyKey, escapeInField } from "./ui/keys";
 import { buildViewCube } from "./ui/viewcube";
 import { buildTriad } from "./ui/triad";
-import { buildFilterBoxes } from "./ui/filterboxes";
+import { buildFilterBoxes, buildFilterReset } from "./ui/filterboxes";
 import { buildToolbar } from "./ui/toolbar";
 import { buildCameraCluster } from "./ui/camera-cluster";
-import { buildViewbar } from "./ui/viewbar";
+import { buildDataMode } from "./ui/viewbar";
+import { buildDisplayPopover } from "./ui/displaypop";
+import { applyTheme, readTheme, writeTheme } from "./ui/themechoice";
 import { attachControls } from "./viewport/controls3d";
 import { installDebugHook } from "./viewport/debug";
 import { createViewport } from "./viewport/scene";
@@ -67,6 +76,16 @@ import { fitBounds } from "./view/fit";
 import { resetPivot } from "./view/pivot";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+
+// The theme choice is per browser: it is applied before anything is built so the first paint is already themed.
+const storage = ((): Storage | { getItem: () => null; setItem: () => void; removeItem: () => void } => {
+  try {
+    return localStorage;
+  } catch {
+    return { getItem: () => null, setItem: () => undefined, removeItem: () => undefined };
+  }
+})();
+applyTheme(document.documentElement, readTheme(storage));
 
 const store = createAppStore();
 createJobHint(store);
@@ -131,7 +150,7 @@ const layers = createLayers(
     paramsHook,
     flushProtection: () => protection.flush(),
     confirm: (m) => window.confirm(m),
-    selectLayer: (id) => void runner.oneShot((rev) => layerSelectBody(rev, id, store.get().scope)),
+    selectLayer: (id) => runner.oneShot((rev) => layerSelectBody(rev, id, store.get().scope)),
     selectLayerAdd: (id) => runner.oneShot((rev) => layerAddBody(rev, id)),
     selectLayerOp: (id, op) => runner.oneShot((rev) => layerOpBody(rev, id, op)),
     apply: () => editor.apply(),
@@ -160,8 +179,21 @@ const tools = createToolInteraction(canvas, store, size, {
   hint: (text) => addNotice(store, "info", "box_body_hint", text),
   filterEdit: (axis, side, value, o) => filters.editSide(axis, side, value, o),
 });
+let popOpenAtEsc = false; // a popover was open when this Esc began; the later listener must not also discard a draft (E6b)
+// The first global keydown listener: it reads the state before controls3d, the timeline, the filter boxes and the one below act.
+// A popover added later must report itself through `overlay` (22-5).
 window.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") tools.cancel(); // an arrow drag in progress goes back to its start value
+  if (e.key !== "Escape") return;
+  popOpenAtEsc = pops.isOpen();
+  const st = store.get();
+  const el = e.target as HTMLInputElement | null;
+  const target = escTarget(st, {
+    field: escapeInField(el?.tagName ?? "", el?.type ?? ""),
+    dragging: tools.dragging() || filterBoxes.dragging() || st.timeline.dragging !== null,
+    overlay: pops.isOpen() || document.querySelector("dialog[open]") !== null,
+  });
+  tools.cancel(); // an arrow drag in progress goes back to its start value
+  if (target === "tool") store.update(disarmedKeepingRegion); // R22-1: nothing more specific was pending; the selection and its candidate stay
 });
 installDebugHook(canvas, store, size, () => viewport?.drawnCount() ?? 0, () => viewport?.stepLayer() ?? { visible: false }, () => viewport?.previewLayer() ?? { id: null, add: 0, remove: 0 });
 if (viewport) {
@@ -234,7 +266,7 @@ const exportDialog = buildExportDialog(store, (o) => runExport(store, o, { start
 const persister = createPersister(store, api.putClientState, { dragging: () => tools.dragging() });
 window.addEventListener("beforeunload", beforeUnloadHandler(() => store.get()));
 
-buildToolbar($("toolbar"), store, {
+const topbar = buildToolbar($("toolbar"), store, {
   saveSession: () =>
     void runSave(store, { flushClientState: () => persister.flush(), startSave: () => startSave(), markSaved: async (id) => api.normaliseState(await markSaved(id)) }),
   openExport: () => exportDialog.open(),
@@ -244,17 +276,41 @@ buildToolbar($("toolbar"), store, {
   undo: () => void editor.undo(),
   redo: () => void editor.redo(),
 });
+// The popovers. Their Escape listener is on window and registered after the first global one above, so that listener
+// still sees a popover as open (overlay) when it picks what the Esc is for; popOpenAtEsc keeps that for the draft branch below.
+const historyOpen = iconControl("history-open", "list");
+const pops = bindPopovers([
+  { id: "display", anchor: topbar.anchors.display, panel: $("display-pop") },
+  { id: "details", anchor: topbar.anchors.details, panel: $("cloud-details") },
+  { id: "help", anchor: topbar.anchors.help, panel: $("help-overlay") },
+  { id: "history", anchor: historyOpen, panel: $("history-pop") },
+], {
+  listenPointerDown: (f) => document.addEventListener("pointerdown", f, true),
+  listenKey: (f) => window.addEventListener("keydown", f),
+  listenResize: (f) => window.addEventListener("resize", f),
+  viewport: () => ({ w: window.innerWidth, h: window.innerHeight }),
+  measure: (anchor, panel) => {
+    const r = anchor.getBoundingClientRect();
+    return { anchor: { left: r.left, top: r.top, width: r.width, height: r.height }, size: { w: panel.offsetWidth, h: panel.offsetHeight } };
+  },
+});
 buildCameraCluster($("camera-cluster"), store, { size });
-buildViewbar($("viewbar"), store, {
-  size,
-  refresh: () => void refresher.refresh(),
-  toggleHelp: () => help.toggle(),
+buildDataMode(topbar.centre, store, {
   setCompare: (m) => {
     setCompare(store, m);
     void refresher.refresh();
   },
 });
-buildStatusbar($("statusbar"), $("modebar"), store);
+buildDisplayPopover($("display-pop"), store, {
+  size,
+  refresh: () => void refresher.refresh(),
+  theme: readTheme(storage),
+  setTheme: (c) => {
+    applyTheme(document.documentElement, c);
+    writeTheme(storage, c);
+  },
+});
+buildStatusbar($("statusbar"), $("modebar"), store, { openDetails: () => pops.open("details") });
 const planesCtl = createPlanesController(
   store,
   { detect: (b) => api.detectPlanes(b as api.DetectPlanesBody), poll: (id, opts) => pollJob(id, opts), cancelJob: (id) => postJson(`/api/jobs/${id}/cancel`) },
@@ -307,9 +363,6 @@ const panelActions = {
   layerMove: (id: number, dir: -1 | 1) => void layers.move(id, dir),
   layerMerge: (from: number, into: number) => void layers.merge(from, into),
   layerDeletePoints: (id: number) => void layers.deletePoints(id),
-  removeInvalid: () => void editor.removeInvalid(),
-  removeInvalidVisible: () => editor.removeInvalidVisible(),
-  removeInvalidLabel: () => editor.removeInvalidLabel(),
   cancelJob: () => runner.reset(),
   startDrawing: () => store.update((st) => ({ ...st, tools: { ...st.tools, polygon: startDrawing(st.tools.polygon) } })),
   finishPolygon: (): string | null => {
@@ -331,10 +384,21 @@ const panelActions = {
     clearSelection: () => void editor.clearSelection(),
   }),
 };
-buildInspector($("fileinfo"), store);
+buildCloudDetails($("cloud-details"), store, { removeInvalid: () => void editor.removeInvalid(), removeInvalidVisible: () => editor.removeInvalidVisible(), removeInvalidLabel: () => editor.removeInvalidLabel() });
+buildPalette($("palette"), store, panelActions, $("arm-pill"));
 buildToolPalette($("tools"), store, panelActions);
-buildLayersPanel($("layers-slot"), store, panelActions);
-const legend = buildLegend($("legend"), store, $("modebar"), () => void hide.show(), (id) => void layers.toggle(id));
+// The row menu is one document-level popover whose anchor is the open row's ... button (moved by toggleAt).
+pops.add({ id: "layer", anchor: document.createElement("span"), panel: $("layer-menu"), where: "beside", movable: true });
+buildLayersPanel($("layers-slot"), store, panelActions, {
+  panel: $("layer-menu"),
+  toggleAt: (el) => pops.toggleAt("layer", el),
+  reanchor: (el) => pops.reanchor("layer", el),
+  close: () => pops.closeIf("layer"),
+  openId: () => pops.openId(),
+});
+buildBandPill($("stage"), store);
+buildFilterReset($("filter-hud"), store, () => panelActions.filterResetAll());
+const legend = buildLegend($("legend"), store, () => void hide.show(), (id) => void layers.toggle(id));
 store.subscribe((s) => legend.update(s.timeline.highlight !== null, s.preview?.op ?? null));
 const stepEdit = createEditShape(store, {
   resetRunner: () => runner.reset(),
@@ -349,13 +413,18 @@ buildTimeline($("timeline"), store, {
   renameStep: (sid, name) => void editor.renameStep(sid, name),
   pendingCursor: () => editor.pendingCursor(),
 });
+$("timeline").querySelector(".tl-end")!.append(historyOpen);
+buildHistoryPopover($("history-pop"), store);
+store.subscribe(() => {
+  if (pops.openId() === "history") pops.replace(); // a step added or undone while it is open changes its height
+});
 buildViewCube($("viewcube"), store);
 buildTriad($("triad"), store);
-buildFilterBoxes($("fbox-layer"), canvas, store, {
+const filterBoxes = buildFilterBoxes($("fbox-layer"), canvas, store, {
   editSide: (axis, side, value, o) => filters.editSide(axis, side, value, o),
   resetSide: (axis, side) => filters.resetSide(axis, side),
 });
-buildEditPanels($("editpanels"), store, panelActions, { toolRoot: $("toolpanels"), scroller: $("inspector") });
+buildEditPanels($("editpanels"), store, panelActions, { toolRoot: $("toolpanels"), scroller: $("inspector"), pops, popRoot: $("popovers") });
 
 window.addEventListener("keyup", (e) => {
   if (e.key.toLowerCase() === "r") rectHeld = false;
@@ -363,7 +432,7 @@ window.addEventListener("keyup", (e) => {
 window.addEventListener("blur", () => {
   rectHeld = false;
 });
-const help = buildHelp($("help-overlay"));
+const help = buildHelp($("help-overlay"), pops);
 window.addEventListener("keydown", (e) => {
   const t = e.target as HTMLElement | null;
   const id = classifyKey({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey, shiftKey: e.shiftKey, target: t?.tagName ?? "" });
@@ -394,7 +463,7 @@ window.addEventListener("keydown", (e) => {
     layers.leaveEdit();
   } else if (id === "cancel" && store.get().tools.polygon.phase === "drawing") {
     panelActions.cancelDrawing();
-  } else if (id === "cancel" && store.get().interaction === "orbit" && discardEnabled(store.get())) {
+  } else if (id === "cancel" && store.get().interaction === "orbit" && discardEnabled(store.get()) && !popOpenAtEsc) {
     runner.discardDraft();
   }
 });
@@ -405,9 +474,7 @@ store.select(
   (s) => s.notices,
   (notices) => {
     noticeBox.replaceChildren(
-      ...notices.map((n) =>
-        h("div", { class: `notice ${n.level}`, role: n.level === "error" ? "alert" : "status", title: "Click to dismiss", onclick: () => dismissNotice(store, n.id) }, n.text),
-      ),
+      ...notices.map((n) => noticeEl(n, (id) => dismissNotice(store, id))),
     );
   },
 );
@@ -444,11 +511,4 @@ attachDropZone(document.body, {
 });
 
 // an existing session (page reload)
-void getState()
-  .then((state) => {
-    if (!state) return;
-    store.set({ session: state });
-    onOpened(state);
-    return refresher.refresh();
-  })
-  .catch(() => undefined);
+void adoptExisting(store, { onOpened, refresh: () => refresher.refresh() }).catch(() => undefined);

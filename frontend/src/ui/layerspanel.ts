@@ -1,10 +1,10 @@
 import { type AppState } from "../state/app";
 import type { Store } from "../state/store";
-import { LAYER_COLOURS, MAIN_COLOUR, MAIN_LABEL, editingText, findLayer, layerButtons, layerRows } from "../layers/model";
+import { LAYER_COLOURS, MAIN_LABEL, editingText, findLayer, layerButtons, layerRows, mainColour, protectedTip } from "../layers/model";
 import { control } from "./controls";
 import { foldable } from "./fold";
 import { h } from "./dom";
-import { iconSvg } from "./icons";
+import { type IconName, iconSvg } from "./icons";
 import { TOOLTIPS } from "./tooltips";
 import type { PanelActions } from "./panels";
 
@@ -17,21 +17,35 @@ export const LAYERS_NOTE_TITLE = "Named groups of points. Layer edits are timeli
  * count, eye, Select and a chevron that opens the row's details area. Edit layer and To main live in that area, which is also
  * where Part 18's per-layer edit menu goes.
  */
-export function buildLayersPanel(root: HTMLElement, store: Store<AppState>, a: PanelActions): void {
+export interface LayerMenuHost {
+  /** The document-level `#layer-menu` panel the row menu is drawn into. */
+  panel: HTMLElement;
+  /** Opens the popover at this `...` button, moves it there when open elsewhere, closes it when open here. */
+  toggleAt(anchor: HTMLElement): void;
+  /** The `...` button was rebuilt: point the popover at the new one. */
+  reanchor(anchor: HTMLElement): void;
+  close(): void;
+  /** The id of the open popover, or null. */
+  openId(): string | null;
+}
+
+export function buildLayersPanel(root: HTMLElement, store: Store<AppState>, a: PanelActions, menu: LayerMenuHost): void {
   const syncs: ((s: AppState) => void)[] = [];
   const layerList = h("ul", { id: "layer-list", class: "layer-list" });
   const layerName = control("input", { id: "layer-name", type: "text", maxlength: "40", placeholder: "Layer name", "aria-label": "Layer name" });
-  const layerBtn = (id: string, label: string, onclick: () => void) => control("button", { id, "aria-disabled": "false", onclick }, label);
-  const newBtn = layerBtn("layer-new", "New layer", () => {
+  const layerBtn = (id: string, label: string | Node, onclick: () => void, name?: string) =>
+    control("button", { id, "aria-disabled": "false", ...(name ? { "aria-label": name } : {}), onclick }, label);
+  // the footer: icon-only New layer buttons (their names are aria-labels), short texts for Assign and Release (names keep the field labels)
+  const newBtn = layerBtn("layer-new", iconSvg("add", 16), () => {
     a.layerCreate(layerName.value);
     layerName.value = "";
-  });
-  const assignBtn = layerBtn("layer-assign", "Assign selection", () => a.layerAssign());
-  const releaseBtn = layerBtn("layer-release", "Release to main", () => a.layerRelease());
+  }, "New layer");
+  const assignBtn = layerBtn("layer-assign", "Assign", () => a.layerAssign(), "Assign selection");
+  const releaseBtn = layerBtn("layer-release", "Release", () => a.layerRelease(), "Release to main");
   const setBtn = layerBtn("layer-set", "Set layer to selection", () => a.layerSet());
   setBtn.hidden = true;
-  const fromBandBtn = layerBtn("layer-from-band", "New layer from protected points", () => a.layerFromBand());
-  const stack = h("div", { class: "stack" }, assignBtn, releaseBtn, setBtn);
+  const fromBandBtn = layerBtn("layer-from-band", iconSvg("shieldplus", 16), () => a.layerFromBand(), "New layer from protected points");
+  const foot2 = h("div", { class: "lfoot2" }, assignBtn, releaseBtn, setBtn); // Set layer to selection lives here while a layer is edited; the menu closes when Edit layer fires
   const editingLine = h("p", { id: "layer-editing", class: "note", hidden: true });
   const reasonOn = (b: HTMLElement, tipId: string, why: string | null) => {
     b.setAttribute("aria-disabled", String(why !== null));
@@ -48,17 +62,32 @@ export function buildLayersPanel(root: HTMLElement, store: Store<AppState>, a: P
     h("span", { class: "layer-name", text: name }),
     h("span", { class: "layer-count", text: label.startsWith(name) ? label.slice(name.length) : "" }),
   ];
-  const opened = new Set<number>();
+  /** R22-3: the shield is the only protection mark of a row; it sits between the name and the count. */
+  const shieldOf = (id: number, name: string): Node => h("span", { class: "layer-shield", "data-layer-shield": id, role: "img", "aria-label": "Protected", title: protectedTip(name) }, iconSvg("shield", 12));
+  /** The lock mark of a locked layer: it sits after the shield, before the count. */
+  const lockOf = (id: number): Node => h("span", { class: "layer-lock", "data-layer-lock": id, role: "img", "aria-label": "Locked", title: "Locked: membership is fixed; the points can still be deleted" }, iconSvg("lock", 12));
+  const withFlags = ([name, count]: Node[], shield: Node | null, lock: Node | null): Node[] => [name, ...(shield ? [shield] : []), ...(lock ? [lock] : []), count];
+  /** The layer whose menu is open (the popover shows it); null when none. */
+  let menuFor: number | null = null;
+  let curRows: ReturnType<typeof layerRows> = [];
   let layerKey = "";
+  const closeMenu = () => {
+    menuFor = null;
+    menu.close();
+  };
+  /** The Main row's chip: recoloured in place when the render theme changes (the rows are not rebuilt for it). */
+  let mainChip: HTMLElement | null = null;
   let sessionId: string | null = null;
   const sync = (s: AppState) => {
-    // a different file starts with every fold-out closed: layer ids repeat from file to file
+    // a different file starts with the menu closed: layer ids repeat from file to file
     const sid = s.session?.session_id ?? null;
+    const rows = layerRows(s.session);
+    if (menuFor !== null && menu.openId() !== "layer") menuFor = null; // closed by Esc or an outside click
     if (sid !== sessionId) {
       sessionId = sid;
-      opened.clear();
+      if (menuFor !== null) closeMenu();
     }
-    const rows = layerRows(s.session);
+    if (menuFor !== null && !rows.some((r) => r.id === menuFor)) closeMenu();
     const b = layerButtons(s);
     reasonOn(newBtn, "layer-new", b.create);
     reasonOn(assignBtn, "layer-assign", b.assign);
@@ -69,86 +98,102 @@ export function buildLayersPanel(root: HTMLElement, store: Store<AppState>, a: P
     editingLine.hidden = !editing;
     editingLine.textContent = editing ? editingText(editing.name, editing.count, s.session?.selection.count ?? 0) : "";
     reasonOn(setBtn, "layer-set", b.set);
-    for (const id of [...opened]) if (!rows.some((r) => r.id === id)) opened.delete(id);
     // rebuild the rows only when they change: a store update between mousedown and mouseup must not swallow a click
-    const editingId = s.layerUi.editing;
-    const key = JSON.stringify([rows, s.layerUi.active, s.session?.counts.main, [...opened], editingId]);
+    const key = JSON.stringify([rows, s.layerUi.active, s.session?.counts.main]);
+    if (mainChip) mainChip.style.background = mainColour(s.renderTheme);
     if (key === layerKey) return;
     layerKey = key;
+    curRows = rows;
+    mainChip = null;
+    const moreOf = new Map<number, HTMLElement>();
     const out: Node[] = [];
     if (rows.length > 0) {
       const main = MAIN_LABEL(s.session?.counts.main ?? 0);
-      out.push(h("li", { class: "layer-row main", "data-layer-row": "0" }, chipOf(MAIN_COLOUR), ...nameAndCount("Main", main)));
+      mainChip = chipOf(mainColour(s.renderTheme));
+      out.push(h("li", { class: "layer-row main", "data-layer-row": "0" }, mainChip, ...nameAndCount("Main", main)));
     }
     for (const r of rows) {
-      const open = opened.has(r.id) || editingId === r.id;
-      const eye = h("button", { type: "button", class: "layer-eye", "data-layer-eye": r.id, "aria-pressed": String(r.visible), "aria-label": r.eyeLabel, title: r.eyeLabel, onclick: (e: Event) => (e.stopPropagation?.(), a.layerToggle(r.id)) }, iconSvg(r.visible ? "eye" : "eyeoff", 14));
+      const eye = h("button", { type: "button", class: `layer-eye${r.visible ? " layer-act" : ""}`, "data-layer-eye": r.id, "aria-pressed": String(r.visible), "aria-label": r.eyeLabel, title: r.eyeLabel, onclick: (e: Event) => (e.stopPropagation?.(), a.layerToggle(r.id)) }, iconSvg(r.visible ? "eye" : "eyeoff", 14));
       const selTitle = r.selectDisabled ?? `Select the ${r.count.toLocaleString("en-US")} points of ${r.name}`;
-      const sel = h("button", { type: "button", class: `layer-icon${r.selectDisabled ? " inactive" : ""}`, "data-layer-select": r.id, "aria-disabled": String(r.selectDisabled !== null), "aria-label": `Select layer ${r.name}`, title: selTitle, onclick: (e: Event) => (e.stopPropagation?.(), a.layerSelect(r.id)) }, iconSvg("pick", 14));
-      const more = h("button", { type: "button", class: "layer-icon layer-more", "data-layer-more": r.id, "aria-expanded": String(open), "aria-label": `More for layer ${r.name}`, title: `Options for ${r.name}`, onclick: (e: Event) => {
+      const sel = h("button", { type: "button", class: `layer-icon layer-act${r.selectDisabled ? " inactive" : ""}`, "data-layer-select": r.id, "aria-disabled": String(r.selectDisabled !== null), "aria-label": `Select layer ${r.name}`, title: selTitle, onclick: (e: Event) => (e.stopPropagation?.(), a.layerSelect(r.id)) }, iconSvg("pick", 14));
+      const more = h("button", { type: "button", class: "layer-icon layer-more layer-act", "data-layer-more": r.id, "aria-haspopup": "menu", "aria-expanded": "false", "aria-label": `More for layer ${r.name}`, title: `Options for ${r.name}`, onclick: (e: Event) => {
         e.stopPropagation?.();
-        if (opened.has(r.id)) opened.delete(r.id);
-        else opened.add(r.id);
-        sync(store.get());
-      } }, iconSvg("chev", 14));
-      const stop = (e: Event) => e.stopPropagation?.();
-      const btn = (attr: string, label: string, onclick: () => void, why: string | null = null, extra: Record<string, unknown> = {}) =>
-        h("button", { type: "button", [`data-layer-${attr}`]: r.id, "aria-disabled": String(why !== null), class: `${why ? "inactive " : ""}${extra.class ?? ""}`.trim(), title: why ?? extra.title ?? label, onclick: (e: Event) => (stop(e), why === null && onclick()), ...(extra.aria ? { "aria-pressed": extra.aria } : {}) }, label);
-      const flag = (attr: string, label: string, on: boolean, tip: string, onclick: () => void) => btn(attr, label, onclick, null, { aria: String(on), title: tip });
-      const group = (cls: string, ...kids: Node[]) => h("div", { class: `layer-group ${cls}` }, ...kids);
-      const commitRename = () => a.layerRename(r.id, rename.value);
-      const rename = h("input", { type: "text", maxlength: "40", value: r.name, "data-layer-rename": r.id, "aria-label": `Rename ${r.name}`, title: `Rename ${r.name} (Enter)`, onclick: stop, onkeydown: (e: KeyboardEvent) => e.key === "Enter" && commitRename() });
-      const swatches = LAYER_COLOURS.map((c, k) => {
-        const sw = h("button", { type: "button", class: "layer-swatch", "data-layer-colour": r.id, "data-colour": k, "aria-pressed": String(k === r.colourIndex), "aria-label": `Colour ${k + 1}`, title: `Colour ${k + 1}`, onclick: (e: Event) => (stop(e), a.layerColour(r.id, k)) });
-        sw.style.background = c;
-        return sw;
-      });
-      const others = rows.filter((o) => o.id !== r.id);
-      const mergeSel = h("select", { "data-layer-merge-target": r.id, "aria-label": `Merge ${r.name} into`, title: "The layer that receives the points", onclick: stop }, ...others.map((o) => h("option", { value: o.id, text: o.name })));
-      mergeSel.value = String(others[0]?.id ?? "");
-      const idx = rows.findIndex((o) => o.id === r.id);
-      const op = (o: string, label: string, call: "replace" | "add" | "subtract" | "intersect", tip: string) =>
-        h("button", { type: "button", "data-layer-op": o, "data-layer-of": r.id, title: tip, onclick: (e: Event) => (stop(e), a.layerOp(r.id, call)) }, label);
-      const details = h(
-        "li",
-        { class: "layer-details", "data-layer-details": r.id, hidden: !open },
-        group("g-rename", rename, btn("rename-ok", "Rename", commitRename, null, { title: `Rename ${r.name}` })),
-        group("g-colour", ...swatches),
-        group(
-          "g-flags",
-          flag("visible", "Visible", r.visible, `Show or hide ${r.name}`, () => a.layerToggle(r.id)),
-          flag("protected", "Protected", r.protected, `Protected: the points of ${r.name} are never deleted by any Delete`, () => a.layerFlag(r.id, "protected", !r.protected)),
-          flag("lock", "Lock", r.locked, `Lock: no points can be assigned into or out of ${r.name}; the points can still be deleted`, () => a.layerFlag(r.id, "locked", !r.locked)),
-        ),
-        group(
-          "g-ops",
-          op("select", "Select", "replace", `Select the points of ${r.name}`),
-          op("add", "Add", "add", `Add the points of ${r.name} to the selection`),
-          op("subtract", "Subtract", "subtract", `Remove the points of ${r.name} from the selection`),
-          op("intersect", "Intersect", "intersect", `Keep only the selected points that are in ${r.name}`),
-        ),
-        group(
-          "g-member",
-          btn("edit", "Edit layer", () => a.layerEdit(r.id), r.editDisabled, { title: `Edit ${r.name}: select the layer's points again with a box, then press Set layer to selection` }),
-          ...(editingId === r.id ? [setBtn] : []),
-          btn("tomain", "To main", () => a.layerToMain(r.id), r.toMainDisabled, { title: `Move every point of ${r.name} back to main and remove the layer` }),
-        ),
-        group(
-          "g-order",
-          btn("up", "Up", () => a.layerMove(r.id, -1), idx === 0 ? "Already first" : null, { title: "Move up in the layer order" }),
-          btn("down", "Down", () => a.layerMove(r.id, 1), idx === rows.length - 1 ? "Already last" : null, { title: "Move down in the layer order" }),
-          mergeSel,
-          btn("merge", "Merge", () => a.layerMerge(r.id, Number(mergeSel.value)), r.mergeDisabled, { title: `Merge ${r.name} into the chosen layer; ${r.name} goes away` }),
-        ),
-        group("g-delete", btn("delete-points", "Delete points", () => a.layerDeletePoints(r.id), r.deletePointsDisabled, { class: "danger", title: `Delete the points of ${r.name} (confirmed; a timeline step you can undo)` })),
-      );
+        menuFor = r.id;
+        paintMenu(); // drawn before the popover measures it
+        menu.toggleAt(more);
+        if (menu.openId() !== "layer") menuFor = null; // the same button again closed it
+      } }, iconSvg("more", 14));
+      moreOf.set(r.id, more);
       out.push(
-        h("li", { class: `layer-row${s.layerUi.active === r.id ? " active" : ""}`, "data-layer-row": r.id, title: r.title, "aria-selected": String(s.layerUi.active === r.id), onclick: () => a.layerChoose(r.id) }, chipOf(r.colour, `${r.protected ? " protected" : ""}${r.locked ? " locked" : ""}`), ...nameAndCount(r.name, r.label), eye, sel, more),
-        details,
+        h("li", { class: `layer-row${s.layerUi.active === r.id ? " active" : ""}`, "data-layer-row": r.id, title: r.title, "aria-selected": String(s.layerUi.active === r.id), onclick: () => a.layerChoose(r.id) }, chipOf(r.colour, r.locked ? " locked" : ""), ...withFlags(nameAndCount(r.name, r.label), r.protected ? shieldOf(r.id, r.name) : null, r.locked ? lockOf(r.id) : null), h("span", { class: "layer-acts" }, eye, sel, more)),
       );
     }
     layerList.replaceChildren(...out);
-    stack.replaceChildren(assignBtn, releaseBtn, ...(rows.some((r) => r.id === editingId) ? [] : [setBtn]));
+    if (menuFor !== null) {
+      paintMenu();
+      const m = moreOf.get(menuFor);
+      if (m) menu.reanchor(m); // the rows were rebuilt: the popover follows the new button
+    }
+  };
+  /** Draws the open menu's layer into `#layer-menu`; the same `data-layer-*` hooks as the old inline area. */
+  const paintMenu = () => {
+    const rows = curRows;
+    const r = rows.find((x) => x.id === menuFor);
+    if (!r) return;
+    const stop = (e: Event) => e.stopPropagation?.();
+    const btn = (attr: string, label: string, onclick: () => void, why: string | null = null, extra: Record<string, unknown> = {}) =>
+      h("button", { type: "button", [`data-layer-${attr}`]: r.id, "aria-disabled": String(why !== null), class: `${why ? "inactive " : ""}${extra.class ?? ""}`.trim(), title: why ?? extra.title ?? label, onclick: (e: Event) => (stop(e), why === null && onclick()), ...(extra.aria ? { "aria-pressed": extra.aria } : {}) }, ...(extra.icon ? [iconSvg(extra.icon as IconName, 12)] : []), label);
+    const flag = (attr: string, label: string, on: boolean, tip: string, onclick: () => void, icon?: IconName) => btn(attr, label, onclick, null, { aria: String(on), title: tip, icon });
+    const group = (cls: string, ...kids: Node[]) => h("div", { class: `layer-group ${cls}` }, ...kids);
+    const commitRename = () => a.layerRename(r.id, rename.value);
+    const rename = h("input", { type: "text", maxlength: "40", value: r.name, "data-layer-rename": r.id, "aria-label": `Rename ${r.name}`, title: `Rename ${r.name} (Enter)`, onclick: stop, onkeydown: (e: KeyboardEvent) => e.key === "Enter" && commitRename() });
+    const swatches = LAYER_COLOURS.map((c, k) => {
+      const sw = h("button", { type: "button", class: "layer-swatch", "data-layer-colour": r.id, "data-colour": k, "aria-pressed": String(k === r.colourIndex), "aria-label": `Colour ${k + 1}`, title: `Colour ${k + 1}`, onclick: (e: Event) => (stop(e), a.layerColour(r.id, k)) });
+      sw.style.background = c;
+      return sw;
+    });
+    const others = rows.filter((o) => o.id !== r.id);
+    const mergeSel = h("select", { "data-layer-merge-target": r.id, "aria-label": `Merge ${r.name} into`, title: "The layer that receives the points", onclick: stop }, ...others.map((o) => h("option", { value: o.id, text: o.name })));
+    mergeSel.value = String(others[0]?.id ?? "");
+    const idx = rows.findIndex((o) => o.id === r.id);
+    const op = (o: string, label: string, call: "replace" | "add" | "subtract" | "intersect", tip: string) =>
+      h("button", { type: "button", "data-layer-op": o, "data-layer-of": r.id, title: tip, onclick: (e: Event) => (stop(e), a.layerOp(r.id, call)) }, label);
+    /** These four end the visit: the menu closes after the action fires. */
+    const thenClose = (f: () => void) => () => {
+      f();
+      closeMenu();
+    };
+    menu.panel.setAttribute("data-layer-details", String(r.id));
+    menu.panel.replaceChildren(
+      group("g-rename", rename, btn("rename-ok", "Rename", commitRename, null, { title: `Rename ${r.name}` })),
+      group("g-colour", ...swatches),
+      group(
+        "g-flags",
+        flag("visible", "Visible", r.visible, `Show or hide ${r.name}`, () => a.layerToggle(r.id)),
+        flag("protected", "Protected", r.protected, protectedTip(r.name), () => a.layerFlag(r.id, "protected", !r.protected), "shield"),
+        flag("lock", "Lock", r.locked, `Lock: no points can be assigned into or out of ${r.name}; the points can still be deleted`, () => a.layerFlag(r.id, "locked", !r.locked)),
+      ),
+      group(
+        "g-ops",
+        op("select", "Select", "replace", `Select the points of ${r.name}`),
+        op("add", "Add", "add", `Add the points of ${r.name} to the selection`),
+        op("subtract", "Subtract", "subtract", `Remove the points of ${r.name} from the selection`),
+        op("intersect", "Intersect", "intersect", `Keep only the selected points that are in ${r.name}`),
+      ),
+      group(
+        "g-member",
+        btn("edit", "Edit layer", thenClose(() => a.layerEdit(r.id)), r.editDisabled, { title: `Edit ${r.name}: select the layer's points again with a box, then press Set layer to selection` }),
+        btn("tomain", "To main", thenClose(() => a.layerToMain(r.id)), r.toMainDisabled, { title: `Move every point of ${r.name} back to main and remove the layer` }),
+      ),
+      group(
+        "g-order",
+        btn("up", "Up", () => a.layerMove(r.id, -1), idx === 0 ? "Already first" : null, { title: "Move up in the layer order" }),
+        btn("down", "Down", () => a.layerMove(r.id, 1), idx === rows.length - 1 ? "Already last" : null, { title: "Move down in the layer order" }),
+        mergeSel,
+        btn("merge", "Merge", thenClose(() => a.layerMerge(r.id, Number(mergeSel.value))), r.mergeDisabled, { title: `Merge ${r.name} into the chosen layer; ${r.name} goes away` }),
+      ),
+      group("g-delete", btn("delete-points", "Delete points", thenClose(() => a.layerDeletePoints(r.id)), r.deletePointsDisabled, { class: "danger", title: `Delete the points of ${r.name} (confirmed; a timeline step you can undo)` })),
+    );
   };
   syncs.push(sync);
   const empty = h("p", { class: "note" });
@@ -161,9 +206,8 @@ export function buildLayersPanel(root: HTMLElement, store: Store<AppState>, a: P
     empty,
     layerList,
     editingLine,
-    h("div", { class: "oprow" }, layerName, newBtn),
-    h("div", { class: "stack" }, fromBandBtn),
-    stack,
+    h("div", { class: "lfoot" }, layerName, newBtn, fromBandBtn),
+    foot2,
   );
   syncs.push((s) => {
     f.el.hidden = s.session === null;

@@ -2,7 +2,7 @@ import type { AttrArray } from "../render/parse";
 import { LAYER_COLOURS } from "../layers/model";
 import type { Bounds, FieldInfo, Layer, Vec3 } from "../state/types";
 import { type Tilt, slabCoordinate } from "../inspector/tilt";
-import { PALETTE, type Rgb } from "./palette";
+import { PALETTE, type RenderPalette, type Rgb } from "./palette";
 import { NORMAL_ATTR, decodeNormal, normalColour } from "./normals";
 import { RAMP_STOPS, rampAt } from "./ramps";
 
@@ -64,8 +64,10 @@ export interface ColourContext {
   markDeleted: boolean;
   /** Colour per layer id for the Layers mode (see `layerPaletteRgb`). */
   layerRgb?: readonly (Rgb | undefined)[];
-  /** Colour of selected (candidate) points; default PALETTE.selected. */
+  /** Colour of selected (candidate) points; default the palette's `selected`. */
   selected?: Rgb;
+  /** The point palette (`paletteFor(renderTheme)`); default the dark `PALETTE`. */
+  palette?: RenderPalette;
   /** Protected slab intervals (Z, file frame) to draw strong; absent when the protection section is collapsed. */
   region?: { intervals: { min: number; max: number }[]; tilt?: Tilt } | null;
 }
@@ -77,9 +79,11 @@ export function colourize(r: ColourInput, ctx: ColourContext): Float32Array {
 
 /**
  * `colours` as `colourize`; `ovr` is 1 for each point whose colour is a flag, protected or region colour and 0 for the
- * points the mode colours itself. The Distance shader recolours only the 0 points (the camera decides their colour).
+ * points the mode colours itself (a layer point in Layers mode draws its layer colour before the slab colour, R22-3). The Distance
+ * shader recolours only the 0 points (the camera decides their colour).
  */
 export function colourizeMasked(r: ColourInput, ctx: ColourContext): { colours: Float32Array; ovr: Float32Array } {
+  const P = ctx.palette ?? PALETTE;
   const out = new Float32Array(r.count * 3);
   const ovr = new Float32Array(r.count);
   const lo = ctx.bounds ? ctx.bounds.min[2] : 0;
@@ -99,15 +103,19 @@ export function colourizeMasked(r: ColourInput, ctx: ColourContext): { colours: 
     const f = r.flags[i];
     let c: Rgb;
     ovr[i] = 1;
-    if (f & 2) c = region ? PALETTE.protectedStrong : PALETTE.protected;
-    else if (f & 8) c = PALETTE.previewAdd;
-    else if (f & 16) c = PALETTE.previewRemove;
-    else if (f & 1) c = ctx.selected ?? PALETTE.selected;
-    else if (f & 4 && ctx.markDeleted) c = PALETTE.deleted;
-    else if (region && inRegion(i)) c = PALETTE.protectedStrong;
+    if (f & 2) c = region ? P.protectedStrong : P.protected;
+    else if (f & 8) c = P.previewAdd;
+    else if (f & 16) c = P.previewRemove;
+    else if (f & 1) c = ctx.selected ?? P.selected;
+    else if (f & 4 && ctx.markDeleted) c = P.deleted;
+    else if (lay && ctx.layerRgb![lay[i]] !== undefined) {
+      ovr[i] = 0;
+      c = ctx.layerRgb![lay[i]]!; // R22-3: a layer's colour wins over the slab colour, protected or not
+    }
+    else if (region && inRegion(i)) c = P.protectedStrong;
     else {
       ovr[i] = 0;
-      c = stops ? heightRamp(r.coords[3 * i + 2] + r.origin[2], lo, hi, stops) : nrm ? normalColour(decodeNormal(nrm[i], tmp)) : lay ? (ctx.layerRgb![lay[i]] ?? PALETTE.base) : PALETTE.base;
+      c = stops ? heightRamp(r.coords[3 * i + 2] + r.origin[2], lo, hi, stops) : nrm ? normalColour(decodeNormal(nrm[i], tmp)) : P.base;
     }
     out[3 * i] = c[0];
     out[3 * i + 1] = c[1];

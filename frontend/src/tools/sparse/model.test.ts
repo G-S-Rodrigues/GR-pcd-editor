@@ -3,21 +3,34 @@ import { createAppStore } from "../../state/app";
 import { sessionFixture } from "../../testing/fixtures";
 import { buildSelection, currentTool } from "../../orchestration/selection";
 import { armTool } from "../../orchestration/toolstate";
+import { defaultPlane } from "../plane/model";
 import { DEFAULT_MIN_NEIGHBOURS, defaultSparse, setMinNeighbours, setSparseRadius, sparseSummary, toSparseTool } from "./model";
 
 const sq = { type: "prism" as const, polygon: [[0, 0], [1, 0], [1, 1]] as [number, number][], z_min: -1, z_max: 1, mode: "inside" as const };
 const box = { type: "box" as const, center: [0, 0, 0] as [number, number, number], dimensions: [1, 1, 1] as [number, number, number], rpy_deg: [0, 0, 0] as [number, number, number], mode: "inside" as const };
 
 describe("sparse points tool model (13-8)", () => {
-  it("UI-678 defaults: radius derived by the server, 8 neighbours, whole cloud, protected points kept", () => {
-    expect(defaultSparse()).toEqual({ radius: null, minNeighbours: DEFAULT_MIN_NEIGHBOURS, region: "none", excludeProtected: true });
+  it("UI-1150 a fresh store carries the R22-15 defaults: Sparse radius 0.4; Planes 0.1 / 5 / 1; arming Sparse sends 0.4 and the summary names it", () => {
+    const s = createAppStore().get();
+    expect(s.tools.sparse.radius).toBe(0.4);
+    expect(s.tools.plane).toEqual({ distance: 0.1, maxTilt: 5, maxPlanes: 1, region: "none", excludeProtected: true });
+    expect(defaultPlane()).toEqual(s.tools.plane);
+    const store = createAppStore();
+    store.set({ session: sessionFixture() });
+    store.update((x) => armTool(x, "sparse"));
+    expect(currentTool(store.get())).toMatchObject({ type: "sparse", radius: 0.4 });
+    expect(sparseSummary(defaultSparse())).toMatch(/radius 0\.4/);
+  });
+
+  it("UI-678 defaults: radius 0.4 (R22-15), 8 neighbours, whole cloud, protected points kept", () => {
+    expect(defaultSparse()).toEqual({ radius: 0.4, minNeighbours: DEFAULT_MIN_NEIGHBOURS, region: "none", excludeProtected: true });
     expect(DEFAULT_MIN_NEIGHBOURS).toBe(8);
   });
 
   it("UI-678 the radius is empty (derived) or above 0; the neighbour count is a whole number of at least 1", () => {
     const m = defaultSparse();
     expect(setSparseRadius(m, 0.25)).toEqual({ ok: true, model: { ...m, radius: 0.25 } });
-    expect(setSparseRadius({ ...m, radius: 0.25 }, null)).toEqual({ ok: true, model: m });
+    expect(setSparseRadius({ ...m, radius: 0.25 }, null)).toEqual({ ok: true, model: { ...m, radius: null } });
     for (const bad of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
       const r = setSparseRadius(m, bad);
       expect(r.ok).toBe(false);
@@ -34,7 +47,7 @@ describe("sparse points tool model (13-8)", () => {
   });
 
   it("UI-679 the request carries the parameters and the chosen region; an unavailable region means the whole cloud", () => {
-    expect(toSparseTool(defaultSparse(), box, sq)).toEqual({ type: "sparse", radius: null, min_neighbours: 8, region: null, exclude_protected: true });
+    expect(toSparseTool(defaultSparse(), box, sq)).toEqual({ type: "sparse", radius: 0.4, min_neighbours: 8, region: null, exclude_protected: true });
     expect(toSparseTool({ ...defaultSparse(), radius: 0.3, minNeighbours: 5, region: "box", excludeProtected: false }, box, sq)).toEqual({
       type: "sparse",
       radius: 0.3,
@@ -68,7 +81,7 @@ describe("sparse points tool model (13-8)", () => {
 
   it("UI-681 the summary line says what the tool selects in plain words", () => {
     expect(sparseSummary(defaultSparse())).toMatch(/fewer than 8 points around them/);
-    expect(sparseSummary(defaultSparse())).toMatch(/radius from the point spacing/i);
+    expect(sparseSummary({ ...defaultSparse(), radius: null })).toMatch(/radius from the point spacing/i);
     expect(sparseSummary({ ...defaultSparse(), radius: 0.5, minNeighbours: 3 })).toMatch(/fewer than 3 points.*0\.5/);
   });
 });

@@ -15,27 +15,27 @@ test("UI-230 every inspector section starts open and the ids avoid the UI-92 wor
 
 test("UI-231 setSectionOpen changes one section and leaves the rest and the input alone", () => {
   const a = createAppStore().get().sectionsOpen;
-  const b = setSectionOpen(a, "history", false);
-  expect(isSectionOpen(b, "history")).toBe(false);
+  const b = setSectionOpen(a, "layers", false);
+  expect(isSectionOpen(b, "layers")).toBe(false);
   expect(isSectionOpen(b, "box")).toBe(true);
-  expect(isSectionOpen(a, "history")).toBe(true);
-  expect(setSectionOpen(b, "history", true)).toEqual({});
+  expect(isSectionOpen(a, "layers")).toBe(true);
+  expect(setSectionOpen(b, "layers", true)).toEqual({});
 });
 
 test("UI-232 section state is saved and restored, old sessions and bad content give all open", () => {
   const a = createAppStore();
-  a.update((s) => ({ ...s, sectionsOpen: setSectionOpen(setSectionOpen(s.sectionsOpen, "box", false), "history", false) }));
+  a.update((s) => ({ ...s, sectionsOpen: setSectionOpen(setSectionOpen(s.sectionsOpen, "box", false), "layers", false) }));
   const saved = JSON.parse(JSON.stringify(serialiseClientState(a.get())));
   expect(JSON.stringify(saved)).not.toMatch(/filters|protection/);
   const patch = restoreClientState(saved);
   const out = applyClientPatch(createAppStore().get(), patch!);
   expect(isSectionOpen(out.sectionsOpen, "box")).toBe(false);
-  expect(isSectionOpen(out.sectionsOpen, "history")).toBe(false);
-  expect(isSectionOpen(out.sectionsOpen, "display")).toBe(true);
+  expect(isSectionOpen(out.sectionsOpen, "layers")).toBe(false);
+  expect(isSectionOpen(out.sectionsOpen, "polygon")).toBe(true);
   const old = applyClientPatch(createAppStore().get(), restoreClientState({ v: 1, ui: {} })!);
   expect(old.sectionsOpen).toEqual({});
-  const bad = restoreClientState({ v: 1, ui: { sectionsOpen: { nope: false, box: "x", history: false, slice: false } } });
-  expect(bad?.sectionsOpen).toEqual({ history: false }); // the removed slice section id is ignored too
+  const bad = restoreClientState({ v: 1, ui: { sectionsOpen: { nope: false, box: "x", history: false, slice: false, layers: false } } });
+  expect(bad?.sectionsOpen).toEqual({ layers: false }); // removed ids (slice, history) are ignored
   expect(restoreClientState({ v: 1, ui: { sectionsOpen: [1] } })?.sectionsOpen).toBeUndefined();
 });
 
@@ -52,16 +52,20 @@ test("UI-233 a store update never writes the element back while the store value 
 test("UI-234 foldSyncer keeps the user's flip through repeated unrelated syncs, then follows the store", () => {
   const store = createAppStore();
   const el = { open: true };
-  const sync = foldSyncer(el, (s) => isSectionOpen(s.sectionsOpen, "history"));
+  const sync = foldSyncer(el, (s) => isSectionOpen(s.sectionsOpen, "layers"));
   sync(store.get());
   el.open = false; // user click, toggle event still queued
   sync(store.get());
   sync(store.get());
   expect(el.open).toBe(false);
-  store.update((s) => ({ ...s, sectionsOpen: setSectionOpen(s.sectionsOpen, "history", false) })); // the toggle handler arrives
+  store.update((s) => ({ ...s, sectionsOpen: setSectionOpen(s.sectionsOpen, "layers", false) })); // the toggle handler arrives
   sync(store.get());
   expect(el.open).toBe(false);
-  store.update((s) => ({ ...s, sectionsOpen: setSectionOpen(s.sectionsOpen, "history", true) })); // a session reopen
+  store.update((s) => ({ ...s, sectionsOpen: setSectionOpen(s.sectionsOpen, "layers", true) })); // a session reopen
   sync(store.get());
   expect(el.open).toBe(true);
+});
+
+test("UI-1142 the fold sections are the six tools, Selection and Layers, in that order", () => {
+  expect([...SECTION_IDS]).toEqual(["box", "polygon", "cluster", "sparse", "plane", "thin", "selection", "layers"]);
 });

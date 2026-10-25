@@ -2,15 +2,24 @@ import { afterAll, beforeEach, expect, test } from "vitest";
 import { createAppStore } from "../state/app";
 import { sessionFixture } from "../testing/fixtures";
 import { type FakeEl, installFakeDom } from "../testing/fakedom";
-import { type PanelActions, buildEditPanels } from "./panels";
+import { PROTECTION_COPY } from "../inspector/protection";
+import { POLYGON_DEPTH_NOTE } from "../tools/polygon/model";
+import { type PanelActions, BOX_NOTE, buildEditPanels } from "./panels";
+import { CLUSTER_HELP, PLANE_HELP, SPARSE_HELP, THIN_HELP } from "./copy";
+import { FIELD_SPECS } from "./fields";
+import type { PopEntry } from "./popover";
 
 const dom = installFakeDom();
 afterAll(() => dom.restore());
 const store = createAppStore();
-const actions = new Proxy({} as Record<string, unknown>, { get: (t, k: string) => t[k] ?? (() => undefined) }) as unknown as PanelActions;
+const setToolCalls: unknown[] = [];
+const actions = new Proxy({ setTool: (t: unknown) => void setToolCalls.push(t) } as Record<string, unknown>, { get: (t, k: string) => t[k] ?? (() => undefined) }) as unknown as PanelActions;
+const added: PopEntry[] = [];
+const popRoot = new (dom.root.constructor as new (t: string) => FakeEl)("div");
+const fakePops = { add: (e: PopEntry) => void added.push(e), close: () => undefined };
 const toolRoot = new (dom.root.constructor as new (t: string) => FakeEl)("div");
 const scroller = { scrollTop: 0 };
-buildEditPanels(dom.root as unknown as HTMLElement, store, actions, { toolRoot: toolRoot as unknown as HTMLElement, scroller });
+buildEditPanels(dom.root as unknown as HTMLElement, store, actions, { toolRoot: toolRoot as unknown as HTMLElement, scroller, pops: fakePops, popRoot: popRoot as unknown as HTMLElement });
 const ids = (el: FakeEl) => el.children.map((c) => c.getAttribute("data-section"));
 beforeEach(() => {
   scroller.scrollTop = 40;
@@ -18,12 +27,12 @@ beforeEach(() => {
 });
 
 test("UI-890 the six tool sections live in the toolRoot slot and the other sections stay in the root; the slot order is box, polygon, cluster, sparse, plane, thin", () => {
-  expect(ids(toolRoot)).toEqual(["box", "polygon", "cluster", "sparse", "plane", "thin"]);
+  expect(ids(toolRoot).filter((x) => x !== null)).toEqual(["box", "polygon", "cluster", "sparse", "plane", "thin"]); // 22-6: the idle line (no data-section) shares the slot
   const rest = ids(dom.root).filter((x) => x !== null);
   expect(rest).not.toContain("box");
   expect(rest).not.toContain("cluster");
   expect(rest).not.toContain("layers"); // 17-10: Layers moved to the left panel
-  expect(rest).toContain("history");
+  expect(rest).toEqual([]); // 22-5: History is a popover, so the root holds no fold section
 });
 
 test("UI-891 arming a tool whose section is folded opens it through the store once, and scrolls the panel to the top once per arming, not on every sync", () => {
@@ -41,4 +50,102 @@ test("UI-891 arming a tool whose section is folded opens it through the store on
   store.set({ tool: "cluster" }); // armed again: opens again
   expect(store.get().sectionsOpen.cluster).toBeUndefined();
   expect(scroller.scrollTop).toBe(0);
+});
+
+const SECTIONS: [string, string, string][] = [
+  ["box", "Box", BOX_NOTE],
+  ["polygon", "Polygon", POLYGON_DEPTH_NOTE],
+  ["cluster", "Cluster", CLUSTER_HELP],
+  ["sparse", "Sparse points", SPARSE_HELP],
+  ["plane", "Planes", PLANE_HELP],
+  ["thin", "Thin", THIN_HELP],
+];
+const cls = (e: FakeEl) => e.className.split(/\s+/);
+
+test("UI-1165 each tool section's summary is the shared header: icon tile, name, ? help, Esc kbd and an exit button; exit disarms; no static note outside a help panel", () => {
+  for (const [id, name] of SECTIONS) {
+    const det = toolRoot.children.find((c) => c.getAttribute("data-section") === id) as FakeEl;
+    const sum = det.children.find((c) => c.tag === "summary") as FakeEl;
+    const kids = sum.children;
+    expect(kids.map((k) => k.tag)).toEqual(["span", "h2", "button", "span", "button"]);
+    expect(cls(kids[0])).toContain("ticon");
+    expect(kids[0].children[0].tag).toBe("svg");
+    expect(kids[1].text()).toBe(name);
+    expect(kids[2].getAttribute("data-control")).toBe(`${id}-help`);
+    expect(cls(kids[3])).toContain("kbd");
+    expect(kids[3].text()).toBe("Esc to exit");
+    expect(kids[4].getAttribute("data-control")).toBe(`${id}-exit`);
+  }
+  setToolCalls.length = 0;
+  (toolRoot.control("box-exit") as FakeEl).fire("click");
+  expect(setToolCalls).toEqual(["none"]);
+  const notes = toolRoot.all().filter((e) => e.tag === "p" && [BOX_NOTE, POLYGON_DEPTH_NOTE].includes(e.text()));
+  expect(notes).toEqual([]);
+});
+
+test("UI-1166 the seven ? helps register as popovers whose panels hang off the popover container (not off a details), carry their copy, and are distinct", () => {
+  const helps = added.filter((e) => e.id.startsWith("help-")); // 22-6: the Fit menu registers through the same add()
+  expect(helps.map((e) => e.id)).toEqual(["help-box", "help-polygon", "help-cluster", "help-sparse", "help-plane", "help-thin", "help-prot"]);
+  const copies = [...SECTIONS.map((x) => x[2]), PROTECTION_COPY];
+  helps.forEach((e, i) => {
+    const panel = e.panel as unknown as FakeEl;
+    expect(popRoot.children).toContain(panel);
+    expect(toolRoot.all().includes(panel) || dom.root.all().includes(panel)).toBe(false);
+    expect(panel.text()).toBe(copies[i]);
+    expect(e.anchor.getAttribute("title")).toBe(copies[i]);
+    expect(cls(panel)).toContain("pop");
+  });
+  expect(new Set(copies).size).toBe(7);
+});
+
+test("UI-1167 an open session with no tool armed shows the idle line in the tool slot; arming a tool hides it", () => {
+  const idle = toolRoot.children.find((c) => cls(c).includes("idle-tool")) as FakeEl;
+  expect(idle.text()).toBe("Pick a tool on the canvas to start a selection.");
+  store.set({ tool: "none" });
+  expect(idle.hidden).toBe(false);
+  store.set({ tool: "box" });
+  expect(idle.hidden).toBe(true);
+  store.set({ tool: "none" });
+});
+
+test("UI-1171 every control of the tool and protection groups is built exactly once, the polygon mode is a segmented group, the skip-protected checkboxes are switches, and the thin method stays a select", () => {
+  const all = [...dom.root.all(), ...toolRoot.all()];
+  const groups = ["box", "polygon", "cluster", "sparse", "plane", "thin", "protection"];
+  for (const spec of FIELD_SPECS.filter((x) => groups.includes(x.group))) {
+    if (spec.id === "plane-list") continue; // built per detection, not at start
+    expect(all.filter((e) => e.getAttribute("data-control") === spec.id).length, spec.id).toBe(1);
+  }
+  const mode = toolRoot.control("poly-mode") as FakeEl;
+  expect(mode.tag).toBe("div");
+  expect(mode.getAttribute("role")).toBe("radiogroup");
+  expect(cls(mode)).toContain("seg");
+  for (const t of ["cluster", "sparse", "plane", "thin"]) {
+    const ex = toolRoot.control(`${t}-exclude-protected`) as FakeEl;
+    expect(ex.getAttribute("type")).toBe("checkbox");
+    expect(cls(ex)).toContain("switch");
+  }
+  expect((toolRoot.control("thin-method") as FakeEl).tag).toBe("select");
+});
+
+const protDetails = () => dom.root.all().find((e) => e.tag === "details" && e.children[0].children.some((c) => c.tag === "h2" && c.text() === "Height protection")) as FakeEl;
+
+test("UI-1170 Height protection: the header holds chevron, shield, title, ? and the global switch; the rows are Height, Floor, Tilt, Show band, This edit", () => {
+  const det = protDetails();
+  const sum = det.children[0];
+  expect(sum.children.map((c) => c.tag)).toEqual(["svg", "svg", "h2", "button", "input"]);
+  expect(sum.children[1].getAttribute("data-icon")).toBe("shield");
+  expect(sum.children[3].getAttribute("data-control")).toBe("prot-help");
+  const sw = sum.children[4];
+  expect(sw.getAttribute("data-control")).toBe("prot-enabled");
+  expect(sw.getAttribute("type")).toBe("checkbox");
+  expect(sw.getAttribute("role")).toBe("switch");
+  expect(cls(sw)).toContain("switch");
+  const labels = det.all().filter((e) => cls(e).includes("prow")).map((r) => r.children[0].text());
+  expect(labels).toEqual(["Height", "Floor", "Tilt", "Show band", "This edit"]);
+  expect((det.control("prot-pick-floor") as FakeEl).text()).toContain("Pick point");
+  const level = det.control("prot-level") as FakeEl;
+  expect(level.children[0].tag).toBe("svg");
+  expect(level.getAttribute("aria-label")).toContain("Level");
+  for (const id of ["prot-local-min", "prot-local-max", "prot-ack"]) expect(det.control(id)).toBeDefined();
+  expect(det.all().some((e) => e.tag === "p" && e.text() === PROTECTION_COPY)).toBe(false);
 });

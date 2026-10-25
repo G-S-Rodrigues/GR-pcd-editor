@@ -12,5 +12,5 @@ export function layerColourKey(s: AppState, withRegion: boolean): string {
   const tilt = r?.tilt ? `@${r.tilt.rx}:${r.tilt.ry}:${r.tilt.pivot[0]}:${r.tilt.pivot[1]}` : "";
   const region = r ? r.intervals.map((i) => `${i.min}:${i.max}`).join(",") + tilt : "";
   const lay = s.colour.mode === "layers" ? (s.session?.layers ?? []).map((l) => `${l.id}:${l.colour}`).join(",") : "";
-  return `${s.colour.mode}|${lay}|${s.selectedColour}|${s.session?.session_id}|${s.session?.revision.cloud}|${b?.min[2]}|${b?.max[2]}|${region}`;
+  return `${s.colour.mode}|${lay}|${s.selectedColour}|${s.session?.session_id}|${s.session?.revision.cloud}|${b?.min[2]}|${b?.max[2]}|${region}|${s.renderTheme}`;
 }

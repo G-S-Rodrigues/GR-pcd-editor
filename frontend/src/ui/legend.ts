@@ -1,10 +1,10 @@
-import { PALETTE, type Rgb } from "../colour/palette";
+import { PALETTE, type RenderPalette, type Rgb, paletteFor } from "../colour/palette";
 import { selectedRgb } from "../colour/selectcolour";
 import { type RampLegend, cssGradient, rampLegend } from "../colour/ramps";
 import type { AppState } from "../state/app";
 import type { Store } from "../state/store";
 import type { PreviewState } from "../state/types";
-import { HIDDEN_CHIP_TEXT, type LayerRow, hiddenPointCount, layerRows } from "../layers/model";
+import { HIDDEN_CHIP_TEXT, type LayerRow, hiddenPointCount, layerRows, protectedTip } from "../layers/model";
 import { LEGEND_BOX } from "../view/layout";
 import { control } from "./controls";
 import { h } from "./dom";
@@ -16,37 +16,37 @@ export interface LegendEntry {
   id: "base" | "selected" | "protected" | "slab" | "deleted" | "step" | "preview-add" | "preview-remove" | `layer-${number}`;
   label: string;
   colour: Rgb;
-  /** Present on a layer row: which layer, whether it is drawn, and the eye button's label. */
-  layer?: { id: number; visible: boolean; eyeLabel: string };
+  /** Present on a layer row: which layer, its bare name, whether it is drawn, the eye button's label and whether it is protected (the shield). */
+  layer?: { id: number; name: string; visible: boolean; eyeLabel: string; protected: boolean };
 }
 
 const hexRgb = (hex: string): Rgb => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255) as unknown as Rgb;
 
 /** Legend rows; colours are the same constants the renderer uses. */
-export function legendEntries(stepActive = false, previewOp: PreviewState["op"] | null = null, selected: Rgb = PALETTE.selected, layers: readonly LayerRow[] = []): LegendEntry[] {
+export function legendEntries(stepActive = false, previewOp: PreviewState["op"] | null = null, selected: Rgb | undefined = undefined, layers: readonly LayerRow[] = [], P: RenderPalette = PALETTE): LegendEntry[] {
+  const candidate = selected ?? P.selected;
   return [
-    { id: "base", label: "Unselected", colour: PALETTE.base },
-    { id: "selected", label: "Candidate (will delete)", colour: selected },
-    { id: "protected", label: "Protected (kept)", colour: PALETTE.protected },
-    { id: "slab", label: "Protection slab", colour: PALETTE.slab },
-    { id: "deleted", label: "Deleted overlay", colour: PALETTE.deleted },
-    ...(previewOp === "add" ? [{ id: "preview-add" as const, label: "Will be added", colour: PALETTE.previewAdd }] : []),
+    { id: "base", label: "Unselected", colour: P.base },
+    { id: "selected", label: "Candidate (will delete)", colour: candidate },
+    { id: "protected", label: "Protected (kept)", colour: P.protected },
+    { id: "slab", label: "Protection slab", colour: P.slab },
+    { id: "deleted", label: "Deleted overlay", colour: P.deleted },
+    ...(previewOp === "add" ? [{ id: "preview-add" as const, label: "Will be added", colour: P.previewAdd }] : []),
     ...(previewOp === "subtract" || previewOp === "intersect"
-      ? [{ id: "preview-remove" as const, label: "Will be removed", colour: PALETTE.previewRemove }]
+      ? [{ id: "preview-remove" as const, label: "Will be removed", colour: P.previewRemove }]
       : []),
-    ...(stepActive ? [{ id: "step" as const, label: "Step highlight", colour: PALETTE.step }] : []),
-    ...layers.map((l) => ({ id: `layer-${l.id}` as const, label: l.label, colour: hexRgb(l.colour), layer: { id: l.id, visible: l.visible, eyeLabel: l.eyeLabel } })),
+    ...(stepActive ? [{ id: "step" as const, label: "Step highlight", colour: P.step }] : []),
+    ...layers.map((l) => ({ id: `layer-${l.id}` as const, label: l.label, colour: hexRgb(l.colour), layer: { id: l.id, name: l.name, visible: l.visible, eyeLabel: l.eyeLabel, protected: l.protected } })),
   ];
 }
 
 export const cssColour = (c: Rgb): string => `rgb(${c.map((v) => Math.round(v * 255)).join(", ")})`;
 
 /**
- * The collapsible legend menu: a header button (aria-expanded, chevron) and a body holding the legend rows and the
- * mode line (`modebar`, id kept). `update(true)` adds the Step highlight row; a preview op adds its live-preview row.
+ * The collapsible legend menu: a header button (aria-expanded, chevron) and a body holding the legend rows. `update(true)` adds the Step highlight row; a preview op adds its live-preview row.
  * Open by default; the folded state lives in `AppState.legendOpen` and is saved with the session.
  */
-export function buildLegend(root: HTMLElement, store: Store<AppState>, modebar: HTMLElement, onShowHidden: () => void = () => undefined, onToggleLayer: (id: number) => void = () => undefined): { update(stepActive: boolean, previewOp?: PreviewState["op"] | null): void } {
+export function buildLegend(root: HTMLElement, store: Store<AppState>, onShowHidden: () => void = () => undefined, onToggleLayer: (id: number) => void = () => undefined): { update(stepActive: boolean, previewOp?: PreviewState["op"] | null): void } {
   let shown = false;
   let shownPreview: PreviewState["op"] | null = null;
   const rows = h("div", { class: "legend-rows" });
@@ -59,14 +59,14 @@ export function buildLegend(root: HTMLElement, store: Store<AppState>, modebar: 
   const rampSwatches = h("div", { class: "ramp-swatches", "data-ramp-swatches": "1", hidden: true });
   const ramp = h("div", { id: "legend-ramp", role: "img", hidden: true }, rampTitle, rampBar, rampEnds, rampSwatches);
   const layerBox = h("div", { class: "legend-layers" });
-  const body = h("div", { id: "legend-body", "data-legend-body": "1" }, ramp, rows, layerBox, modebar);
+  const body = h("div", { id: "legend-body", "data-legend-body": "1" }, ramp, rows, layerBox);
   let current: RampLegend | null = null;
   let currentKey = "";
   const chev = iconSvg("chev", 14);
   const header = control("button", { id: "legend-menu", type: "button", class: "legend-head", "aria-label": LABEL, "aria-controls": "legend-body", "aria-expanded": "true" }, chev, h("span", { text: "Legend" }));
   header.addEventListener("click", () => store.update((s) => ({ ...s, legendOpen: !s.legendOpen })));
   root.style.left = `${LEGEND_BOX.left}px`;
-  root.style.top = `${LEGEND_BOX.top}px`;
+  root.style.bottom = `${LEGEND_BOX.bottom}px`;
   root.style.width = `${LEGEND_BOX.w}px`;
   root.style.maxHeight = `${LEGEND_BOX.maxH}px`;
   // "N hidden - Show": the on-canvas reminder of "Hide selected"; inside the legend box, so no new reserved rectangle
@@ -74,7 +74,8 @@ export function buildLegend(root: HTMLElement, store: Store<AppState>, modebar: 
   root.append(header, chip, body);
   const draw = () => {
     rows.replaceChildren();
-    for (const e of legendEntries(shown, shownPreview, selectedRgb(store.get().selectedColour))) {
+    const { selectedColour, renderTheme } = store.get();
+    for (const e of legendEntries(shown, shownPreview, selectedRgb(selectedColour, renderTheme), [], paletteFor(renderTheme))) {
       const chip = h("span", { class: "chip", "data-legend": e.id });
       chip.style.background = e.id === "base" && current ? cssGradient(current.stops) : cssColour(e.colour);
       rows.append(h("span", { class: "legend-item" }, chip, e.label));
@@ -94,7 +95,8 @@ export function buildLegend(root: HTMLElement, store: Store<AppState>, modebar: 
           const chip = h("span", { class: "chip", "data-legend": e.id });
           chip.style.background = cssColour(e.colour);
           const eye = h("button", { type: "button", class: "legend-eye", "data-legend-eye": e.layer!.id, "aria-pressed": String(e.layer!.visible), "aria-label": e.layer!.eyeLabel, title: e.layer!.eyeLabel, onclick: () => onToggleLayer(e.layer!.id) }, iconSvg(e.layer!.visible ? "eye" : "eyeoff", 12));
-          return h("span", { class: `legend-item${e.layer!.visible ? "" : " off"}`, "data-legend-layer": e.layer!.id }, chip, e.label, eye);
+          const shield = e.layer!.protected ? [h("span", { class: "legend-shield", "data-legend-shield": e.layer!.id, role: "img", "aria-label": "Protected", title: protectedTip(e.layer!.name) }, iconSvg("shield", 12))] : [];
+          return h("span", { class: `legend-item${e.layer!.visible ? "" : " off"}`, "data-legend-layer": e.layer!.id }, chip, e.label, ...shield, eye);
         }),
     );
   };
@@ -131,11 +133,13 @@ export function buildLegend(root: HTMLElement, store: Store<AppState>, modebar: 
     if (rampChanged) draw();
   };
   let shownSelected = store.get().selectedColour;
+  let shownTheme = store.get().renderTheme;
   const sync = (s: AppState) => {
     syncRamp(s);
     drawLayers(s);
-    if (s.selectedColour !== shownSelected) {
+    if (s.selectedColour !== shownSelected || s.renderTheme !== shownTheme) {
       shownSelected = s.selectedColour;
+      shownTheme = s.renderTheme;
       draw();
     }
     header.setAttribute("aria-expanded", String(s.legendOpen));

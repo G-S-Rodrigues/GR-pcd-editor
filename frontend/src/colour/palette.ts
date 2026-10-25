@@ -20,6 +20,44 @@ export const PALETTE = {
   previewRemove: hex(0x5b7cff),
 } as const;
 
+/** Which render palette is in force: set from the page's colour scheme (`state.renderTheme`), never saved. */
+export type RenderTheme = "dark" | "light";
+export type RenderPalette = Record<keyof typeof PALETTE, Rgb>;
+/**
+ * The light theme's point colours (R22-14, option A): each reads at 3:1 on the light stage (`--canvas` #e9ebef and `--canvas-vignette` #f6f7f9),
+ * the highlighted step and its hover preview as composited at .95 and .7. `deleted` and `previewRemove` already pass and are unchanged.
+ */
+export const LIGHT_PALETTE: RenderPalette = {
+  base: hex(0x878787),
+  selected: hex(0xbe7715),
+  protected: hex(0x0092be),
+  protectedStrong: hex(0x00969f),
+  slab: hex(0xab6bdb),
+  deleted: hex(0xe63946),
+  step: hex(0x528f5f),
+  stepHover: hex(0x535f54),
+  pivot: hex(0x1d1d1f),
+  previewAdd: hex(0xe246bf),
+  previewRemove: hex(0x5b7cff),
+};
+/** The palette for a render theme; the dark one is `PALETTE` itself. */
+export const paletteFor = (theme: RenderTheme): RenderPalette => (theme === "light" ? LIGHT_PALETTE : PALETTE);
+
+const toLinear = (c: number): number => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+/**
+ * A colour as handed to three.js. three.js treats `color` attributes and `Color.setRGB` values as linear and sRGB-encodes the output, so a
+ * palette float drawn as is comes out brighter than its hex. The light theme (R22-14) is exact: its hex is converted to linear here, so the
+ * drawn pixel is the hex. The dark theme is passed through untouched (it draws as it always has).
+ */
+export const gpuRgb = (c: Rgb, theme: RenderTheme): Rgb => (theme === "light" ? [toLinear(c[0]), toLinear(c[1]), toLinear(c[2])] : c);
+let gpuLight: RenderPalette | null = null;
+/** `paletteFor`, as handed to three.js (see `gpuRgb`); the dark one is `PALETTE` itself. */
+export const gpuPalette = (theme: RenderTheme): RenderPalette => {
+  if (theme !== "light") return PALETTE;
+  gpuLight ??= Object.fromEntries(Object.entries(LIGHT_PALETTE).map(([k, v]) => [k, gpuRgb(v, "light")])) as RenderPalette;
+  return gpuLight;
+};
+
 export const DELETED_OPACITY_DEFAULT = 0.35;
 
 export interface FaceColour {

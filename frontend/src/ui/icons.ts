@@ -11,6 +11,10 @@ const r = (x: number, y: number, w: number, h: number, rx: number): IconNode => 
   attrs: { x: String(x), y: String(y), width: String(w), height: String(h), rx: String(rx) },
 });
 
+/** A filled dot (the mockup sheet's `fill="currentColor"` circles). */
+const cf = (cx: number, cy: number, r: number): IconNode => ({ tag: "circle", attrs: { cx: String(cx), cy: String(cy), r: String(r), fill: "currentColor" } });
+const dashed = (n: IconNode, dash: string): IconNode => ({ tag: n.tag, attrs: { ...n.attrs, "stroke-dasharray": dash } });
+
 const pa = (d: string, extra: Record<string, string>): IconNode => ({ tag: "path", attrs: { d, ...extra } });
 
 export const ICONS = {
@@ -50,6 +54,42 @@ export const ICONS = {
   pencil: [p("M4 20l1-4L16 5l3 3L8 19z"), p("M14 7l3 3")],
   /** Not in the sheet: a dotted box with a point, for "select this layer's points" (part 17-10). */
   pick: [r(4, 4, 16, 16, 2), c(12, 12, 2)],
+  /** Not in the sheet (22-7): the layer row and footer icons. */
+  lock: [r(5, 11, 14, 10, 2), p("M8 11V8a4 4 0 0 1 8 0v3")],
+  more: [cf(5, 12, 1.6), cf(12, 12, 1.6), cf(19, 12, 1.6)],
+  shieldplus: [p("M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6z"), p("M12 9v6M9 12h6")],
+  assign: [p("M12 5v14M5 12h14")],
+  release: [p("M19 12H5M11 6l-6 6 6 6")],
+  /** Not in the sheet (22-7): the Selection action icons. */
+  selectall: [dashed(r(4, 4, 16, 16, 2), "3 3"), c(9, 10, 0.8), c(14, 9, 0.8), c(12, 15, 0.8)],
+  invert: [r(4, 4, 16, 16, 2), pa("M12 4v16M12 4h6a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6z", { fill: "currentColor" })],
+  clear: [p("M6 6l12 12M18 6 6 18")],
+  /** Not in the sheet: the protected-layer mark (22-2, R22-3), the mockup's shield outline with a tick. */
+  shield: [p("M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6z"), p("m9 12 2 2 4-4")],
+  /** Not in the sheet (22-5, mockup-22): the app mark, a cube. */
+  box: [p("M12 3 4 7.5v9L12 21l8-4.5v-9z"), p("M4 7.5 12 12l8-4.5M12 12v9")],
+  /** Not in the sheet (22-5, mockup-22): the Display popover anchor. */
+  sliders: [p("M4 7h9m4 0h3M4 17h3m4 0h9"), c(15, 7, 2), c(9, 17, 2)],
+  /** Not in the sheet (22-5, mockup-22): the Cloud details anchor; the dot has no fill, as the orig icon's. */
+  info: [c(12, 12, 9), p("M12 11v5.5"), c(12, 7.8, 0.6)],
+  /** Not in the sheet (22-5, mockup-22): the Keyboard popover anchor. */
+  keyboard: [r(3, 6, 18, 12, 2), p("M7 10h.01M11 10h.01M15 10h.01M7 14h10")],
+  /** Not in the sheet (22-5, mockup-22): the History popover anchor. */
+  list: [p("M9 6h11M9 12h11M9 18h11"), c(4.5, 6, 0.9), c(4.5, 12, 0.9), c(4.5, 18, 0.9)],
+  /** Not in the sheet (22-5, mockup-22): invalid points. */
+  invalid: [c(12, 12, 8.5), p("m6 6 12 12")],
+  /** Not in the sheet (22-6, mockup-22): the tool palette glyphs and the inspector controls. */
+  poly: [p("M12 3.5 20 9l-3 10.5H7L4 9z"), cf(12, 3.5, 1.6), cf(20, 9, 1.6), cf(17, 19.5, 1.6), cf(7, 19.5, 1.6), cf(4, 9, 1.6)],
+  cluster: [cf(9, 9, 1.4), cf(13, 7, 1.4), cf(12, 11.5, 1.4), cf(8, 13, 1.4), cf(15.5, 11, 1.4), dashed(c(12, 10, 7.5), "2.2 2.2"), p("m17.5 16 3.5 3.5")],
+  sparse: [cf(5, 6, 1.3), cf(18, 5, 1.3), cf(11, 12, 1.3), cf(4, 18, 1.3), cf(19, 17, 1.3), pa("M14.5 19.5 20 14", { opacity: ".55" })],
+  plane: [p("M3 15.5 9 9h12l-6 6.5z"), p("M12 9V3.5m0 0-2 2m2-2 2 2")],
+  thin: [cf(5, 5, 1.2), cf(12, 5, 1.2), cf(19, 5, 1.2), cf(5, 12, 1.2), cf(12, 12, 1.2), cf(19, 12, 1.2), cf(5, 19, 1.2), cf(19, 19, 1.2), dashed(r(9, 16, 6, 6, 1.4), "1.6 1.6")],
+  rect: [dashed(r(4, 6, 16, 12, 1.5), "2.5 2")],
+  level: [r(2.5, 8.5, 19, 7, 3.5), r(9.5, 10.5, 5, 3, 1.5)],
+  close: [p("M6 6l12 12M18 6 6 18")],
+  chevr: [p("m9 6 6 6-6 6")],
+  /** Not in the sheet (22-8, mockup-22): the Reset filters button on the canvas (a funnel with a cross). */
+  filterx: [p("M3 5h15l-5.5 6.5V18l-3 1.5v-8z"), p("m16 15 5 5m0-5-5 5")],
 } as const satisfies Record<string, readonly IconNode[]>;
 
 export type IconName = keyof typeof ICONS;

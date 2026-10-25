@@ -3,6 +3,7 @@ import { createAppStore } from "../state/app";
 import { candidateFixture, sessionFixture } from "../testing/fixtures";
 import { type FakeEl, installFakeDom } from "../testing/fakedom";
 import { type PanelActions, buildToolPalette } from "./panels";
+import { buildPalette } from "./palette";
 import { describeControls } from "./describe";
 import { TOOLTIPS } from "./tooltips";
 import { applyClientPatch, restoreClientState, serialiseClientState } from "../state/persist";
@@ -17,7 +18,9 @@ const invert = vi.fn();
 const setTool = vi.fn();
 const actions = new Proxy({ toolChanged, selectDisplayed, invert, setTool } as Record<string, unknown>, { get: (t, k: string) => t[k] ?? (() => undefined) }) as unknown as PanelActions;
 buildToolPalette(dom.root as unknown as HTMLElement, store, actions);
-const ctl = (id: string) => dom.root.control(id) as FakeEl;
+const paletteRoot = new (dom.root.constructor as new (t: string) => FakeEl)("div");
+buildPalette(paletteRoot as unknown as HTMLElement, store, actions);
+const ctl = (id: string) => (dom.root.control(id) ?? paletteRoot.control(id)) as FakeEl;
 beforeEach(() => {
   toolChanged.mockClear();
   selectDisplayed.mockClear();
@@ -127,15 +130,15 @@ test("UI-639 Select displayed and Invert are aria-disabled with the reason while
   expect(selectDisplayed).toHaveBeenCalledTimes(1);
   expect(invert).toHaveBeenCalledTimes(1);
   expect(sd.getAttribute("aria-disabled")).toBe("false");
-  expect(sd.title).toBe(TOOLTIPS["sel-select-displayed"]);
+  expect(sd.title).toBe(`Select displayed: ${TOOLTIPS["sel-select-displayed"]}`);
   expect(ctl("sel-clear").hasAttribute("aria-disabled")).toBe(false); // Clear selection stays usable
 });
 
-test("UI-682 Sparse points is a text tool button beside the other tools: it arms the tool, a second press disarms it", () => {
+test("UI-682 Sparse points is an icon button in the tool palette: it arms the tool, a second press disarms it", () => {
   const { ctl, store } = build();
   const b = ctl("tool-sparse");
-  expect(b.text()).toBe("Sparse points");
-  expect(b.children.some((c) => c.tag === "svg")).toBe(false); // no icon on the approved sheet: a text button
+  expect(b.getAttribute("aria-label")).toBe("Sparse points");
+  expect(b.children.map((c) => c.getAttribute("data-icon"))).toEqual(["sparse"]); // the approved 22 mockup supersedes the part-17 text button
   expect(describeControls().find((d) => d.id === "tool-sparse")?.label).toBe("Sparse points");
   expect(TOOLTIPS["tool-sparse"]).toMatch(/isolated/);
   store.set({ tool: "none" });
@@ -174,18 +177,21 @@ test("UI-876 a #delete-blocked note under the Select/Clear/Hide stack carries th
   expect(note.text()).toBe("");
 });
 
-test("UI-887 Scope sits on its own row (div.oprow.scoperow with a Scope label and the select), a sibling block of the swatch row, not inline before it", () => {
+test("UI-887 Scope sits on its own row (div.prow with a Scope label and the segmented radiogroup), a sibling block of the Highlight row, not inline before it", () => {
   const all = dom.root.all();
   const sel = ctl("scope-select");
-  const row = all.find((e) => e.children.includes(sel)) as FakeEl;
+  const pctl = all.find((e) => e.children.includes(sel)) as FakeEl;
+  const row = all.find((e) => e.children.includes(pctl)) as FakeEl;
   expect(row.tag).toBe("div");
-  expect(row.className).toBe("oprow scoperow");
-  expect(row.children.map((c) => c.tag)).toEqual(["label", "select"]);
+  expect(row.className).toBe("prow");
+  expect(row.children.map((c) => c.tag)).toEqual(["span", "div"]);
   expect(row.children[0].text()).toBe("Scope");
-  const swatchRow = all.find((e) => e.className === "oprow" && e.text().startsWith("Selected colour")) as FakeEl;
+  expect(sel.tag).toBe("div");
+  expect(sel.className).toBe("seg");
+  const swatchRow = all.find((e) => e.className === "prow" && e.text().startsWith("Highlight")) as FakeEl;
   expect(swatchRow).toBeDefined();
   const parentOf = (x: FakeEl) => all.concat(dom.root as unknown as FakeEl).find((e) => e.children.includes(x));
   expect(parentOf(row)).toBe(parentOf(swatchRow));
   expect(row).not.toBe(swatchRow);
-  expect(swatchRow.children.includes(sel)).toBe(false);
+  expect(swatchRow.all().includes(sel)).toBe(false);
 });

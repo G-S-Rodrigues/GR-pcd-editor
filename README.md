@@ -6,44 +6,56 @@ not want (for example reflection or ghost points), preview exactly what would be
 deleted, apply, undo, compare against the original, and export a new `.pcd`.
 The source file is never modified.
 
-![The editor with a room scan: tools, selection, slice view, height protection and live status counts](docs/images/editor.png)
+![GR PCD Editor in the dark theme: the owner's scan with the Box tool armed, the left sidebar, the tool palette, the inspector and the timeline](docs/images/screenshots/1920x1080-dark-armed.png)
 
-*A real indoor scan (about 124k points) with the tool and selection panels, slice
-view, global height protection (the purple slab) and the live counts in the status bar.*
+*The editor on the owner's scan (`unitree_slam.pcd`, 134,674 points) at 1920x1080, dark theme, Box tool armed.*
+
+| Theme | Idle | Box armed | Box armed + draft |
+|---|---|---|---|
+| Dark | [idle](docs/images/screenshots/1920x1080-dark-idle.png) | [Box armed](docs/images/screenshots/1920x1080-dark-armed.png) | [+ draft](docs/images/screenshots/1920x1080-dark-draft.png) |
+| Light | [idle](docs/images/screenshots/1920x1080-light-idle.png) | [Box armed](docs/images/screenshots/1920x1080-light-armed.png) | [+ draft](docs/images/screenshots/1920x1080-light-draft.png) |
 
 ## Using the editor
+
+The window has a **top bar** (the title with an Edited dot, Open, Save and Export, Undo and Redo, the Original, Edited, Overlay and Split control,
+the Display, Cloud details and Keyboard buttons, Preview, the **N kept** chip and the red **Delete** button), a **left sidebar** (Selection and
+Layers; it scrolls when it cannot fit, as at 1280x720 with a draft showing), a floating **tool palette** at the canvas's left edge, a right
+**inspector** (the armed tool's panel and Height protection), the **footer** with the live counts, and over the canvas a small HUD: the ViewCube
+with the camera buttons stacked under it at the top right, the legend (foldable) at the bottom left, the Reset filters icon at the bottom right and
+toasts at the top centre. The **timeline bar** runs along the bottom of the view. The light or dark theme follows the system; **Display** can
+override it.
 
 1. **Open** a `.pcd` or `.pcdsession` (file picker, or drag and drop).
 2. Navigate: the ViewCube or keys `1`..`6` (top, bottom, front, back, left,
    right), `P` toggles perspective/orthographic, `F` fits the cloud. The orbit
    pivot can be reset, or picked by clicking a point (Pick pivot; Esc cancels).
-3. Pick a tool (**Box**, **Polygon**, **Cluster**, **Sparse points**, **Planes**, **Thin**), shape it with
-   numbers or its 3D handles, and read the **exact** counts in the status bar (Selected,
-   Protected, Candidates). The red **Delete** button (the `Delete` key) removes the selected
+3. Pick a tool from the tool palette (**Box**, **Polygon**, **Cluster**, **Sparse points**, **Planes**, **Thin**), shape it with
+   numbers or its 3D handles, and read the **exact** counts in the footer (Selected,
+   Protected, Candidates). The red **Delete** button in the top bar (the `Delete` key) removes the selected
    points that are not protected; it is enabled only for an up-to-date selection.
 4. **Undo/Redo** (`Ctrl+Z`, `Ctrl+Y`) walk the history. Compare with **Original**,
    **Overlay** (deleted points in red, opacity slider beside the icon while Overlay
    is on) or **Split** (original left, edited right, one camera): the four data
-   modes are an icon group next to the toolbar. Comparison views are read-only.
-5. **Export** (scope: active by default, displayed, or selected) or **Save session**.
+   modes are the segmented control in the middle of the top bar (the opacity slider shows only in Overlay). Comparison views are read-only.
+5. **Export** (it opens as a sheet; scope: active by default, displayed, or selected) or **Save session**.
 
 | Input | Action |
 |---|---|
 | Left-drag | Orbit about the pivot (drags a tool handle or the rectangle when one is active; with the Box tool a drag that starts on the box moves it) |
-| Box tool: drag a face arrow / a small ring on an arrow / the box body | Resize that face (Alt: both sides) / rotate the box about that arrow's axis (six rings, one per arrow) / move the box in the plane facing the camera; Ctrl+drag always orbits, also when it starts over a handle; Esc during a drag restores the box; Reset box and Reset rotation sit in the panel (there is no Axes select) |
+| Box tool: drag a face arrow / a small ring on an arrow / the box body | Resize that face (Alt: both sides) / rotate the box about that arrow's axis (six rings, one per arrow) / move the box in the plane facing the camera; Ctrl+drag always orbits, also when it starts over a handle; Esc during a drag restores the box; the Box panel has a **Fit** menu (cloud, displayed, view or selection), **Reset box** and a Reset rotation button (there is no Axes select) |
 | Box tool keys | Arrows nudge by Step (PageUp/PageDown along the view), Alt+arrows grow or shrink both faces, `,` and `.` turn by Angle step (Shift: the axis nearest screen-right; Ctrl+Shift: the view axis); Shift is a tenth |
 | Middle/right-drag, Shift+left-drag | Pan |
 | Wheel | Zoom |
-| ViewCube (top right of the view, under the four camera buttons) | Click a face to look along that axis; click an edge or corner for a diagonal view; it follows every camera change |
-| Selected colour (Selection block, left) | Four swatches (Orange, Magenta, White, Lime) set the colour of selected points on the canvas and in the legend; view only, saved with the session |
+| ViewCube (top right of the view, with the camera buttons stacked under it) | Click a face to look along that axis; click an edge or corner for a diagonal view; it follows every camera change |
+| Selected colour (Selection block, left) | Four colour dots (Orange, Magenta, White, Lime) set the colour of selected points on the canvas and in the legend; view only, saved with the session |
 | `1` `2` `3` `4` `5` `6` | Top, bottom, front, back, left, right (the ViewCube faces) |
 | `P`, `F`, `Alt+F` | Perspective/orthographic, fit the cloud, fit the camera to the current candidate |
 | Hold `R`, or the **Rect** button | Rectangle select: drag a rectangle in a face view to set the box (depth: the whole cloud along the view axis) |
 | Drag a filter box grip, or the arrow on its plane | Set that side of the display filter (six boxes on the canvas; Shift is finer, a typed value and a per-side reset sit in the box, the chip collapses it) |
 | Arrow keys on a focused grip | Nudge the filter value (Shift finer, PageUp/PageDown ten steps, Home/End the cloud bounds) |
-| Drag a protection arrow, or the band's edge | Move that side of the protected slab (open **Height protection**; the band is drawn translucent and the protected points in cyan) |
-| Drag a blue ring around the slab | Tilt the protected slab about X or Y (limit 60 degrees); **Level** or the two angle fields reset or type it |
-| Click a step icon in the timeline (under the view) | Highlight the points that step deleted in a distinct green (hover shows a lighter preview; click again, click the strip background or press `Esc` to clear; the legend lists **Step highlight** only while it is on) |
+| Drag a protection arrow, or the band's edge | Move that side of the protected slab (open **Height protection**; the band is drawn translucent and the protected points in cyan; the **Show band** switch hides the whole band while protection stays on) |
+| Drag the red X or green Y ring beside the band | Tilt the protected slab about X or Y (limit 60 degrees); **Level** or the two angle fields reset or type it |
+| Click a step chip in the timeline (along the bottom of the view; below 1700 px a chip shows its label on hover or focus) | Highlight the points that step deleted in a distinct green (hover shows a lighter preview; click again, click the strip background or press `Esc` to clear; the legend lists **Step highlight** only while it is on) |
 | Drag the timeline marker, or the **Roll back to here** button on a step (hover or focus it), or `Left` `Right` `Home` `End` on the marker | Roll the history back or forward to that point; later steps grey out and can be redone, one request is sent when you let go. **Undo** and **Redo** move the marker one slot |
 | Double-click a step name, the pencil button, or `F2` on a focused step | Rename the step (an empty name restores the default label) |
 | `x` button on a step, or `Delete` / `Backspace` on a focused step or on one of its buttons (the marker ignores them; they never apply) | Remove just that step after a confirmation (its points come back; later steps stay; it cannot be undone). `Enter` or `Space` highlights, arrow keys move between steps |
@@ -52,13 +64,13 @@ view, global height protection (the purple slab) and the live counts in the stat
 | Pencil button of the Polygon tool, then click an edge / `Backspace` over a vertex or double-click it / `Enter` or `Esc` | Polygon edit mode: add a vertex on the edge, remove the vertex under the pointer (never below three), leave the mode; dragging a vertex works with or without it |
 | Click a step icon in the timeline, then **Edit shape** on the highlighted step (or `Enter` on it) | The camera centres on the step; Edit shape clears the selection and reopens the step's box, polygon, cluster or sparse shape as a live selection of its own tool (the history does not change; deleting again adds a new step; steps from older sessions have no stored shape and only centre) |
 | `Ctrl+Z`, `Ctrl+Y` | Undo, redo |
-| `Enter`, `Esc` | Close the polygon, cancel drawing, leave polygon edit mode, leave pick mode, discard a pending draft, close help; Esc during a grip, arrow or ring drag restores the value |
-| `?` or the **?** button | Show the key list (generated from the same table the handlers use) |
+| `Enter`, `Esc` | Close the polygon, cancel drawing, leave polygon edit mode, leave pick mode, discard a pending draft, close help; with none of these, Esc disarms the armed tool (not while typing in a text field); Esc during a grip, arrow or ring drag restores the value |
+| `?` or the **Keyboard** button in the top bar | Show the key list (generated from the same table the handlers use) |
 
-The legend in the view names the highlight colours (unselected, candidate,
-protected-kept, deleted overlay). Next to **Delete**, "Will delete N" and "Kept by
-protection M" show the exact numbers; when M is above 0 a warning says selected
-points lie in the protected interval (ghosts in the floor slab?). Add, Subtract
+The legend at the bottom left of the view names the highlight colours (unselected, candidate,
+protected-kept, deleted overlay) and folds away. The red **Delete N** button in the top bar carries the
+count, and the **N kept** chip beside it shows the points kept by protection; when that number is above 0 a warning
+in the Selection block says selected points lie in the protected interval (ghosts in the floor slab?). Add, Subtract
 and Intersect shapes are drawn in their own outline colour and previewed live:
 points the shape would add are drawn magenta and points it would remove blue
 (the legend lists **Will be added** or **Will be removed** only while a preview is
@@ -69,11 +81,12 @@ Concepts worth knowing:
 - **Height protection is a coordinate slab**, not a semantic floor: points inside
   the protected interval are never deleted. The slab is horizontal by default; it
   can be tilted up to 60 degrees about X and Y (rings, the angle fields or **Level**)
-  to follow a sloping floor, and it stays a plane, not a surface: no ramps or curves.
+  to follow a sloping floor, and it stays a plane, not a surface: no ramps or curves. **Show band** (a switch in the section) hides the whole band on
+  the canvas while protection stays on; a pill then reads "Protection on · band hidden" with a **Show** button.
 - A **polygon** selection includes points through the whole view depth unless its
   Z limits are enabled.
 - A **display filter hides** points from the view; it does not delete them. It is
-  edited with six boxes on the canvas, not panel sliders. The
+  edited with six boxes on the canvas, not panel sliders, and the **Reset filters** icon at the bottom right of the canvas puts all six back. The
   scope (Displayed or Active) decides whether a selection reaches hidden points.
 - The **first selection** is live: while nothing is selected, every edit of the shape
   (a box handle, a polygon vertex, a cluster radius) replaces the selection at once and
@@ -87,32 +100,36 @@ Concepts worth knowing:
   pending draft.
 - **Tool flow:** pressing **Cluster** arms it and waits for one click on a point; **Pick
   point** (waiting, set, paused) clears the seed and waits for another. Pressing a tool
-  again, or **Clear selection**, disarms it; **Select displayed** and **Invert** refuse
-  with a reason while a tool is armed. A polygon delete leaves the Polygon tool armed with
-  a blank polygon. The Box tool starts as a 3 m cube.
-- **Layers** (section before History) are named groups of points. **New layer** makes one from the selection,
+  again, or **Clear selection**, disarms it; **Select shown** and **Invert** refuse
+  with a reason while a tool is armed. After an action that uses the selection (Delete, New layer, Assign selection, Release to main, Set layer to
+  selection, Hide selected, a layer's Select, Add, Subtract or Intersect, Merge, New layer from protected points) the tool disarms. **Esc** disarms
+  the tool when no drag, drawing, pick, help, dialog or draft is pending, and the key was not typed in a text field. A polygon delete keeps a closed
+  polygon region for the other tools unless the Polygon tool was armed. The Box tool starts as a 3 m cube.
+- **Layers** (a section of the left sidebar; History is a popover at the timeline's end) are named groups of points. **New layer** makes one from the selection,
   **Assign selection** moves the selection into the chosen row, **Release to main** and a row's **To main** give points
   back; each row has an eye (a hidden layer is not drawn, picked or selected, but stays in the cloud, the counts and
-  the export), **Select**, **Edit** and **To main**. **Edit** clears the selection, opens a Box at the layer's bounds as
+  the export), a **Select** button and a more button (they show on hover, on the active row or on focus); **Edit layer** and **To main** are in the
+  layer menu. **Edit layer** clears the selection, opens a Box at the layer's bounds as
   a live selection; resize it and press **Set layer to selection** to make the layer hold exactly those points (points
   taken from another layer are confirmed first; the selection stays). Layers are saved in the session (version 2, version 3 when a layer step exists), restored on reopen, and the Export dialog can export a subset of layers. Layer edits are steps in the timeline: Ctrl+Z
   undoes them and the Export dialog can write one file per layer. **New layer from protected points** snapshots the height band into a protected layer called
-  Floor. The chevron on a row opens its menu: rename, 16 colours, Visible, **Protected** (its points are never deleted
+  Floor. The more button on a row opens the layer menu: rename, 16 colours, Visible, **Protected** (its points are never deleted
   by any Delete; Override protection frees only the band), **Lock** (no points move into or out of it), Select, Add,
   Subtract and Intersect with the layer, Up and Down, Merge into another layer and **Delete points**. The colour
-  control has a **Layers** entry (layer colours, main in grey) while layers exist.
-- **Hide selected** (Selection section, after Clear selection) moves the selected points into the layer **Hidden** and
+  control has a **Layers** entry (layer colours, main in grey) while layers exist. Protected rows show a shield and locked rows a lock; a protected
+  layer's points keep their layer colour.
+- **Hide selected** (Selection section, the action beside Clear selection) moves the selected points into the layer **Hidden** and
   hides it; the button then reads **Show hidden (N)** and a **N hidden - Show** chip appears in the legend. Hidden
-  points are not drawn, picked or selected (Select displayed, Invert and Delete leave them alone), but they stay in the
+  points are not drawn, picked or selected (Select shown, Invert and Delete leave them alone), but they stay in the
   cloud and **Export** contains them. Unlike the earlier view-only version it is saved with the session.
 - **Sparse points** selects points with fewer than a set number of neighbours (default 8)
   within a small cube around them, so isolated artifacts in the open go while dense walls
-  and floors stay. The radius (empty: derived from the point spacing), the region (whole
+  and floors stay. The radius (default 0.4 in the file unit; empty: derived from the point spacing), the region (whole
   cloud, box or polygon) and Exclude protected are set in its panel; it is an ordinary
   selection tool and composes with Add, Subtract and Intersect. The neighbour count is an
   upper-bound proxy for a true radius count, and its quality on a real scan is for you to judge.
-- **Planes** finds floor and ceiling candidates: Detect lists up to 4 near-horizontal planes (lowest first, with their
-  point counts); choose a row to select the points within the Distance of that plane, or **Use as protection band** to
+- **Planes** finds floor and ceiling candidates: Detect lists up to Max planes near-horizontal planes, lowest first with their
+  point counts (by default 1 plane, tilt at most 5 degrees, Distance 0.1; Max planes at most 8); choose a row to select the points within the Distance of that plane, or **Use as protection band** to
   protect a tilted floor. Detection changes nothing by itself.
 - **Thin** selects duplicate points (distance 0 for exact copies, above 0 for near copies) or a voxel subsample; Delete
   then removes them and Undo brings them back. The point with the lowest index in each group stays. Both tools follow
@@ -255,6 +272,13 @@ bash scripts/smoke.sh                           # runs e2e/smoke.spec.ts
 SMOKE_UPDATE_SCREENSHOT=1 bash scripts/smoke.sh # also refreshes docs/images/editor.png
 ```
 
+The README screenshots are a separate manual tool that needs a PCD you own (it is in no gate; never commit a `.pcd` or `.pcdsession`):
+
+```sh
+GR_PCD_SHOTS_PCD=/absolute/path/cloud.pcd SMOKE_SHOTS_DIR=/tmp/shots \
+  bash scripts/smoke.sh npx playwright test -c shots.config.ts --workers=1
+```
+
 ### Manual checklist: real GPU and a 1,000,000-point cloud
 
 The smoke runs on software WebGL (SwiftShader) with small synthetic clouds, so
@@ -272,5 +296,5 @@ these checks are manual, on a real browser with a GPU and a private map you own:
 
 ## Point cloud loaded
 
-The screenshot at the top shows a **synthetic** cloud generated in code
-(`e2e/synthetic.ts`); no private map is committed.
+The screenshots show the owner's own scan `unitree_slam.pcd` (134,674 points), published with the owner's permission; the `.pcd` itself is not in
+the repository. The tests use synthetic clouds (`e2e/synthetic.ts`).

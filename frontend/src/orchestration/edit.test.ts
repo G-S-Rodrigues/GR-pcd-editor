@@ -4,6 +4,7 @@ import { historyRows } from "../inspector/history";
 import { setGlobal, setLocal, setOperationMode, acknowledge, toProtectionBody } from "../inspector/protection";
 import { createAppStore } from "../state/app";
 import { candidateFixture, sessionFixture } from "../testing/fixtures";
+import { setSeed } from "../tools/cluster/model";
 import { addVertex, closePolygon, emptyPolygon, startDrawing } from "../tools/polygon/model";
 import { createEditor, keyAction } from "./edit";
 
@@ -219,12 +220,12 @@ describe("Apply with the Polygon tool (13-7, owner request a)", () => {
     for (const v of [[0, 0], [4, 0], [4, 4], [0, 4]] as [number, number][]) p = addVertex(p, v);
     return { ...closePolygon(p).state, editing: true };
   };
-  it("UI-667 a polygon delete leaves the tool armed with an empty polygon, out of edit mode, ready for the next shape", async () => {
+  it("UI-667 a polygon delete disarms the tool and blanks the polygon, out of edit mode (R22-1)", async () => {
     const t = setup();
     t.store.update((s) => ({ ...s, tool: "polygon", tools: { ...s.tools, polygon: closedSquare() } }));
     t.store.set({ candidate: candidateFixture({ candidates: 42 }) });
     await t.ed.apply();
-    expect(t.store.get().tool).toBe("polygon");
+    expect(t.store.get().tool).toBe("none");
     expect(t.store.get().tools.polygon).toEqual(emptyPolygon());
   });
   it("UI-667 other tools and a refused Apply keep their shapes", async () => {
@@ -239,5 +240,110 @@ describe("Apply with the Polygon tool (13-7, owner request a)", () => {
     stale.api.apply.mockRejectedValueOnce(new ApiError(409, "stale_revision", "stale"));
     await stale.ed.apply();
     expect(stale.store.get().tools.polygon.phase).toBe("closed");
+  });
+});
+
+describe("Apply disarms the tool (22-1, R22-1)", () => {
+  const closedSquare = () => {
+    let p = startDrawing(emptyPolygon());
+    for (const v of [[0, 0], [4, 0], [4, 4], [0, 4]] as [number, number][]) p = addVertex(p, v);
+    return closePolygon(p).state;
+  };
+  it("UI-993 a successful Delete leaves no tool armed and orbit on; the box model is unchanged", async () => {
+    const t = setup();
+    const box = t.store.get().tools.box;
+    t.store.update((s) => ({ ...s, interaction: "pick-seed" as const }));
+    t.store.set({ candidate: candidateFixture({ candidates: 42 }) });
+    await t.ed.apply();
+    expect(t.store.get().tool).toBe("none");
+    expect(t.store.get().interaction).toBe("orbit");
+    expect(t.store.get().tools.box).toEqual(box);
+    expect(t.store.get().liveFirst).toBe(true);
+  });
+  it("UI-993 cluster drops its seed, plane drops its chosen row, polygon is blank", async () => {
+    const c = setup();
+    c.store.update((s) => ({ ...s, tool: "cluster" as const, tools: { ...s.tools, cluster: setSeed(s.tools.cluster, { id: 4, point: [1, 2, 3] }) } }));
+    c.store.set({ candidate: candidateFixture({ candidates: 42 }) });
+    await c.ed.apply();
+    expect(c.store.get().tool).toBe("none");
+    expect(c.store.get().tools.cluster.seed).toBeNull();
+    const p = setup();
+    p.store.update((s) => ({ ...s, tool: "plane" as const, planes: { ...s.planes, chosen: { normal: [0, 0, 1], d: 1, thickness: 0.03 }, chosenRow: 2 } }));
+    p.store.set({ candidate: candidateFixture({ candidates: 42 }) });
+    await p.ed.apply();
+    expect(p.store.get().tool).toBe("none");
+    expect(p.store.get().planes.chosen).toBeNull();
+    expect(p.store.get().planes.chosenRow).toBeNull();
+    const g = setup();
+    g.store.update((s) => ({ ...s, tool: "polygon" as const, tools: { ...s.tools, polygon: closedSquare() } }));
+    g.store.set({ candidate: candidateFixture({ candidates: 42 }) });
+    await g.ed.apply();
+    expect(g.store.get().tool).toBe("none");
+    expect(g.store.get().tools.polygon).toEqual(emptyPolygon());
+  });
+  it("UI-993 a Delete with Cluster, Sparse, Plane or Thin armed keeps the closed polygon they use as a region; the Polygon tool blanks it", async () => {
+    for (const tool of ["cluster", "sparse", "plane", "thin"] as const) {
+      const t = setup();
+      const poly = closedSquare();
+      t.store.update((s) => ({ ...s, tool, tools: { ...s.tools, polygon: poly } }));
+      t.store.set({ candidate: candidateFixture({ candidates: 42 }) });
+      await t.ed.apply();
+      expect(t.store.get().tool, tool).toBe("none");
+      expect(t.store.get().tools.polygon, tool).toEqual(poly);
+    }
+    const g = setup();
+    g.store.update((s) => ({ ...s, tool: "polygon" as const, tools: { ...s.tools, polygon: closedSquare() } }));
+    g.store.set({ candidate: candidateFixture({ candidates: 42 }) });
+    await g.ed.apply();
+    expect(g.store.get().tools.polygon).toEqual(emptyPolygon());
+  });
+  it("UI-993 with no tool armed Apply still runs and leaves the tool none", async () => {
+    const t = setup();
+    t.store.set({ tool: "none", candidate: candidateFixture({ candidates: 42 }) });
+    await t.ed.apply();
+    expect(t.api.apply).toHaveBeenCalledTimes(1);
+    expect(t.store.get().tool).toBe("none");
+  });
+  const armedWithShape = (candidates = 42) => {
+    const t = setup(sessionFixture({ history: hist(3, 3) }));
+    t.store.update((s) => ({ ...s, tool: "polygon" as const, tools: { ...s.tools, polygon: closedSquare() } }));
+    t.store.set({ candidate: candidateFixture({ candidates }) });
+    return t;
+  };
+  const keepsTool = (t: ReturnType<typeof armedWithShape>) => {
+    expect(t.store.get().tool).toBe("polygon");
+    expect(t.store.get().tools.polygon.phase).toBe("closed");
+  };
+  it("UI-993 a refused Delete (bulk confirm No, discard confirm No, no candidate) keeps the tool and its shape", async () => {
+    const bulk = armedWithShape(500);
+    bulk.confirm.mockReturnValueOnce(false);
+    await bulk.ed.apply();
+    expect(bulk.api.apply).not.toHaveBeenCalled();
+    keepsTool(bulk);
+    const rolled = setup(sessionFixture({ history: hist(3, 1) }));
+    rolled.store.update((s) => ({ ...s, tool: "polygon" as const, tools: { ...s.tools, polygon: closedSquare() } }));
+    rolled.store.set({ candidate: candidateFixture({ candidates: 42 }) });
+    rolled.confirm.mockReturnValueOnce(false);
+    await rolled.ed.apply();
+    expect(rolled.api.apply).not.toHaveBeenCalled();
+    keepsTool(rolled);
+    const none = armedWithShape();
+    none.store.set({ candidate: null });
+    await none.ed.apply();
+    expect(none.api.apply).not.toHaveBeenCalled();
+    keepsTool(none);
+  });
+  it("UI-993 a failed Delete (409, 413, 422 layer_locked, 500) keeps the tool and its shape", async () => {
+    for (const err of [
+      new ApiError(409, "stale_revision", "stale"),
+      new ApiError(413, "memory_budget_exceeded", "too big"),
+      new ApiError(422, "layer_locked", "locked"),
+      new ApiError(500, "internal", "boom"),
+    ]) {
+      const t = armedWithShape();
+      t.api.apply.mockRejectedValueOnce(err);
+      await t.ed.apply();
+      keepsTool(t);
+    }
   });
 });

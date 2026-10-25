@@ -1,14 +1,18 @@
 import { beginFilterDrag, cancelFilterDrag, END_ON_DOT, type FilterDrag, moveFilterDrag } from "../filterboxes/drag";
 import { BOX_IDS, boxKey, isBoxCollapsed } from "../filterboxes/model";
-import { type PlaceState, placeBoxes } from "../filterboxes/placement";
+import { type PlaceState, type Rect, pillRect, placeBoxes } from "../filterboxes/placement";
+import { boxTipRects } from "../filterboxes/tips";
 import { boxView, nudgeValue, parseBoxInput } from "../filterboxes/view";
-import { type Axis, type FilterEdit, type Side, sideValue } from "../inspector/filters";
+import { type Axis, type FilterEdit, type Side, filterSummary, sideValue } from "../inspector/filters";
 import { screenRay } from "../pick/screenray";
 import { type AppState, addNotice } from "../state/app";
 import type { Store } from "../state/store";
 import { lookDirection } from "../view/camera";
+import { RESET_HUD } from "../view/layout";
+import { bandPillShown } from "./bandpill";
 import { control } from "./controls";
 import { h } from "./dom";
+import { iconControl } from "./iconbutton";
 
 export interface BoxActions {
   editSide: (axis: Axis, side: Side, value: number, opts: { live: boolean }) => FilterEdit;
@@ -39,7 +43,7 @@ export function buildFilterBoxes(
   canvas: HTMLCanvasElement,
   store: Store<AppState>,
   actions: BoxActions,
-): void {
+): { dragging: () => boolean } {
   const boxes: Box[] = [];
   const setInteracting = (key: string | null) => {
     const cur = store.get().filterUi.interacting;
@@ -85,8 +89,8 @@ export function buildFilterBoxes(
     const fid = `filter-${axis}-${side}`;
     const grip = control("div", { id: `${fid}-grip`, class: "fgrip", role: "slider", tabindex: "0", "aria-label": `${A} ${side} filter`, text: `${A} ${side}` });
     const input = control("input", { id: fid, class: "fin", type: "text", inputmode: "decimal", "aria-label": `${A} ${side} value` });
-    const reset = control("button", { id: `${fid}-reset`, class: "frst", onclick: () => actions.resetSide(axis, side) }, "↺");
-    const tog = control("button", { id: `${fid}-toggle`, class: "ftog", "aria-expanded": "false", onclick: () => toggle(key) }, "–");
+    const reset = control("button", { id: `${fid}-reset`, class: "frst", "aria-label": `Reset ${A} ${side} filter`, onclick: () => actions.resetSide(axis, side) }, "↺");
+    const tog = control("button", { id: `${fid}-toggle`, class: "ftog", "aria-expanded": "false", "aria-label": `${A} ${side} filter box`, onclick: () => toggle(key) }, "–");
     const el = h("div", { class: "fbox", "data-axis": axis, "data-side": side, "data-box": key }, grip, input, reset, tog);
     const box: Box = { axis, side, key, el, grip, input, reset, toggle: tog };
     boxes.push(box);
@@ -153,7 +157,9 @@ export function buildFilterBoxes(
     const sizes = (id: string) => (isBoxCollapsed(s.filterUi, id) ? COLLAPSED : EXPANDED);
     const stage = { w: layer.clientWidth, h: layer.clientHeight };
     const lock = new Set<string>(s.filterUi.interacting ? [s.filterUi.interacting] : []);
-    const placed = placeBoxes(s.camera.orientation, stage, place, sizes, lock);
+    // reserved: the band-hidden pill and, while the Box tool is armed, its arrow tips (a chip on a tip would take the press)
+    const reserved: Rect[] = [...(bandPillShown(s) ? [pillRect(stage)] : []), ...(s.tool === "box" ? boxTipRects(s.tools.box, s.camera, stage) : [])];
+    const placed = placeBoxes(s.camera.orientation, stage, place, sizes, lock, reserved);
     place = placed.state;
     for (const box of boxes) {
       const collapsed = isBoxCollapsed(s.filterUi, box.key);
@@ -165,6 +171,8 @@ export function buildFilterBoxes(
       box.reset.disabled = v.disabled || !v.active;
       box.toggle.textContent = collapsed ? v.chipText : "–";
       box.toggle.setAttribute("aria-expanded", String(!collapsed));
+      // WCAG 2.5.3: the collapsed toggle shows the chip text, so its name must contain it
+      box.toggle.setAttribute("aria-label", `${box.axis.toUpperCase()} ${box.side} filter box${collapsed ? `: ${v.chipText}` : ""}`);
       const endOn = Math.abs(look[AXIS_I[box.axis]]) > END_ON_DOT;
       box.grip.setAttribute("aria-valuemin", String(v.min));
       box.grip.setAttribute("aria-valuemax", String(v.max));
@@ -181,5 +189,30 @@ export function buildFilterBoxes(
   store.subscribe(sync);
   new ResizeObserver(() => sync(store.get())).observe(layer);
   sync(store.get());
+  // `filterUi.interacting` also marks keyboard focus, so Esc asks the grip drag itself
+  return { dragging: () => drag !== null };
 }
 
+
+/**
+ * The Reset filters icon on the canvas (22-8, replaces the Display filter section): a glass button at the stage's bottom right.
+ * Its tooltip carries the filter copy; the live summary ("2 filters active, 0.2% hidden") is its accessible description, and it
+ * takes the accent while any side is active. Hidden without a session.
+ */
+export function buildFilterReset(root: HTMLElement, store: Store<AppState>, onReset: () => void): void {
+  const b = iconControl("filter-reset-all", "filterx", { onclick: onReset });
+  root.style.right = `${RESET_HUD.right}px`;
+  root.style.bottom = `${RESET_HUD.bottom}px`;
+  root.style.width = `${RESET_HUD.size}px`;
+  root.style.height = `${RESET_HUD.size}px`;
+  root.append(b);
+  const sync = (s: AppState) => {
+    root.hidden = s.session === null;
+    if (!s.session) return;
+    const text = filterSummary(s.tools.filters, s.session.bounds, s.session.counts);
+    b.setAttribute("aria-description", text);
+    b.classList.toggle("active", !text.startsWith("0 "));
+  };
+  store.subscribe(sync);
+  sync(store.get());
+}

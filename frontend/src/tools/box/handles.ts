@@ -49,6 +49,27 @@ const DEFAULT_VIEW_H = 720;
 /** World length of an arrow handle for the camera and viewport height. */
 export const handleLength = (cam: Camera, viewH: number = DEFAULT_VIEW_H): number => HANDLE_ARROW_PX / pxPerUnit(cam, Math.max(viewH, 1));
 
+/**
+ * A ring of `radius` world units on the shaft that runs from `base` along `sign * dir`: centred `RING_AT * len` out, `RING_SAMPLES`
+ * points in the plane normal to `dir`, and the widest point on screen (perpendicular to the view and to `dir`).
+ * The box handles and the height-protection band (22-3) share it, so both draw the same 14b ring.
+ */
+export function shaftRing(base: Vec3, dir: Vec3, sign: 1 | -1, len: number, radius: number, cam: Camera, look: Vec3): { ring: Vec3[]; centre: Vec3; anchor: Vec3 } {
+  const helper: Vec3 = Math.abs(dir[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+  const u = normalize(cross(helper, dir));
+  const w = cross(dir, u);
+  const centre = add3(base, dir, sign * RING_AT * len);
+  const ring: Vec3[] = [];
+  for (let s = 0; s < RING_SAMPLES; s++) {
+    const t = (s / RING_SAMPLES) * 2 * Math.PI;
+    ring.push(add3(add3(centre, u, Math.cos(t) * radius), w, Math.sin(t) * radius));
+  }
+  // the widest point on screen: perpendicular to both the view and the axis
+  let side = cross(look, dir);
+  side = length(side) < 1e-6 ? rightVector(cam) : normalize(side);
+  return { ring, centre, anchor: add3(centre, side, radius) };
+}
+
 /** Handle geometry sized in pixels, so handles keep one screen size: six arrows, each with a small ring on its shaft. */
 export function boxHandles(box: BoxModel, cam: Camera, viewH: number = DEFAULT_VIEW_H): Handle[] {
   const ppu = pxPerUnit(cam, Math.max(viewH, 1));
@@ -59,23 +80,12 @@ export function boxHandles(box: BoxModel, cam: Camera, viewH: number = DEFAULT_V
   const out: Handle[] = [];
   for (const i of [0, 1, 2] as const) {
     const ld = rotate(box.quat, E[i]);
-    const helper: Vec3 = Math.abs(ld[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
-    const u = normalize(cross(helper, ld));
-    const w = cross(ld, u);
     for (const sign of [1, -1] as const) {
       const tag = sign > 0 ? "+" : "-";
       const base = add3(box.center, ld, sign * half[i]);
       out.push({ id: `resize-${i}${tag}`, cls: "resize", axis: i, sign, anchor: add3(box.center, ld, sign * (half[i] + len)), base, dir: ld });
-      const centre = add3(base, ld, sign * RING_AT * len);
-      const ring: Vec3[] = [];
-      for (let s = 0; s < RING_SAMPLES; s++) {
-        const t = (s / RING_SAMPLES) * 2 * Math.PI;
-        ring.push(add3(add3(centre, u, Math.cos(t) * radius), w, Math.sin(t) * radius));
-      }
-      // the widest point on screen: perpendicular to both the view and the axis
-      let side = cross(look, ld);
-      side = length(side) < 1e-6 ? rightVector(cam) : normalize(side);
-      out.push({ id: `rotate-${i}${tag}`, cls: "rotate", axis: i, sign, anchor: add3(centre, side, radius), dir: ld, ring, centre, radius });
+      const { ring, centre, anchor } = shaftRing(base, ld, sign, len, radius, cam, look);
+      out.push({ id: `rotate-${i}${tag}`, cls: "rotate", axis: i, sign, anchor, dir: ld, ring, centre, radius });
     }
   }
   return out;

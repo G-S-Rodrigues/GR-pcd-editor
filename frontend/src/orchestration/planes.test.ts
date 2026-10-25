@@ -58,7 +58,7 @@ describe("planes controller (20-6)", () => {
     void t.ctl.detect();
     await flush();
     expect(t.detects).toHaveLength(1);
-    expect(t.detects[0]).toEqual({ cloud_revision: 3, scope: "displayed", distance: 0.03, max_tilt_deg: 30, max_planes: 4, region: null, exclude_protected: true });
+    expect(t.detects[0]).toEqual({ cloud_revision: 3, scope: "displayed", distance: 0.1, max_tilt_deg: 5, max_planes: 1, region: null, exclude_protected: true });
     expect(t.store.get().planes.busy).toBe(true);
     expect(planesNote(t.store.get())).toBe(DETECTING_TEXT);
     t.polls[0].onProgress?.(0.5, "testing planes");
@@ -121,7 +121,7 @@ describe("planes controller (20-6)", () => {
     expect(s.tool).toBe("plane");
     expect(s.liveFirst).toBe(true);
     expect(s.planes.chosenRow).toBe(1);
-    expect(s.planes.chosen).toEqual({ normal: [0, 0, 1], d: 3, thickness: 0.03 });
+    expect(s.planes.chosen).toEqual({ normal: [0, 0, 1], d: 3, thickness: 0.1 });
     expect(t.toolChanged).toHaveBeenCalledTimes(1);
     t.ctl.select(9);
     expect(t.toolChanged).toHaveBeenCalledTimes(1);
@@ -138,13 +138,13 @@ describe("planes controller (20-6)", () => {
     expect(t.protectionEdit).toHaveBeenCalledTimes(1);
     expect(t.confirm).not.toHaveBeenCalled();
     expect(t.store.get().tools.protection.global).toMatchObject({ enabled: true });
-    expect(t.store.get().tools.protection.global.min).toBeCloseTo(1.97, 12);
+    expect(t.store.get().tools.protection.global.min).toBeCloseTo(1.9, 12);
     expect(t.store.get().planes.rowNote).toBeNull();
     // a band is enabled now: the second use asks, naming it; No changes nothing
     t.confirm.mockReturnValueOnce(false);
     t.ctl.band(0);
     expect(t.confirm).toHaveBeenCalledTimes(1);
-    expect(t.confirm.mock.calls[0]?.[0]).toMatch(/^Replace the protection band 1\.97 to 2\.03 \(level\)/);
+    expect(t.confirm.mock.calls[0]?.[0]).toMatch(/^Replace the protection band 1\.9 to 2\.1 \(level\)/);
     expect(t.protectionEdit).toHaveBeenCalledTimes(1);
     t.ctl.band(0); // Yes
     expect(t.protectionEdit).toHaveBeenCalledTimes(2);

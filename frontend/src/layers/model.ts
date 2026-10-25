@@ -8,6 +8,9 @@ export const LAYER_COLOURS: readonly string[] = [
   "#fabed4", "#469990", "#dcbeff", "#9a6324", "#fffac8", "#800000", "#aaffc3", "#808000",
 ];
 export const MAIN_COLOUR = "#9aa0a6";
+/** The Main layer's chip on the light stage (3:1 on #e9ebef). */
+export const LIGHT_MAIN_COLOUR = "#82888d";
+export const mainColour = (theme: "dark" | "light"): string => (theme === "light" ? LIGHT_MAIN_COLOUR : MAIN_COLOUR);
 export const MAX_LAYERS = 32;
 export const HIDDEN_LAYER_NAME = "Hidden";
 
@@ -57,6 +60,8 @@ export const NO_POINTS = "The layer has no points";
 
 export const LOCKED_REASON = "The layer is locked";
 export const PROTECTED_REASON = "The layer is protected";
+/** The tooltip of the shield and of the menu's Protected flag. */
+export const protectedTip = (name: string): string => `Protected: the points of ${name} are never deleted by any Delete`;
 export const NO_BAND = "Turn on height protection first";
 export const NO_MERGE_TARGET = "No other layer to merge into";
 

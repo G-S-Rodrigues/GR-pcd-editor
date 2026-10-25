@@ -2,10 +2,10 @@ import type { BoxTool, PrismTool, PlaneTool } from "../../orchestration/tooltype
 import type { Bounds, Scope, Vec3 } from "../../state/types";
 import type { RegionKind } from "../cluster/model";
 
-/** O7 defaults: distance in the file unit, near-horizontal planes only, at most 4 planes. The seed is not exposed. */
-export const DEFAULT_PLANE_DISTANCE = 0.03;
-export const DEFAULT_MAX_TILT = 30;
-export const DEFAULT_MAX_PLANES = 4;
+/** R22-15 defaults (owner 2026-10-23, superseding O7's 0.03 / 30 / 4): distance in the file unit, planes within 5 degrees of level, one plane. The seed is not exposed. */
+export const DEFAULT_PLANE_DISTANCE = 0.1;
+export const DEFAULT_MAX_TILT = 5;
+export const DEFAULT_MAX_PLANES = 1;
 /** The server's limits (editing/planes.py MAX_PLANES). */
 export const MAX_PLANES_LIMIT = 8;
 

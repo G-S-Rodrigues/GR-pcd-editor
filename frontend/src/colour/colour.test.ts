@@ -95,3 +95,46 @@ test("UI-855 the colour cache key follows the layer colours only in Layers mode"
   expect(layerColourKey(st("layers", 0), false)).not.toBe(layerColourKey(st("layers", 1), false));
   expect(layerColourKey(st("turbo", 0), false)).toBe(layerColourKey(st("turbo", 1), false));
 });
+
+// ---- 22-2 (R22-3): a layer's points keep the layer colour inside the protected slab
+const SLAB = { intervals: [{ min: -1, max: 1 }] };
+const layerA = (colour: number) => layerPaletteRgb([{ id: 1, name: "A", colour, visible: true, count: 1, bounds: null, protected: true }]);
+
+test("UI-1010 Layers mode with a slab region: a layer point draws its layer colour, main and unknown-id points stay the strong slab colour, the kept, selected and preview flags still win", () => {
+  const rgb = layerA(0);
+  const r = { ...PT(8), layer: new Uint8Array([0, 1, 9, 1, 1, 1, 1, 1]) }; // every z is 0, inside the slab
+  r.flags = new Uint8Array([0, 0, 0, 2, 1, 8, 16, 4]); // main, layer, unknown id, kept, selected, preview-add, preview-remove, deleted
+  const { colours, ovr } = colourizeMasked(r, { mode: "layers", bounds: null, markDeleted: true, layerRgb: rgb, region: SLAB });
+  const at = (i: number) => [...colours.slice(3 * i, 3 * i + 3)];
+  const f = (c: readonly number[]) => c.map(Math.fround);
+  expect(at(0)).toEqual(f(PALETTE.protectedStrong));
+  expect(at(1)).toEqual(f(rgb[1]!));
+  expect(at(2)).toEqual(f(PALETTE.protectedStrong));
+  expect(at(3)).toEqual(f(PALETTE.protectedStrong));
+  expect(at(4)).toEqual(f(PALETTE.selected));
+  expect(at(5)).toEqual(f(PALETTE.previewAdd));
+  expect(at(6)).toEqual(f(PALETTE.previewRemove));
+  expect(at(7)).toEqual(f(PALETTE.deleted));
+  expect([...ovr]).toEqual([1, 0, 1, 1, 1, 1, 1, 1]);
+});
+
+test("UI-1011 a protected layer inside the slab follows its colour index, with and without a tilted slab", () => {
+  const f = (c: readonly number[]) => c.map(Math.fround);
+  for (const region of [SLAB, { ...SLAB, tilt: { rx: 2, ry: 3, pivot: [0, 0] as [number, number] } }]) {
+    const r = { ...PT(1), layer: new Uint8Array([1]) };
+    const first = colourizeMasked(r, { mode: "layers", bounds: null, markDeleted: false, layerRgb: layerA(0), region }).colours;
+    const second = colourizeMasked(r, { mode: "layers", bounds: null, markDeleted: false, layerRgb: layerA(3), region }).colours;
+    expect([...first]).toEqual(f(layerA(0)[1]!));
+    expect([...second]).toEqual(f(layerA(3)[1]!));
+    expect([...first]).not.toEqual([...second]);
+  }
+});
+
+test("UI-1012 the other colour modes with a layer block and a slab region are unchanged: the point inside the slab stays the strong slab colour", () => {
+  const rgb = layerA(0);
+  const r = { ...PT(1), layer: new Uint8Array([1]) };
+  for (const mode of ["flat", "turbo"] as const) {
+    const out = colourizeMasked(r, { mode, bounds: { min: [0, 0, -1], max: [0, 0, 1] } as never, markDeleted: false, layerRgb: rgb, region: SLAB }).colours;
+    expect([...out], mode).toEqual([...PALETTE.protectedStrong].map(Math.fround));
+  }
+});

@@ -3,7 +3,7 @@ import { createAppStore } from "../state/app";
 import { sessionFixture } from "../testing/fixtures";
 import { type FakeEl, installFakeDom } from "../testing/fakedom";
 import { RESERVED } from "../filterboxes/placement";
-import { CLUSTER, CUBE, CUBE_RIGHT, CUBE_SIDE, CUBE_STAGE, CUBE_TOP, CUBE_NAV, CUBE_WRAP, CUBE_WRAP_TOP } from "../view/layout";
+import { CLUSTER, CUBE, CUBE_RIGHT, CUBE_SIDE, CUBE_STAGE, CUBE_TOP, CUBE_NAV, CUBE_WRAP, CUBE_WRAP_TOP, STACK } from "../view/layout";
 import { cubeNavCss } from "./cube-arrows";
 import { togglePerspective } from "../view/camera";
 import { buildCameraCluster } from "./camera-cluster";
@@ -22,6 +22,17 @@ beforeAll(() => {
   buildCameraCluster(root as unknown as HTMLElement, store, { size: () => ({ w: 800, h: 600 }) });
 });
 afterAll(() => dom.restore());
+
+test("UI-1232 22-8 the camera cluster is a vertical stack under the ViewCube, centred on it, in the same order, and the cube moves to the top", () => {
+  expect(root.style.flexDirection).toBe("column");
+  expect(root.style.right).toBe(`${CUBE_RIGHT + (CUBE_WRAP - CLUSTER.w) / 2}px`);
+  expect(root.style.top).toBe(`${CUBE_TOP + CUBE_WRAP + CLUSTER.gap}px`);
+  expect([CLUSTER.w, CLUSTER.h]).toEqual([STACK.w, STACK.h]);
+  expect(root.style.width).toBe(`${STACK.w}px`);
+  expect(root.style.height).toBe(`${STACK.h}px`);
+  expect(root.children.map((c) => c.getAttribute("data-control"))).toEqual(["view-perspective", "fit-cloud", "pivot-reset", "pivot-pick"]);
+  expect(cubeNavCss()).toContain(`#viewcube { position: absolute; right: ${CUBE_RIGHT}px; top: ${CUBE_TOP}px;`);
+});
 
 test("UI-320 the cluster holds projection, fit, reset pivot and pick pivot in that order, each an icon button", () => {
   const ids = root.children.map((c) => c.getAttribute("data-control"));
@@ -67,18 +78,18 @@ test("UI-323 the typed pivot fields and Set pivot are gone", () => {
   expect(Object.keys(TOOLTIPS).filter((id) => gone.includes(id))).toEqual([]);
 });
 
-test("UI-326 the reserved top-right rectangle is the ViewCube plus the cluster, derived from the shared constants", () => {
-  expect(CUBE.h).toBeGreaterThanOrEqual(CUBE_TOP + CLUSTER.h + CLUSTER.gap + CUBE_STAGE);
+test("UI-326 the reserved top-right rectangle is the ViewCube with the camera stack under it, derived from the shared constants", () => {
+  expect(CUBE.h).toBeGreaterThanOrEqual(CUBE_TOP + CUBE_WRAP + CLUSTER.gap + CLUSTER.h);
   expect(CUBE.w).toBeGreaterThanOrEqual(CLUSTER.w);
   const [, r] = RESERVED({ w: 780, h: 560 });
   expect(r).toEqual({ l: 780 - CUBE.w, t: 0, r: 780, b: CUBE.h });
 });
 
-test("UI-710 the cluster row sits above the smaller ViewCube wrapper and the reserved rectangle follows the new stack", () => {
+test("UI-710 the camera stack sits under the ViewCube wrapper (the cube is at the top) and the reserved rectangle follows it", () => {
   const top = Number.parseFloat(root.style.top);
-  expect(top + CLUSTER.h + CLUSTER.gap).toBeLessThanOrEqual(CUBE_WRAP_TOP);
-  expect(CUBE_WRAP_TOP).toBe(CUBE_TOP + CLUSTER.h + CLUSTER.gap);
-  expect(CUBE.h).toBe(CUBE_TOP + CLUSTER.h + CLUSTER.gap + CUBE_WRAP + 8);
+  expect(CUBE_WRAP_TOP + CUBE_WRAP + CLUSTER.gap).toBeLessThanOrEqual(top);
+  expect(CUBE_WRAP_TOP).toBe(CUBE_TOP);
+  expect(CUBE.h).toBe(CUBE_TOP + CUBE_WRAP + CLUSTER.gap + STACK.h + 8); // 22-8: the column reserves the stack under the cube (it covers the row above it too)
   expect(CUBE_WRAP).toBeGreaterThanOrEqual(2 * CUBE_NAV.ring + CUBE_NAV.arrow);
   expect(CLUSTER.w).toBeLessThanOrEqual(CUBE_WRAP);
   expect(CUBE_SIDE).toBeLessThanOrEqual(40);

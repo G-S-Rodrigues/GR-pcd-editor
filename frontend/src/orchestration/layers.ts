@@ -7,6 +7,7 @@ import { HIDDEN_LAYER_NAME, SHOW_FIRST, deletePointsText, findLayer, hiddenLayer
 import { discardCount, layerDiscardText } from "../timeline/model";
 import { makeGuard } from "./edit";
 import type { ParamsKind } from "./runner";
+import { disarmedKeepingRegion } from "./toolstate";
 import type { SelectionRequest } from "./selection";
 
 export interface LayersApi {
@@ -28,8 +29,8 @@ export interface LayersDeps {
   /** Re-runs the live tool and redraws, as for a filter change. */
   paramsHook(kind: ParamsKind): void;
   confirm(message: string): boolean;
-  /** Sends the one-shot selection of one layer's members. */
-  selectLayer(id: number): void;
+  /** Sends the one-shot selection of one layer's members; a promise answers true when it landed (the tool then disarms, R22-1). */
+  selectLayer(id: number): void | Promise<boolean>;
   /** Adds one layer's members (scope Active) to the selection; true when it landed, false when something superseded it or it failed. */
   selectLayerAdd(id: number): Promise<boolean>;
   /** One-shot selection of a layer's members with the given operation (scope Active); true when it landed. */
@@ -72,6 +73,9 @@ export function createLayers(store: Store<AppState>, api: LayersApi, deps: Layer
     return why !== null;
   };
 
+  /** R22-1: a call that consumed the selection leaves no tool armed (a closed polygon prism region survives unless the Polygon tool was armed, as for Esc and Delete). Runs before `adopt`, so the params hook sees tool none. */
+  const disarm = (): void => store.update(disarmedKeepingRegion);
+
   function adopt(reply: LayerReply): void {
     store.set({ session: reply.session });
     deps.paramsHook("layers");
@@ -103,13 +107,14 @@ export function createLayers(store: Store<AppState>, api: LayersApi, deps: Layer
         const reply = existing
           ? await api.assignLayer(rev(), existing.id, { visible: false })
           : await api.createLayer(rev(), { name: HIDDEN_LAYER_NAME, visible: false });
+        disarm();
         adopt(reply);
       });
     },
     /**
      * Show hidden: every hidden layer is visible again and the members of the layer named Hidden (the one Hide selected
      * fills) join the selection, so Delete works on them at once. A user layer hidden by its eye comes back visible, not
-     * selected. The tool stays armed; `liveFirst` goes false so neither the params hook nor the next tool edit replaces the union.
+     * selected. Showing consumes nothing, so the tool stays as it is; `liveFirst` goes false so neither the params hook nor the next tool edit replaces the union.
      */
     showHidden: (): Promise<void> =>
       guarded(async () => {
@@ -130,6 +135,7 @@ export function createLayers(store: Store<AppState>, api: LayersApi, deps: Layer
         if (!(await confirmed(api.createLayer(rev(), { ...o, dry_run: true }), name || "the new layer"))) return;
         const before = new Set(layersOf(store.get().session).map((l) => l.id));
         const reply = await api.createLayer(rev(), o);
+        disarm();
         adopt(reply);
         const fresh = reply.session.layers.find((l) => !before.has(l.id));
         if (fresh) store.update((s) => ({ ...s, layerUi: { ...s.layerUi, active: fresh.id } }));
@@ -143,7 +149,9 @@ export function createLayers(store: Store<AppState>, api: LayersApi, deps: Layer
       if (!stepGate()) return Promise.resolve();
       return guarded(async () => {
         if (!(await confirmed(api.assignLayer(rev(), target.id, { dry_run: true }), target.name))) return;
-        adopt(await api.assignLayer(rev(), target.id));
+        const reply = await api.assignLayer(rev(), target.id);
+        disarm();
+        adopt(reply);
       });
     },
     /** Selected points back to main (layer 0). */
@@ -151,7 +159,9 @@ export function createLayers(store: Store<AppState>, api: LayersApi, deps: Layer
       if (refuse(layerButtons(store.get()).release)) return Promise.resolve();
       if (!stepGate()) return Promise.resolve();
       return guarded(async () => {
-        adopt(await api.assignLayer(rev(), 0));
+        const reply = await api.assignLayer(rev(), 0);
+        disarm();
+        adopt(reply);
       });
     },
     toggle: (id: number): Promise<void> => {
@@ -178,7 +188,8 @@ export function createLayers(store: Store<AppState>, api: LayersApi, deps: Layer
         addNotice(store, "info", "layer_disabled", SHOW_FIRST);
         return;
       }
-      deps.selectLayer(id);
+      const landing = deps.selectLayer(id);
+      if (landing) void landing.then((ok) => (ok ? disarm() : undefined));
     },
     /** Edit layer: clear the selection, seed a Box at the member bounds and start a live selection; the box then picks the new members. */
     async editLayer(id: number): Promise<void> {
@@ -200,7 +211,9 @@ export function createLayers(store: Store<AppState>, api: LayersApi, deps: Layer
       if (!stepGate()) return Promise.resolve();
       return guarded(async () => {
         if (!(await confirmed(api.setMembers(rev(), l.id, { dry_run: true }), l.name))) return;
-        adopt(await api.setMembers(rev(), l.id));
+        const reply = await api.setMembers(rev(), l.id);
+        disarm();
+        adopt(reply);
         store.update((s) => ({ ...s, layerUi: { ...s.layerUi, editing: null } }));
       });
     },
@@ -215,6 +228,7 @@ export function createLayers(store: Store<AppState>, api: LayersApi, deps: Layer
         if (!(await confirmed(api.layerFromProtection(rev(), { dry_run: true }), "Floor"))) return;
         const before = new Set(layersOf(store.get().session).map((l) => l.id));
         const reply = await api.layerFromProtection(rev());
+        disarm();
         adopt(reply);
         const fresh = reply.session.layers.find((l) => !before.has(l.id));
         if (fresh) store.update((s) => ({ ...s, layerUi: { ...s.layerUi, active: fresh.id } }));
@@ -229,7 +243,9 @@ export function createLayers(store: Store<AppState>, api: LayersApi, deps: Layer
       if (!stepGate()) return Promise.resolve();
       if (!deps.confirm(mergeConfirmText(a, b))) return Promise.resolve();
       return guarded(async () => {
-        adopt(await api.mergeLayer(rev(), from, { into }));
+        const reply = await api.mergeLayer(rev(), from, { into });
+        disarm();
+        adopt(reply);
         store.update((s) => ({ ...s, layerUi: { ...s.layerUi, active: into } }));
       });
     },
@@ -260,7 +276,7 @@ export function createLayers(store: Store<AppState>, api: LayersApi, deps: Layer
               : null;
       if (refuse(why)) return;
       store.update((s) => ({ ...s, layerUi: { ...s.layerUi, active: id } }));
-      await deps.selectLayerOp(id, op);
+      if (await deps.selectLayerOp(id, op)) disarm();
     },
     /** Delete the layer's points as a normal timeline step (confirmed; a protected layer is refused). */
     async deletePoints(id: number): Promise<void> {

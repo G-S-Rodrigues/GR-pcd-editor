@@ -1,4 +1,4 @@
-import { DELETED_OPACITY_DEFAULT, PALETTE } from "../colour/palette";
+import { DELETED_OPACITY_DEFAULT, type RenderTheme, paletteFor } from "../colour/palette";
 import type { AppState } from "../state/app";
 import type { Store } from "../state/store";
 import type { Counts, RenderMode } from "../state/types";
@@ -24,8 +24,8 @@ export function fetchPlan(mode: CompareMode): { primary: RenderMode; secondary: 
 export const clampOpacity = (v: number | undefined): number =>
   v === undefined || !Number.isFinite(v) ? DELETED_OPACITY_DEFAULT : Math.min(1, Math.max(0.05, v));
 
-export const overlayStyle = (opacity: number | undefined) => ({
-  colour: PALETTE.deleted,
+export const overlayStyle = (opacity: number | undefined, theme: RenderTheme = "dark") => ({
+  colour: paletteFor(theme).deleted,
   opacity: clampOpacity(opacity),
 });
 
