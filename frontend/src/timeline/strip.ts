@@ -163,6 +163,8 @@ export function buildTimeline(root: HTMLElement, store: Store<AppState>, actions
     if (v.hidden) return;
     track.style.width = `${v.trackWidth}px`;
     empty.textContent = v.empty ? v.emptyText : "";
+    line.hidden = v.empty; // M2: nothing to draw a line through, and the marker would sit on the first letter
+    marker.hidden = v.empty;
     const live = new Set(v.cards.map((c) => c.sid));
     for (const [sid, el] of cards) {
       if (!live.has(sid)) {

@@ -77,3 +77,20 @@ test("UI-1240 the strip is a bar with a head (Timeline, k of n), the scroller an
     expect(marker.style.left).toBe(`${slotX(2, w) - 7}px`);
   }
 });
+
+test("UI-1242 with no steps the line and the marker are hidden, so \"No steps yet\" sits on a clear bar; they return with the first step", async () => {
+  const { store, root } = await build(false);
+  const line = root.all().find((e) => e.classList.contains("tl-line"))!;
+  const marker = root.all().find((e) => e.getAttribute("id") === "timeline-marker")!;
+  const empty = root.all().find((e) => e.classList.contains("tl-empty"))!;
+  expect(line.hidden).toBe(false);
+  expect(marker.hidden).toBe(false);
+  expect(empty.text()).toBe("");
+  store.set({ session: sessionFixture({ history: { entries: [], cursor: 0, can_undo: false, can_redo: false } }) });
+  expect(empty.text()).toBe("No steps yet");
+  expect(line.hidden).toBe(true);
+  expect(marker.hidden).toBe(true);
+  store.set({ session: session(1) });
+  expect(line.hidden).toBe(false);
+  expect(marker.hidden).toBe(false);
+});

@@ -24,14 +24,15 @@ test("UI-350 the strip is a transparent overlay on the stage's bottom edge that 
   for (const sel of [".step", "#timeline-marker", ".tl-line"]) expect(rule(sel), sel).toContain("pointer-events: auto");
 });
 
-test("UI-351 step icons and counts read at 4.5:1 in both themes over the bar token and the chip fill, over a dark background and over bright points, and carry a halo", () => {
+test("UI-351 step icons and counts read at 4.5:1 in both themes over the bar token and the opaque chip, over a dark background and over bright points, and carry a halo", () => {
   const blocks = parseBlocks();
   for (const theme of ["dark", "light"] as const satisfies readonly Theme[]) {
     const bar = parseColour(raw(theme, "tl-bar", blocks));
     expect(bar.alpha, `--tl-bar alpha (${theme})`).toBeLessThan(1);
     for (const under of ["#15181d", "#000000", "#ffffff", "#ffd400", "#ff2a2a", "#e9ebef"]) {
       const onBar = blend(bar.hex, bar.alpha, under);
-      const chip = solid(theme, "fill-1", onBar, blocks);
+      const chip = raw(theme, "tl-chip", blocks); // the chip is opaque (UI-1241): the point colour under the bar no longer reaches it
+      expect(contrastRatio(solid(theme, "tl-text", onBar, blocks), onBar), `${theme} head over ${under}`).toBeGreaterThanOrEqual(4.5);
       const text = solid(theme, "tl-text", chip, blocks);
       expect(contrastRatio(text, chip), `${theme} text over ${under}`).toBeGreaterThanOrEqual(4.5);
     }
@@ -68,4 +69,14 @@ test("UI-1239 the thin bar: a 40 px glass strip 8 px above the stage bottom, 26 
 
 test("UI-353 the strip's transition is switched off for reduced motion", () => {
   expect(css).toMatch(/prefers-reduced-motion: reduce\) \{[^}]*\.step[^}]*transition: none/);
+});
+
+test("UI-1241 a chip is opaque in both themes (--tl-chip, the translucent fill already composited), so the timeline line never shows through its label", () => {
+  const blocks = parseBlocks();
+  for (const theme of ["dark", "light"] as const satisfies readonly Theme[]) {
+    const chip = parseColour(raw(theme, "tl-chip", blocks));
+    expect(chip.alpha, `--tl-chip alpha (${theme})`).toBe(1);
+    expect(contrastRatio(solid(theme, "tl-text", chip.hex, blocks), chip.hex), `${theme} text over the chip`).toBeGreaterThanOrEqual(4.5);
+  }
+  expect(rule(".step")).toContain("background: var(--tl-chip);");
 });

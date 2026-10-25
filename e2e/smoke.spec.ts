@@ -8639,3 +8639,76 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
     expect(errors).toEqual([]);
   });
 }
+
+/** RGB rows of a page clip, decoded in the page from the screenshot PNG: rows[y][x] = [r, g, b]. */
+const clipPixels = async (page: Pg, clip: { x: number; y: number; width: number; height: number }): Promise<number[][][]> => {
+  const png = await page.screenshot({ clip });
+  return page.evaluate(async (b64) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const bmp = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+    const cv = document.createElement("canvas");
+    cv.width = bmp.width;
+    cv.height = bmp.height;
+    const cx = cv.getContext("2d")!;
+    cx.drawImage(bmp, 0, 0);
+    const d = cx.getImageData(0, 0, bmp.width, bmp.height).data;
+    const rows: number[][][] = [];
+    for (let y = 0; y < bmp.height; y++) {
+      const row: number[][] = [];
+      for (let x = 0; x < bmp.width; x++) row.push([d[(y * bmp.width + x) * 4], d[(y * bmp.width + x) * 4 + 1], d[(y * bmp.width + x) * 4 + 2]]);
+      rows.push(row);
+    }
+    return rows;
+  }, png.toString("base64"));
+};
+
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-306 22-fix the timeline line does not run through a chip at ${w}x${h}: in both themes the pixel row at the line's y inside the chip's left padding equals the rows above it`, async ({ page }) => {
+    test.setTimeout(240000);
+    await page.setViewportSize({ width: w, height: h });
+    const t = tl(page);
+    await t.threeSteps();
+    for (const scheme of ["dark", "light"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await transitionsSettled(page);
+      await page.mouse.move(w / 2, 200); // no chip is hovered
+      await t.idle();
+      const line = (await page.locator(".tl-line").boundingBox())!;
+      const lineY = Math.round(line.y + line.height / 2); // the 1 px line is centred in its 14 px hit strip
+      let checked = 0;
+      for (let i = 0; i < 3; i++) {
+        const c = (await t.card(i).boundingBox())!;
+        const x = Math.round(c.x) + 1;
+        // 6 columns of the left padding (8 px), rows lineY-9 .. lineY+3 relative to the line
+        const rows = await clipPixels(page, { x, y: lineY - 9, width: 6, height: 13 });
+        const at = rows[9];
+        const ref = rows[3]; // 6 px above the line, same chip fill
+        const noise = Math.max(...rows[1].map((p, k) => Math.max(...p.map((v, ch) => Math.abs(v - rows[3][k][ch])))));
+        const diff = Math.max(...at.map((p, k) => Math.max(...p.map((v, ch) => Math.abs(v - ref[k][ch])))));
+        expect(diff, `${scheme} chip ${i}: line row vs the row 6 px above (noise ${noise})`).toBeLessThanOrEqual(noise);
+        checked++;
+      }
+      expect(checked, `${scheme}: chips checked`).toBe(3);
+    }
+  });
+}
+
+test("E2E-309 22-fix with no steps the timeline shows 'No steps yet' on a clear bar: no line and no marker are drawn, and both return with the first step", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const t = tl(page);
+  await t.open();
+  const empty = page.locator("#timeline .tl-empty");
+  await expect(empty).toHaveText("No steps yet");
+  const e = (await empty.boundingBox())!;
+  expect(e.width).toBeGreaterThan(0);
+  await expect(page.locator("#timeline .tl-line")).toBeHidden();
+  await expect(page.locator("#timeline-marker")).toBeHidden();
+  expect(await page.locator("#timeline .tl-line").boundingBox(), "the line has no box").toBeNull();
+  expect(await page.locator("#timeline-marker").boundingBox(), "the marker has no box").toBeNull();
+  await t.boxAt(3, 13, 2, 4, 4, 3);
+  await t.exact("Candidates", String(ROOM.ghost));
+  await t.ctl("apply").click();
+  await expect(t.cards).toHaveCount(1);
+  await expect(page.locator("#timeline .tl-line")).toBeAttached();
+  await expect(page.locator("#timeline-marker")).toBeVisible();
+});
