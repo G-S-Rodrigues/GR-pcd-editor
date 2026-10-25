@@ -47,7 +47,7 @@ override it.
 | Middle/right-drag, Shift+left-drag | Pan |
 | Wheel | Zoom |
 | ViewCube (top right of the view, with the camera buttons stacked under it) | Click a face to look along that axis; click an edge or corner for a diagonal view; it follows every camera change |
-| Selected colour (Selection block, left) | Four colour dots (Orange, Magenta, White, Lime) set the colour of selected points on the canvas and in the legend; view only, saved with the session |
+| Selected colour (Selection block, left) | Four colour dots (Orange, Magenta, White, Lime; Blue in the light theme) set the colour of selected points on the canvas and in the legend; view only, saved with the session |
 | `1` `2` `3` `4` `5` `6` | Top, bottom, front, back, left, right (the ViewCube faces) |
 | `P`, `F`, `Alt+F` | Perspective/orthographic, fit the cloud, fit the camera to the current candidate |
 | Hold `R`, or the **Rect** button | Rectangle select: drag a rectangle in a face view to set the box (depth: the whole cloud along the view axis) |

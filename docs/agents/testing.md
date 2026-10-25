@@ -749,8 +749,7 @@ Since 22-5 the fold ids are `box, polygon, cluster, sparse, plane, thin, layers`
   `frontend/index.html` too.
 - E2E-305 writes 20 owner shots (`/out/part22-8-<w>x<h>-<theme>-<state>.png`: idle, box-armed-toast, five-steps-highlighted, legend-folded,
   band-hidden-pill) under `shots-22/part-8`; never committed.
-- Smoke order dependence (pre-existing, measured on 653ae96): E2E-19 fails in a subset run right after E2E-16 (the Left view persists); it passes alone
-  and in full order.
+- History: the E2E-19-after-E2E-16 order dependence (measured on 653ae96) is fixed by 7727ee7 (the file-wide session isolation below).
 
 ## Part 22-9 additions (docs, README screenshots)
 - New id: `CTR-13` (`tests/container/test_shots_input.sh`, static, a recording `docker` stub): unset leaves the run line exactly as before, a missing
@@ -760,4 +759,21 @@ Since 22-5 the fold ids are `box, polygon, cluster, sparse, plane, thin, layers`
 - `scripts/check-bootstrap-contract.sh` now rejects a tracked `.pcdsession` and probes that `private.pcdsession` is ignored.
 - Committed screenshots: the six 1920x1080 shots in `docs/images/screenshots/` (`1920x1080-{dark,light}-{idle,armed,draft}.png`, R22-20); the full
   owner set (both sizes, plus the owner-only states) stays in `shots-22/part-9`, never committed.
-- Smoke count unchanged: 251 (`npx playwright test --list`, the 22-8 end count); this part adds no smoke test. Changed tests: none.
+- Smoke count: 258 (`bash scripts/smoke.sh npx playwright test --list | tail -1`, measured after the fix rounds below); 22-9 itself added no smoke test.
+
+## Part 22 fix rounds (6..8) and 22-11 follow-ups
+- Isolation rule: `e2e/smoke.spec.ts` (lines 5-10) and `e2e/readme.shots.ts` run a file-wide `test.beforeEach` that sends `DELETE /api/session`, so a
+  page load cannot adopt the previous test's session a moment before the new upload replaces it (setup only; no assertion depends on it).
+- New ids, fix rounds: UI-1241 (chips opaque, the timeline line never shows through), UI-1242 (no steps: line and marker hidden), UI-1243 (Show band switch
+  and the I-understand row), UI-1250, UI-1251, UI-1252 (the startup adoption: a newer open wins, an upload in flight wins, otherwise the session is adopted),
+  UI-1260, UI-1261 (filter boxes keep off the Box resize tips), UI-1262 (a waiting pick owns the press over the band), E2E-306 (timeline line vs chip),
+  E2E-307 (Show band switch), E2E-308 (I-understand row), E2E-309 (empty timeline).
+- New ids, 22-11: UI-1263 (chips keep off the Box rotate ring anchors: `boxHandleRects`), UI-1264 and UI-1265 (a waiting pick owns the press over Box
+  handles and filter-plane arrows; `hoverAt` gated the same way), UI-1266 (a failed open with no session adopts the session the server holds),
+  UI-1267 (the Reset box tooltip names the 3 m default box).
+- Changed tests (intended): UI-351, UI-1070, UI-1075, E2E-57 (moves the pointer off the card; 22-11 also polls the hover preview visible first and
+  asserts `timeline.highlight` is null), E2E-285, E2E-289, E2E-304 and CTR-12.
+- Smoke total: 258 tests; 22-11 adds none.
+- `docs/images/editor.png` and `docs/images/viewcube.png` are smoke artefacts refreshed by `SMOKE_UPDATE_SCREENSHOT=1`; the README shows neither (its
+  images are the 1920x1080 set under `docs/images/screenshots/`).
+- Run frontend vitest on a host without node: `docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD/frontend:/w" -w /w node:22-bookworm node node_modules/vitest/vitest.mjs run <file>`.

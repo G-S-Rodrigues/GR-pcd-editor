@@ -70,3 +70,9 @@ test("UI-1169 a Fit menu item runs its fit and closes the menu", () => {
   expect(store.get().tools.box).toEqual(fitToBounds(before, store.get().session!.active_bounds!));
   expect(closed).toBe(1);
 });
+
+test("UI-1267 the Reset box tooltip names the 3 m default box, not a unit box", () => {
+  const tip = FIELD_SPECS.find((s) => s.id === "box-reset")!.tooltip;
+  expect(tip).toMatch(/3 m/);
+  expect(tip).not.toMatch(/unit box/);
+});

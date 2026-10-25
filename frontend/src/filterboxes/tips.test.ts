@@ -4,7 +4,7 @@ import { defaultBox } from "../tools/box/model";
 import { project } from "../pick/ray";
 import { applyPreset } from "../view/presets";
 import { defaultCamera } from "../view/camera";
-import { boxTipRects } from "./tips";
+import { boxHandleRects, boxTipRects } from "./tips";
 import { placeBoxes, type Rect } from "./placement";
 
 const STAGE = { w: 768, h: 642 }; // the 1280x720 stage
@@ -36,5 +36,17 @@ describe("filter boxes keep off the Box tool's arrow tips (22-8 regression, E2E-
       placeBoxes(o, STAGE, null, COLLAPSED, new Set(), reserved).boxes.filter((b) => hit({ l: b.x, t: b.y, r: b.x + b.w, b: b.y + b.h }, tip));
     expect(covered([]).length).toBeGreaterThan(0); // the regression
     expect(covered([tip])).toEqual([]);
+  });
+
+  it("UI-1263 a docked chip no longer covers a Box rotate ring anchor (boxHandleRects: tips and rings) (back view, box at 2,1,0, 1280x720 stage, collapsed chips)", () => {
+    const cam = applyPreset(defaultCamera(), "back");
+    const box = defaultBox([2, 1, 0]);
+    const ring = boxHandles(box, cam, STAGE.h).find((h) => h.id === "rotate-0+")!;
+    const p = project(cam, ring.anchor, [0, 0, 0], STAGE)!;
+    expect(p.x).toBeGreaterThanOrEqual(0);
+    expect(p.x).toBeLessThanOrEqual(STAGE.w);
+    const anchor: Rect = { l: p.x - HANDLE_HIT_PX, t: p.y - HANDLE_HIT_PX, r: p.x + HANDLE_HIT_PX, b: p.y + HANDLE_HIT_PX };
+    const placed = placeBoxes(cam.orientation, STAGE, null, COLLAPSED, new Set(), boxHandleRects(box, cam, STAGE)).boxes;
+    expect(placed.filter((b) => hit({ l: b.x, t: b.y, r: b.x + b.w, b: b.y + b.h }, anchor))).toEqual([]);
   });
 });

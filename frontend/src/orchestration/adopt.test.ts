@@ -2,6 +2,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import { sessionFixture } from "../testing/fixtures";
 import { createAppStore } from "../state/app";
 import { adoptExisting } from "./adopt";
+import { openSource } from "./open";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -60,4 +61,25 @@ test("UI-1252 with nothing newer, the existing session is adopted, restored and 
   expect(store.get().session?.session_id).toBe("A");
   expect(d.onOpened).toHaveBeenCalledTimes(1);
   expect(d.refresh).toHaveBeenCalledTimes(1);
+});
+
+test("UI-1266 an upload that fails while the startup GET was held adopts the session the server still holds", async () => {
+  const store = createAppStore();
+  const release = heldState(wire(sessionFixture({ session_id: "A" })));
+  const d = deps();
+  const first = adoptExisting(store, d);
+  let fail: (e: Error) => void = () => undefined;
+  const upload = (_f: File, o: { onPhase?: (p: "sending" | "importing") => void }) => {
+    o.onPhase?.("sending");
+    return { promise: new Promise<never>((_, rej) => (fail = rej)) } as never;
+  };
+  const opening = openSource({ kind: "picker", file: new File(["x"], "b.pcd") }, { store, confirm: () => true, refresh: d.refresh, upload, onOpened: d.onOpened });
+  release();
+  expect(await first).toBe(false); // dropped: the upload is in flight
+  expect(store.get().session).toBeNull();
+  fail(new Error("boom"));
+  expect(await opening).toMatchObject({ ok: false, reason: "error" });
+  expect(store.get().session?.session_id).toBe("A");
+  expect(store.get().upload).toBeNull();
+  expect(d.onOpened).toHaveBeenCalledTimes(1);
 });

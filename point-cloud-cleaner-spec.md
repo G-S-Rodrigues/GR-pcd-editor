@@ -275,7 +275,7 @@ The box is an oriented volume with centre `c`, positive dimensions `(dx, dy, dz)
 - Filters are world-axis-aligned, use inclusive limits and combine with logical AND.
 - Allow each axis filter to be disabled; provide reset-to-cloud-bounds and reset-all.
 - Make the distinction explicit: display filtering hides points; it does not delete them or make the filter itself a committed selection.
-- `Select displayed` evaluates all active finite-coordinate source points satisfying these limits, including points omitted from rendering by level of detail.
+- `Select shown` evaluates all active finite-coordinate source points satisfying these limits, including points omitted from rendering by level of detail.
 - Selection tools expose a scope selector: `Displayed points` (default) or `All active points`.
 - In displayed scope, hidden points cannot enter the selection. In all-active scope, show a persistent notice and count of selected points outside the display filter.
 - Scissors/polygon selections include points through the view depth unless a height/depth bound is explicitly enabled. Describe this in the UI.
@@ -391,7 +391,7 @@ Initial targets, to be benchmarked on a documented desktop Linux reference PC wi
 | AC-01 | Import ASCII, binary and binary-compressed fixtures with custom fields | Correct records/schema; no silent field loss |
 | AC-02 | Box above a floor slab overlaps the same XY footprint | Only points inside its 3D volume are candidates; floor below remains |
 | AC-03 | Enter centre, dimensions and rotation, then drag handles | Both controls represent the same geometry without transforming the cloud |
-| AC-04 | Set six XYZ limits and Select displayed | Exact full-resolution filtered set is selected, including undrawn LOD points |
+| AC-04 | Set six XYZ limits and Select shown | Exact full-resolution filtered set is selected, including undrawn LOD points |
 | AC-05 | Select an XY polygon with Z limits | Only points in the resulting prism are selected |
 | AC-06 | Global protection and additive local protection overlap a selection | Both protected intervals survive deletion |
 | AC-07 | Explicitly override global protection for one operation | Preview clearly reflects only the local protection; later inherited operations use global protection again |
@@ -453,7 +453,7 @@ Initial targets, to be benchmarked on a documented desktop Linux reference PC wi
   the view axis. The Box tool starts as a 3 m cube and a click moves it.
 - Tool flow: Cluster arms at once and waits for a seed click (Pick point toggles waiting, set and paused); Clear
   selection, pressing a tool again, Esc and any successful action that consumes the selection disarm it (Part 22
-  addendum); Select displayed and Invert refuse while a tool is armed. The Polygon
+  addendum); Select shown and Invert refuse while a tool is armed. The Polygon
   tool has an edit mode (add and remove vertices); a polygon delete blanks the polygon.
 - History steps store their editable shape (box, polygon, cluster with its region, sparse parameters; a filter step
   becomes the box of its bounds) in the session archive as an optional manifest key (archive VERSION unchanged; an older
@@ -531,7 +531,7 @@ This addendum supersedes the layout wording of section 4 and of the older addend
   Height protection. The XYZ display limits stay as the canvas filter boxes (R22-8). The status bar moves to the footer. Export is a sheet and
   History a popover at the timeline's end.
 - R22-1 (reverses R17-2): Esc and every action that consumes the selection and succeeds disarm the tool; refused or cancelled actions keep it. The
-  Esc order is drag, text field, polygon or pick, layer edit, overlay, draft, then the tool. The closed polygon prism region is kept unless the
+  Esc order is text field, drag, polygon or pick, layer edit, overlay, draft, then the tool. The closed polygon prism region is kept unless the
   Polygon tool was armed. Pinned by UI-991, UI-993, UI-994, UI-995, E2E-196, E2E-197.
 - R22-2: the Display filter section is removed; Reset filters is an icon at the bottom right of the canvas (E2E-301, E2E-40).
 - R22-3 (reverses Part 18 O9): a layer's points always show the layer colour, protected or not; a shield marks a protected layer on its row, its
@@ -549,4 +549,5 @@ This addendum supersedes the layout wording of section 4 and of the older addend
 - Process rulings R22-12, R22-17, R22-18, R22-20: part 22 is built on the `prototype` branch first and merged to main after the owner's validation; the
   README screenshots are the 1920x1080 set of the owner's own scan.
 - Acceptance: the AC numbering is unchanged; the part 22 acceptance criteria live in the part 22 spec. The landed tests pin them (UI-991 to
-  UI-1015, UI-1230 to UI-1240, E2E-196 to E2E-202, E2E-285, E2E-300 to E2E-304).
+  UI-1015, UI-1230 to UI-1240, E2E-196 to E2E-202, E2E-285, E2E-300 to E2E-304; the fix rounds add UI-1241 to UI-1243, UI-1250 to UI-1252,
+  UI-1260 to UI-1267 and E2E-306 to E2E-309).
