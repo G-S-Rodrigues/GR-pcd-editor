@@ -8542,12 +8542,15 @@ test("E2E-304 22-8 contrast in both themes on the new surfaces: the chip counts,
     await transitionsSettled(page);
     const row = async (name: string, sel: string, floor: number) => {
       await expect.poll(async () => (await textBackdrops(page, sel)).length, { message: name }).toBeGreaterThan(0);
+      let asserted = 0;
       for (const b of await textBackdrops(page, sel)) {
         if (floor === 4.5 && !/"[^"]+"$/.test(b.what)) continue;
         const r = worstContrast(b);
         console.info(`CONTRAST ${scheme} ${name} ${b.what.slice(0, 40)}: ${r.toFixed(2)}`);
         expect(r, `${scheme} ${name}: ${b.what}`).toBeGreaterThanOrEqual(floor);
+        asserted++;
       }
+      expect(asserted, `${scheme} ${name}: backdrops actually asserted (no vacuous pass)`).toBeGreaterThan(0);
     };
     await row("step count", "#timeline .step-count", 4.5);
     await row("Timeline head", "#timeline-bar .tl-head b, #tl-sum", 4.5);
