@@ -1,4 +1,5 @@
 import { getState } from "../api/session";
+import { adoptExisting } from "./adopt";
 import { ApiError, openErrorText } from "../files/errors";
 import { type DataTransferLike, type DropErrorCode, pickDroppedFile } from "../files/dragdrop";
 import { type UploadHandle, type UploadOptions, uploadFile } from "../files/upload";
@@ -89,6 +90,8 @@ export async function openSource(src: OpenSource, deps: OpenDeps): Promise<OpenO
       const name = file?.name ?? "the file";
       addNotice(store, "error", "open_failed", openErrorText(name, e instanceof Error ? e.message : "unknown error", code));
     }
+    // the startup adoption may have been dropped while this upload ran; the server still holds that session, so show it
+    if (!store.get().session) await adoptExisting(store, { onOpened: (st) => deps.onOpened?.(st), refresh: deps.refresh }).catch(() => false);
     return { ok: false, reason: "error", code };
   }
 }
