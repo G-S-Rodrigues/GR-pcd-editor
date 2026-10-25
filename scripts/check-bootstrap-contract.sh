@@ -23,7 +23,7 @@ done
 
 if [[ -f .gitignore ]]; then
   probes=(
-    fixture.pcd fixture.pcd.zip private.session private.session.zip
+    fixture.pcd fixture.pcd.zip private.pcdsession private.session private.session.zip
     uploads/example outputs/example .env .env.local build/output
     .claude/state .agents/state .scratch/state plans/example *.plan.md
   )
@@ -35,7 +35,7 @@ if [[ -f .gitignore ]]; then
   done
 fi
 
-forbidden='(^|/)([^/]+\.pcd|[^/]+\.pcd\.zip|[^/]+\.session|[^/]+\.session\.zip|\.env(\.[^/]*)?|\.claude|\.agents|\.scratch|plans|.*\.plan\.md)(/|$)'
+forbidden='(^|/)([^/]+\.pcd|[^/]+\.pcdsession|[^/]+\.pcd\.zip|[^/]+\.session|[^/]+\.session\.zip|\.env(\.[^/]*)?|\.claude|\.agents|\.scratch|plans|.*\.plan\.md)(/|$)'
 tracked="$(git ls-files)"
 if grep -Eqi "$forbidden" <<<"$tracked"; then
   fail "tracked content includes private or planning material"
