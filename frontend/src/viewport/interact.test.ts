@@ -49,6 +49,18 @@ describe("tool pointer routing (F-06)", () => {
     expect(t.tools.dragging()).toBe(false);
   });
 
+  it("UI-1264 while a pick is waiting (pick-seed, pick-pivot, pick-floor) a press on a Box handle is a pick, not a resize; back in orbit it grabs again", () => {
+    for (const interaction of ["pick-seed", "pick-pivot", "pick-floor"] as const) {
+      const t = setup();
+      t.store.update((s) => ({ ...s, interaction }));
+      expect(t.tools.pointerDown(t.ev(t.at.x, t.at.y, false)), `${interaction} handle`).toBe(false);
+      expect(t.tools.dragging()).toBe(false);
+      t.store.update((s) => ({ ...s, interaction: "orbit" }));
+      expect(t.tools.pointerDown(t.ev(t.at.x, t.at.y, false)), "orbit handle").toBe(true);
+      t.tools.pointerUp();
+    }
+  });
+
   it("UI-108 a Shift drag resizes the box by a tenth of a plain drag", () => {
     const moved = (shift: boolean) => {
       const t = setup();
@@ -158,6 +170,19 @@ describe("filter arrow routing (part 10)", () => {
     t.tools.pointerUp();
     expect(t.edits.at(-1)![3]).toBe(false);
     expect(t.store.get().filterUi.interacting).toBeNull();
+  });
+
+  it("UI-1265 while a pick is waiting a press on a shown filter plane's arrow is a pick, not a filter drag; back in orbit it grabs again", () => {
+    for (const interaction of ["pick-seed", "pick-pivot", "pick-floor"] as const) {
+      const t = filterSetup();
+      t.store.update((s) => ({ ...s, interaction }));
+      expect(t.tools.pointerDown(t.ev(t.tip!.x, t.tip!.y)), `${interaction} arrow`).toBe(false);
+      expect(t.tools.dragging()).toBe(false);
+      expect(t.edits).toEqual([]);
+      t.store.update((s) => ({ ...s, interaction: "orbit" }));
+      expect(t.tools.pointerDown(t.ev(t.tip!.x, t.tip!.y)), "orbit arrow").toBe(true);
+      t.tools.pointerUp();
+    }
   });
 
   it("UI-203 with the plane hidden (collapsed or inactive) the same spot is not grabbed, so the camera orbits", () => {

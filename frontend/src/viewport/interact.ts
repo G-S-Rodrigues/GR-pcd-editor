@@ -174,7 +174,7 @@ export function createToolInteraction(
   };
   /** The box handle (arrow tip or ring) under p with the Box tool armed, or null. */
   const boxHandleAt = (s: AppState, vp: { w: number; h: number }, p: { x: number; y: number }, e: { ctrlKey?: boolean; metaKey?: boolean }): Handle | null =>
-    s.tool === "box" && !e.ctrlKey && !e.metaKey ? hitHandle(boxHandles(s.tools.box, s.camera, vp.h), s.camera, vp, p.x, p.y) : null; // Ctrl/Meta over a handle orbits
+    s.tool === "box" && s.interaction === "orbit" && !e.ctrlKey && !e.metaKey ? hitHandle(boxHandles(s.tools.box, s.camera, vp.h), s.camera, vp, p.x, p.y) : null; // Ctrl/Meta over a handle orbits
   /** Where the pointer ray enters the box body, when a plain left press there should move the box; null otherwise. */
   const bodyHit = (s: AppState, ray: ReturnType<typeof screenRay>, e: { shiftKey: boolean; ctrlKey?: boolean; metaKey?: boolean }) => {
     if (s.tool !== "box" || s.interaction !== "orbit" || e.shiftKey || e.ctrlKey || e.metaKey) return null; // Shift pans, Ctrl always orbits
@@ -193,7 +193,7 @@ export function createToolInteraction(
       const cursor = deg < 22.5 || deg >= 157.5 ? "ew-resize" : deg < 67.5 ? "nwse-resize" : deg < 112.5 ? "ns-resize" : "nesw-resize";
       return { cursor, id: hit.id };
     }
-    if (bandHit(s, vp, p)) return null;
+    if (s.interaction === "orbit" && bandHit(s, vp, p)) return null;
     const ray = screenRay(s.camera, vp, p.x, p.y);
     return bodyHit(s, ray, e) ? { cursor: "move", id: null } : null;
   };
@@ -208,8 +208,8 @@ export function createToolInteraction(
       const p = px(e);
       const vp = size();
       const ray = screenRay(s.camera, vp, p.x, p.y);
-      if (deps.filterEdit) {
-        // a shown filter plane's arrow wins over everything else; with no plane shown nothing changes
+      if (deps.filterEdit && s.interaction === "orbit") {
+        // a waiting pick owns the press (see below); a shown filter plane's arrow wins over everything else; with no plane shown nothing changes
         let best: { key: string; d: FilterDrag; value: number } | null = null;
         let bd = PICK_PX;
         for (const pl of filterPlanes(s, vp.h)) {
