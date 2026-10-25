@@ -8325,6 +8325,30 @@ for (const [w, h] of SIZES) {
       expect(apart(toast, await box(sel)), `the toast overlaps ${sel}`).toBe(true);
     }
     if (await page.locator("#arm-pill").isVisible()) expect(apart(toast, await box("#arm-pill")), "the toast overlaps #arm-pill").toBe(true);
+    // the completed map (Step 9): the Box armed, the toast up; the Reset icon bottom right, the timeline bar thin and 8 px above the stage bottom,
+    // no two stage controls overlap, the page does not scroll and the stage keeps the checkLayout 0.6 share of the window
+    await page.locator('[data-control="tool-box"]').click();
+    await expect(page.locator("#arm-pill")).toBeVisible();
+    await expect(page.locator("#notices > *")).toHaveCount(1);
+    const hud = await box("#filter-hud");
+    expect(hud.x, "the Reset icon is in the right half").toBeGreaterThan(stage.x + stage.width / 2);
+    expect(hud.y, "the Reset icon is in the bottom half").toBeGreaterThan(stage.y + stage.height / 2);
+    const bar = await box("#timeline-bar").catch(() => null);
+    if (bar) {
+      expect(bar.height, "the timeline bar is at most 40 px tall").toBeLessThanOrEqual(40.5);
+      expect(Math.abs(stage.y + stage.height - (bar.y + bar.height) - 8), "the bar's bottom is 8 px above the stage bottom").toBeLessThanOrEqual(1);
+    }
+    const all: [string, { x: number; y: number; width: number; height: number }][] = [];
+    for (const sel of ["#palette", "#arm-pill", "#viewcube .cube-stage", "#camera-cluster", "#triad", "#legend", "#filter-hud", "#timeline-bar", "#notices > *"]) {
+      const loc = page.locator(sel);
+      for (let i = 0; i < (await loc.count()); i++) if (await loc.nth(i).isVisible()) all.push([`${sel}#${i}`, (await loc.nth(i).boundingBox())!]);
+    }
+    const fb = page.locator("#fbox-layer .fbox");
+    for (let i = 0; i < (await fb.count()); i++) if (await fb.nth(i).isVisible()) all.push([`fbox#${i}`, (await fb.nth(i).boundingBox())!]);
+    console.info(`HUD ${w}x${h} ${all.map(([n, b]) => `${n}:${Math.round(b.x)},${Math.round(b.y)},${Math.round(b.width)},${Math.round(b.height)}`).join(" ")}`);
+    for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) expect(apart(all[i][1], all[j][1]), `${all[i][0]} overlaps ${all[j][0]}`).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight && document.documentElement.scrollWidth <= window.innerWidth), "the page does not scroll").toBe(true);
+    expect(stage.width, "the stage keeps the checkLayout share (0.6, unedited)").toBeGreaterThanOrEqual(0.6 * w);
   });
 }
 
@@ -8500,3 +8524,112 @@ test("E2E-303 22-8 the thin timeline: a 40 px bar of 26 px chips, the label on h
   for (let i = 0; i < 5; i++) if (i !== 0) await expect(label(i), `label ${i} at 1920`).toBeVisible();
   expect((await t.card(1).boundingBox())!.width).toBeCloseTo(184, 0);
 });
+
+test("E2E-304 22-8 contrast in both themes on the new surfaces: the chip counts, the Timeline head and the toast text read at 4.5:1, the Reset icon and the marker grip at 3:1", async ({ page }) => {
+  test.setTimeout(240000);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const t = tl(page);
+  await t.threeSteps();
+  await page.mouse.move(640, 300);
+  for (const scheme of ["dark", "light"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await transitionsSettled(page);
+    const row = async (name: string, sel: string, floor: number) => {
+      await expect.poll(async () => (await textBackdrops(page, sel)).length, { message: name }).toBeGreaterThan(0);
+      for (const b of await textBackdrops(page, sel)) {
+        if (floor === 4.5 && !/"[^"]+"$/.test(b.what)) continue;
+        const r = worstContrast(b);
+        console.info(`CONTRAST ${scheme} ${name} ${b.what.slice(0, 40)}: ${r.toFixed(2)}`);
+        expect(r, `${scheme} ${name}: ${b.what}`).toBeGreaterThanOrEqual(floor);
+      }
+    };
+    await row("step count", "#timeline .step-count", 4.5);
+    await row("Timeline head", "#timeline-bar .tl-head b, #tl-sum", 4.5);
+    await row("Reset icon", '#filter-hud [data-control="filter-reset-all"]', 3);
+    // the marker grip: its fill (the accent) against the layers behind the bar
+    const [bar] = await textBackdrops(page, "#timeline-bar", 1);
+    const accent = await page.locator("#timeline-marker .marker-grip").evaluate((e) => getComputedStyle(e).backgroundColor);
+    const rg = worstContrast({ ...bar, fg: accent });
+    console.info(`CONTRAST ${scheme} marker grip: ${rg.toFixed(2)}`);
+    expect(rg, `${scheme} marker grip against the bar`).toBeGreaterThanOrEqual(3);
+    // a toast: raised by a typed-in junk value, read while it is up
+    await expandFilterBox(page, "filter-x-min");
+    await page.locator('[data-control="filter-x-min"]').fill("abc");
+    await page.keyboard.press("Enter");
+    await expect.poll(async () => (await textBackdrops(page, "#notices > *, #notices > * *")).length, { message: "a toast is up" }).toBeGreaterThan(0);
+    for (const b of await textBackdrops(page, "#notices > *, #notices > * *")) {
+      if (!/"[^"]+"$/.test(b.what)) continue;
+      const r = worstContrast(b);
+      console.info(`CONTRAST ${scheme} toast ${b.what.slice(0, 40)}: ${r.toFixed(2)}`);
+      expect(r, `${scheme} toast: ${b.what}`).toBeGreaterThanOrEqual(4.5);
+    }
+  }
+});
+
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`E2E-305 22-8 owner screenshots at ${w}x${h}: idle, the Box armed with its preview and a toast, five steps with one highlighted, the legend folded, and the band hidden with its pill, in dark and light`, async ({ page }) => {
+    test.setTimeout(420000);
+    await page.setViewportSize({ width: w, height: h });
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => {
+      if (m.type() === "error" && !/404/.test(m.text())) errors.push(m.text());
+    });
+    const t = tl(page);
+    const shoot = async (name: string) => {
+      for (const scheme of ["dark", "light"] as const) {
+        await page.emulateMedia({ colorScheme: scheme });
+        await transitionsSettled(page);
+        await appIdle(page);
+        await page.screenshot({ path: `/out/part22-8-${w}x${h}-${scheme}-${name}.png` });
+      }
+    };
+    await t.open();
+    await page.keyboard.press("3");
+    await page.mouse.move(5, 5);
+    await shoot("idle");
+    await t.boxAt(GHOST_BOX.c[0], GHOST_BOX.c[1], GHOST_BOX.c[2], GHOST_BOX.d[0], GHOST_BOX.d[1], GHOST_BOX.d[2]);
+    await t.exact("Candidates", String(ROOM.ghost));
+    await expandFilterBox(page, "filter-x-min");
+    await page.locator('[data-control="filter-x-min"]').fill("abc");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#notices > *")).toHaveCount(1);
+    await page.mouse.move(5, 5);
+    await shoot("box-armed-toast");
+    await t.ctl("tool-box").click(); // disarm
+    await t.threeSteps();
+    const rows = roomValid();
+    const xs = rows.map((r) => r[0]);
+    const [lo, hi] = [Math.min(...xs), Math.max(...xs)];
+    const mid = (lo + hi) / 2;
+    const ext = (i: number) => [Math.min(...rows.map((r) => r[i])) - 0.1, Math.max(...rows.map((r) => r[i])) + 0.1] as const;
+    const [y0, y1] = ext(1);
+    const [z0, z1] = ext(2);
+    for (const [a, b] of [[lo - 0.1, mid], [mid, hi + 0.1]] as const) {
+      await t.boxAt((a + b) / 2, (y0 + y1) / 2, (z0 + z1) / 2, b - a, y1 - y0, z1 - z0);
+      await expect(t.ctl("apply")).toBeEnabled();
+      await t.ctl("apply").click();
+      await t.idle();
+    }
+    await expect(t.cards).toHaveCount(5);
+    await t.card(2).locator(".step-icon").click();
+    await page.mouse.move(w / 2, 200);
+    await t.card(2).blur();
+    await shoot("five-steps-highlighted");
+    await t.ctl("legend-menu").click();
+    await expect(t.ctl("legend-menu")).toHaveAttribute("aria-expanded", "false");
+    await shoot("legend-folded");
+    await t.ctl("legend-menu").click();
+    expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight), "the page does not scroll").toBe(true);
+    // the band hidden with its pill (the 22-3 setup)
+    const { exact, ctl, setNum } = t;
+    await openTilted(page, exact);
+    await fitTiltedFloor(page, setNum, ctl, false);
+    await ctl("prot-show-band").click();
+    await expect(page.locator("#band-pill")).toBeVisible();
+    await page.mouse.move(5, 5);
+    await shoot("band-hidden-pill");
+    await ctl("prot-show-band").click();
+    expect(errors).toEqual([]);
+  });
+}
