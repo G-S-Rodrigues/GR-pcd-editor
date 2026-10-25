@@ -70,7 +70,7 @@
 - **Per-layer export:** The Export option One file per layer: one PCD per chosen layer named
   `<original>_<layer>_cleaned.pcd`, Main as `main`; layers with no points in scope are skipped and listed.
 - **Timeline:** The 40 px glass bar along the bottom of the view with one chip per step and a marker, a "Timeline k of n" head and the History button
-  at its end; it is saved in the session archive.
+  at its end; with no steps it reads "No steps yet" and draws no line or marker; it is saved in the session archive.
 - **Marker:** The cursor between steps; steps before it are applied, steps after it are rolled back (greyed). Undo and
   Redo move it one slot.
 - **Rolled back:** A step after the marker: its points are active again, and applying a new deletion discards it.

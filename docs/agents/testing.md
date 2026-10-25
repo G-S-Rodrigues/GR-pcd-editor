@@ -362,7 +362,7 @@ Since 22-5 the fold ids are `box, polygon, cluster, sparse, plane, thin, layers`
   the Cluster toggle (waiting, set, paused), Clear selection disarms, the Polygon pencil with the real mouse (draw, drag,
   insert on an edge, Backspace, double click, Esc), Box click to centre, Live preview off, a step click centres the
   camera and Edit shape (box, polygon, cluster) leaves the history alone, save and reopen keep the shapes, Delete is red
-  and Select displayed refuses while armed, Sparse points on `sparseRoomPcd` (`e2e/synthetic.ts`: dense floor and wall with
+  and Select shown refuses while armed, Sparse points on `sparseRoomPcd` (`e2e/synthetic.ts`: dense floor and wall with
   ten floating points above z 3; truth is the points above z 3), layout at 1280x720 and 1920x1080 with a highlighted step,
   and keyboard only.
 - Not covered by a browser test: an old `.pcdsession` without step shapes (the disabled Edit shape button and its reason are
@@ -406,7 +406,7 @@ Since 22-5 the fold ids are `box, polygon, cluster, sparse, plane, thin, layers`
 - Unit `UI-500..504` (`view/hidden.test.ts`: the id bitmap, exactness, `applyHidden` compaction, same object when empty),
   `UI-505/506` (`orchestration/refresh.test.ts`: primary and second render compacted, the deleted overlay is not, the set
   drops with the cache or a different session id), `UI-507..514` (`orchestration/hide.test.ts`: button states, refusal
-  reasons, Select displayed and Invert refused, the extra Apply confirm, hidden seed pick, never persisted, hide keeps the
+  reasons, Select shown and Invert refused, the extra Apply confirm, hidden seed pick, never persisted, hide keeps the
   tool armed, Save notice), `UI-515/516` (`ui/hiddenchip.test.ts`: the legend chip), `UI-517` (export dialog note).
 - Smoke `E2E-90` (hide the floor and its ghosts, the drawn count drops by exactly the count, Apply asks with the exact
   text, the export re-parsed with the independent reader equals the room minus the ghosts and includes the hidden floor,

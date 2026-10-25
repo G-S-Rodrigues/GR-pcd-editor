@@ -95,7 +95,7 @@ Concepts worth knowing:
   pending draft.
 - **Tool flow:** pressing **Cluster** arms it and waits for one click on a point; **Pick
   point** (waiting, set, paused) clears the seed and waits for another. Pressing a tool
-  again, or **Clear selection**, disarms it; **Select displayed** and **Invert** refuse
+  again, or **Clear selection**, disarms it; **Select shown** and **Invert** refuse
   with a reason while a tool is armed. After an action that uses the selection (Delete, New layer, Assign selection, Release to main, Set layer to
   selection, Hide selected, a layer's Select, Add, Subtract or Intersect, Merge, New layer from protected points) the tool disarms. **Esc** disarms
   the tool when no drag, drawing, pick, help, dialog or draft is pending, and the key was not typed in a text field. A polygon delete keeps a closed
@@ -115,7 +115,7 @@ Concepts worth knowing:
   layer's points keep their layer colour.
 - **Hide selected** (Selection section, the action beside Clear selection) moves the selected points into the layer **Hidden** and
   hides it; the button then reads **Show hidden (N)** and a **N hidden - Show** chip appears in the legend. Hidden
-  points are not drawn, picked or selected (Select displayed, Invert and Delete leave them alone), but they stay in the
+  points are not drawn, picked or selected (Select shown, Invert and Delete leave them alone), but they stay in the
   cloud and **Export** contains them. Unlike the earlier view-only version it is saved with the session.
 - **Sparse points** selects points with fewer than a set number of neighbours (default 8)
   within a small cube around them, so isolated artifacts in the open go while dense walls
