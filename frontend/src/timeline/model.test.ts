@@ -4,9 +4,11 @@ import type { HistoryEntry } from "../state/types";
 import { sessionFixture } from "../testing/fixtures";
 import {
   CARD_W,
+  CARD_W_WIDE,
   GAP,
   PAD,
   clearHighlight,
+  markerSlots,
   clickStep,
   commitRename,
   dragCancel,
@@ -104,6 +106,26 @@ describe("marker geometry", () => {
     expect(slotFromX(slotX(2), 0)).toBe(0);
     // content x = client x - scroller left + scrollLeft
     expect(slotFromX(100 - 40 + 300, 10)).toBe(slotFromX(360, 10));
+  });
+
+  test("UI-1238 chip geometry per breakpoint: CARD_W is 112 and CARD_W_WIDE 184; slotX, markerSlots, slotFromX and timelineView take the width and snap, clamp and size the track the same way (default CARD_W)", () => {
+    expect(CARD_W).toBe(112);
+    expect(CARD_W_WIDE).toBe(184);
+    expect(slotX(2)).toBe(slotX(2, CARD_W));
+    for (const W of [CARD_W, CARD_W_WIDE]) {
+      const pitch = W + GAP;
+      expect(slotX(3, W)).toBe(PAD + 3 * pitch - GAP / 2);
+      for (let k = 0; k <= 3; k++) expect(slotFromX(slotX(k, W), 3, W)).toBe(k);
+      expect(slotFromX(slotX(1, W) + pitch * 0.4, 3, W)).toBe(1);
+      expect(slotFromX(slotX(1, W) + pitch * 0.6, 3, W)).toBe(2);
+      expect(slotFromX(-500, 3, W)).toBe(0);
+      expect(slotFromX(99999, 3, W)).toBe(3);
+      expect(slotFromX(slotX(2, W), 0, W)).toBe(0);
+      expect(markerSlots(3, W)).toEqual([0, 1, 2, 3].map((k) => slotX(k, W)));
+      const v = timelineView(sess(2), emptyTimeline(), W);
+      expect(v.trackWidth).toBe(PAD * 2 + 3 * pitch - GAP);
+      expect(v.marker.x).toBe(slotX(2, W));
+    }
   });
 
   test("UI-237 nextFocus clamps at both ends", () => {
