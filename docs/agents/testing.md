@@ -502,6 +502,8 @@ Since 22-5 the fold ids are `box, polygon, cluster, sparse, plane, thin, layers`
   `PLN-14/15` and `THN-13/14` run one call in a fresh process under `RLIMIT_AS` (`tests/fixtures/plane_rss.py`) and are
   the worst of 3 runs of the committed code x1.5 (detect 1.50 s / 96 MiB, plane mask 0.03 s, duplicates at 1e-3
   2.96 s / 171 MiB, voxel 0.81 s / 133 MiB). The voxel number is slower than the Step 0 spike (0.25 s); reported, not tuned.
+  R22-22 raised the `THN-13/14` time bounds (4.45 s to 8.0 s, 1.22 s to 3.0 s; memory bounds unchanged): the gate host is a
+  shared WSL machine, and at load average 15-40 `THN-13` took up to 6.04 s and `THN-14` 2.00 s.
 - Frontend unit: `UI-954..983` (models, `bandFromPlane`, the detect flow in `orchestration/planes.ts`, panels, step cards).
   vitest 763 to 797. Changed existing test: `UI-890` (the tool order is box, polygon, cluster, sparse, plane, thin).
 - Smoke `E2E-186..194`: `E2E-186` Detect, held progress and Cancel; `E2E-187` ceiling Delete, Undo, Redo; `E2E-188` the
@@ -770,7 +772,8 @@ Since 22-5 the fold ids are `box, polygon, cluster, sparse, plane, thin, layers`
   E2E-307 (Show band switch), E2E-308 (I-understand row), E2E-309 (empty timeline).
 - New ids, 22-11: UI-1263 (chips keep off the Box rotate ring anchors: `boxHandleRects`), UI-1264 and UI-1265 (a waiting pick owns the press over Box
   handles and filter-plane arrows; `hoverAt` gated the same way), UI-1266 (a failed open with no session adopts the session the server holds),
-  UI-1267 (the Reset box tooltip names the 3 m default box).
+  UI-1267 (the Reset box tooltip names the 3 m default box), UI-1268 (guard from the E2E-27 probe: a candidate stale twice before the protection PUT
+  lands is re-requested at the new params revision once the PUT's params hook runs; GREEN on first run, the stuck "—" is not reachable that way).
 - Changed tests (intended): UI-351, UI-1070, UI-1075, E2E-57 (moves the pointer off the card; 22-11 also polls the hover preview visible first and
   asserts `timeline.highlight` is null), E2E-285, E2E-289, E2E-304 and CTR-12.
 - Smoke total: 258 tests; 22-11 adds none.

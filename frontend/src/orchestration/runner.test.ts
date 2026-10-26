@@ -6,6 +6,7 @@ import { setCenter } from "../tools/box/model";
 import { setSeed } from "../tools/cluster/model";
 import { applyBlockedText, canApply, createRunner, deleteBlockedNote, deleteKeyOutcome } from "./runner";
 import { shouldPreview } from "./selection";
+import { statusItems } from "../status/model";
 
 interface Deferred {
   id: string;
@@ -875,5 +876,37 @@ describe("runner one-shot landing (R17-8)", () => {
     await flush();
     u.polls[0].reject(new ApiError(500, "boom", "no"));
     await expect(failing).resolves.toBe(false);
+  });
+});
+
+describe("runner candidate after a late params change (E2E-27 probe)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("UI-1268 a candidate stale twice before the protection PUT lands is re-requested at the new params revision and Candidates leaves —", async () => {
+    const t = setup({ count: 10 });
+    t.store.set({ tool: "none", liveFirst: false });
+    const candidates = () => statusItems(t.store.get()).find((i) => i.label === "Candidates")?.value;
+    t.runner.paramsChanged("protection");
+    await vi.advanceTimersByTimeAsync(300);
+    await flush();
+    expect(t.api.submitCandidate).toHaveBeenCalledTimes(1);
+    t.polls[0].reject(new ApiError(409, "stale", "the job ended as stale"));
+    await flush();
+    expect(t.api.submitCandidate).toHaveBeenCalledTimes(2); // the one retry
+    t.polls[1].reject(new ApiError(409, "stale", "the job ended as stale"));
+    await flush();
+    expect(candidates()).toBe("—");
+    // the protection PUT (switch to override) lands only now: the controller stores its session and calls the params hook
+    const sess = t.store.get().session!;
+    t.store.set({ session: { ...sess, revision: { ...sess.revision, params: 5 } } });
+    t.runner.paramsChanged("protection");
+    await vi.advanceTimersByTimeAsync(300);
+    await flush();
+    expect(t.api.submitCandidate).toHaveBeenCalledTimes(3);
+    t.polls[2].resolve({ candidate: candidateFixture({ params_revision: 5, candidates: 7 }) });
+    await flush();
+    expect(t.store.get().candidate?.params_revision).toBe(5);
+    expect(candidates()).toBe("7");
   });
 });
